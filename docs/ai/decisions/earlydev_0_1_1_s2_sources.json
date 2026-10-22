@@ -658,5 +658,33 @@
     "task_id": "MC-AI-0518",
     "requirements_ledger_sha256": "3e27f7806d8244874df55157e645b10d4cba237e75a012b849894d7e091da0c0",
     "note": "Generation shares the world-map raster; coordinate text uses one consistent scale; map framing and legends become compact. Native source fixture unchanged."
+  },
+  "owner_ui_dynamics_feedback": {
+    "text": "1. As for world generation, it probably might begin with something like: Tectonics (with plates moving, continents drafing, colliding and splitting, islands appearing and submerging, mountains growing, etc). And then several more similar dynamic stages (e.g. slow advance of glaciers and sea ice, etc). Ending up with the normal world map. Although in general the current screen is acceptable - not excellent, but not all that bad already\n2. In-game: Maybe only remove the \"VIEW\" part... And add some more colors. Otherwise not bad already.\n3. Map still too small. Moisture and precipitation displays are somewhat bad. Temperature probably needs more of a translucent heatmap as well as the previous 2.\n\nOtherwise this one is more or less solid",
+    "sha256": "6dd2ef447497b40cb31caba36a23e49e5cfb531a9af4aea7ab3e99ec9afd0cae",
+    "supersedes": "View readout requirement and assistant square/sidebar/no-intermediate-deformation defaults"
+  },
+  "ui_dynamics": {
+    "task_id": "MC-AI-0519",
+    "requirements_ledger_sha256": "8ca8c28df5910597ddc6e1c6fec90109f54f3e3516888ac4f10033af3e5754d6",
+    "note": "Small rigid-plate motion and field-driven wind/current/rain; ice grows toward the same retained normal-map mask. Full-viewport translucent climate fields and colored uniform HUD. Native fixture unchanged.",
+    "ice_proxy": {
+      "native_ice_producer": false,
+      "land": "Nonwater native climateZone5 Snow",
+      "water": "Ocean or lake with temperature <= -10 C",
+      "meaning": "Conservative visual proxy, not physical freezing law",
+      "land_cells": 4303,
+      "water_cells": 2834,
+      "normal_raster_rgba_sha256": "90fd2d450b146e429758d797d8bd550a6533ed5b69349c9f8bc9cc1fe8cdd408"
+    }
+  },
+  "owner_ui_ice_feedback": {
+    "text": "The plates moving part looks so-so. The arrival of ice also looks bad - why sea ice first covers half the world then disappears completely?",
+    "sha256": "05f065f3df13ebfcdf5eb99677715f492bc79225431ac0383d557a9a0a0eb738",
+    "supersedes": "Assistant freeze/thaw cycle and unchanged-default-raster constraint; native fields remain unchanged"
+  },
+  "owner_ui_weather_feedback": {
+    "text": "Also maybe some animations related to winds/currents/precipitations/etc might improve the visuals",
+    "sha256": "c2ebab57fe58319b1cdcc03502e5734b1cd47b772d590a8cb38b0342060ecd30"
   }
 }

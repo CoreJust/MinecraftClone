@@ -28,6 +28,12 @@
     const foreground = api.colors.light;
     const outline = "#10212b";
     const hintColor = "#e5d29b";
+    const colors = {
+      coordinates: "#9adbe5",
+      heading: "#e5c798",
+      active: "#b2d39c",
+      inactive: "#b5bdb7",
+    };
     const textWidth = (value, textScale = scale) => String(value).length * 8 * textScale;
     const text = (value, x, y, textScale = scale, color = foreground) => {
       api.outlinedText(String(value), Math.round(x), Math.round(y), textScale, color, outline);
@@ -51,8 +57,8 @@
     function fields(rows, x, y, availableWidth) {
       const labelWidth = Math.max(...rows.map(([label]) => label.length)) + 1;
       let bottom = y;
-      for (const [label, value] of rows) {
-        bottom = wrapped(`${label.padEnd(labelWidth)}${value}`, x, y, availableWidth);
+      for (const [label, value, color = foreground] of rows) {
+        bottom = wrapped(`${label.padEnd(labelWidth)}${value}`, x, y, availableWidth, scale, color);
         y = bottom + 4;
       }
       return bottom;
@@ -61,12 +67,12 @@
     function flow(values, x, y, availableWidth) {
       let cursor = x;
       let bottom = y;
-      for (const value of values) {
+      for (const [value, color = foreground] of values) {
         if (cursor > x && cursor + textWidth(value) > x + availableWidth) {
           cursor = x;
           y += lineHeight;
         }
-        bottom = Math.max(bottom, wrapped(value, cursor, y, availableWidth));
+        bottom = Math.max(bottom, wrapped(value, cursor, y, availableWidth, scale, color));
         cursor += textWidth(value) + (compact ? 16 : 32);
       }
       return bottom;
@@ -74,6 +80,8 @@
 
     const flight = deniedMovement ? "Unavailable" : movement.flight ? "ON" : "OFF";
     const bypass = deniedMovement ? "Unavailable" : movement.bypass ? "ON" : "OFF";
+    const flightColor = !deniedMovement && movement.flight ? colors.active : colors.inactive;
+    const bypassColor = !deniedMovement && movement.bypass ? colors.active : colors.inactive;
     const footerY = height - (compact ? 80 : 128);
     const footerColumn = Math.floor((width - margin * 2 - gap) / 2);
     const footerRight = margin + footerColumn + gap;
@@ -84,51 +92,50 @@
       const columnWidth = Math.floor((availableWidth - gap) / 2);
       const right = margin + columnWidth + gap;
       const sessionBottom = flow([
-        `FPS ${number(telemetry.fps, 0)}`,
-        `Uptime ${uptime(telemetry.uptime)}`,
-        `Chunks ${number(telemetry.chunks, 0)}`,
-        `Memory ${number(telemetry.memoryMiB, 0)} MiB`,
+        [`FPS ${number(telemetry.fps, 0)}`],
+        [`Uptime ${uptime(telemetry.uptime)}`],
+        [`Chunks ${number(telemetry.chunks, 0)}`],
+        [`Memory ${number(telemetry.memoryMiB, 0)} MiB`],
       ], margin, compact ? 8 : 12, availableWidth);
       const headingY = sessionBottom + (compact ? 12 : 24);
       const readoutY = headingY + (compact ? 24 : 44);
-      text("Game position example", margin, headingY);
+      text("Game position example", margin, headingY, scale, colors.heading);
       const positionBottom = fields([
-        ["X", number(telemetry.x)],
-        ["Z", number(telemetry.z)],
-        ["Y", number(telemetry.y)],
+        ["X", number(telemetry.x), colors.coordinates],
+        ["Z", number(telemetry.z), colors.coordinates],
+        ["Y", number(telemetry.y), colors.coordinates],
         ["YPR deg", `${number(telemetry.yaw)} ${number(telemetry.pitch)} ${number(telemetry.roll)}`],
-        ["View", String(model.view || "--")],
       ], margin, readoutY, columnWidth);
 
-      text("Movement", right, headingY);
+      text("Movement", right, headingY, scale, colors.heading);
       const movementBottom = fields([
         ["Effective speed", `${number(model.effectiveSpeed, 0)}x`],
         ["Selected speed", `${number(model.selectedSpeed, 0)}x`],
-        ["Acceleration", model.acceleration ? "ON" : "OFF"],
-        ["Collision bypass", bypass],
-        ["Flight", flight],
+        ["Acceleration", model.acceleration ? "ON" : "OFF", model.acceleration ? colors.active : colors.inactive],
+        ["Collision bypass", bypass, bypassColor],
+        ["Flight", flight, flightColor],
       ], right, readoutY, columnWidth);
 
       const humidity = telemetry.humidity;
       const humidityUnavailable = humidity === null || humidity === undefined
         || humidity === "" || humidity === "--" || humidity === "unavailable";
       const climateY = Math.max(positionBottom, movementBottom) + (compact ? 16 : 24);
-      text("Local climate", margin, climateY);
+      text("Local climate", margin, climateY, scale, colors.heading);
       fields([
         ["Temperature", `${number(telemetry.temperatureC)} C`],
-        ["Humidity", humidityUnavailable ? "Unavailable" : String(humidity)],
+        ["Humidity", humidityUnavailable ? "Unavailable" : String(humidity), humidityUnavailable ? colors.inactive : foreground],
       ], margin, climateY + (compact ? 24 : 44), columnWidth);
     } else {
-      flow([`Flight ${flight}`, `Collision bypass ${bypass}`], margin,
+      flow([[`Flight ${flight}`, flightColor], [`Collision bypass ${bypass}`, bypassColor]], margin,
         footerY - (compact ? 32 : 48), width - margin * 2);
     }
 
     fields([["Selected block", String(model.selectedMaterial || "--")]],
       margin, footerY, footerColumn);
     fields([["Mode", mode]], footerRight, footerY, footerColumn);
-    fields([["Break", model.breakRule || (model.canBreak ? "Allowed" : "Unavailable")]],
+    fields([["Break", model.breakRule || (model.canBreak ? "Allowed" : "Unavailable"), model.canBreak ? foreground : colors.inactive]],
       margin, footerY + lineHeight, footerColumn);
-    fields([["Place", model.placeRule || (model.canPlace ? "Allowed" : "Unavailable")]],
+    fields([["Place", model.placeRule || (model.canPlace ? "Allowed" : "Unavailable"), model.canPlace ? foreground : colors.inactive]],
       footerRight, footerY + lineHeight, footerColumn);
 
     const canEdit = model.canPlace || model.canBreak;

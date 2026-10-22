@@ -43,7 +43,7 @@ model boundary and inherited acceptance requirements.
 | S2-09 | Preserve world bounds/wrapping, residency/LOD separation and the final accepted S1 gameplay/platform gates. | Existing world contract + S1 task |
 | S2-10 | Add a minimap and world map in S2, bringing forward the later map UI scope. | Owner addition, 22 October 2026 |
 | S2-11 | Prototype pre-connect loading, world generation, gameplay and world map using current text/background/map primitives; no widget toolkit. | Owner UI request and capability correction |
-| S2-12 | Preserve existing FPS/uptime/speed/view/movement/XYZ/YPR and controls; add chunks, measured memory and local climate. Local L1/L2 map uses game colors and prominent N/E/S/W. Hide inapplicable fields. | Owner UI request and refinement |
+| S2-12 | Preserve FPS/uptime/speed/movement/XYZ/YPR and controls; omit camera-view readout per latest owner feedback. Add chunks, measured memory and local climate. Local L1/L2 map uses game colors and prominent N/E/S/W. Hide inapplicable fields. | Owner UI request and refinement |
 
 ## Architecture
 

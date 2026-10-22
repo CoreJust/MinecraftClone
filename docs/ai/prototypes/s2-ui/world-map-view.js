@@ -11,8 +11,8 @@
     { id: "biomes", key: "B", name: "BIOMES", color: "#a8c893", fields: ["climateZone"] },
     { id: "wind", key: "W", name: "WIND", color: "#63dbd4", fields: ["windU", "windV"] },
     { id: "currents", key: "C", name: "CURRENTS", color: "#dceef7", fields: ["currentU", "currentV"] },
-    { id: "moisture", key: "O", name: "MOISTURE", color: "#7ca7de", fields: ["moisture"] },
-    { id: "precipitation", key: "Q", name: "PRECIPITATION", color: "#d9d0ed", fields: ["precipitation"] },
+    { id: "moisture", key: "O", name: "MOISTURE", color: "#79c2a8", fields: ["moisture"] },
+    { id: "precipitation", key: "Q", name: "PRECIPITATION", color: "#c9a8e6", fields: ["precipitation"] },
   ];
   const climateColors = [
     [35, 69, 87], [181, 153, 99], [76, 125, 91],
@@ -30,7 +30,8 @@
 
   function createState() {
     return {
-      zoom: 1, panX: 0, panY: 0,
+      zoom: 1, panX: PLAYER.x - 0.5, panY: PLAYER.y - 0.5,
+      overview: false, legendExpanded: false,
       layers: {
         plates: false, heights: true, temperature: false, biomes: true,
         wind: false, currents: false, moisture: false, precipitation: false,
@@ -45,6 +46,17 @@
       state.layers[layer.id] = !state.layers[layer.id];
       return true;
     }
+    if (lowerKey === "l") {
+      state.legendExpanded = !state.legendExpanded;
+      return true;
+    }
+    if (key === "0") {
+      state.overview = true;
+      state.zoom = 1;
+      state.panX = 0;
+      state.panY = 0;
+      return true;
+    }
     const step = (shiftKey ? 0.24 : 0.08) / state.zoom;
     if (key === "ArrowLeft") state.panX -= step;
     else if (key === "ArrowRight") state.panX += step;
@@ -54,9 +66,10 @@
     else if (key === "-" || key === "_") state.zoom = Math.max(1, state.zoom - 0.25);
     else if (lowerKey === "r") {
       state.zoom = 1;
-      state.panX = 0;
-      state.panY = 0;
+      state.panX = PLAYER.x - 0.5;
+      state.panY = PLAYER.y - 0.5;
     } else return false;
+    state.overview = false;
     state.panX = wrap(state.panX + 0.5) - 0.5;
     state.panY = wrap(state.panY + 0.5) - 0.5;
     return true;
@@ -174,6 +187,27 @@
     ]);
   }
 
+  function heatColor(id, value, stats) {
+    if (id === "temperature") return temperatureColor(value);
+    let position = fraction(value, stats);
+    if (id === "precipitation") {
+      position = Math.log1p(Math.max(0, value - stats.minimum))
+        / Math.log1p(stats.maximum - stats.minimum || 1);
+    }
+    return ramp(position, id === "moisture"
+      ? [[0, [209, 189, 137]], [0.5, [109, 183, 158]], [1, [31, 137, 125]]]
+      : [[0, [220, 213, 235]], [0.5, [163, 130, 199]], [1, [99, 73, 170]]]);
+  }
+
+  function activeHeat(data, selected) {
+    return ["temperature", "moisture", "precipitation"]
+      .filter((id) => data && data.available[id] && selected[id]);
+  }
+
+  function heatAlpha(count) {
+    return count === 1 ? 0.44 : count === 2 ? 0.54 : count === 3 ? 0.6 : 0;
+  }
+
   function elevationColor(value, stats) {
     if (value < 0) return ramp(value, [
       [Math.min(-0.01, stats.minimum), [24, 51, 70]], [0, [101, 150, 155]],
@@ -190,8 +224,10 @@
     return band !== Math.floor(values[west] / step) || band !== Math.floor(values[north] / step);
   }
 
-  function raster(data, selected) {
-    const key = ["plates", "heights", "temperature", "biomes", "moisture", "precipitation"]
+  function raster(data, selected, options) {
+    const ice = getIceMask(data.atlas);
+    const showIce = options.ice !== false;
+    const key = (showIce ? "ice:" : "bare:") + ["plates", "heights", "temperature", "biomes", "moisture", "precipitation"]
       .map((id) => selected[id] && data.available[id] ? "1" : "0").join("");
     if (data.rasters.has(key)) {
       const cached = data.rasters.get(key);
@@ -206,6 +242,7 @@
     const image = context.createImageData(data.width, data.height);
     const f = data.fields;
     const s = data.stats;
+    const heat = activeHeat(data, selected);
     for (let y = 0; y < data.height; y += 1) {
       for (let x = 0; x < data.width; x += 1) {
         const index = y * data.width + x;
@@ -217,8 +254,10 @@
         let color = water ? [35, 62, 77] : [128, 143, 126];
         if (selected.biomes && data.available.biomes) {
           color = [...(climateColors[Math.round(f.climateZone[index])] || [136, 148, 131])];
-        } else if (selected.temperature && data.available.temperature) {
-          color = temperatureColor(f.temperature[index]);
+          if (!showIce && ice && ice[index] === 1) {
+            color = selected.heights && f.elevation
+              ? elevationColor(f.elevation[index], s.elevation) : [...climateColors[4]];
+          }
         } else if (selected.heights && data.available.heights) {
           color = elevationColor(f.elevation[index], s.elevation);
         }
@@ -237,26 +276,21 @@
           mix(color, water ? [91, 143, 158] : [191, 190, 147], 0.58);
         }
         if (f.riverMask && f.riverMask[index]) mix(color, [81, 145, 172], 0.8);
-        if (selected.moisture && data.available.moisture) {
-          const value = fraction(f.moisture[index], s.moisture);
-          const line = contour(f.moisture, index, west, north, s.moisture.step);
-          if ((line && (x + y) % 3 !== 0) || (x % 7 === 0 && y % 7 === 0 && value > 0.25)) {
-            mix(color, [122, 167, 225], line ? 0.7 : 0.5);
-          }
+        if (showIce && ice && ice[index]) {
+          mix(color, ice[index] === 2 ? [203, 227, 231] : [236, 242, 235], ice[index] === 2 ? 0.82 : 0.3);
         }
-        if (selected.precipitation && data.available.precipitation) {
-          const value = fraction(f.precipitation[index], s.precipitation);
-          const density = ((x * 17 + y * 29) % 97) / 97;
-          if (x % 3 === 0 && y % 3 === 0 && density < value * 0.85) {
-            mix(color, [225, 214, 242], 0.8);
-          }
-        }
-        if (selected.temperature && data.available.temperature) {
-          const line = contour(f.temperature, index, west, north, s.temperature.step);
-          if (line || (x % 11 === 0 && y % 11 === 0)) {
-            const tint = temperatureColor(f.temperature[index]);
-            mix(color, tint, line ? 0.86 : 0.65);
-            if (line) mix(color, [244, 231, 197], 0.22);
+        if (heat.length) {
+          color = color.map((channel) => clamp(channel, 0, 255));
+          const tint = [0, 0, 0];
+          let count = 0;
+          heat.forEach((id) => {
+            if (!Number.isFinite(f[id][index])) return;
+            const current = heatColor(id, f[id][index], s[id]);
+            for (let channel = 0; channel < 3; channel += 1) tint[channel] += current[channel];
+            count += 1;
+          });
+          if (count) {
+            mix(color, tint.map((channel) => channel / count), heatAlpha(count));
           }
         }
         if (selected.plates && data.available.plates
@@ -282,9 +316,36 @@
     return caches.get(atlas);
   }
 
-  function getRaster(atlas, selected = createState().layers) {
+  function getIceMask(atlas) {
     const data = atlasData(atlas);
-    return data ? raster(data, selected) : null;
+    if (!data) return null;
+    if (data.iceMask !== undefined) return data.iceMask;
+    const fields = data.fields;
+    if (!fields.climateZone || !fields.temperature || !fields.oceanMask || !fields.lakeMask) {
+      data.iceMask = null;
+      return null;
+    }
+    const mask = new Uint8Array(data.width * data.height);
+    let land = 0;
+    let water = 0;
+    for (let index = 0; index < mask.length; index += 1) {
+      const isWater = Boolean(fields.oceanMask[index] || fields.lakeMask[index]);
+      if (isWater && fields.temperature[index] <= -10) {
+        mask[index] = 2;
+        water += 1;
+      } else if (!isWater && fields.climateZone[index] === 5) {
+        mask[index] = 1;
+        land += 1;
+      }
+    }
+    data.iceMask = mask;
+    data.iceCounts = { land, water };
+    return mask;
+  }
+
+  function getRaster(atlas, selected = createState().layers, options = {}) {
+    const data = atlasData(atlas);
+    return data ? raster(data, selected, options) : null;
   }
 
   function arrow(context, x, y, u, v, length, color, doubleHead) {
@@ -332,8 +393,8 @@
           if (id === "currents" && f.oceanMask && !f.oceanMask[index]) continue;
           const px = left + (x + 0.5) / data.width * size;
           const py = top + (y + 0.5) / data.height * size;
-          if (px < viewport.x - 20 || px > viewport.x + viewport.size + 20
-            || py < viewport.y - 20 || py > viewport.y + viewport.size + 20) continue;
+          if (px < viewport.x - 20 || px > viewport.x + viewport.width + 20
+            || py < viewport.y - 20 || py > viewport.y + viewport.height + 20) continue;
           arrow(api.context, px, py, f[uName][index], f[vName][index], compact ? 13 : 18,
             color, id === "currents");
         }
@@ -343,8 +404,8 @@
     data.plateCenters.forEach((plate) => {
       const x = left + plate.x * size;
       const y = top + plate.y * size;
-      if (x < viewport.x - 32 || x > viewport.x + viewport.size + 32
-        || y < viewport.y - 32 || y > viewport.y + viewport.size + 32) return;
+      if (x < viewport.x - 32 || x > viewport.x + viewport.width + 32
+        || y < viewport.y - 32 || y > viewport.y + viewport.height + 32) return;
       if (f.plateVx && f.plateVy) {
         arrow(api.context, x, y - 10, f.plateVx[plate.index], f.plateVy[plate.index],
           compact ? 17 : 24, "#d5a4ed", false);
@@ -359,132 +420,161 @@
       + Math.floor(PLAYER.x * data.width)];
   }
 
-  function description(layer, data) {
-    if (!data || !data.available[layer.id]) return ["Source unavailable", "No values supplied"];
+  function layerStatus(data, state, id) {
+    return !data || !data.available[id] ? "unavailable" : state.layers[id] ? "on" : "off";
+  }
+
+  function range(data, id) {
+    const stats = data.stats[id];
+    const minimumPlaces = stats.minimum > 0 && stats.minimum < 0.01 ? 4 : 2;
+    return `${number(stats.minimum, minimumPlaces)}..${number(stats.maximum, stats.maximum < 1 ? 2 : 1)}`;
+  }
+
+  function drawHeatKeys(api, data, heat) {
+    const columnWidth = (api.width - 24) / heat.length;
+    heat.forEach((id, index) => {
+      const layer = layers.find((item) => item.id === id);
+      const stats = data.stats[id];
+      const x = 12 + index * columnWidth;
+      const label = `${layer.key} ${range(data, id)} ${id === "temperature" ? "C" : "model"}`;
+      api.outlinedText(label, x, 56, 1, "#e7eadb");
+      const barX = x + label.length * 8 + 8;
+      for (let pixel = 0; pixel < 48; pixel += 1) {
+        const position = pixel / 47;
+        const value = stats.minimum + (id === "precipitation"
+          ? Math.expm1(Math.log1p(stats.maximum - stats.minimum) * position)
+          : (stats.maximum - stats.minimum) * position);
+        const color = heatColor(id, value, stats);
+        api.context.fillStyle = `rgb(${color.map(Math.round).join(",")})`;
+        api.context.fillRect(barX + pixel, 60, 1, 8);
+      }
+      if (id === "precipitation") api.outlinedText("log", barX + 54, 56, 1, "#d4c5e6");
+    });
+  }
+
+  function detail(data, layer) {
+    if (!data || !data.available[layer.id]) return ["", "Source unavailable; no values supplied"];
     const value = (name) => number(sample(data, name));
-    if (layer.id === "plates") return ["Plate edges and drift", "Arrows: drift direction"];
-    if (layer.id === "heights") return [`Relief; ${number(data.stats.elevation.step)} km contours`, `YOU ${value("elevation")} km; sea = 0`];
-    if (layer.id === "temperature") return [`Isotherms; ${number(data.stats.temperature.step)} C interval`, `YOU ${value("temperature")} C`];
+    if (layer.id === "plates") return [`ID ${value("plateId")}`, "Edges; model world/epoch drift arrows"];
+    if (layer.id === "heights") return [`${value("elevation")} km`, `${number(data.stats.elevation.step)} km contours / ${range(data, "elevation")} km / sea 0`];
+    if (layer.id === "temperature") return [`${value("temperature")} C`, `Translucent field / ${range(data, "temperature")} C`];
     if (layer.id === "biomes") {
       const zone = Math.round(sample(data, "climateZone"));
       const names = data.atlas.climateZoneNames || climateNames;
-      return ["Coarse climate-zone proxy", `YOU ${names[zone] || `Zone ${zone}`}`];
+      return [names[zone] || `Zone ${zone}`, "Coarse climate-zone proxy"];
     }
-    if (layer.id === "wind") return ["Cyan single arrows", "Airflow direction"];
-    if (layer.id === "currents") return ["White double arrows", "Ocean flow direction"];
-    if (layer.id === "moisture") return ["Dashed reservoir contours", `YOU ${value("moisture")} model units`];
-    return ["Accumulated rain; stipple", `YOU ${value("precipitation")} model units`];
+    if (layer.id === "wind") return ["", "Cyan single arrows; cells/climate step"];
+    if (layer.id === "currents") return ["", "White double arrows; cells/climate step"];
+    if (layer.id === "moisture") return [`${value("moisture")} model`, `Reservoir ${range(data, "moisture")} / linear heat`];
+    return [`${value("precipitation")} model`, `Accum rain ${range(data, "precipitation")} / log heat`];
   }
 
-  function drawLegend(api, state, data, rect, compact) {
-    const columnWidth = compact ? Math.floor((rect.width - 14) / 2) : rect.width;
-    const rowHeight = compact ? 50 : 48;
+  function drawDetails(api, state, data, heat) {
+    const x = 10;
+    const y = heat.length ? 84 : 60;
+    const width = Math.min(api.width - 20, 1040);
+    const columnWidth = (width - 30) / 2;
+    api.context.fillStyle = "rgba(12,29,36,0.84)";
+    api.context.fillRect(x, y, width, 232);
+    const source = data ? ` / SEED ${data.atlas.seed ?? "--"} / ${data.width}x${data.height}` : " / SOURCE UNAVAILABLE";
+    api.text(`LAYER DETAILS / L Close${source}`, x + 10, y + 8, 1, "#e7e2cc");
+    const iceRule = data && getIceMask(data.atlas)
+      ? "ICE PROXY: Snow land / water <= -10 C" : "ICE PROXY: source unavailable";
+    api.text(iceRule, x + width - iceRule.length * 8 - 10, y + 8, 1, "#b5d8dc");
     layers.forEach((layer, index) => {
-      const column = compact ? Math.floor(index / 4) : 0;
-      const row = compact ? index % 4 : index;
-      const x = rect.x + column * (columnWidth + 14);
-      const y = rect.y + row * rowHeight;
-      const available = Boolean(data && data.available[layer.id]);
-      const enabled = Boolean(state.layers[layer.id] && available);
-      const status = !available ? "N/A" : enabled ? "ON" : "OFF";
-      const color = enabled ? layer.color : "#9aa9aa";
-      api.text(layer.key, x, y, 2, enabled ? layer.color : "#c6cfc7");
-      api.context.fillStyle = enabled ? layer.color : "#455a61";
-      api.context.fillRect(x, y + 34, 16, 2);
-      const labelX = x + (compact ? 28 : 40);
-      api.text(layer.name, labelX, y, compact ? 1 : 2, enabled ? "#f0ead7" : "#a5b3af");
-      const statusScale = compact ? 1 : 2;
-      api.text(status, x + columnWidth - status.length * 8 * statusScale, y,
-        statusScale, enabled ? layer.color : "#7f9398");
-      const detail = description(layer, data);
-      if (compact) {
-        api.fitText(detail[0], labelX, y + 18, 1, columnWidth - 28, color);
-        api.fitText(detail[1], labelX, y + 34, 1, columnWidth - 28, "#8da1a4");
-      } else {
-        api.fitText(`${detail[0]} / ${detail[1]}`, labelX, y + 32, 1,
-          columnWidth - 40, color);
-      }
+      const column = Math.floor(index / 4);
+      const row = index % 4;
+      const rowX = x + 10 + column * (columnWidth + 10);
+      const rowY = y + 32 + row * 38;
+      const status = layerStatus(data, state, layer.id);
+      const label = status === "unavailable" ? "N/A" : status.toUpperCase();
+      const info = detail(data, layer);
+      api.text(`${layer.key} ${layer.name} ${label}${info[0] ? ` / ${info[0]}` : ""}`,
+        rowX, rowY, 1, status === "on" ? layer.color : "#bbc5be");
+      api.fitText(info[1], rowX, rowY + 18, 1, columnWidth, "#97adb1");
     });
+    const note = data && data.iceCounts
+      ? `Ice proxy: ${data.iceCounts.land} land / ${data.iceCounts.water} water. Climate view, not freezing physics. Arrows: direction only.`
+      : "Ice proxy unavailable. Arrows show direction, not speed.";
+    api.fitText(note, x + 10, y + 186, 1, width - 20, "#aabdb7");
+    if (data && data.available.biomes) {
+      api.text("B:", x + 10, y + 208, 1, "#9eb1b3");
+      let cursor = x + 38;
+      climateNames.forEach((name, index) => {
+        api.context.fillStyle = `rgb(${climateColors[index].join(",")})`;
+        api.context.fillRect(cursor, y + 212, 8, 8);
+        api.text(name, cursor + 12, y + 208, 1, "#b9c6bb");
+        cursor += 24 + name.length * 8;
+      });
+    }
+    if (data && data.available.heights) {
+      let cursor = x + 498;
+      api.text("H km:", cursor, y + 208, 1, "#9eb1b3");
+      cursor += 48;
+      const stats = data.stats.elevation;
+      [stats.minimum, 0, stats.maximum].forEach((value) => {
+        const label = number(value, 1);
+        api.context.fillStyle = `rgb(${elevationColor(value, stats).map(Math.round).join(",")})`;
+        api.context.fillRect(cursor, y + 212, 8, 8);
+        api.text(label, cursor + 12, y + 208, 1, "#b9c6bb");
+        cursor += 24 + label.length * 8;
+      });
+    }
   }
 
-  function drawClimateKey(api, x, y) {
-    api.text("B:", x, y, 1, "#9eb1b3");
-    let cursor = x + 28;
-    climateNames.forEach((name, index) => {
-      api.context.fillStyle = `rgb(${climateColors[index].join(",")})`;
-      api.context.fillRect(cursor, y + 4, 8, 8);
-      api.text(name, cursor + 12, y, 1, "#b9c6bb");
-      cursor += 12 + name.length * 8 + 12;
+  function drawOverlay(api, state, data, heat) {
+    const { context, width, height } = api;
+    context.fillStyle = "rgba(12,29,36,0.62)";
+    context.fillRect(6, 6, width - 12, heat.length ? 70 : 46);
+    const view = state.overview ? "Whole world" : `${state.zoom.toFixed(2)}x / Player view`;
+    const opacity = heat.length ? ` / Heat ${Math.round(heatAlpha(heat.length) * 100)}%${heat.length > 1 ? " mixed" : ""}` : "";
+    api.outlinedText(`MAP N^ / ${view}${opacity}`, 12, 8, 1, "#f0e7cc");
+    const help = `0 Whole world  R Reset  L ${state.legendExpanded ? "Hide details" : "Details"}`;
+    api.outlinedText(help, width - help.length * 8 - 12, 8, 1, "#d4ddd0");
+    const shortNames = ["Plate", "Height", "Temp", "Biomes", "Wind", "Curr", "Moist", "Rain"];
+    let cursor = 12;
+    layers.forEach((layer, index) => {
+      const status = layerStatus(data, state, layer.id);
+      const label = status === "unavailable" ? "N/A" : status.toUpperCase();
+      api.outlinedText(`${layer.key} ${shortNames[index]} ${label}`, cursor, 32, 1,
+        status === "on" ? layer.color : "#93a7aa");
+      cursor += (shortNames[index].length + 6) * 8 + 12;
     });
-  }
-
-  function drawScalarKey(api, data, id, x, y) {
-    const thermal = id === "temperature";
-    const stats = data.stats[thermal ? "temperature" : "elevation"];
-    const values = thermal
-      ? [stats.minimum, ...[-20, 0, 20].filter((value) => value > stats.minimum + 1 && value < stats.maximum - 1), stats.maximum]
-      : [stats.minimum, ...(stats.minimum < 0 && stats.maximum > 0 ? [0] : []), stats.maximum];
-    api.text(thermal ? "T:" : "H:", x, y, 1, "#9eb1b3");
-    let cursor = x + 28;
-    values.forEach((value, index) => {
-      const color = thermal ? temperatureColor(value) : elevationColor(value, stats);
-      const unit = thermal ? "C" : "km";
-      let label = `${number(value, 1)} ${unit}`;
-      if (thermal && index === 0) label = `Cold ${label}`;
-      if (thermal && index === values.length - 1) label += " Warm";
-      if (!thermal && value === 0) label = "Sea 0 km";
-      api.context.fillStyle = `rgb(${color.map(Math.round).join(",")})`;
-      api.context.fillRect(cursor, y + 4, 8, 8);
-      api.text(label, cursor + 12, y, 1, "#b9c6bb");
-      cursor += 12 + label.length * 8 + 12;
-    });
+    if (heat.length) drawHeatKeys(api, data, heat);
+    if (state.legendExpanded) drawDetails(api, state, data, heat);
+    context.fillStyle = "rgba(12,29,36,0.62)";
+    context.fillRect(6, height - 26, width - 12, 20);
+    api.outlinedText("Arrows pan  Shift faster  +/- zoom  M/Esc Close", 12, height - 24, 1, "#d7dfcd");
   }
 
   function draw(api, state) {
     const { context, width, height } = api;
     const compact = height < 500 || width < 1080;
-    const margin = compact ? 6 : 8;
-    const mapTop = 24;
-    const gap = compact ? 16 : 20;
-    const mapSize = Math.max(1, Math.floor(Math.min(height - mapTop - 20,
-      width - margin * 2 - gap - (compact ? 480 : 500))));
-    const mapRect = { x: margin, y: mapTop, size: mapSize };
-    const legendX = margin + mapSize + gap;
-    const legendWidth = Math.max(1, width - legendX - margin);
     const atlas = api.atlas || window.S2_WORLD_DATA;
     const data = atlasData(atlas);
-    const biomeBase = Boolean(data && data.available.biomes && state.layers.biomes);
-    const temperatureLayer = Boolean(data && data.available.temperature && state.layers.temperature);
-    const heightRelief = Boolean(data && data.available.heights && state.layers.heights);
-    const baseLabel = !data ? "unavailable" : biomeBase ? "climate zones" : temperatureLayer ? "temperature"
-      : heightRelief ? "elevation" : "land / water";
-    const composition = `${baseLabel}${biomeBase && temperatureLayer ? " + isotherms" : ""}${heightRelief ? " + relief" : ""}`;
+    const heat = activeHeat(data, state.layers);
+    const tileSize = state.overview ? Math.min(width, height) : Math.max(width, height) * state.zoom;
+    const originX = width / 2 - tileSize / 2 - (state.overview ? 0 : state.panX * tileSize);
+    const originY = height / 2 - tileSize / 2 - (state.overview ? 0 : state.panY * tileSize);
+    const viewport = state.overview
+      ? { x: originX, y: originY, width: tileSize, height: tileSize }
+      : { x: 0, y: 0, width, height };
     context.fillStyle = "#15272f";
     context.fillRect(0, 0, width, height);
-    api.text("WORLD ATLAS", margin, 4, 1, "#f1e8cc");
-    api.text("LAYERS / press a key to turn it on or off", legendX, 4, 1, "#c2cfc4");
-    const sourceLabel = data
-      ? `SEED ${data.atlas.seed ?? "--"} / ${data.width}x${data.height}`
-      : "MAP DATA UNAVAILABLE";
-    api.fitText(sourceLabel, margin + 112, 4, 1, Math.max(1, mapSize - 112), "#91a7aa");
-    const zoomLabel = `${state.zoom.toFixed(2)}x`;
     context.save();
     context.beginPath();
-    context.rect(mapRect.x, mapRect.y, mapSize, mapSize);
+    context.rect(viewport.x, viewport.y, viewport.width, viewport.height);
     context.clip();
     context.imageSmoothingEnabled = false;
     const mapRaster = getRaster(atlas, state.layers) || api.mapImage;
     const imageReady = data || (mapRaster && mapRaster.complete && mapRaster.naturalWidth > 0);
     if (imageReady) {
-      const tileSize = mapSize * state.zoom;
-      const originX = mapRect.x + mapSize / 2 - tileSize / 2 - state.panX * tileSize;
-      const originY = mapRect.y + mapSize / 2 - tileSize / 2 - state.panY * tileSize;
-      for (let row = -1; row <= 1; row += 1) {
-        for (let column = -1; column <= 1; column += 1) {
+      const tiles = state.overview ? [0] : [-1, 0, 1];
+      tiles.forEach((row) => {
+        tiles.forEach((column) => {
           const left = originX + column * tileSize;
           const top = originY + row * tileSize;
-          if (left >= mapRect.x + mapSize || left + tileSize <= mapRect.x
-            || top >= mapRect.y + mapSize || top + tileSize <= mapRect.y) continue;
+          if (left >= width || left + tileSize <= 0 || top >= height || top + tileSize <= 0) return;
           if (data) context.drawImage(mapRaster, left, top, tileSize, tileSize);
           else context.drawImage(mapRaster, 0, 0, 256, 256, left, top, tileSize, tileSize);
           context.strokeStyle = "rgba(223,236,218,0.09)";
@@ -497,57 +587,24 @@
             context.lineTo(left + tileSize, top + tileSize * division / 4);
           }
           context.stroke();
-          if (data) drawVectors(api, data, state.layers, left, top, tileSize, compact, mapRect);
+          if (data) drawVectors(api, data, state.layers, left, top, tileSize, compact, viewport);
           const playerX = left + PLAYER.x * tileSize;
           const playerY = top + PLAYER.y * tileSize;
           api.outlinedText("+", playerX - 8, playerY - 16, 2, "#ffe49a", "#18303b");
           api.outlinedText("YOU", playerX + 12, playerY + 8, 1, "#ffe49a", "#18303b");
-        }
-      }
+        });
+      });
     } else {
-      context.fillStyle = "#223942";
-      context.fillRect(mapRect.x, mapRect.y, mapSize, mapSize);
-      api.text("Map source unavailable", mapRect.x + 12, mapRect.y + mapSize / 2, 1, "#d5c9ac");
+      api.outlinedText("Map source unavailable", 12, height / 2, 1, "#d5c9ac");
     }
     context.restore();
-    context.strokeStyle = "#6c878a";
-    context.lineWidth = 1;
-    context.strokeRect(mapRect.x - 1, mapRect.y - 1, mapSize + 2, mapSize + 2);
-    const cardinalScale = compact ? 1 : 2;
-    for (const [label, x, y] of [
-      ["N", mapRect.x + mapSize / 2 - 4 * cardinalScale, mapRect.y + 6],
-      ["S", mapRect.x + mapSize / 2 - 4 * cardinalScale, mapRect.y + mapSize - 16 * cardinalScale - 6],
-      ["W", mapRect.x + 7, mapRect.y + mapSize / 2 - 8 * cardinalScale],
-      ["E", mapRect.x + mapSize - 8 * cardinalScale - 7, mapRect.y + mapSize / 2 - 8 * cardinalScale],
-    ]) api.outlinedText(label, x, y, cardinalScale, "#e6ead7", "#233b43");
-    api.outlinedText(zoomLabel, mapRect.x + mapSize - zoomLabel.length * 8 - 8,
-      mapTop + mapSize - 24, 1, "#e4e3ce");
-    drawLegend(api, state, data, { x: legendX, y: 32, width: legendWidth }, compact);
-    const compositionY = compact ? 244 : 428;
-    api.fitText(`Color: ${composition}`, legendX, compositionY, 1, legendWidth, "#b9c6bb");
-    if (compact) {
-      if (biomeBase) drawClimateKey(api, legendX, 268);
-      else if (temperatureLayer) drawScalarKey(api, data, "temperature", legendX, 268);
-      else if (heightRelief) drawScalarKey(api, data, "heights", legendX, 268);
-      else api.text("Land / water base; no scalar color selected", legendX, 268, 1, "#90a6aa");
-      if (biomeBase && temperatureLayer) drawScalarKey(api, data, "temperature", legendX, 292);
-      else api.fitText("Arrows show direction, not speed", legendX,
-        292, 1, legendWidth, "#90a6aa");
-    } else {
-      if (biomeBase) drawClimateKey(api, legendX, 452);
-      else if (temperatureLayer) drawScalarKey(api, data, "temperature", legendX, 452);
-      else if (heightRelief) drawScalarKey(api, data, "heights", legendX, 452);
-      else api.text("Land / water base; no scalar color selected", legendX, 452, 1, "#9eb1b3");
-      if (biomeBase && temperatureLayer) drawScalarKey(api, data, "temperature", legendX, 476);
-      else api.fitText("Cyan wind / white currents / purple plate motion", legendX, 476, 1, legendWidth, "#9eb1b3");
-      api.fitText("Arrows show direction, not speed", legendX, 500, 1, legendWidth, "#90a6aa");
-    }
-    api.fitText("Arrows pan   Shift faster   +/- zoom   R center   M/Esc close", margin,
-      height - 18, 1, width - margin * 2, "#d7dfcd");
-    return { layers: Object.fromEntries(layers.map((layer) => [layer.id,
-      !data || !data.available[layer.id] ? "unavailable" : state.layers[layer.id] ? "on" : "off",
-    ])) };
+    drawOverlay(api, state, data, heat);
+    return {
+      layers: Object.fromEntries(layers.map((layer) => [layer.id, layerStatus(data, state, layer.id)])),
+      view: state.overview ? "whole-world" : "close",
+      legendExpanded: Boolean(state.legendExpanded),
+    };
   }
 
-  window.S2WorldMapView = { createState, handleKey, getRaster, draw };
+  window.S2WorldMapView = { createState, handleKey, getRaster, getIceMask, draw };
 })();

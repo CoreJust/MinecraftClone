@@ -225,6 +225,7 @@
       const displayed = window.S2WorldMapView.draw(api, mapState);
       state += `, zoom ${mapState.zoom.toFixed(2)}, pan ${mapState.panX.toFixed(2)},${mapState.panY.toFixed(2)}; `;
       state += Object.entries(displayed.layers).map(([name, status]) => `${name} ${status}`).join(", ");
+      state += `; ${displayed.view} view; legend ${displayed.legendExpanded ? "expanded" : "compact"}`;
     }
     canvas.setAttribute("aria-label", `S2 UI prototype: ${state}`);
   }
