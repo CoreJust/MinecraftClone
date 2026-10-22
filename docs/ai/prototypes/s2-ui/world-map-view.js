@@ -276,6 +276,17 @@
     return canvas;
   }
 
+  function atlasData(atlas) {
+    if (!atlas || typeof atlas !== "object") return null;
+    if (!caches.has(atlas)) caches.set(atlas, prepare(atlas));
+    return caches.get(atlas);
+  }
+
+  function getRaster(atlas, selected = createState().layers) {
+    const data = atlasData(atlas);
+    return data ? raster(data, selected) : null;
+  }
+
   function arrow(context, x, y, u, v, length, color, doubleHead) {
     const magnitude = Math.hypot(u, v);
     if (!Number.isFinite(magnitude)) return;
@@ -349,9 +360,9 @@
   }
 
   function description(layer, data) {
-    if (!data || !data.available[layer.id]) return ["Unavailable in this fixture", "No source values supplied"];
+    if (!data || !data.available[layer.id]) return ["Source unavailable", "No values supplied"];
     const value = (name) => number(sample(data, name));
-    if (layer.id === "plates") return ["Plate edges and drift", "Arrows: relative direction"];
+    if (layer.id === "plates") return ["Plate edges and drift", "Arrows: drift direction"];
     if (layer.id === "heights") return [`Relief; ${number(data.stats.elevation.step)} km contours`, `YOU ${value("elevation")} km; sea = 0`];
     if (layer.id === "temperature") return [`Isotherms; ${number(data.stats.temperature.step)} C interval`, `YOU ${value("temperature")} C`];
     if (layer.id === "biomes") {
@@ -359,15 +370,15 @@
       const names = data.atlas.climateZoneNames || climateNames;
       return ["Coarse climate-zone proxy", `YOU ${names[zone] || `Zone ${zone}`}`];
     }
-    if (layer.id === "wind") return ["Cyan single arrows", "Atmospheric flow direction"];
-    if (layer.id === "currents") return ["White double arrows", "Ocean circulation direction"];
+    if (layer.id === "wind") return ["Cyan single arrows", "Airflow direction"];
+    if (layer.id === "currents") return ["White double arrows", "Ocean flow direction"];
     if (layer.id === "moisture") return ["Dashed reservoir contours", `YOU ${value("moisture")} model units`];
     return ["Accumulated rain; stipple", `YOU ${value("precipitation")} model units`];
   }
 
   function drawLegend(api, state, data, rect, compact) {
     const columnWidth = compact ? Math.floor((rect.width - 14) / 2) : rect.width;
-    const rowHeight = compact ? Math.min(64, Math.max(50, Math.floor((api.height - 190) / 3))) : 52;
+    const rowHeight = compact ? 50 : 48;
     layers.forEach((layer, index) => {
       const column = compact ? Math.floor(index / 4) : 0;
       const row = compact ? index % 4 : index;
@@ -432,19 +443,16 @@
   function draw(api, state) {
     const { context, width, height } = api;
     const compact = height < 500 || width < 1080;
-    const margin = compact ? 18 : 24;
-    const mapTop = compact ? 62 : 94;
-    const mapSize = Math.max(1, Math.floor(Math.min(height - mapTop - (compact ? 38 : 48),
-      width * (compact ? 0.36 : 0.48))));
+    const margin = compact ? 6 : 8;
+    const mapTop = 24;
+    const gap = compact ? 16 : 20;
+    const mapSize = Math.max(1, Math.floor(Math.min(height - mapTop - 20,
+      width - margin * 2 - gap - (compact ? 480 : 500))));
     const mapRect = { x: margin, y: mapTop, size: mapSize };
-    const legendX = margin + mapSize + (compact ? 26 : 36);
+    const legendX = margin + mapSize + gap;
     const legendWidth = Math.max(1, width - legendX - margin);
     const atlas = api.atlas || window.S2_WORLD_DATA;
-    let data = caches.get(state);
-    if (!data || data.atlas !== atlas) {
-      data = prepare(atlas);
-      if (data) caches.set(state, data);
-    }
+    const data = atlasData(atlas);
     const biomeBase = Boolean(data && data.available.biomes && state.layers.biomes);
     const temperatureLayer = Boolean(data && data.available.temperature && state.layers.temperature);
     const heightRelief = Boolean(data && data.available.heights && state.layers.heights);
@@ -453,22 +461,19 @@
     const composition = `${baseLabel}${biomeBase && temperatureLayer ? " + isotherms" : ""}${heightRelief ? " + relief" : ""}`;
     context.fillStyle = "#15272f";
     context.fillRect(0, 0, width, height);
-    api.text("WORLD ATLAS", margin, compact ? 10 : 12, compact ? 2 : 3, "#f1e8cc");
-    api.text(compact ? "LAYERS / press a key to toggle" : "LAYERS", legendX,
-      compact ? 12 : 16, compact ? 1 : 2, "#f1e8cc");
-    api.text(compact ? composition : "Press a layer key to turn it on or off", legendX,
-      compact ? 32 : 54, 1, "#9eb2b2");
+    api.text("WORLD ATLAS", margin, 4, 1, "#f1e8cc");
+    api.text("LAYERS / press a key to turn it on or off", legendX, 4, 1, "#c2cfc4");
     const sourceLabel = data
       ? `SEED ${data.atlas.seed ?? "--"} / ${data.width}x${data.height}`
       : "MAP DATA UNAVAILABLE";
-    api.fitText(sourceLabel, margin, compact ? 44 : 68, 1, mapSize, "#91a7aa");
+    api.fitText(sourceLabel, margin + 112, 4, 1, Math.max(1, mapSize - 112), "#91a7aa");
     const zoomLabel = `${state.zoom.toFixed(2)}x`;
     context.save();
     context.beginPath();
     context.rect(mapRect.x, mapRect.y, mapSize, mapSize);
     context.clip();
     context.imageSmoothingEnabled = false;
-    const mapRaster = data ? raster(data, state.layers) : api.mapImage;
+    const mapRaster = getRaster(atlas, state.layers) || api.mapImage;
     const imageReady = data || (mapRaster && mapRaster.complete && mapRaster.naturalWidth > 0);
     if (imageReady) {
       const tileSize = mapSize * state.zoom;
@@ -517,33 +522,32 @@
     ]) api.outlinedText(label, x, y, cardinalScale, "#e6ead7", "#233b43");
     api.outlinedText(zoomLabel, mapRect.x + mapSize - zoomLabel.length * 8 - 8,
       mapTop + mapSize - 24, 1, "#e4e3ce");
-    drawLegend(api, state, data, { x: legendX, y: compact ? 62 : 94, width: legendWidth }, compact);
+    drawLegend(api, state, data, { x: legendX, y: 32, width: legendWidth }, compact);
+    const compositionY = compact ? 244 : 428;
+    api.fitText(`Color: ${composition}`, legendX, compositionY, 1, legendWidth, "#b9c6bb");
     if (compact) {
-      if (biomeBase) drawClimateKey(api, legendX, height - 76);
-      else if (temperatureLayer) drawScalarKey(api, data, "temperature", legendX, height - 76);
-      else if (heightRelief) drawScalarKey(api, data, "heights", legendX, height - 76);
-      else api.text("Land / water base; no scalar color selected", legendX, height - 76, 1, "#90a6aa");
-      if (biomeBase && temperatureLayer) drawScalarKey(api, data, "temperature", legendX, height - 52);
+      if (biomeBase) drawClimateKey(api, legendX, 268);
+      else if (temperatureLayer) drawScalarKey(api, data, "temperature", legendX, 268);
+      else if (heightRelief) drawScalarKey(api, data, "heights", legendX, 268);
+      else api.text("Land / water base; no scalar color selected", legendX, 268, 1, "#90a6aa");
+      if (biomeBase && temperatureLayer) drawScalarKey(api, data, "temperature", legendX, 292);
       else api.fitText("Arrows show direction, not speed", legendX,
-        height - 52, 1, legendWidth, "#90a6aa");
+        292, 1, legendWidth, "#90a6aa");
     } else {
-      api.text("COMPOSITION", legendX, 530, 2, "#e0d8bd");
-      api.fitText(`Color: ${baseLabel} / H relief: ${heightRelief ? "ON" : "OFF"}${biomeBase && temperatureLayer ? " / T isotherms" : ""}`,
-        legendX, 570, 1, legendWidth, "#b9c6bb");
-      if (biomeBase) drawClimateKey(api, legendX, 594);
-      else if (temperatureLayer) drawScalarKey(api, data, "temperature", legendX, 594);
-      else if (heightRelief) drawScalarKey(api, data, "heights", legendX, 594);
-      else api.text("Land / water base; no scalar color selected", legendX, 594, 1, "#9eb1b3");
-      if (biomeBase && temperatureLayer) drawScalarKey(api, data, "temperature", legendX, 618);
-      else api.fitText("Cyan wind / white currents / purple plate motion", legendX, 618, 1, legendWidth, "#9eb1b3");
-      api.fitText("Arrows show direction, not speed", legendX, 642, 1, legendWidth, "#90a6aa");
+      if (biomeBase) drawClimateKey(api, legendX, 452);
+      else if (temperatureLayer) drawScalarKey(api, data, "temperature", legendX, 452);
+      else if (heightRelief) drawScalarKey(api, data, "heights", legendX, 452);
+      else api.text("Land / water base; no scalar color selected", legendX, 452, 1, "#9eb1b3");
+      if (biomeBase && temperatureLayer) drawScalarKey(api, data, "temperature", legendX, 476);
+      else api.fitText("Cyan wind / white currents / purple plate motion", legendX, 476, 1, legendWidth, "#9eb1b3");
+      api.fitText("Arrows show direction, not speed", legendX, 500, 1, legendWidth, "#90a6aa");
     }
     api.fitText("Arrows pan   Shift faster   +/- zoom   R center   M/Esc close", margin,
-      height - 25, 1, width - margin * 2, "#d7dfcd");
+      height - 18, 1, width - margin * 2, "#d7dfcd");
     return { layers: Object.fromEntries(layers.map((layer) => [layer.id,
       !data || !data.available[layer.id] ? "unavailable" : state.layers[layer.id] ? "on" : "off",
     ])) };
   }
 
-  window.S2WorldMapView = { createState, handleKey, draw };
+  window.S2WorldMapView = { createState, handleKey, getRaster, draw };
 })();

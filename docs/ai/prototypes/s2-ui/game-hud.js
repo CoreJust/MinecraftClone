@@ -1,19 +1,10 @@
 (() => {
   "use strict";
 
-  const nativeColors = {
-    cyan: "#7ae0ff",
-    gold: "#ffd161",
-    green: "#a1ff9e",
-    rose: "#ffa6bd",
-  };
-
   function number(value, decimals = 1) {
     if (value === null || value === undefined || value === "") return "--";
     const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return "--";
-    const fixed = numeric.toFixed(decimals);
-    return fixed.length <= 9 ? fixed : numeric.toExponential(2);
+    return Number.isFinite(numeric) ? numeric.toFixed(decimals) : "--";
   }
 
   function uptime(value) {
@@ -26,198 +17,132 @@
   function draw(api, model) {
     const { width, height } = api;
     const compact = width < 1050 || height < 520;
+    const scale = compact ? 1 : 2;
     const margin = compact ? 12 : 24;
     const gap = compact ? 24 : 40;
-    const colors = {
-      light: api.colors.light,
-      label: "#d5e0dc",
-      quiet: "#c1cfca",
-      outline: "#10212b",
-      ...nativeColors,
-    };
+    const lineHeight = scale * 16 + 4;
     const telemetry = model.telemetry || {};
     const movement = model.movement || {};
     const mode = String(model.mode || "--");
-    const text = (value, x, y, scale = 1, color = colors.light) => {
-      api.outlinedText(String(value), Math.round(x), Math.round(y), scale, color, colors.outline);
+    const deniedMovement = mode.toLowerCase() === "survival";
+    const foreground = api.colors.light;
+    const outline = "#10212b";
+    const hintColor = "#e5d29b";
+    const textWidth = (value, textScale = scale) => String(value).length * 8 * textScale;
+    const text = (value, x, y, textScale = scale, color = foreground) => {
+      api.outlinedText(String(value), Math.round(x), Math.round(y), textScale, color, outline);
     };
-    const textWidth = (value, scale = 1) => String(value).length * 8 * scale;
 
-    function wrapped(value, x, y, scale, availableWidth, color) {
-      const limit = Math.max(1, Math.floor(availableWidth / (8 * scale)));
-      let line = "";
-      let offset = 0;
-      for (const word of String(value).split(/\s+/)) {
-        if (line && line.length + 1 + word.length > limit) {
-          text(line, x, y + offset, scale, color);
-          offset += 16 * scale + 4;
-          line = "";
-        }
-        line += `${line ? " " : ""}${word}`;
+    function wrapped(value, x, y, availableWidth, textScale = scale, color = foreground) {
+      const columns = Math.max(1, Math.floor(availableWidth / (8 * textScale)));
+      const rows = [];
+      let remaining = String(value);
+      while (remaining.length > columns) {
+        const wordEnd = remaining.lastIndexOf(" ", columns);
+        const end = wordEnd > 0 ? wordEnd : columns;
+        rows.push(remaining.slice(0, end));
+        remaining = remaining.slice(end).trimStart();
       }
-      if (line) text(line, x, y + offset, scale, color);
-      return offset + 16 * scale;
+      if (remaining) rows.push(remaining);
+      rows.forEach((row, index) => text(row, x, y + index * (16 * textScale + 4), textScale, color));
+      return y + rows.length * (16 * textScale + 4) - 4;
     }
 
-    function status(label, enabled, x, y, scale = 1) {
-      text(label, x, y + (scale - 1) * 12, 1, colors.label);
-      text(enabled ? "ON" : "OFF", x + textWidth(label) + 8, y, scale,
-        enabled ? colors.green : colors.quiet);
+    function fields(rows, x, y, availableWidth) {
+      const labelWidth = Math.max(...rows.map(([label]) => label.length)) + 1;
+      let bottom = y;
+      for (const [label, value] of rows) {
+        bottom = wrapped(`${label.padEnd(labelWidth)}${value}`, x, y, availableWidth);
+        y = bottom + 4;
+      }
+      return bottom;
     }
+
+    function flow(values, x, y, availableWidth) {
+      let cursor = x;
+      let bottom = y;
+      for (const value of values) {
+        if (cursor > x && cursor + textWidth(value) > x + availableWidth) {
+          cursor = x;
+          y += lineHeight;
+        }
+        bottom = Math.max(bottom, wrapped(value, cursor, y, availableWidth));
+        cursor += textWidth(value) + (compact ? 16 : 32);
+      }
+      return bottom;
+    }
+
+    const flight = deniedMovement ? "Unavailable" : movement.flight ? "ON" : "OFF";
+    const bypass = deniedMovement ? "Unavailable" : movement.bypass ? "ON" : "OFF";
+    const footerY = height - (compact ? 80 : 128);
+    const footerColumn = Math.floor((width - margin * 2 - gap) / 2);
+    const footerRight = margin + footerColumn + gap;
 
     if (model.visible) {
-      const mapLeft = model.minimapRect ? model.minimapRect.x - gap : width - margin;
+      const mapLeft = model.minimapRect ? model.minimapRect.x - (compact ? 16 : 24) : width - margin;
       const availableWidth = Math.min(width - margin, mapLeft) - margin;
-      const positionWidth = Math.floor(availableWidth * (compact ? 0.52 : 0.46));
-      const movementX = margin + positionWidth + gap;
-      const movementWidth = availableWidth - positionWidth - gap;
-      const headingY = compact ? 52 : 64;
-      const positionY = compact ? 72 : 88;
-      const positionValues = [telemetry.x, telemetry.z, telemetry.y];
-      const positionLabels = ["X", "Z", "Y"];
-      const positionColors = [colors.cyan, colors.gold, colors.green];
-      const cellWidth = Math.floor(positionWidth / 3);
+      const columnWidth = Math.floor((availableWidth - gap) / 2);
+      const right = margin + columnWidth + gap;
+      const sessionBottom = flow([
+        `FPS ${number(telemetry.fps, 0)}`,
+        `Uptime ${uptime(telemetry.uptime)}`,
+        `Chunks ${number(telemetry.chunks, 0)}`,
+        `Memory ${number(telemetry.memoryMiB, 0)} MiB`,
+      ], margin, compact ? 8 : 12, availableWidth);
+      const headingY = sessionBottom + (compact ? 12 : 24);
+      const readoutY = headingY + (compact ? 24 : 44);
+      text("Game position example", margin, headingY);
+      const positionBottom = fields([
+        ["X", number(telemetry.x)],
+        ["Z", number(telemetry.z)],
+        ["Y", number(telemetry.y)],
+        ["YPR deg", `${number(telemetry.yaw)} ${number(telemetry.pitch)} ${number(telemetry.roll)}`],
+        ["View", String(model.view || "--")],
+      ], margin, readoutY, columnWidth);
 
-      const fps = number(telemetry.fps, 0);
-      const fpsScale = 2;
-      text(fps, margin, compact ? 10 : 12, fpsScale);
-      text("FPS", margin + textWidth(fps, fpsScale) + 8, compact ? 22 : 24, 1, colors.label);
-      if (compact) {
-        const sessionX = margin + Math.max(88, textWidth(fps, 2) + 40);
-        text(`Uptime ${uptime(telemetry.uptime)}`, sessionX, 10, 1, colors.label);
-        text(`Chunks ${number(telemetry.chunks, 0)}  Memory ${number(telemetry.memoryMiB, 0)} MiB`,
-          sessionX, 30, 1, colors.label);
-      } else {
-        let sessionX = margin + Math.max(112, textWidth(fps, fpsScale) + 56);
-        for (const value of [
-          `Uptime ${uptime(telemetry.uptime)}`,
-          `Chunks ${number(telemetry.chunks, 0)}`,
-          `Memory ${number(telemetry.memoryMiB, 0)} MiB`,
-        ]) {
-          text(value, sessionX, 24, 1, colors.label);
-          sessionX += textWidth(value) + 24;
-        }
-      }
+      text("Movement", right, headingY);
+      const movementBottom = fields([
+        ["Effective speed", `${number(model.effectiveSpeed, 0)}x`],
+        ["Selected speed", `${number(model.selectedSpeed, 0)}x`],
+        ["Acceleration", model.acceleration ? "ON" : "OFF"],
+        ["Collision bypass", bypass],
+        ["Flight", flight],
+      ], right, readoutY, columnWidth);
 
-      text("GAME POSITION EXAMPLE", margin, headingY, 1, colors.label);
-      positionValues.forEach((value, index) => {
-        const x = margin + index * cellWidth;
-        const formatted = number(value);
-        const valueScale = textWidth(formatted, 2) + 20 <= cellWidth ? 2 : 1;
-        text(positionLabels[index], x, positionY + 12, 1, positionColors[index]);
-        text(formatted, x + 16, positionY + (2 - valueScale) * 12, valueScale, positionColors[index]);
-      });
-
-      let orientationX = margin;
-      for (const [value, color] of [
-        ["YPR", colors.label],
-        [number(telemetry.yaw), colors.cyan],
-        [number(telemetry.pitch), colors.gold],
-        [number(telemetry.roll), colors.rose],
-        ["deg", colors.label],
-      ]) {
-        text(value, orientationX, compact ? 114 : 132, 1, color);
-        orientationX += textWidth(value) + 12;
-      }
-
-      const viewY = compact ? 136 : 156;
-      text("VIEW", margin, viewY + 12, 1, colors.label);
-      text(String(model.view || "--"), margin + 48, viewY, 2);
-      text("F5/5 Change view", margin + 144, viewY + 12, 1, colors.gold);
-
-      const temperature = `${number(telemetry.temperatureC)} C`;
-      const climateY = compact ? 180 : 212;
-      text("LOCAL CLIMATE", margin, climateY, 1, colors.label);
-      text(temperature, margin, climateY + 20, 2);
       const humidity = telemetry.humidity;
       const humidityUnavailable = humidity === null || humidity === undefined
         || humidity === "" || humidity === "--" || humidity === "unavailable";
-      const humidityText = humidityUnavailable ? "Humidity unavailable" : `Humidity ${humidity}`;
-      const humidityX = margin + textWidth(temperature, 2) + 16;
-      text(humidityText, humidityX, climateY + 32, 1,
-        humidityUnavailable ? colors.quiet : colors.light);
-
-      const deniedMovement = mode.toLowerCase() === "survival";
-      const movementKey = deniedMovement ? "F6/6 Unavailable" : "F6/6 Cycle";
-      const effective = `${number(model.effectiveSpeed, 0)}x`;
-      const selected = `${number(model.selectedSpeed, 0)}x`;
-      if (compact) {
-        const selectedX = movementX + Math.floor((movementWidth + 16) / 2);
-        text("EFFECTIVE SPEED", movementX, 10, 1, colors.label);
-        text("SELECTED SPEED", selectedX, 10, 1, colors.label);
-        text(effective, movementX, 30, 2);
-        text(selected, selectedX, 30, 2, colors.gold);
-        text("+/- Select speed", movementX, 68, 1, colors.gold);
-        status("Acceleration", model.acceleration, movementX, 90);
-        text("Ctrl Toggle", movementX + 152, 90, 1, colors.gold);
-        if (deniedMovement) {
-          text(movementKey, movementX + movementWidth - textWidth(movementKey), 68, 1, colors.quiet);
-          text("Flight unavailable (Survival)", movementX, 110, 1, colors.quiet);
-          text("Collision bypass unavailable", movementX, 130, 1, colors.quiet);
-        } else {
-          status("Flight", movement.flight, movementX, 110);
-          status("Collision bypass", movement.bypass, movementX + 88, 110);
-          text("F6/6 Cycle movement", movementX, 130, 1, colors.gold);
-        }
-      } else {
-        text("MOVEMENT", movementX, 64, 1, colors.label);
-        text(movementKey, movementX + movementWidth - textWidth(movementKey), 64,
-          1, deniedMovement ? colors.quiet : colors.gold);
-        text(effective, movementX, 88, 2);
-        text("effective", movementX + textWidth(effective, 2) + 8, 100, 1, colors.label);
-        const selectedX = movementX + 224;
-        text(selected, selectedX, 88, 2, colors.gold);
-        text("selected", selectedX + textWidth(selected, 2) + 8, 100, 1, colors.label);
-        text("+/- Select speed", movementX, 132, 1, colors.gold);
-        status("Acceleration", model.acceleration, movementX, 156, 2);
-        text("Ctrl Toggle", movementX + 184, 168, 1, colors.gold);
-        if (deniedMovement) {
-          text("Flight unavailable in Survival", movementX, 204, 1, colors.quiet);
-          text("Collision bypass unavailable", movementX, 226, 1, colors.quiet);
-        } else {
-          status("Flight", movement.flight, movementX, 204, 2);
-          status("Collision bypass", movement.bypass, movementX + 184, 204, 2);
-        }
-      }
+      const climateY = Math.max(positionBottom, movementBottom) + (compact ? 16 : 24);
+      text("Local climate", margin, climateY);
+      fields([
+        ["Temperature", `${number(telemetry.temperatureC)} C`],
+        ["Humidity", humidityUnavailable ? "Unavailable" : String(humidity)],
+      ], margin, climateY + (compact ? 24 : 44), columnWidth);
+    } else {
+      flow([`Flight ${flight}`, `Collision bypass ${bypass}`], margin,
+        footerY - (compact ? 32 : 48), width - margin * 2);
     }
 
-    const footerY = height - 104;
-    const blockWidth = compact ? 176 : 256;
-    const modeWidth = compact ? 184 : 256;
-    const modeX = margin + blockWidth + gap;
-    const rulesX = modeX + modeWidth + gap;
-    const hintY = footerY + 60;
+    fields([["Selected block", String(model.selectedMaterial || "--")]],
+      margin, footerY, footerColumn);
+    fields([["Mode", mode]], footerRight, footerY, footerColumn);
+    fields([["Break", model.breakRule || (model.canBreak ? "Allowed" : "Unavailable")]],
+      margin, footerY + lineHeight, footerColumn);
+    fields([["Place", model.placeRule || (model.canPlace ? "Allowed" : "Unavailable")]],
+      footerRight, footerY + lineHeight, footerColumn);
+
     const canEdit = model.canPlace || model.canBreak;
-    text("SELECTED BLOCK", margin, footerY, 1, colors.label);
-    text(String(model.selectedMaterial || "--"), margin, footerY + 20,
-      2, canEdit ? colors.gold : colors.quiet);
-    text(canEdit ? "B Change block" : "B Unavailable", margin, hintY, 1,
-      canEdit ? colors.gold : colors.quiet);
-
-    text("GAME MODE", modeX, footerY, 1, colors.label);
-    text(mode, modeX, footerY + 20, 2);
-    text("G Change mode", modeX, hintY, 1, colors.gold);
-
-    text("EDIT RULES", rulesX, footerY, 1, colors.label);
-    const ruleScale = 1;
-    const rulesWidth = width - margin - rulesX;
-    const breakHeight = wrapped(`Break: ${model.breakRule || (model.canBreak ? "Allowed" : "Unavailable")}`,
-      rulesX, footerY + 20, ruleScale, rulesWidth,
-      model.canBreak ? colors.light : colors.quiet);
-    wrapped(`Place: ${model.placeRule || (model.canPlace ? "Allowed" : "Unavailable")}`,
-      rulesX, footerY + 20 + breakHeight + 8,
-      ruleScale, rulesWidth, model.canPlace ? colors.light : colors.quiet);
-
-    const controlsY = height - 24;
-    const controlScale = 1;
-    text(model.visible ? "F1 Hide HUD" : "F1 Show HUD", margin, controlsY, controlScale, colors.label);
-    text("M World map", margin + 144, controlsY, controlScale, colors.gold);
-    text("Esc Leave game", margin + 288, controlsY, controlScale, colors.label);
-    if (!model.visible) {
-      const capabilities = `Flight ${movement.flight ? "ON" : "OFF"}  Collision bypass ${movement.bypass ? "ON" : "OFF"}`;
-      text(capabilities, width - margin - textWidth(capabilities, controlScale), controlsY,
-        controlScale, colors.label);
-    }
+    const hintY = height - (compact ? 40 : 48);
+    wrapped([
+      canEdit ? "B Change block" : "B Unavailable in Spectator",
+      "G Change mode", "M World map", "Esc Leave game",
+    ].join("   "), margin, hintY, width - margin * 2, 1, hintColor);
+    wrapped([
+      model.visible ? "F1 Hide HUD" : "F1 Show HUD",
+      "F5/5 Change view",
+      deniedMovement ? "F6/6 Unavailable" : "F6/6 Cycle movement",
+      "+/- Select speed", "Ctrl Toggle acceleration",
+    ].join("   "), margin, hintY + 20, width - margin * 2, 1, hintColor);
   }
 
   window.S2GameHud = { draw };

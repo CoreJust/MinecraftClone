@@ -20,6 +20,8 @@ Keep all enabled channels visible together. Biomes currently mean coarse
 climate zones; moisture is not relative humidity and model rain is not mm/year.
 Use one matching atlas identity; no screenshot-derived vectors or mixed runs.
 The prototype's native export/provenance demonstrates this data prerequisite.
+Generation shares this north-up terrain raster and final H+B appearance.
+Keep the map near full available height; compact legends must not crowd it out.
 
 Place a north-up minimap at top-right, showing the player in the shared selected-model L1/L2 projection around them, with prominent outlined N/E/S/W labels and a heading marker, using the game's material palette rather than the diagnostic atlas colors. It must cover more than resident voxel columns. The S1 scaffold’s L1/L2 spacing is 64/16 blocks at 256 atlas resolution and 32/8 at 512 (`docs/ai/decisions/earlydev_0_1_1_s1_lod_scaffold.md:21`). Shared `TerrainLodArtifact` (`src/shared/include/shared/world/TerrainLod.hpp:41`) records model identity and level; today’s model is an S1 placeholder. Use the eventual accepted terrain identity and shared projection, not that placeholder or duplicate terrain research. Use the accepted immutable session atlas for the wider world map ([atlas contract](../WORLD_MAP.md#L3)).
 

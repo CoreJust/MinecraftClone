@@ -37,9 +37,9 @@ path; do not conceal that work behind the prototype.
    epoch and separately retained attempt evidence.
 
 2. **Generation or synchronization.** Make geographical formation move: a
-   coherent oblique relief rises, masked basins fill and climate zones emerge,
-   then a marked safe spawn. Use bounded map-pixel animation and bitmap phase
-   labels. The owner allows illustrative intermediate depiction; this is not a
+   north-up map builds relief, water and climate on the same grid and palette
+   as the world map, then marks the starting point. Share its terrain raster;
+   final Arrival/ready geography must match exactly. Use bitmap phase labels. The owner allows illustrative intermediate depiction; this is not a
    claim of physical simulation. Prefer actual stage snapshots and show the
    actual final map before readiness. Distinguish presentation animation from
    measured progress; do not invent completed work, delay readiness for a
@@ -58,14 +58,15 @@ path; do not conceal that work behind the prototype.
    visibility. Add dense loaded chunks, process memory and local climate to
    that telemetry group. Keep mode, precise effective edit/movement rights and
    selected block in compact bottom groups, with a central crosshair. Give
-   primary values a larger integer glyph scale than labels and hints. Use plain
+   labels and values a consistent integer scale within each group, including
+   identical XYZ sizes. Reflow or wrap; never shrink individual values. Use plain
    actions: “Selected block: Grass”, “B Change block”, effective/selected speed
    and collision bypass. Reflow crowded groups; do not silently shrink entire
    rows. No field disappears merely to reduce clutter.
    The local map uses the game's material palette and strong outlined N/E/S/W
    plus heading. The [map note](earlydev_0_1_1_s2_maps.md) owns L1/L2 coverage.
 
-4. **World map.** A dominant image, plain title/detail label, position/heading,
+4. **World map.** A near-full-height map with compact layer legends, plain title, position/heading,
    cardinal glyphs and text hints. Proposed controls: `M`/`Esc` closes, arrows
    pan, `+/-` zoom, `R` recenters; the map note owns separate layer keys and
    legends. Ignore modified browser shortcuts and repeated toggle presses.

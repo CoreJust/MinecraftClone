@@ -17947,5 +17947,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0518",
+    "title": "Align S2 generation and simplify HUD typography",
+    "kind": "decision",
+    "status": "done",
+    "priority": "P1",
+    "route": "sol",
+    "milestone": "ED-011-S2-UI",
+    "depends_on": [],
+    "acceptance": "Make generation use the actual world-map projection, terrain drawing, palette and final geography. Remove per-value HUD scaling and use consistently sized labels/values with readable alignment; preserve every existing field, new telemetry and keyboard/state semantics. Enlarge the map and reduce legend overhead without losing eight independent layers, legends or aspect/projection correctness. Visually compare desktop and landscape output, verify matching final map pixels and uniform coordinate type sizes, then review/commit and retain a primary local ref.",
+    "evidence": "Three Sol/Max implementation lanes and a read-only UX critique corrected the owner feedback. Generation Arrival/ready and world map draw the same north-up default native raster. HUD uses uniform readout scales per viewport, aligned label/value rows and identical XYZ sizes;72 lane scenarios cover complete fields/long values/modes. Map area grows40.1% desktop and50.7% landscape. Main inspected all four desktop/landscape views;38 real browser assertions and10 input/readiness/lifecycle probes pass, with no console errors. JavaScript and document/backlog checks pass. Exact-stage review/hooks and durable primary local-ref readback are recorded at the commit boundary through Task-ID MC-AI-0518. No native or owner acceptance is claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "",
+    "motivation": "Owner finds generation too different from the map, HUD size jumps unreadable, and world-map canvas too small.",
+    "context": "Planning/browser prototype refinement after committed revision 071b008. Exact feedback/evidence at /Users/core-just/.codex/task-evidence/basicblocks-s2-ui-coherence-20261022-01a162a1. Continue the requested Sol/Max lane policy. Preserve concurrent S1, current selection and open S2 delivery state.",
+    "complexity": "high",
+    "created_at": "2026-10-22",
+    "resolved_at": "2026-10-22",
+    "resolution_changes": "Replaced oblique generation imagery and separate palette with the exact world-map terrain renderer, retaining illustrative layer development. Removed per-value HUD scaling and inline size/color fragmentation; aligned complete readout rows at one viewport scale. Reduced world-map framing/legend overhead to enlarge undistorted full-world geography. Preserved all telemetry, keys, modes, climate/source limits and S1/open S2 state.",
+    "plan": [
+      "Coordinate disjoint Sol/Max map, generation and HUD revisions using one terrain raster API.",
+      "Integrate, compare actual final terrain pixels and inspect all screens at desktop/landscape sizes.",
+      "Update design and task views; review, commit and retain a primary local ref."
+    ],
+    "product_changes": [
+      "Coherent generation/map presentation, consistent HUD text and larger world-map view."
+    ],
+    "code_changes": [
+      "Browser prototype and design artifacts only; no native features."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

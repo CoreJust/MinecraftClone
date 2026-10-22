@@ -43,7 +43,7 @@ settled before parallel code writers start; metadata has one writer.
 Assert observable outcomes in the owning suites; never auto-bless goldens.
 
 Map acceptance in the [map design](earlydev_0_1_1_s2_maps.md) covers independent layers, units, readable combinations, navigation, edited surfaces, wrapping and bounded work.
-The [UI design](earlydev_0_1_1_s2_ui.md) adds four-screen flow, telemetry sources, preserved FPS/uptime/speed/view/movement/XYZ/YPR/F1, explicit controls, conditional fields, hierarchy/reflow, reduced motion and current-renderer limits. Check toolbar-reduced landscape height. Prototype screenshots are design evidence, not gameplay qualification.
+The [UI design](earlydev_0_1_1_s2_ui.md) adds four-screen flow, telemetry sources, preserved FPS/uptime/speed/view/movement/XYZ/YPR/F1, controls, conditional fields and current-renderer limits. Verify uniform readout/XYZ scales, identical final generation/map raster, larger map area, reduced motion and toolbar-reduced landscape. Inspect readability at 100% size; screenshots do not qualify gameplay.
 
 ## Visual, multiplayer and performance gates
 

@@ -49,6 +49,7 @@
 
   function datasetReady() {
     if (!atlas || !Number.isInteger(atlas.width) || !Number.isInteger(atlas.height)) return false;
+    if (typeof window.S2WorldMapView.getRaster !== "function") return false;
     const cells = atlas.width * atlas.height;
     return cells > 0 && ["elevation", "waterLevel", "temperature", "climateZone", "oceanMask"].every(
       (name) => atlas[name] && atlas[name].length === cells,
