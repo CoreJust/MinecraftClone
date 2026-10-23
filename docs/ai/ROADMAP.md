@@ -24,11 +24,32 @@ This is an implementation queue, not the product specification. [../ROADMAP.md](
 
 `ED-010-S1`–`S3` are historical snapshot descriptions; use the same acceptance checks to establish their actual state before extending them. S6 absorbed the former wrapping-only S7, so the former S8 is now S7 and closes the minor.
 
+## BasicBlocks snapshots
+
+The [owner's four-snapshot plan](../ROADMAP.md#earlydev-011--basicblocks),
+consolidated on 22 October 2026 from the recovered six-snapshot plan,
+is canonical. All rows are planned; fixes accompany these product deliveries.
+S1 uses the finalized [Terrain-v2 design](decisions/earlydev_0_1_1_s1_generation.md),
+replacing the current Terrain-v1 waves. Its implementation remains planned.
+
+| ID | Depends on | Product outcome | Validation focus |
+|---|---|---|---|
+| ED-011-S1 | ED-010-S7 | Terrain-v2, climate-driven layers/maps, CoreLang 0.1.5 JIT/AOT, loading/key gate and shared 2D tests. | [Loading/FPS targets](decisions/earlydev_0_1_1_s1_performance.md), exact pixels, subsystem modes and two-laptop play; inherited 0477–0479 fixes. |
+| ED-011-S2 | ED-011-S1 | [Editing/modes, adaptive HUD/crosshair and minimap/world map](decisions/earlydev_0_1_1_s2.md), B selection/precise rights, accepted four-view UI baseline, chunk/RAM/climate HUD and dynamic formation; qualified replacement terrain model from S1. | Authority/collision/replication, timing/filters/modes, per-pixel styling, map navigation/edit/wrap, UI and model adoption; inherited S1 gates. |
+| ED-011-S3 | ED-011-S2 | Sea-level water fill, semitransparency, underwater postprocessing, swimming permissions/slowdown, flowing water and replacement by placed solids. | Fluid research/design before implementation; authority, swim transitions, edit interaction and bounded multiplayer convergence. |
+| ED-011-S4 | ED-011-S3 | Conventional animated models for all players, two first-person hands, held selected block, external-view animations and 0–100% opacity with Spectator at 40%; capability-aware bots that wander/edit/swim/fly and return toward players; safe recovery from embedded mode switches. | All specified action/view combinations, held-block presentation and opacity in ordinary play; two-player model/action replication, bot-distance/mode restoration and human/bot collision recovery. |
+
+Creative can break bedrock; Survival cannot fly (owner-confirmed).
+Map UI moves forward from GD-020. Terrain adoption still needs an accepted model.
+S3's fluid model and S4's proposed 64/128/160-block thresholds and anchor-player
+selection remain later design decisions. Do not replace these four product
+snapshots with a fix-only or separate water-subsystem sequence.
+
 ## EarlyDev minor releases
 
 | ID | Depends on | Scope and acceptance | Validation |
 |---|---|---|---|
-| ED-011 BasicBlocks | ED-010-S7 | Grass, stone, bedrock, snow, ice, water; fixed-pattern worldgen; permission-aware place/break; correct first/second/third-person player models/views. | block-state, edit-authority, serialization tests; all-view multiplayer smoke. |
+| ED-011 BasicBlocks | ED-010-S7 | The four snapshots above: solid layered continental terrain including dirt, permission-aware editing/modes, adaptive HUD/crosshair, flowing water/swimming, animated player models/opacity and multiplayer bot behavior. | Snapshot-specific behavior and visual checks; inherited gameplay regressions; integrated multiplayer and platform acceptance. |
 | ED-012 GUI | ED-011 | Main screen; create/join-world screen; pause; hotbar and inventories; save/open world; F3 diagnostics. Save/load preserves world and inventory. | UI state/save compatibility tests; create, join, pause, reload smoke. |
 | ED-013 BasicWorldGen | ED-012 | Global height/temperature continents and oceans; local deep-ocean/ocean/beach/plains/hills/mountains biomes; sand; icy poles and extreme north/south ice wall; trees. | fixed-seed map/biome boundary tests; map preview smoke. |
 | ED-014 SkyGraphics | ED-013 | Lighting/effects, day/night, sun/moon/stars/clouds, and latitude-dependent sky position/block tint. D: choose lighting model and performance target. | deterministic time/latitude tests; day-cycle visual smoke. |
@@ -44,7 +65,7 @@ This is an implementation queue, not the product specification. [../ROADMAP.md](
 
 | ID | Depends on | Scope and acceptance | Validation |
 |---|---|---|---|
-| GD-020 Map | ED-019 | Seas, rivers, lakes, ponds, islands, minimap, world map, and gravel if selected. D: decide the original “gravel, ?” scope and water-map representation. | fixed-seed hydrology/topology tests; map navigation smoke. |
+| GD-020 Map | ED-019 | Seas, rivers, lakes, ponds, islands and gravel if selected; integrate geography with S2 maps. D: decide “gravel, ?” and water-map representation. | fixed-seed hydrology/topology and map integration tests. |
 | GD-021 SurfaceBiomes | GD-020 | Deserts with sandstone/cactus; tundra with frozen dirt; taiga, “step” (D: clarify whether this means steppe), savanna, jungle; better terrain. | biome-material and transition tests; seed gallery smoke. |
 | GD-022 Forests | GD-021 | Realistic structures/placement, meadows, young/old/bush/fallen/dead trees, and pine, spruce, oak, birch, weeping willow, palm, acacia, maple, ginkgo, sakura, baobab, giant sequoia, banyan, tree-like cactus, olive, juniper. | species grammar/placement tests; biome traversal smoke. |
 | GD-023 Caves | GD-022 | D: define the tentative layered/rifted cave kinds; surface, dirt+some-stone underground, stone caves, deep caves with compressed-stone decision and occasional lava, and nether with netherstone/lava bodies; layer-specific specialized ores and additional minerals. | layer/ore/lava safety tests; vertical exploration smoke. |

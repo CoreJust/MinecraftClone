@@ -1,5 +1,8 @@
+#include <shared/world/Chunk.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
+#include <shared/world/TerrainWorld.hpp>
 #include <shared/world/WorldGeneration.hpp>
+#include <generation/Generation.hpp>
 
 #include <gtest/gtest.h>
 
@@ -8,8 +11,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <iterator>
+#include <memory>
 #include <optional>
-#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -23,6 +27,40 @@ Value const& requiredValue(std::optional<Value> const& optional)
         return *optional;
     }
     throw std::runtime_error("Test expected an optional value");
+}
+
+struct MaterialTileParameters final {
+    uint16_t exclusive_height;
+    uint32_t sea_level = 8U;
+};
+
+void initializeMaterialTile(
+    shared::HeightTile& tile,
+    MaterialTileParameters const parameters
+)
+{
+    tile.surface.coordinate = { tile.coordinate.x, tile.coordinate.y, 0 };
+    tile.surface.block_sea_level = parameters.sea_level;
+    generation::GenerationConfiguration const configuration{};
+    tile.surface.identity.seed = configuration.seed;
+    tile.surface.identity.configuration_identity = generation::configurationIdentity(configuration);
+    for (uint32_t y = 0U; y < shared::HeightTile::SIDE_LENGTH; ++y) {
+        for (uint32_t x = 0U; x < shared::HeightTile::SIDE_LENGTH; ++x) {
+            uint32_t const column_index = y * shared::HeightTile::SIDE_LENGTH + x;
+            tile.heights[column_index] = parameters.exclusive_height;
+            shared::TerrainColumn& column = tile.surface.columns[column_index];
+            column.highest_solid_z = static_cast<uint16_t>(parameters.exclusive_height - 1U);
+            column.submerged = column.highest_solid_z < parameters.sea_level;
+            column.top_material = shared::Block::Dirt;
+            column.ground_material = shared::Block::Dirt;
+            column.ground_first_z = static_cast<uint16_t>(column.submerged
+                ? (parameters.sea_level > 4U ? parameters.sea_level - 4U : 1U)
+                : (column.highest_solid_z > 4U ? column.highest_solid_z - 4U : 1U));
+            column.ground_end_z = static_cast<uint16_t>(column.submerged
+                ? column.highest_solid_z + 1U
+                : column.highest_solid_z);
+        }
+    }
 }
 
 [[nodiscard]]
@@ -223,7 +261,7 @@ TEST(HeightTileSurfaceMesherTest, EdgeProfilesPreserveClippedSpansOverwriteOrder
             int32_t const boundary = edge == EDGES[0U] || edge == EDGES[2U] ? 0 : 15;
             int32_t const origin_x = coordinate.x * 16;
             int32_t const origin_y = coordinate.y * 16;
-            shared::HeightTileSurfaceMesh mesh{ .coordinate = coordinate, .quads = {} };
+            shared::HeightTileSurfaceMesh mesh{ .coordinate = coordinate, .quads = {}, .identity = {} };
             auto const top = [&](
                 int32_t const perpendicular, int32_t const along,
                 uint16_t const perpendicular_span, uint16_t const along_span,
@@ -269,7 +307,7 @@ TEST(HeightTileSurfaceMesherTest, EdgeProfilesPreserveClippedSpansOverwriteOrder
             EXPECT_EQ(profile.top, EXPECTED_TOP);
             EXPECT_EQ(profile.elevation.minimum, 3U);
             EXPECT_EQ(profile.elevation.maximum, 33U);
-            shared::HeightTileSurfaceMesh point_only{ .coordinate = coordinate, .quads = {} };
+            shared::HeightTileSurfaceMesh point_only{ .coordinate = coordinate, .quads = {}, .identity = {} };
             point_only.quads.push_back(mesh.quads.back());
             auto const point_profile = shared::heightTileSurfaceEdgeProfile(point_only, edge);
             EXPECT_EQ(point_profile.top, (std::array<uint16_t, 16U>{}));
@@ -293,11 +331,11 @@ TEST(HeightTileSurfaceMesherTest, ClippedWallCoverageLeavesExactGapsWithBothSeam
         auto const opposite = EDGES[OPPOSITE[edge_index]];
         bool const x_edge = edge_index < 2U;
         bool const negative = edge_index == 0U || edge_index == 2U;
-        shared::HeightTileSurfaceMesh first{ .coordinate = { 4094, 4094 }, .quads = {} };
+        shared::HeightTileSurfaceMesh first{ .coordinate = { 4094, 4094 }, .quads = {}, .identity = {} };
         shared::HeightTileSurfaceMesh second{ .coordinate = {
             first.coordinate.x + (x_edge ? (negative ? -1 : 1) : 0),
             first.coordinate.y + (x_edge ? 0 : (negative ? -1 : 1)),
-        }, .quads = {} };
+        }, .quads = {}, .identity = {} };
         first.quads.push_back({ .x = first.coordinate.x * 16, .y = first.coordinate.y * 16,
             .z = 9, .direction = shared::HeightTileSurfaceDirection::PositiveZ,
             .u_extent = 16U, .v_extent = 16U });
@@ -391,11 +429,12 @@ TEST(HeightTileSurfaceMesherTest, CertificateBoundsPublicMeshAndBothInstalledSea
     bool saw_first_bridge = false;
     bool saw_second_bridge = false;
     for (uint32_t case_index = 0U; case_index < CASES; ++case_index) {
-        shared::HeightTile tile{
-            .coordinate = case_index == 1U ? shared::HeightTileCoordinate{ WORLD_TILES - 1, WORLD_TILES - 1 }
-                : shared::HeightTileCoordinate{},
-        };
-        std::array<shared::HeightTile, 4> raw_neighbors;
+        auto const tile_owner = std::make_unique<shared::HeightTile>();
+        auto& tile = *tile_owner;
+        tile.coordinate = case_index == 1U ? shared::HeightTileCoordinate{ WORLD_TILES - 1, WORLD_TILES - 1 }
+            : shared::HeightTileCoordinate{};
+        auto const raw_neighbors_owner = std::make_unique<std::array<shared::HeightTile, 4>>();
+        auto& raw_neighbors = *raw_neighbors_owner;
         std::array<shared::HeightTileSurfaceMesh, 4> installed;
         std::array<std::optional<shared::HeightTileSurfaceEdgeProfile>, 4> profiles;
         auto const fill = [&seed, case_index](shared::HeightTile& target) {
@@ -411,7 +450,8 @@ TEST(HeightTileSurfaceMesherTest, CertificateBoundsPublicMeshAndBothInstalledSea
                 (tile.coordinate.y + NEIGHBOR_COORDINATES[edge].y + WORLD_TILES) % WORLD_TILES,
             };
             fill(raw_neighbors[edge]);
-            shared::HeightTile retained = raw_neighbors[edge];
+            auto const retained_owner = std::make_unique<shared::HeightTile>(raw_neighbors[edge]);
+            auto& retained = *retained_owner;
             fill(retained);
             shared::HeightTile::Heights taller;
             taller.fill(1'024U);
@@ -574,7 +614,8 @@ TEST(HeightTileSurfaceMesherTest, InstalledProfileShapesPreserveExactFaceAreaLev
         .negative_y = same_height,
         .positive_y = same_height,
     };
-    shared::HeightTile installed_neighbor;
+    auto const installed_neighbor_owner = std::make_unique<shared::HeightTile>();
+    auto& installed_neighbor = *installed_neighbor_owner;
     for (uint32_t y = 0U; y < SIDE; ++y) {
         uint16_t const height = y < SIDE / 2U ? 2U : 10U;
         for (uint32_t x = 0U; x < SIDE; ++x) {
@@ -655,7 +696,7 @@ TEST(HeightTileSurfaceMesherTest, CertifiedPublicCellPatchesProjectBelowTwoPixel
     }
 }
 
-TEST(HeightTileSurfaceMesherTest, FlatTileCollapsesToOneTopAndFourBoundaryQuads)
+TEST(HeightTileSurfaceMesherTest, FlatTileWithoutKnownNeighborsOnlyEmitsTopQuad)
 {
     static constexpr uint16_t HEIGHT = 12U;
     shared::HeightTile tile{ .coordinate = { .x = 3, .y = 5 } };
@@ -663,22 +704,160 @@ TEST(HeightTileSurfaceMesherTest, FlatTileCollapsesToOneTopAndFourBoundaryQuads)
 
     shared::HeightTileSurfaceMesh const mesh = shared::HeightTileSurfaceMesher{}.build(tile);
 
-    ASSERT_EQ(mesh.quads.size(), 5U);
+    ASSERT_EQ(mesh.quads.size(), 1U);
     EXPECT_TRUE(hasQuad(
         mesh, 48, 80, HEIGHT - 1, shared::HeightTileSurfaceDirection::PositiveZ, 16U, 16U
     ));
-    EXPECT_TRUE(hasQuad(
-        mesh, 48, 80, 0, shared::HeightTileSurfaceDirection::NegativeX, 16U, HEIGHT
-    ));
-    EXPECT_TRUE(hasQuad(
-        mesh, 63, 80, 0, shared::HeightTileSurfaceDirection::PositiveX, 16U, HEIGHT
-    ));
-    EXPECT_TRUE(hasQuad(
-        mesh, 48, 80, 0, shared::HeightTileSurfaceDirection::NegativeY, 16U, HEIGHT
-    ));
-    EXPECT_TRUE(hasQuad(
-        mesh, 48, 95, 0, shared::HeightTileSurfaceDirection::PositiveY, 16U, HEIGHT
-    ));
+}
+
+TEST(HeightTileSurfaceMesherTest, TopQuadsMergeOnlyAcrossColumnsWithTheSameCanonicalMaterial)
+{
+    shared::HeightTile tile{};
+    initializeMaterialTile(tile, { .exclusive_height = 11U });
+    for (uint32_t y = 0U; y < shared::HeightTile::SIDE_LENGTH; ++y) {
+        for (uint32_t x = 0U; x < shared::HeightTile::SIDE_LENGTH / 2U; ++x) {
+            shared::TerrainColumn& column = tile.surface.columns[y * shared::HeightTile::SIDE_LENGTH + x];
+            column.top_material = shared::Block::Grass;
+            column.precipitation = 0.5;
+        }
+    }
+
+    shared::HeightTileSurfaceMesh const mesh = shared::HeightTileSurfaceMesher{}.build(tile);
+    std::vector<shared::HeightTileSurfaceQuad> tops;
+    std::ranges::copy_if(mesh.quads, std::back_inserter(tops), [](shared::HeightTileSurfaceQuad const& quad) {
+        return quad.direction == shared::HeightTileSurfaceDirection::PositiveZ;
+    });
+
+    ASSERT_EQ(tops.size(), 2U);
+    EXPECT_EQ(tops[0].material, shared::Block::Grass);
+    EXPECT_EQ(tops[0].x, 0);
+    EXPECT_EQ(tops[0].u_extent, shared::HeightTile::SIDE_LENGTH / 2U);
+    EXPECT_EQ(tops[1].material, shared::Block::Dirt);
+    EXPECT_EQ(tops[1].x, shared::HeightTile::SIDE_LENGTH / 2U);
+    EXPECT_EQ(tops[1].u_extent, shared::HeightTile::SIDE_LENGTH / 2U);
+}
+
+TEST(HeightTileSurfaceMesherTest, CliffFacesSplitAtCanonicalGroundStoneTopAndBedrockIntervals)
+{
+    shared::HeightTile tile{};
+    initializeMaterialTile(tile, { .exclusive_height = 4U });
+    for (uint32_t y = 0U; y < 16U; ++y) {
+        for (uint32_t x = 0U; x < 16U; ++x) {
+            uint32_t const column_index = y * shared::HeightTile::SIDE_LENGTH + x;
+            tile.heights[column_index] = 11U;
+            shared::TerrainColumn& column = tile.surface.columns[column_index];
+            column.highest_solid_z = 10U;
+            column.submerged = false;
+            column.top_material = shared::Block::Grass;
+            column.precipitation = 0.5;
+            column.ground_material = shared::Block::Dirt;
+            column.ground_first_z = 6U;
+            column.ground_end_z = 10U;
+        }
+    }
+
+    auto const has_material_interval = [](
+        shared::HeightTileSurfaceMesh const& mesh,
+        shared::HeightTileSurfaceDirection const direction,
+        int32_t const x,
+        int32_t const start_z,
+        uint16_t const height,
+        shared::Block const material
+    ) {
+        return std::ranges::any_of(mesh.quads, [=](shared::HeightTileSurfaceQuad const& quad) {
+            return quad.x == x && quad.y == 0 && quad.direction == direction
+                && quad.z == start_z && quad.v_extent == height && quad.material == material;
+        });
+    };
+    shared::HeightTile::Heights low_neighbor_heights;
+    low_neighbor_heights.fill(4U);
+
+    for (shared::HeightTileSurfaceDetail const detail : {
+             shared::HeightTileSurfaceDetail::Fine,
+             shared::HeightTileSurfaceDetail::Coarse2,
+             shared::HeightTileSurfaceDetail::Coarse4,
+             shared::HeightTileSurfaceDetail::Coarse,
+             shared::HeightTileSurfaceDetail::Distant,
+         }) {
+        shared::HeightTileSurfaceMesh const mesh = shared::HeightTileSurfaceMesher{}.build(
+            tile,
+            {
+                .negative_x = {},
+                .positive_x = low_neighbor_heights,
+                .negative_y = std::nullopt,
+                .positive_y = std::nullopt,
+            },
+            detail
+        );
+        EXPECT_TRUE(has_material_interval(
+            mesh, shared::HeightTileSurfaceDirection::PositiveX, 15, 4, 2U, shared::Block::Stone));
+        EXPECT_TRUE(has_material_interval(
+            mesh, shared::HeightTileSurfaceDirection::PositiveX, 15, 6, 4U, shared::Block::Dirt));
+        EXPECT_TRUE(has_material_interval(
+            mesh, shared::HeightTileSurfaceDirection::PositiveX, 15, 10, 1U, shared::Block::Grass));
+        EXPECT_FALSE(has_material_interval(
+            mesh, shared::HeightTileSurfaceDirection::NegativeX, 0, 0, 1U, shared::Block::Bedrock));
+    }
+}
+
+TEST(HeightTileSurfaceMesherTest, SeamBridgeUsesCanonicalMaterialsFromTheHigherSurface)
+{
+    shared::HeightTile first_tile{ .coordinate = { .x = 0, .y = 0 } };
+    shared::HeightTile second_tile{ .coordinate = { .x = 1, .y = 0 } };
+    initializeMaterialTile(first_tile, { .exclusive_height = 11U });
+    initializeMaterialTile(second_tile, { .exclusive_height = 5U });
+    for (uint32_t y = 0U; y < shared::HeightTile::SIDE_LENGTH; ++y) {
+        shared::TerrainColumn& column = first_tile.surface.columns[
+            y * shared::HeightTile::SIDE_LENGTH + shared::HeightTile::SIDE_LENGTH - 1U
+        ];
+        column.top_material = shared::Block::Grass;
+        column.precipitation = 0.5;
+    }
+
+    shared::HeightTileSurfaceMesh const first{
+        .coordinate = { .x = 0, .y = 0 },
+        .quads = {{
+            .x = 0,
+            .y = 0,
+            .z = 10,
+            .direction = shared::HeightTileSurfaceDirection::PositiveZ,
+            .u_extent = shared::HeightTile::SIDE_LENGTH,
+            .v_extent = shared::HeightTile::SIDE_LENGTH,
+        }},
+        .identity = first_tile.surface.identity,
+    };
+    shared::HeightTileSurfaceMesh const second{
+        .coordinate = { .x = 1, .y = 0 },
+        .quads = {{
+            .x = shared::HeightTile::SIDE_LENGTH,
+            .y = 0,
+            .z = 4,
+            .direction = shared::HeightTileSurfaceDirection::PositiveZ,
+            .u_extent = shared::HeightTile::SIDE_LENGTH,
+            .v_extent = shared::HeightTile::SIDE_LENGTH,
+        }},
+        .identity = second_tile.surface.identity,
+    };
+
+    shared::HeightTileSurfaceSeamBridge const bridge = shared::heightTileSurfaceSeamBridge(
+        first,
+        second,
+        shared::HeightTileSurfaceDirection::PositiveX,
+        &first_tile.surface,
+        &second_tile.surface
+    );
+
+    ASSERT_EQ(bridge.first.size(), 3U);
+    EXPECT_EQ(bridge.first[0].z, 5);
+    EXPECT_EQ(bridge.first[0].v_extent, 1U);
+    EXPECT_EQ(bridge.first[0].material, shared::Block::Stone);
+    EXPECT_EQ(bridge.first[1].z, 6);
+    EXPECT_EQ(bridge.first[1].v_extent, 4U);
+    EXPECT_EQ(bridge.first[1].material, shared::Block::Dirt);
+    EXPECT_EQ(bridge.first[2].z, 10);
+    EXPECT_EQ(bridge.first[2].v_extent, 1U);
+    EXPECT_EQ(bridge.first[2].material, shared::Block::Grass);
+    EXPECT_TRUE(bridge.second.empty());
 }
 
 TEST(HeightTileSurfaceMesherTest, AdjacentColumnsExposeOnlyTheHeightDifference)
@@ -717,6 +896,62 @@ TEST(HeightTileSurfaceMesherTest, SolidNeighborSuppressesSharedBoundaryWhileLowe
     EXPECT_TRUE(hasQuad(
         stepped, 15, 0, 6, shared::HeightTileSurfaceDirection::PositiveX, 16U, 5U
     ));
+}
+
+TEST(HeightTileSurfaceMesherTest, UnknownBoundaryDoesNotCreateWallButKnownZeroNeighborDoes)
+{
+    static constexpr uint16_t HEIGHT = 11U;
+    static constexpr uint32_t SIDE = shared::HeightTile::SIDE_LENGTH;
+    static constexpr int32_t TILE_X = 4;
+    static constexpr int32_t TILE_Y = 5;
+    static constexpr int32_t WORLD_X = TILE_X * static_cast<int32_t>(SIDE)
+        + static_cast<int32_t>(SIDE) - 1;
+    static constexpr int32_t WORLD_Y = TILE_Y * static_cast<int32_t>(SIDE);
+    shared::HeightTile tile{ .coordinate = { .x = TILE_X, .y = TILE_Y } };
+    tile.heights.fill(HEIGHT);
+    shared::HeightTileSurfaceMesher const mesher;
+
+    shared::HeightTileSurfaceMesh const unknown = mesher.build(tile);
+    EXPECT_EQ(unknown.quads.size(), 1U);
+    shared::HeightTileSurfaceFaceAreas const unknown_areas = shared::heightTileSurfaceFaceAreas(
+        tile,
+        {}
+    );
+    EXPECT_EQ(unknown_areas.maximum[0U], 4.0);
+    shared::HeightTileSurfaceBounds const unknown_bounds = shared::HeightTileSurfaceMesher::boundsForTile(
+        {},
+        tile,
+        {}
+    );
+    EXPECT_EQ(unknown_bounds.min_z_blocks, HEIGHT);
+
+    shared::HeightTileSurfaceNeighbors neighbors{};
+    neighbors.positive_x.emplace();
+    neighbors.positive_x->fill(0U);
+    shared::HeightTileSurfaceMesh const known_zero = mesher.build(tile, neighbors);
+    EXPECT_EQ(std::ranges::count_if(known_zero.quads, [](shared::HeightTileSurfaceQuad const& quad) {
+        return quad.direction != shared::HeightTileSurfaceDirection::PositiveZ;
+    }), 1U);
+    EXPECT_TRUE(hasQuad(
+        known_zero,
+        WORLD_X,
+        WORLD_Y,
+        0,
+        shared::HeightTileSurfaceDirection::PositiveX,
+        SIDE,
+        HEIGHT
+    ));
+    shared::HeightTileSurfaceFaceAreas const known_zero_areas = shared::heightTileSurfaceFaceAreas(
+        tile,
+        neighbors
+    );
+    EXPECT_EQ(known_zero_areas.maximum[0U], 22.0);
+    shared::HeightTileSurfaceBounds const known_zero_bounds = shared::HeightTileSurfaceMesher::boundsForTile(
+        {},
+        tile,
+        neighbors
+    );
+    EXPECT_EQ(known_zero_bounds.min_z_blocks, 0.0);
 }
 
 TEST(HeightTileSurfaceMesherTest, GeneratedTerrainCoversEveryColumnTop)
@@ -777,7 +1012,7 @@ TEST(HeightTileSurfaceMesherTest, CoarseDetailPreservesMacroReliefWhileReducingM
     EXPECT_TRUE(hasQuad(
         coarse, 39, 48, 5, shared::HeightTileSurfaceDirection::PositiveX, 16U, 16U
     ));
-    EXPECT_TRUE(hasQuad(
+    EXPECT_FALSE(hasQuad(
         coarse, 32, 48, 0, shared::HeightTileSurfaceDirection::NegativeX, 16U, 21U
     ));
     EXPECT_LT(coarse.quads.size(), fine.quads.size());
@@ -1350,6 +1585,7 @@ TEST(HeightTileSurfaceMesherTest, InstalledEdgeElevationRangeIncludesTopAndWallP
                 .v_extent = HEIGHT - WALL_BOTTOM,
             },
         },
+        .identity = {},
     };
 
     EXPECT_EQ(

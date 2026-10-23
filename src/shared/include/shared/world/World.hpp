@@ -177,6 +177,7 @@ public:
         * SUBCELLS_PER_CELL;
     static constexpr int32_t FLIGHT_MIN_CELL = 0;
     static constexpr int32_t FLIGHT_MAX_CELL = 65'535;
+    static constexpr int32_t FLIGHT_ENTITY_MAX_Z = 65'535;
     static constexpr int32_t FLIGHT_MAX_Z = 1'023;
     static constexpr PlayerPosition FLIGHT_SPAWN{ .x = 32'896, .y = 32'768, .z = 410 };
 
@@ -237,6 +238,10 @@ public:
     );
     [[nodiscard]]
     bool setPlayerPosition(PlayerId id, PlayerPosition position);
+    // Replication preserves server-approved state even when a bypass player overlaps it.
+    // Validate values and identity here; collision admission belongs to authority requests.
+    [[nodiscard]]
+    bool applyReplicatedPlayerState(Player const& state);
     bool setPlayerPaletteIndex(PlayerId id, PlayerPaletteIndex palette_index) noexcept;
     [[nodiscard]]
     bool canSetPlayerMovementCapabilities(PlayerId id, MovementCapabilities capabilities) const noexcept;
@@ -252,6 +257,8 @@ public:
     [[nodiscard]]
     constexpr std::vector<Player> const& players() const noexcept { return m_players; }
 private:
+    [[nodiscard]]
+    bool isPlayerPositionInBounds(PlayerPosition position) const noexcept;
     [[nodiscard]]
     bool canPlayerBeAt(uint32_t x, uint32_t y, int64_t z, PlayerId id) const;
     [[nodiscard]]

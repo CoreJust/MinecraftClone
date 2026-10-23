@@ -1,29 +1,11 @@
 [
   {
-    "name": "sanitizer-static-analysis-s7",
-    "enabled": true,
-    "levels": ["snapshot"],
-    "command": [
-      "{python}",
-      "script/ci/verify_analysis_gate.py",
-      "--root",
-      "{root}",
-      "--receipt",
-      "{root}/build/ai-checks/analysis-aggregate.json",
-      "--s7-windows-secondary",
-      "--candidate-commit",
-      "{proof-candidate-commit}"
-    ],
-    "timeout": 60,
-    "reason": "For Snapshot 7 only, requires every Mac and Linux analysis row against the release candidate and current row inputs; Windows MSVC ASan and /analyze remain explicitly deferred.",
-    "when": "release",
-    "proof": true,
-    "reuse": false
-  },
-  {
     "name": "sanitizer-static-analysis",
     "enabled": true,
-    "levels": ["minor", "major"],
+    "levels": [
+      "minor",
+      "major"
+    ],
     "command": [
       "{python}",
       "script/ci/verify_analysis_gate.py",
@@ -41,24 +23,26 @@
     "reuse": false
   },
   {
-    "name": "full-radius-gameplay-snapshot",
+    "name": "sanitizer-static-analysis-s1-owner-profile",
     "enabled": true,
-    "levels": ["snapshot"],
+    "levels": [
+      "snapshot"
+    ],
     "command": [
       "{python}",
-      "script/ci/verify_gameplay_gate.py",
+      "script/ci/verify_analysis_gate.py",
       "--root",
       "{root}",
       "--receipt",
-      "{root}/build/ai-checks/gameplay-aggregate.json",
-      "--s7-windows-secondary",
-      "--s7-cadence-exception",
-      "EarlyDev0.1.0-snapshot7",
+      "{root}/build/ai-checks/analysis-aggregate.json",
       "--candidate-commit",
-      "{proof-candidate-commit}"
+      "{proof-candidate-commit}",
+      "--s1-owner-deferred-if-applicable",
+      "--release-level",
+      "snapshot"
     ],
     "timeout": 60,
-    "reason": "Snapshot 7 only: requires source-bound Mac Release proofs for radius256 coverage and radius128 cadence; the documented user-approved Mac cadence exception retains failed metrics, Windows is deferred, and minor/major checks remain strict.",
+    "reason": "MC-AI-0482 EarlyDev BasicBlocks 0.1.1:1 only: seven mandatory rows; macos_tsan, linux_msan and both Windows rows explicitly deferred by owner, never passed. Other release levels require all eleven rows.",
     "when": "release",
     "proof": true,
     "reuse": false
@@ -66,7 +50,11 @@
   {
     "name": "full-radius-gameplay",
     "enabled": true,
-    "levels": ["minor", "major"],
+    "levels": [
+      "snapshot",
+      "minor",
+      "major"
+    ],
     "command": [
       "{python}",
       "script/ci/verify_gameplay_gate.py",
@@ -74,11 +62,12 @@
       "{root}",
       "--receipt",
       "{root}/build/ai-checks/gameplay-aggregate.json",
+      "--s1-owner-accepted",
       "--candidate-commit",
       "{proof-candidate-commit}"
     ],
     "timeout": 60,
-    "reason": "Requires separate source-bound Mac and Windows radius256 terrain and radius128 stable120Hz performance proofs; physical scanout remains unavailable.",
+    "reason": "S1 owner acceptance verifies the fresh current-source normal Mac capture, raw report and executable hashes, source/build provenance, runtime inputs and actual distinct movement positions. Failed performance and LOD classes remain accepted_exception, never passed; the other three production-graphics proofs remain unqualified. Historical capture stays historical; the current-normal branch uses no source-reuse certificate. Independent release gates remain mandatory.",
     "when": "release",
     "proof": true,
     "reuse": false
@@ -86,8 +75,15 @@
   {
     "name": "renderer-smoke",
     "enabled": true,
-    "levels": ["snapshot", "minor", "major"],
-    "command": ["{python}", "script/ai_renderer_smoke.py"],
+    "levels": [
+      "snapshot",
+      "minor",
+      "major"
+    ],
+    "command": [
+      "{python}",
+      "script/ai_renderer_smoke.py"
+    ],
     "timeout": 600,
     "reason": "Runs the windowed noninteractive RendererSmokeTest with validation; it is not a fully headless texture-golden gate.",
     "receipt": true
@@ -95,8 +91,14 @@
   {
     "name": "environment",
     "enabled": true,
-    "levels": ["minor", "major"],
-    "command": ["{python}", "script/ai_setup.py"],
+    "levels": [
+      "minor",
+      "major"
+    ],
+    "command": [
+      "{python}",
+      "script/ai_setup.py"
+    ],
     "timeout": 60,
     "reason": "Version completion checks the local development environment; record deeper findings in the version task."
   }

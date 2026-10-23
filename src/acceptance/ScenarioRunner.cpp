@@ -295,7 +295,7 @@ shared::PolicyCapabilityRegistry movementPermissionRegistry()
 std::string movementPermissionPolicySource(bool const flight, bool const collision_bypass)
 {
     std::string source =
-        "@version(\"0.1.3.1\")\n"
+        "@version(0.1.5)\n"
         "@use minecraft\n"
         "pub fn policy() {\n"
         "    policyRule(\"scenario-movement\", \"minecraft:flight\", ";

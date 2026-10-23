@@ -109,8 +109,11 @@ TEST(GameClientAudioTest, PlaysJoinCueOnceAfterServerAcceptsClient)
         .should_stop = {},
         .is_uncapped_phase = {},
         .input_override = {},
+        .start_input_override = {},
         .on_loop = {},
         .on_authoritative_player = {},
+        .on_input_sent = {},
+        .on_authoritative_state = {},
     };
     game_client.run(core::Address::localhost(server.port()), '@', &hooks);
     stop_server.store(true, std::memory_order_relaxed);

@@ -5,11 +5,15 @@
 #include <shared/world/World.hpp>
 
 #include <glm/ext/vector_double3.hpp>
-#include <glm/vec3.hpp>
 #include <gtest/gtest.h>
+
+// The public dvec3 header includes GLM's inline vector implementation.
+// IWYU pragma: no_include <glm/detail/type_vec3.inl>
 
 #include <array>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -163,6 +167,148 @@ TEST(PlayerPresentationTest, InitialAuthoritativePositionSnapsAndSubsequentPosit
     EXPECT_DOUBLE_EQ(sample_150->x, 0.2);
     EXPECT_DOUBLE_EQ(sample_175->x, 0.3);
     EXPECT_DOUBLE_EQ(sample_200->x, 0.4);
+}
+
+TEST(PlayerPresentationTest, FlightVerticalPresentationMovesUniformlyAcrossInputTicks)
+{
+    static constexpr uint8_t FLIGHT_CAPABILITIES = 3U;
+    static constexpr double VERTICAL_STEP = static_cast<double>(shared::MOVEMENT_SUBCELLS_PER_TICK)
+        / static_cast<double>(shared::SUBCELLS_PER_CELL);
+    static constexpr shared::Player INITIAL{
+        .id = 1U,
+        .x = 0,
+        .y = 0,
+        .z = 12,
+        .ch = '@',
+        .movement_capabilities = { .bits = FLIGHT_CAPABILITIES },
+    };
+    static constexpr shared::Player FIRST_TARGET{
+        .id = 1U,
+        .x = 0,
+        .y = 0,
+        .z = 12,
+        .z_subcell = shared::MOVEMENT_SUBCELLS_PER_TICK,
+        .ch = '@',
+        .movement_capabilities = { .bits = FLIGHT_CAPABILITIES },
+    };
+    static constexpr shared::Player SECOND_TARGET{
+        .id = 1U,
+        .x = 0,
+        .y = 0,
+        .z = 13,
+        .z_subcell = 1'200U,
+        .ch = '@',
+        .movement_capabilities = { .bits = FLIGHT_CAPABILITIES },
+    };
+    static constexpr shared::Player THIRD_TARGET{
+        .id = 1U,
+        .x = 0,
+        .y = 0,
+        .z = 13,
+        .z_subcell = 6'800U,
+        .ch = '@',
+        .movement_capabilities = { .bits = FLIGHT_CAPABILITIES },
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(INITIAL, started_at);
+    presentation.update(FIRST_TARGET, started_at);
+
+    std::optional<client::PlayerPresentationPosition> previous;
+    for (int64_t elapsed_milliseconds = 0; elapsed_milliseconds <= 300; elapsed_milliseconds += 10) {
+        if (elapsed_milliseconds == 70) {
+            presentation.update(FIRST_TARGET, started_at + std::chrono::milliseconds{ 70 });
+        } else if (elapsed_milliseconds == 100) {
+            presentation.update(SECOND_TARGET, started_at + std::chrono::milliseconds{ 100 });
+        } else if (elapsed_milliseconds == 170) {
+            presentation.update(SECOND_TARGET, started_at + std::chrono::milliseconds{ 170 });
+        } else if (elapsed_milliseconds == 200) {
+            presentation.update(THIRD_TARGET, started_at + std::chrono::milliseconds{ 200 });
+        } else if (elapsed_milliseconds == 270) {
+            presentation.update(THIRD_TARGET, started_at + std::chrono::milliseconds{ 270 });
+        }
+        auto const sampled = presentation.sample(
+            '@',
+            started_at + std::chrono::milliseconds{ elapsed_milliseconds }
+        );
+        ASSERT_TRUE(sampled.has_value());
+        EXPECT_NEAR(
+            sampled->z,
+            12.0 + VERTICAL_STEP * static_cast<double>(elapsed_milliseconds) / 100.0,
+            1e-12
+        );
+        if (previous.has_value()) {
+            EXPECT_NEAR(sampled->z - previous->z, VERTICAL_STEP / 10.0, 1e-12)
+                << "elapsed=" << elapsed_milliseconds << " ms";
+        }
+        previous = sampled;
+    }
+}
+
+TEST(PlayerPresentationTest, FlightVerticalPredictionWithJitteredAcknowledgementsStaysContinuous)
+{
+    static constexpr uint8_t FLIGHT_CAPABILITIES = 3U;
+    static constexpr int64_t TICK_MILLISECONDS = 100;
+    static constexpr int64_t SAMPLE_INTERVAL_MILLISECONDS = 17;
+    static constexpr double STEP = static_cast<double>(shared::MOVEMENT_SUBCELLS_PER_TICK)
+        / static_cast<double>(shared::SUBCELLS_PER_CELL);
+    static constexpr std::array<int64_t, 6U> ACK_DELAYS_MILLISECONDS{ 7, 89, 36, 63, 18, 95 };
+    static constexpr shared::Player INITIAL{
+        .id = 1U,
+        .x = 0,
+        .y = 0,
+        .z = 100,
+        .ch = '@',
+        .movement_capabilities = { .bits = FLIGHT_CAPABILITIES },
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+    presentation.update(INITIAL, started_at);
+
+    int64_t total_vertical_subcells = static_cast<int64_t>(INITIAL.z) * shared::SUBCELLS_PER_CELL;
+    shared::Player predicted = INITIAL;
+    int64_t input_tick = 0;
+    int64_t ack_at = ACK_DELAYS_MILLISECONDS[0];
+    int64_t const end_milliseconds = 1'200;
+    for (int64_t elapsed_milliseconds = 0;
+         elapsed_milliseconds <= end_milliseconds;
+         ++elapsed_milliseconds) {
+        if (elapsed_milliseconds % TICK_MILLISECONDS == 0) {
+            int32_t const vertical_sign = elapsed_milliseconds < 600 ? 1 : -1;
+            total_vertical_subcells += static_cast<int64_t>(vertical_sign) * shared::MOVEMENT_SUBCELLS_PER_TICK;
+            int64_t const cell = total_vertical_subcells / shared::SUBCELLS_PER_CELL;
+            int64_t const subcell = total_vertical_subcells % shared::SUBCELLS_PER_CELL;
+            predicted.z = static_cast<int32_t>(cell);
+            predicted.z_subcell = static_cast<uint16_t>(subcell);
+            presentation.update(predicted, started_at + std::chrono::milliseconds{ elapsed_milliseconds });
+            ack_at = elapsed_milliseconds + ACK_DELAYS_MILLISECONDS[
+                static_cast<size_t>(input_tick % static_cast<int64_t>(ACK_DELAYS_MILLISECONDS.size()))
+            ];
+            ++input_tick;
+        }
+        if (elapsed_milliseconds == ack_at) {
+            presentation.update(predicted, started_at + std::chrono::milliseconds{ elapsed_milliseconds });
+        }
+        if (elapsed_milliseconds % SAMPLE_INTERVAL_MILLISECONDS != 0
+            && elapsed_milliseconds != 600 && elapsed_milliseconds != end_milliseconds) {
+            continue;
+        }
+
+        auto const sampled = presentation.sample(
+            '@',
+            started_at + std::chrono::milliseconds{ elapsed_milliseconds }
+        );
+        ASSERT_TRUE(sampled.has_value());
+        double const expected_vertical_delta = elapsed_milliseconds <= 600
+            ? STEP * static_cast<double>(elapsed_milliseconds) / static_cast<double>(TICK_MILLISECONDS)
+            : STEP * (
+                6.0 - static_cast<double>(elapsed_milliseconds - 600)
+                    / static_cast<double>(TICK_MILLISECONDS)
+            );
+        EXPECT_NEAR(sampled->z, static_cast<double>(INITIAL.z) + expected_vertical_delta, 1e-12)
+            << "elapsed=" << elapsed_milliseconds << " ms";
+    }
 }
 
 TEST(PlayerPresentationTest, VerticalInterpolationKeepsVelocityContinuousAcrossTicks)

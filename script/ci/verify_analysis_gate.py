@@ -24,6 +24,10 @@ if _SPEC is None or _SPEC.loader is None:
 _MATRIX = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_MATRIX)
 
+_PROFILE_SPEC = importlib.util.spec_from_file_location("s1_analysis_profile", SCRIPT_ROOT / "ci/s1_analysis_profile.py")
+_PROFILE = importlib.util.module_from_spec(_PROFILE_SPEC)
+_PROFILE_SPEC.loader.exec_module(_PROFILE)
+
 
 def secondary_row_ids(manifest: dict) -> tuple[str, ...]:
     rows = _MATRIX.validate_manifest(manifest)["rows"]
@@ -179,6 +183,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--candidate-commit",
         help="full immutable candidate commit SHA; source inputs are checked against ROOT",
     )
+    parser.add_argument("--s1-owner-deferred", action="store_true")
+    parser.add_argument("--s1-owner-deferred-if-applicable", action="store_true")
+    parser.add_argument("--release-level", choices=("snapshot", "minor", "major"))
     args = parser.parse_args(argv)
 
     try:
@@ -191,7 +198,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             manifest = args.manifest.resolve(strict=True)
         else:
             manifest = root / "script" / "ai_analysis_matrix.json"
-        if args.merge and not args.s7_windows_secondary:
+        if args.merge and not (args.s7_windows_secondary or args.s1_owner_deferred):
             raise _MATRIX.MatrixError("--merge requires the explicit --s7-windows-secondary profile")
         receipt_inputs = [path.resolve(strict=True) for path in args.merge] if args.merge else None
         receipt = args.receipt.absolute() if args.merge else args.receipt.resolve(strict=True)
@@ -199,7 +206,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             expected_candidate = _MATRIX.candidate_identity(root)
         else:
             expected_candidate = _MATRIX.commit_identity(root, args.candidate_commit)
-        if args.s7_windows_secondary:
+        if args.s1_owner_deferred_if_applicable:
+            try:
+                _PROFILE.require_candidate(root, args.release_level, _CHECK)
+            except (OSError, ValueError):
+                pass  # Every other candidate retains the strict eleven-row verifier.
+            else:
+                args.s1_owner_deferred = True
+        if args.s1_owner_deferred:
+            if args.s7_windows_secondary:
+                raise ValueError("analysis profiles cannot be combined")
+            operation = _PROFILE.merge if receipt_inputs is not None else _PROFILE.verify
+            positional = [receipt_inputs, receipt] if receipt_inputs is not None else [receipt]
+            verified = operation(*positional, manifest, root, expected_candidate, args.release_level, _MATRIX, _CHECK)
+        elif args.s7_windows_secondary:
             if receipt_inputs is not None:
                 verified = merge_secondary_receipts(
                     receipt_inputs,
@@ -223,6 +243,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "receipt": str(receipt),
             "rows": [row["id"] for row in verified["rows"]],
         }
+        if args.s1_owner_deferred:
+            result["status"] = "qualified_with_deferrals"
+            result["owner_policy"] = _PROFILE.POLICY
         if args.s7_windows_secondary:
             result["windows"] = {
                 "status": "deferred",

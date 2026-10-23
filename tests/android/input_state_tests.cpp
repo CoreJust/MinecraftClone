@@ -246,5 +246,72 @@ TEST(AndroidInputStateTest, TracksMovementAndLookForTwoPointersInEitherMoveOrder
     EXPECT_FLOAT_EQ(vertical, 20.0F);
 }
 
+TEST(AndroidInputStateTest, NormalLookReleasePreservesMotionUntilConsumed)
+{
+    static constexpr uint32_t SURFACE_WIDTH = 1'000U;
+    AndroidInputState input;
+    ASSERT_TRUE(input.beginLookTouch(8, 700.0F, 300.0F, SURFACE_WIDTH));
+    ASSERT_TRUE(input.moveLookTouch(760.0F, 320.0F, PointerId{8}));
+    ASSERT_TRUE(input.endLookTouch(8));
+
+    float horizontal = 0.0F;
+    float vertical = 0.0F;
+    EXPECT_TRUE(input.consumeLookDelta(horizontal, vertical));
+    EXPECT_FLOAT_EQ(horizontal, 60.0F);
+    EXPECT_FLOAT_EQ(vertical, 20.0F);
+    EXPECT_FALSE(input.consumeLookDelta(horizontal, vertical));
+    EXPECT_FLOAT_EQ(horizontal, 0.0F);
+    EXPECT_FLOAT_EQ(vertical, 0.0F);
+}
+
+TEST(AndroidInputStateTest, ReleasedLookCanReacquireWithoutLosingQueuedMotionOrChangingTheNewOrigin)
+{
+    static constexpr uint32_t SURFACE_WIDTH = 1'000U;
+    AndroidInputState input;
+    ASSERT_TRUE(input.beginLookTouch(8, 700.0F, 300.0F, SURFACE_WIDTH));
+    ASSERT_TRUE(input.moveLookTouch(760.0F, 320.0F, PointerId{8}));
+    ASSERT_TRUE(input.endLookTouch(8));
+    ASSERT_TRUE(input.beginLookTouch(9, 900.0F, 400.0F, SURFACE_WIDTH));
+    ASSERT_TRUE(input.moveLookTouch(905.0F, 390.0F, PointerId{9}));
+
+    float horizontal = 0.0F;
+    float vertical = 0.0F;
+    EXPECT_TRUE(input.consumeLookDelta(horizontal, vertical));
+    EXPECT_FLOAT_EQ(horizontal, 65.0F);
+    EXPECT_FLOAT_EQ(vertical, 10.0F);
+    EXPECT_FALSE(input.moveLookTouch(800.0F, 350.0F, PointerId{8}));
+}
+
+TEST(AndroidInputStateTest, CancelLookDiscardsUnconsumedMotion)
+{
+    static constexpr uint32_t SURFACE_WIDTH = 1'000U;
+    AndroidInputState input;
+    ASSERT_TRUE(input.beginLookTouch(8, 700.0F, 300.0F, SURFACE_WIDTH));
+    ASSERT_TRUE(input.moveLookTouch(760.0F, 320.0F, PointerId{8}));
+    ASSERT_TRUE(input.cancelLookTouch());
+
+    float horizontal = 0.0F;
+    float vertical = 0.0F;
+    EXPECT_FALSE(input.consumeLookDelta(horizontal, vertical));
+    EXPECT_FLOAT_EQ(horizontal, 0.0F);
+    EXPECT_FLOAT_EQ(vertical, 0.0F);
+}
+
+TEST(AndroidInputStateTest, ClearDiscardsReleasedLookMotion)
+{
+    static constexpr uint32_t SURFACE_WIDTH = 1'000U;
+    AndroidInputState input;
+    ASSERT_TRUE(input.beginLookTouch(8, 700.0F, 300.0F, SURFACE_WIDTH));
+    ASSERT_TRUE(input.moveLookTouch(760.0F, 320.0F, PointerId{8}));
+    ASSERT_TRUE(input.endLookTouch(8));
+    input.clear();
+
+    float horizontal = 0.0F;
+    float vertical = 0.0F;
+    EXPECT_FALSE(input.consumeLookDelta(horizontal, vertical));
+    EXPECT_FLOAT_EQ(horizontal, 0.0F);
+    EXPECT_FLOAT_EQ(vertical, 0.0F);
+}
+
 } // namespace
 } // namespace game_android

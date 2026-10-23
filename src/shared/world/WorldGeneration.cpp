@@ -141,7 +141,9 @@ core::lang::CustomManifest generationPlanManifest(GenerationPlanHostSpec const& 
             spec.arguments.size(),
             core::lang::BorrowAccess::None
         ), .returns = {}},
+        .clobber_regions = {},
     };
+    manifest.clobber_regions = {0U};
     manifest.digest = core::lang::customManifestDigest(manifest);
     return manifest;
 }
@@ -476,7 +478,7 @@ struct TerrainGenerator::ScriptState final {
         if (auto const registered = registerGenerationPlanProviders(runtime, generation_plan_collector); !registered) {
             throw std::runtime_error{"CoreLang terrain generation providers failed to register: " + registered.error()};
         }
-        auto loaded = runtime.load(compiled->bytes);
+        auto loaded = runtime.loadCompiled(*compiled);
         if (!loaded) {
             throw std::runtime_error{"CoreLang terrain script failed to load"};
         }

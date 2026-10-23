@@ -1,0 +1,733 @@
+{
+  "schema": 1,
+  "task_id": "MC-AI-0514",
+  "captured_date": "2026-10-22",
+  "purpose": "Observed implementation evidence for the initial S2 design; not qualification or a released source baseline.",
+  "repository": {
+    "origin": "https://github.com/CoreJust/MinecraftClone.git",
+    "branch": "ai-dev",
+    "head_at_discovery": "46cb6132f54a435f9aae8381b189e847fbc22591"
+  },
+  "qualification": "The inspected working tree contains concurrent, uncommitted S1 changes. SHA-256 values identify sampled bytes, which can differ from HEAD and change afterward. Reconcile the design with final accepted S1 APIs before implementation.",
+  "owner_request": {
+    "text": "Also while we are at it, let's try to elaborate S2 more. Begin with elaborating details, covering gaps, defining design and architecture",
+    "sha256": "fb80784e4545e1deb3ad6a13db6549d209ff1a33f8057db1bcb132461a5590bf"
+  },
+  "owner_clarification": {
+    "text": "Owner clarification: Creative can break bedrock; Survival cannot fly.",
+    "sha256": "c293465af9e031cdaa831dd09ef6e88f69479fd8ee0bd85ac43600deb61af13e",
+    "creative_breaks_bedrock": true,
+    "survival_flight": false
+  },
+  "requirements_ledger_sha256": "2e1786e9e207298dbec7f2061fc1f85647cd7e2238ccc083fda2bd6bdddd994f",
+  "terrain_research": {
+    "chat_title": "Compare MinecraftClone world models",
+    "thread_id": "01a15a2e-9e64-7791-89da-5a3953c4e4f8",
+    "state_at_inspection": "Research active; no owner-accepted production replacement. S2 adoption requires the handoff and evidence in the world-state design. X/Y wrapping is preserved."
+  },
+  "source_lanes": {
+    "world": {
+      "repository": "MinecraftClone",
+      "checkout": "/Users/core-just/.codex/worktrees/s7-delivery-recovered",
+      "origin": "https://github.com/CoreJust/MinecraftClone.git",
+      "branch": "ai-dev",
+      "head_at_discovery": "46cb6132f54a435f9aae8381b189e847fbc22591",
+      "worktree_note": "Dirty and mutable during S1 work; hashes identify the sampled working-tree bytes.",
+      "request_sha256": "fb80784e4545e1deb3ad6a13db6549d209ff1a33f8057db1bcb132461a5590bf",
+      "sha256": {
+        "docs/ai/tasks/MC-AI-0483.md": "c9ef8d361582ccf3b321e1c76b273da1ba96f87449bd8f8fb0354023b21b86df",
+        "docs/ai/tasks/MC-AI-0484.md": "15109ef07166c18e1f3c81c055e6da035fa887884e743a037bbc8b0a938c7a31",
+        "src/shared/include/shared/world/World.hpp": "034227dbac585d99c0a9fe9c783746fc76818071a5ea64536d24740283002db8",
+        "src/shared/include/shared/world/SparseWorld.hpp": "e9c61a436bf5bb4406071f49b1ac7a027c80d2907aa3877b3354a1cf33b5aec1",
+        "src/shared/world/SparseWorld.cpp": "70f816ae7a4162ba5f4af005dbb5f09055e2cb1a44f7d75ed2df3d881d627b2c",
+        "src/shared/include/shared/world/Chunk.hpp": "dc6a2a36b1e7de48b9a1a72b96f075a4ef12b970fe9f279d82a4557a9725bb59",
+        "src/shared/world/Chunk.cpp": "5dd55ca4493b79ee4eb8558ad31c94c299519061dd622d6a0f63fa502b15411c",
+        "src/shared/include/shared/world/TerrainWorld.hpp": "57334fff6b13475f48acfa7c45ce8dd1564a9be346556f85aff17f08cace2151",
+        "src/shared/world/TerrainWorld.cpp": "9c409c8b6666bb877eff65b724922734f48e690bc4819f9d94b0e4ce05043073",
+        "src/shared/include/shared/world/WorldGenerationScheduler.hpp": "43e19c6276deef471d665afe6a89689dea10a2bc08319772ea190e92cb40be82",
+        "src/shared/include/shared/world/ChunkMesher.hpp": "5fb52b312a10552645e18b8751c830146c928774e76a67c423108df7de46e9d2",
+        "src/shared/world/ChunkMesher.cpp": "a2bed1f402866a67ef1c07158b1330d3e4dd9e802fbbaa731d17b8a55a498fc2",
+        "src/shared/include/shared/net/Message.hpp": "0560c23aeb50968491541eabdda48a572ff88ee9217941c281c001de6449bf83",
+        "src/shared/net/Message.cpp": "2287cddbe7f30732ebd51b4b2056df98d20c8874698ae78cc0bd26743d5ae3b4",
+        "src/server/include/server/GameServer.hpp": "1b15b84ebcec55e154445e1008195f28c8c0b09365a872539d1a7fdc704a88ef",
+        "src/server/GameServer.cpp": "66aa30d1447e5c982657b7ea2ffd649c1dc711c1aad80a9a0c3838bc8ac18315",
+        "src/client/GameClient.cpp": "fc34d8f9f4e18048655df3b584fc896a0ac577889e7830f76ab501c37e2a1906",
+        "src/shared/world/World.cpp": "1c876cc27a390dad45880c21176aa74a32981fc50377868f09f13d0fe93f3e44",
+        "tests/core/sparse_world_tests.cpp": "49ee199adf176aaa2a4daff1ed8fd3b928e844a0ea1325e9f074e94b534dc3e1",
+        "tests/client/terrain_lod_presentation_tests.cpp": "280ce06fbd490e0a49caac4ab4932e87289b424b4b6fd3e651c81744f179a9c4"
+      }
+    },
+    "interaction": {
+      "root": "/Users/core-just/.codex/worktrees/s7-delivery-recovered",
+      "branch": "ai-dev",
+      "head": "46cb6132f54a435f9aae8381b189e847fbc22591",
+      "note": "Hashes reflect the inspected working tree, including pre-existing S1 changes. No repository source files were written during this discovery.",
+      "sha256": {
+        "AGENTS.md": "4fdde5a8bf722fa6e4a7c63bd21dba5e51b82b9e324ab8aa91accea928f67d9e",
+        "docs/ROADMAP.md": "ad5d0548a153d428a536fe488b8bcda7448e09652856dbe1bddf493c0c9a7871",
+        "docs/ai/README.md": "b363d016309d18a9d69dbb8120bab8b80665230f3c8ac34a393906c1c9030ba8",
+        "docs/ai/INITIATION-CLOSURE-2026-10-19.md": "78b031548681db6340269d2288e65fbd248786ba2accaaeefce1f4f29573a4c4",
+        "docs/ai/tasks/MC-AI-0483.md": "c9ef8d361582ccf3b321e1c76b273da1ba96f87449bd8f8fb0354023b21b86df",
+        "docs/ai/tasks/MC-AI-0484.md": "15109ef07166c18e1f3c81c055e6da035fa887884e743a037bbc8b0a938c7a31",
+        "docs/code/README.md": "1a0e890f5f50388fe13d94ead2ac81918e9d4239fd4f4fc2f817e3439b7c0468",
+        "docs/code/POLICY.md": "7e38d027fa7499e8e607aebc3037288830c170ef1953e79b15da3bcdabc3badb",
+        "docs/code/GAMEPLAY.md": "49e1198cb6eda17d058993b5e644551d27f61bbdc653d97c123e1eaa0939870f",
+        "src/shared/include/shared/policy/Policy.hpp": "b1060e983ef5eb013e2f4517a79abe280ccb201bc9b4e462e6304e681b1eed08",
+        "src/shared/policy/CoreLangPolicy.cpp": "f57e97b392de53c9c200fffa2af10236fab94bc48b08929e0bab209d834bc161",
+        "src/shared/include/shared/world/World.hpp": "034227dbac585d99c0a9fe9c783746fc76818071a5ea64536d24740283002db8",
+        "src/shared/world/World.cpp": "1c876cc27a390dad45880c21176aa74a32981fc50377868f09f13d0fe93f3e44",
+        "src/shared/include/shared/world/SparseWorld.hpp": "e9c61a436bf5bb4406071f49b1ac7a027c80d2907aa3877b3354a1cf33b5aec1",
+        "src/shared/world/SparseWorld.cpp": "70f816ae7a4162ba5f4af005dbb5f09055e2cb1a44f7d75ed2df3d881d627b2c",
+        "src/shared/include/shared/world/Chunk.hpp": "dc6a2a36b1e7de48b9a1a72b96f075a4ef12b970fe9f279d82a4557a9725bb59",
+        "src/shared/world/Chunk.cpp": "5dd55ca4493b79ee4eb8558ad31c94c299519061dd622d6a0f63fa502b15411c",
+        "src/shared/include/shared/net/Message.hpp": "0560c23aeb50968491541eabdda48a572ff88ee9217941c281c001de6449bf83",
+        "src/server/GameServer.cpp": "66aa30d1447e5c982657b7ea2ffd649c1dc711c1aad80a9a0c3838bc8ac18315",
+        "src/client/include/client/GameClient.hpp": "e9da2d8c61cde8bce072a451ac7247c8029cf9e70ef0d9267ae4defb1e5b3f95",
+        "src/client/GameClient.cpp": "fc34d8f9f4e18048655df3b584fc896a0ac577889e7830f76ab501c37e2a1906",
+        "src/client/include/client/PlayerClientInputState.hpp": "dd1f8522c966e81971830f6d6c21855954c8417cfe847ab6e355684790a070f0",
+        "src/client/include/client/PlayerPresentation.hpp": "468093f789cfa7c76e10bb8a39964ae6404783fd264e1797f07335dcb4bdbb12",
+        "src/client/PlayerPresentation.cpp": "0a201a136efcbc4719414e9aa9ef5b4c3a80a5ca6eabade0513e2d85d389e983",
+        "src/client/include/client/PlayerClient.hpp": "6f07f2492b95f72704a2cf3fbbf5888210299e7c3eb5a5c260ee44c0506e6e04",
+        "src/client/PlayerClient.cpp": "5e465d5d80b403ce2a111861e6c367d1ede86a680f29639f7b5691ea73ad6173",
+        "src/android/AndroidInput.cpp": "60051232f0b40fedad1f1ab8396019955193d691d61ef948e0209038699142b8",
+        "src/android/AndroidInput.hpp": "effef9597f56587bff92f0e6acacf98750626bd38da1e71d4ea429feb2d05b39",
+        "src/android/AndroidInputState.cpp": "2dab235e505921b223e746582d90423c224b6638d40a164045393dcf6caeeecd",
+        "src/android/AndroidInputState.hpp": "101b594905b9b44b1743749cf43a6bcba68890c965a1e280f58af011eac29baa",
+        "src/android/AndroidPlayerClient.cpp": "640c45ceebfa0256cbb4ec34877c296ee87e4bf978d60a186507cc6b1546d1e8",
+        "tests/core/corelang_policy_tests.cpp": "91aa95e22a478fc582f0eb6b0feffd5db54ce81a16d88ebd875a7a26b49ba665",
+        "tests/core/flight_world_tests.cpp": "ed100e0a54e5a164cde99293f0a36e578e82cdddd098819fac2a5c19acfdf26f",
+        "tests/core/game_server_tests.cpp": "3da8a3a41b978829d0879157a0b4a3c810dc7ce34f35d36a6a725213528db977",
+        "tests/client/player_client_focus_tests.cpp": "4f16d3dce5cea42f67970067b7e9784500f1b986c945fd260b163bb5301eb050",
+        "tests/client/player_client_input_state_tests.cpp": "7e3b575c3cbf4233856ea6c7cd90c4a65d70b25ebe67c6b7f22935685bc04e4e",
+        "/Users/core-just/.codex/task-evidence/basicblocks-s2-design-20261022-01a162a1/request.txt": "fb80784e4545e1deb3ad6a13db6549d209ff1a33f8057db1bcb132461a5590bf"
+      }
+    },
+    "rendering": {
+      "captured_date": "2026-10-22",
+      "requested_receipt_sha256": "fb80784e4545e1deb3ad6a13db6549d209ff1a33f8057db1bcb132461a5590bf",
+      "minecraftclone": {
+        "root": "/Users/core-just/.codex/worktrees/s7-delivery-recovered",
+        "origin": "https://github.com/CoreJust/MinecraftClone.git",
+        "branch": "ai-dev",
+        "head": "46cb6132f54a435f9aae8381b189e847fbc22591",
+        "worktree_was_dirty": true,
+        "hashes_describe": "Current worktree contents at evidence capture, including pre-existing S1 edits."
+      },
+      "corecpp_caveat": {
+        "root": "/Users/core-just/CoreCpp",
+        "origin": "https://github.com/CoreJust/CoreCpp.git",
+        "head": "618f68ce9625238039e454313b5e790ddf1350b4",
+        "worktree_was_dirty": true,
+        "minecraftclone_lock_revision": "5c1bad11346cfad44470f5985f1944929952b9a6",
+        "source_hashes_are_not_evidence_for_locked_dependency": true
+      },
+      "sources": [
+        {
+          "path": "/Users/core-just/.codex/task-evidence/basicblocks-s2-design-20261022-01a162a1/discovery-manifest.json",
+          "sha256": "fbaaccebed11804760ece7ce2bb40fcde2c67607f1ad44d85fe262c604fabfd6"
+        },
+        {
+          "path": "/Users/core-just/.codex/task-evidence/basicblocks-s2-design-20261022-01a162a1/request.txt",
+          "sha256": "fb80784e4545e1deb3ad6a13db6549d209ff1a33f8057db1bcb132461a5590bf"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/AGENTS.md",
+          "sha256": "4fdde5a8bf722fa6e4a7c63bd21dba5e51b82b9e324ab8aa91accea928f67d9e"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/CMakeLists.txt",
+          "sha256": "317bb3826155f357af28ac04b254662fefb14dbe5282c7bed354743e77c8a596"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/cmake/CoreCppProvenance.cmake",
+          "sha256": "b59e324826f75fb2517fc3267728ac90b0edf175bf93ae5df263751dae147e76"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/dependencies.lock.json",
+          "sha256": "b45aa9a62eef3d1101db0e02ebf7e898618fb3cce49f321ff47e8037abccbee6"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/docs/ai/INITIATION-CLOSURE-2026-10-19.md",
+          "sha256": "78b031548681db6340269d2288e65fbd248786ba2accaaeefce1f4f29573a4c4"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/docs/ai/tasks/MC-AI-0483.md",
+          "sha256": "c9ef8d361582ccf3b321e1c76b273da1ba96f87449bd8f8fb0354023b21b86df"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/docs/ai/tasks/MC-AI-0484.md",
+          "sha256": "15109ef07166c18e1f3c81c055e6da035fa887884e743a037bbc8b0a938c7a31"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/docs/code/RENDERING.md",
+          "sha256": "dd9d6c9fba3f2f4536821678e5f76a9354726df0685331b58b89e555b811489a"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/CMakeLists.txt",
+          "sha256": "70e23ccb451bdbad60616255d3a603d9d3611e5297411d5b341afb4a940321af"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/PlayerClient.cpp",
+          "sha256": "5e465d5d80b403ce2a111861e6c367d1ede86a680f29639f7b5691ea73ad6173"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/PlayerPresentation.cpp",
+          "sha256": "0a201a136efcbc4719414e9aa9ef5b4c3a80a5ca6eabade0513e2d85d389e983"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/TerrainLodPresentation.cpp",
+          "sha256": "6e0a33a11df4f7d756c4c64d3f19517b8aac96e5a505fc90ec07c3c81dd9ab89"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/TerrainLodRuntime.cpp",
+          "sha256": "a5f1b12e84c1236e1f6a6936071432df7c4e7ead0f175485a694bdf8b2310a34"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/include/client/PlayerClient.hpp",
+          "sha256": "6f07f2492b95f72704a2cf3fbbf5888210299e7c3eb5a5c260ee44c0506e6e04"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/include/client/TerrainLodPresentation.hpp",
+          "sha256": "c22eb28131c9456b1210dbf170c78d056a64ebf226a05ea79e3a8c3c7ed09c43"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/include/client/render/DepthFormat.hpp",
+          "sha256": "0893f7d8da06f764d8849f5fd371f1549ea5d16a9a76d20bb698952761460d5f"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/include/client/render/TextRenderer.hpp",
+          "sha256": "96a172f9e99b6a77d4b826245aeb93f89d949c9492776b82fb739b56d22e4726"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/include/client/render/VulkanRenderer.hpp",
+          "sha256": "8ae139f26cae48741402b18859bdf5033fef8200d9cd5a4778b36a08d25cf705"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/render/PresentationRenderer.cpp",
+          "sha256": "fb284ed1efdb8daff46fc0914ddccad2a8e9d2c731920a3683c5b80d67c94e11"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/render/TextRenderer.cpp",
+          "sha256": "4dfc018bd5b44d1da157982691f0a6720b208a81859f616a339a92833c4f7cb8"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/render/shaders/stone.frag",
+          "sha256": "28f56ec72068f2d5209b2d6aed0873a7e52b5de6d5875f27f5f98a19138bbfb0"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/render/shaders/stone_geometry.glsl",
+          "sha256": "79c38242933fb8719c2cce1236c51caa641eb02a2d9587da83f7fc9cffaf4103"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/render/shaders/terrain_texture_sampling.glsl",
+          "sha256": "a484d46c6cfcb67c3581b4affed740d0b25e0234877284c1953a1fb678273e91"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/render/shaders/text.frag",
+          "sha256": "67d82a03c7d2d1d4ac992b26999b144f3ad53d7efa481b63772d9e4bcf16427a"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/render/shaders/text.vert",
+          "sha256": "9c7b934b34f52da45816e28b079bf814a21649119e0a57741f12366515d39f5a"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/src/client/render/shaders/world_curvature.glsl",
+          "sha256": "eb6f8f7b644c7fdf198424b6628761bd3e5bf6186576d9e64b40af526998f7e2"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/tests/client/renderer_golden_tests.cpp",
+          "sha256": "daa9e8de2335e3f32f156a718577797fcb46db7c2158e6229cee9b37b419cca5"
+        },
+        {
+          "path": "/Users/core-just/.codex/worktrees/s7-delivery-recovered/tests/client/renderer_smoke_tests.cpp",
+          "sha256": "a2f2c61a79ba8e2351486956fa521c4daa78b4793e06e5445b89571151c7447f"
+        },
+        {
+          "path": "/Users/core-just/CoreCpp/src/runtime/graphics/vulkan/include/core/graphics/vulkan/Vulkan.hpp",
+          "sha256": "a8626922e90b4d3f6cf0df33bc0ef085d5b6fdc8249df8141972cf2e3c302675"
+        },
+        {
+          "path": "/Users/core-just/CoreCpp/src/runtime/graphics/vulkan/src/Vulkan.cpp",
+          "sha256": "35d6bf59d936fc85d17448edbea41b8099ceeb8a4538f15c79b30c173389442e"
+        }
+      ],
+      "deliverables": {
+        "renderer_note": {
+          "path": "/Users/core-just/.codex/task-evidence/basicblocks-s2-design-20261022-01a162a1/rendering/renderer-s2-findings.md",
+          "sha256": "c35f882e2c7806d54750b6975a0f3333699849b7cca1670484b4438dbaef9a8a",
+          "word_count": 1755
+        }
+      }
+    },
+    "maps": {
+      "task": "MC-AI-0514 S2 planning; owner requires minimap and world map, with local L1/L2 projection and cardinal orientation",
+      "owner_steering": "Four-screen UI prototype and game HUD fields (loaded chunks, memory, local climate) are owned by the main UI note; this lane covers map design only.",
+      "repository": {
+        "root": "/Users/core-just/.codex/worktrees/s7-delivery-recovered",
+        "origin": "https://github.com/CoreJust/MinecraftClone.git",
+        "branch": "ai-dev",
+        "head": "46cb6132f54a435f9aae8381b189e847fbc22591",
+        "worktree_dirty": true
+      },
+      "hash_scope": "SHA-256 values cover current worktree bytes at capture. Relevant S1/S2 sources are uncommitted; hashes do not claim the bytes equal HEAD.",
+      "authored_artifact": {
+        "path": "docs/ai/decisions/earlydev_0_1_1_s2_maps.md",
+        "sha256": "f2a28800819f562ba01149e8bf74fab788e40cc28486d2c3e6afc2e6c4ada6e8",
+        "word_count_including_headings_and_links": 795,
+        "word_limit": 900
+      },
+      "planned_cross_reference": {
+        "path": "docs/ai/decisions/earlydev_0_1_1_s2_ui.md",
+        "present_at_capture": false
+      },
+      "sources": [
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s2.md",
+          "sha256": "c48020db1b71364e71bb3f98be787a004dd9f98aefd709c32a70ba26a27c463b"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s2_rendering.md",
+          "sha256": "b1bf07b9d5e9de1a6c47429d4ce450408fd3ee6f30010ee1910fe383f99b8ac6"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s2_world.md",
+          "sha256": "4f48f6e1171d1aafecc3948c7f6afa07678f4d9f3336c2ecfec2f6c95943f733"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s2_replication.md",
+          "sha256": "d07de61b1c3a9985dd9ea22b43b3be110671318c648f748be8bc3ce7bb334d31"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s2_interaction.md",
+          "sha256": "43f71a5dafed0d475173acb3e513d42d33f3ba7dd6dcdd33f4678b6cf548e47d"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s1_loading.md",
+          "sha256": "444bbc3d66ff80346d165e0e09e5440fc52ee165ad1641734bdd6ac25e1b80fb"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s1_lod_scaffold.md",
+          "sha256": "4e1a5290ebc13f77b7f2b7e244a391848a469e2fa7c0f6caaefd8017402d85f7"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s1_generation.md",
+          "sha256": "9487456674660d049d1a0d9fd59139db9bbd1610367de003515d8d8750b837d2"
+        },
+        {
+          "path": "docs/ai/WORLD_MAP.md",
+          "sha256": "ee9bfa2dce01b62d659af8c5bfc806819a59e06d4d33e749ba797dcbdc148d86"
+        },
+        {
+          "path": "docs/code/RENDERING.md",
+          "sha256": "dd9d6c9fba3f2f4536821678e5f76a9354726df0685331b58b89e555b811489a"
+        },
+        {
+          "path": "src/client/include/client/ColumnMapPresentation.hpp",
+          "sha256": "8b6e814ae38f9bdc511cbc7368030027362892e3a7774266235915b4f77b7a3d"
+        },
+        {
+          "path": "src/client/ColumnMapPresentation.cpp",
+          "sha256": "18f4c5085c4fcb682c4ee94bc5f37cea65e3b69e3300f06f483710885383c501"
+        },
+        {
+          "path": "src/client/include/client/ColumnMapClient.hpp",
+          "sha256": "0b1d9f98691aaba2ac19a252ec49e47d80c3ecd076bc466254d56496ca722f06"
+        },
+        {
+          "path": "src/client/ColumnMapClient.cpp",
+          "sha256": "bfcdd5059df52609832d02967b3e7f8fd04b9bf810f294719aef99fea0890729"
+        },
+        {
+          "path": "src/client/include/client/GenerationMapPresentation.hpp",
+          "sha256": "84ac8cce33e2cdb7ecf1c1c7f9c07595201080ac906ab374cfc158a26656f35c"
+        },
+        {
+          "path": "src/client/GenerationMapPresentation.cpp",
+          "sha256": "a0e870de24b37ca50f073d713c11f87d5c70c1507f28c4359e177fdf9524b393"
+        },
+        {
+          "path": "src/client/include/client/render/MapImageData.hpp",
+          "sha256": "720dac2d6882ebd8e4f1b485d87f7d372f5304d0462b576301d10f3ff2416e05"
+        },
+        {
+          "path": "src/client/PlayerClient.cpp",
+          "sha256": "5e465d5d80b403ce2a111861e6c367d1ede86a680f29639f7b5691ea73ad6173"
+        },
+        {
+          "path": "src/client/render/PresentationRenderer.cpp",
+          "sha256": "fb284ed1efdb8daff46fc0914ddccad2a8e9d2c731920a3683c5b80d67c94e11"
+        },
+        {
+          "path": "src/client/render/shaders/map.frag",
+          "sha256": "1972e758deb69e55df771d12337e674e9f37889552ee8ed58a44206a68d3e7b0"
+        },
+        {
+          "path": "src/client/render/shaders/map.vert",
+          "sha256": "6a4bf656fb766debcdc39d125ad0e41323b90f9fdd3db52b131829147e39c802"
+        },
+        {
+          "path": "src/generation/include/generation/Generation.hpp",
+          "sha256": "404997f6940708b7f212ffd2e38b81b546a73c35a8d374d084bc3e6801bbfd59"
+        },
+        {
+          "path": "src/shared/include/shared/world/SparseWorld.hpp",
+          "sha256": "e9c61a436bf5bb4406071f49b1ac7a027c80d2907aa3877b3354a1cf33b5aec1"
+        },
+        {
+          "path": "src/shared/world/SparseWorld.cpp",
+          "sha256": "70f816ae7a4162ba5f4af005dbb5f09055e2cb1a44f7d75ed2df3d881d627b2c"
+        },
+        {
+          "path": "src/shared/include/shared/world/TerrainLod.hpp",
+          "sha256": "090f4620df0d5186bf28015044ef9c28c85cd2ba3da30736240d978ea313ef79"
+        },
+        {
+          "path": "src/shared/world/TerrainLod.cpp",
+          "sha256": "824e200f3e857a817094e987f9fbd0df857674e3acb71ff0ccb8bccfd3ca3355"
+        },
+        {
+          "path": "src/client/TerrainLodPresentation.cpp",
+          "sha256": "6e0a33a11df4f7d756c4c64d3f19517b8aac96e5a505fc90ec07c3c81dd9ab89"
+        },
+        {
+          "path": "src/android/AndroidPlayerClient.cpp",
+          "sha256": "640c45ceebfa0256cbb4ec34877c296ee87e4bf978d60a186507cc6b1546d1e8"
+        },
+        {
+          "path": "src/android/AndroidPlayerClient.hpp",
+          "sha256": "f5c98f886d531b9febe6710d9136c02022c053f67c77e637a78cdc3f4c2d268a"
+        },
+        {
+          "path": "/Users/core-just/.codex/task-evidence/basicblocks-s2-design-20261022-01a162a1/requirements.md",
+          "sha256": "820559df22c9dbb7d234b94e2dd0d28fb79acc47a8f91812698d9a7e3b3fd427"
+        },
+        {
+          "path": "/Users/core-just/.codex/task-evidence/basicblocks-s2-design-20261022-01a162a1/design-decisions.json",
+          "sha256": "a6690150e2d91ced92bd272de74ac0e7d6944f4244ccd72092ef07d1673fcf80"
+        }
+      ]
+    },
+    "ui": {
+      "schema_version": 1,
+      "captured_at_utc": "2026-10-22T12:15:33+00:00",
+      "repository": "/Users/core-just/.codex/worktrees/s7-delivery-recovered",
+      "origin": "https://github.com/CoreJust/MinecraftClone.git",
+      "branch": "ai-dev",
+      "head": "46cb6132f54a435f9aae8381b189e847fbc22591",
+      "working_tree_note": "Hashes describe current worktree bytes at capture, including concurrent uncommitted S1/S2 changes; they are not a claim about HEAD source state.",
+      "files": [
+        {
+          "path": "AGENTS.md",
+          "sha256": "4fdde5a8bf722fa6e4a7c63bd21dba5e51b82b9e324ab8aa91accea928f67d9e",
+          "git_status": "clean at capture"
+        },
+        {
+          "path": "docs/ai/README.md",
+          "sha256": "b363d016309d18a9d69dbb8120bab8b80665230f3c8ac34a393906c1c9030ba8",
+          "git_status": "clean at capture"
+        },
+        {
+          "path": "docs/ai/INITIATION-CLOSURE-2026-10-19.md",
+          "sha256": "78b031548681db6340269d2288e65fbd248786ba2accaaeefce1f4f29573a4c4",
+          "git_status": "clean at capture"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s2.md",
+          "sha256": "c48020db1b71364e71bb3f98be787a004dd9f98aefd709c32a70ba26a27c463b",
+          "git_status": "?? docs/ai/decisions/earlydev_0_1_1_s2.md"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s2_rendering.md",
+          "sha256": "b1bf07b9d5e9de1a6c47429d4ce450408fd3ee6f30010ee1910fe383f99b8ac6",
+          "git_status": "?? docs/ai/decisions/earlydev_0_1_1_s2_rendering.md"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s2_interaction.md",
+          "sha256": "43f71a5dafed0d475173acb3e513d42d33f3ba7dd6dcdd33f4678b6cf548e47d",
+          "git_status": "?? docs/ai/decisions/earlydev_0_1_1_s2_interaction.md"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s2_maps.md",
+          "sha256": "f2a28800819f562ba01149e8bf74fab788e40cc28486d2c3e6afc2e6c4ada6e8",
+          "git_status": "?? docs/ai/decisions/earlydev_0_1_1_s2_maps.md"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s1_loading.md",
+          "sha256": "444bbc3d66ff80346d165e0e09e5440fc52ee165ad1641734bdd6ac25e1b80fb",
+          "git_status": "clean at capture"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s1_performance.md",
+          "sha256": "f50ffbfc2be095c3eccaa1b0b169e9f9547ff201f8c9f55bd05740916d319729",
+          "git_status": "clean at capture"
+        },
+        {
+          "path": "docs/ai/decisions/earlydev_0_1_1_s1_climate.md",
+          "sha256": "f1d030915a0f0d8256352f669dff479e04864b53efbd5d65dbdb09bde3ced1f2",
+          "git_status": "M docs/ai/decisions/earlydev_0_1_1_s1_climate.md"
+        },
+        {
+          "path": "src/main.cpp",
+          "sha256": "4d613b46f5c498652ecf6701c9005a774eb5fc8753581800f91445c9b6ca0d23",
+          "git_status": "M src/main.cpp"
+        },
+        {
+          "path": "src/client/include/client/WorldLoading.hpp",
+          "sha256": "8c229e61bcc6150ece83d34c5eee5aaa1b8f2b784edf2abf46fd9a7571e5b41e",
+          "git_status": "?? src/client/include/client/WorldLoading.hpp"
+        },
+        {
+          "path": "src/client/WorldLoading.cpp",
+          "sha256": "4946753a2735e393da66bd4e5a9fb52f685c567cc8fa08d5faf715ab44bc1965",
+          "git_status": "?? src/client/WorldLoading.cpp"
+        },
+        {
+          "path": "src/client/include/client/PlayerClient.hpp",
+          "sha256": "6f07f2492b95f72704a2cf3fbbf5888210299e7c3eb5a5c260ee44c0506e6e04",
+          "git_status": "M src/client/include/client/PlayerClient.hpp"
+        },
+        {
+          "path": "src/client/PlayerClient.cpp",
+          "sha256": "5e465d5d80b403ce2a111861e6c367d1ede86a680f29639f7b5691ea73ad6173",
+          "git_status": "M src/client/PlayerClient.cpp"
+        },
+        {
+          "path": "src/client/include/client/GameClient.hpp",
+          "sha256": "e9da2d8c61cde8bce072a451ac7247c8029cf9e70ef0d9267ae4defb1e5b3f95",
+          "git_status": "M src/client/include/client/GameClient.hpp"
+        },
+        {
+          "path": "src/client/GameClient.cpp",
+          "sha256": "fc34d8f9f4e18048655df3b584fc896a0ac577889e7830f76ab501c37e2a1906",
+          "git_status": "M src/client/GameClient.cpp"
+        },
+        {
+          "path": "src/client/include/client/GenerationMapPresentation.hpp",
+          "sha256": "84ac8cce33e2cdb7ecf1c1c7f9c07595201080ac906ab374cfc158a26656f35c",
+          "git_status": "?? src/client/include/client/GenerationMapPresentation.hpp"
+        },
+        {
+          "path": "src/client/GenerationMapPresentation.cpp",
+          "sha256": "a0e870de24b37ca50f073d713c11f87d5c70c1507f28c4359e177fdf9524b393",
+          "git_status": "?? src/client/GenerationMapPresentation.cpp"
+        },
+        {
+          "path": "src/client/include/client/ColumnMapPresentation.hpp",
+          "sha256": "8b6e814ae38f9bdc511cbc7368030027362892e3a7774266235915b4f77b7a3d",
+          "git_status": "?? src/client/include/client/ColumnMapPresentation.hpp"
+        },
+        {
+          "path": "src/client/ColumnMapPresentation.cpp",
+          "sha256": "18f4c5085c4fcb682c4ee94bc5f37cea65e3b69e3300f06f483710885383c501",
+          "git_status": "?? src/client/ColumnMapPresentation.cpp"
+        },
+        {
+          "path": "src/shared/include/shared/world/TerrainWorld.hpp",
+          "sha256": "57334fff6b13475f48acfa7c45ce8dd1564a9be346556f85aff17f08cace2151",
+          "git_status": "M src/shared/include/shared/world/TerrainWorld.hpp"
+        },
+        {
+          "path": "src/shared/world/TerrainWorld.cpp",
+          "sha256": "9c409c8b6666bb877eff65b724922734f48e690bc4819f9d94b0e4ce05043073",
+          "git_status": "M src/shared/world/TerrainWorld.cpp"
+        },
+        {
+          "path": "src/shared/include/shared/world/SparseWorld.hpp",
+          "sha256": "e9c61a436bf5bb4406071f49b1ac7a027c80d2907aa3877b3354a1cf33b5aec1",
+          "git_status": "M src/shared/include/shared/world/SparseWorld.hpp"
+        },
+        {
+          "path": "src/shared/world/SparseWorld.cpp",
+          "sha256": "70f816ae7a4162ba5f4af005dbb5f09055e2cb1a44f7d75ed2df3d881d627b2c",
+          "git_status": "M src/shared/world/SparseWorld.cpp"
+        },
+        {
+          "path": "src/generation/include/generation/Generation.hpp",
+          "sha256": "404997f6940708b7f212ffd2e38b81b546a73c35a8d374d084bc3e6801bbfd59",
+          "git_status": "M src/generation/include/generation/Generation.hpp"
+        },
+        {
+          "path": "src/generation/GenerationStages.hpp",
+          "sha256": "a0c7ebad0824cc820ac3c5a09d0a9838043d4e6c2911ef9719be8069659f02b5",
+          "git_status": "clean at capture"
+        },
+        {
+          "path": "src/client/include/client/PreviewResidency.hpp",
+          "sha256": "31ffd59f76947fcda569aad2a85dfc84679f90cb3b4c5984ecaafa6a1295708d",
+          "git_status": "M src/client/include/client/PreviewResidency.hpp"
+        },
+        {
+          "path": "src/client/PreviewResidency.cpp",
+          "sha256": "6c75726c43d2d614b93d4d42c5ebc2e8050811553e29f6f5337d6cc261911532",
+          "git_status": "M src/client/PreviewResidency.cpp"
+        },
+        {
+          "path": "src/client/include/client/render/VulkanRenderer.hpp",
+          "sha256": "8ae139f26cae48741402b18859bdf5033fef8200d9cd5a4778b36a08d25cf705",
+          "git_status": "M src/client/include/client/render/VulkanRenderer.hpp"
+        },
+        {
+          "path": "src/client/render/PresentationRenderer.cpp",
+          "sha256": "fb284ed1efdb8daff46fc0914ddccad2a8e9d2c731920a3683c5b80d67c94e11",
+          "git_status": "M src/client/render/PresentationRenderer.cpp"
+        },
+        {
+          "path": "src/android/AndroidPlayerClient.hpp",
+          "sha256": "f5c98f886d531b9febe6710d9136c02022c053f67c77e637a78cdc3f4c2d268a",
+          "git_status": "M src/android/AndroidPlayerClient.hpp"
+        },
+        {
+          "path": "src/android/AndroidPlayerClient.cpp",
+          "sha256": "640c45ceebfa0256cbb4ec34877c296ee87e4bf978d60a186507cc6b1546d1e8",
+          "git_status": "M src/android/AndroidPlayerClient.cpp"
+        },
+        {
+          "path": "src/android/AndroidInput.hpp",
+          "sha256": "effef9597f56587bff92f0e6acacf98750626bd38da1e71d4ea429feb2d05b39",
+          "git_status": "clean at capture"
+        },
+        {
+          "path": "src/android/AndroidInput.cpp",
+          "sha256": "60051232f0b40fedad1f1ab8396019955193d691d61ef948e0209038699142b8",
+          "git_status": "clean at capture"
+        }
+      ],
+      "verification": {
+        "checked_at_utc": "2026-10-22T12:17:00+00:00",
+        "changed_since_capture": [],
+        "meaning": "An empty list means the inspected source files matched their capture hashes at this check; concurrent work may still change the dirty worktree later."
+      }
+    }
+  },
+  "owner_map_request": {
+    "text": "Ah, BTW add minimap/world map to S2",
+    "sha256": "cc35b8fb3086542077355096c9852e7c98ff764afe44b689d6849f4d19031ebd"
+  },
+  "owner_ui_request": {
+    "text": "And let's improve UI. Design a UI prototype (4 main screens - world loading before connecting to the server, world generation, game screen, world map). Try to improve visual quality, UX, enjoyment.\n\nFor the game, add to HUD:\n\n1. Loaded chunks\n2. Memory usage\n3. Current climate in local place (temperature, humidity, salinity if any, etc)\n\nMinimap will display some local area (e.g. at L1/L2) + orientation (N/E/S/W)",
+    "sha256": "1ee781e9edaafb4f479014e1ac5aae7b4eed9db52d9b9dc1e4f88043f3df46c7"
+  },
+  "owner_ui_capability_correction": {
+    "text": "This UI look not like something achievable in the current snapshot... Like, we now only have text rendering. Plus we can render some background for the loading screen, we can render the map. But not much more. We don't have, e.g., buttons.",
+    "sha256": "a4abd0ab22cfa836c86fb3a7ead4121939f71dae419148ab76f23352602efcf7"
+  },
+  "owner_ui_refinement": {
+    "text": "Not bad. But several moments:\n\n1. World loading initial screen probably needs some simple rendering of the game as it's background\n2. During world generation, the process of world creation must probably be depicted in more detail and be more visually attractive (even if it actually differs somewhat from it's actually generated)\n3. Do not diplay things like salinity where it's not applicable\n4. Redesign the in-game block so it distracts the player less and is also more visually appealing",
+    "sha256": "c0e489e66e211b1fb7def52fadc359ede570daff7590144e4328ac6641debf33"
+  },
+  "owner_loading_background": {
+    "text": "Maybe for the background you can use a pre-rendered screen from the game (without HUD)",
+    "sha256": "5c21cbd5e83940261122cc73eb28a16cbe39d604f08784e040258782e39f934a"
+  },
+  "prototype_assets": "../prototypes/s2-ui/assets/provenance.json",
+  "rejected_concepts": "The initial image-generated illustrated concepts exceeded the owner-retained UI primitives and are excluded from this design.",
+  "owner_ui_preservation_feedback": {
+    "text": "1. Screen very poor. Not even the globe is visible. Use at least one from the ongoing S1 dev. Or well, leave it as is in the prototype - when we'll begin S2 implementation, naturally we'll have some screens from S1 already\n2. World generation stiil bad. It lacks dynamics, it lacks visual attraction\n3. Minimap looks a bit dull and as if it's color palette differs from that of the other game too much. N/E/S/W also look too inconspicuous.\n4. Now the in-game hood lacks details. Where are FPS, XYZ, etc? I asked to add new information, not to remove the existing one",
+    "sha256": "d9911c273f50cd258612f3d6e1b2feb14d0fe04bd1b9b070e86dc8960d65e68c"
+  },
+  "owner_ui_principles": {
+    "text": "Like, the UI must be: 1. authentic and using what we can use now, 2. visually captivating, 3. useful/informative/convenient, 4. easy to understand and use\nYou can change some pieces of design or come up with new ideas yourself",
+    "sha256": "728c86af0e3ea9da04743c2cf80f4d151291793b10bcb9d4122eaf19c597b9ae"
+  },
+  "additional_hud_sources": {
+    "src/client/render/DebugHud.cpp": "81cee870ca0d8d26f8393ba6044134ec017c84bffad79adbe01019d28ee2b756",
+    "src/client/include/client/render/DebugHud.hpp": "a2c20165783d0c8db43357b389c9c4b84118658e44382e4f9f35e4e26353e918",
+    "src/client/PlayerClient.cpp": "72ee8a29c5504a5504afffa85bc71d2a2afb64773d500ab39d1c8ec042d4f452",
+    "src/client/ColumnMapClient.cpp": "bfcdd5059df52609832d02967b3e7f8fd04b9bf810f294719aef99fea0890729",
+    "src/client/render/shaders/terrain_texture_sampling.glsl": "a484d46c6cfcb67c3581b4affed740d0b25e0234877284c1953a1fb678273e91"
+  },
+  "owner_ui_readability_layers_feedback": {
+    "text": "World generation still terrible. Looks like cheap effects from PPTX made by 2nd-grade schooler...\nIn-game info difficult to read. Fucking blob of same-looking text.\nWhat's Grass [B]?!\nWorld map looks so-so. Probably it needs modes. To see plates, heights, temperature, biomes, wind, currents, etc. Each enabled/disabled with separate toggles (on specific keys).",
+    "sha256": "2ac9b08e24be05f8e6d17c9df5184b7308b2d5ff3b9d5430e0d3683134c3b0a5"
+  },
+  "owner_sol_max_fanout": {
+    "text": "Fan out Sol/Max subagents for each issue and also for other parts in an attempt to improve the visuals and look for UI/UX issues",
+    "sha256": "38a2c2d7c1f3ce76b22216289c52a3efd5524d79a0d5834c70107cd0c21bf061"
+  },
+  "ui_refinement": {
+    "task_id": "MC-AI-0517",
+    "requirements_ledger_sha256": "7531815332a01f42a3c4e2fb0157fd319c73aaf4ce7a484a96cd90f8a512369f",
+    "native_atlas_provenance": "../prototypes/s2-ui/assets/world-data-provenance.json",
+    "note": "One native same-run map fixture; all UI/runtime/vertical-position examples remain explicitly disclosed; no native game implementation or qualification."
+  },
+  "owner_ui_coherence_feedback": {
+    "text": "Somewhat better. But:\n\n1. The world generation is just too different from the actual map...\n2. The in-game HUD is still unreadable mess. The looks are better, but readability suffered. It is extremently weird. Like, why x and y are small but Z is laarge? The sudden jumps in size look terruble\n3. In world map, the map itself is too small. Otherwise not bad at all",
+    "sha256": "f89da63d16f9fc393530c5c26dc38fe638e247dd053be3722f53fba9c8c19f1a"
+  },
+  "ui_coherence": {
+    "task_id": "MC-AI-0518",
+    "requirements_ledger_sha256": "3e27f7806d8244874df55157e645b10d4cba237e75a012b849894d7e091da0c0",
+    "note": "Generation shares the world-map raster; coordinate text uses one consistent scale; map framing and legends become compact. Native source fixture unchanged."
+  },
+  "owner_ui_dynamics_feedback": {
+    "text": "1. As for world generation, it probably might begin with something like: Tectonics (with plates moving, continents drafing, colliding and splitting, islands appearing and submerging, mountains growing, etc). And then several more similar dynamic stages (e.g. slow advance of glaciers and sea ice, etc). Ending up with the normal world map. Although in general the current screen is acceptable - not excellent, but not all that bad already\n2. In-game: Maybe only remove the \"VIEW\" part... And add some more colors. Otherwise not bad already.\n3. Map still too small. Moisture and precipitation displays are somewhat bad. Temperature probably needs more of a translucent heatmap as well as the previous 2.\n\nOtherwise this one is more or less solid",
+    "sha256": "6dd2ef447497b40cb31caba36a23e49e5cfb531a9af4aea7ab3e99ec9afd0cae",
+    "supersedes": "View readout requirement and assistant square/sidebar/no-intermediate-deformation defaults"
+  },
+  "ui_dynamics": {
+    "task_id": "MC-AI-0519",
+    "requirements_ledger_sha256": "8ca8c28df5910597ddc6e1c6fec90109f54f3e3516888ac4f10033af3e5754d6",
+    "note": "Small rigid-plate motion and field-driven wind/current/rain; ice grows toward the same retained normal-map mask. Full-viewport translucent climate fields and colored uniform HUD. Native fixture unchanged.",
+    "ice_proxy": {
+      "native_ice_producer": false,
+      "land": "Nonwater native climateZone5 Snow",
+      "water": "Ocean or lake with temperature <= -10 C",
+      "meaning": "Conservative visual proxy, not physical freezing law",
+      "land_cells": 4303,
+      "water_cells": 2834,
+      "normal_raster_rgba_sha256": "90fd2d450b146e429758d797d8bd550a6533ed5b69349c9f8bc9cc1fe8cdd408"
+    }
+  },
+  "owner_ui_ice_feedback": {
+    "text": "The plates moving part looks so-so. The arrival of ice also looks bad - why sea ice first covers half the world then disappears completely?",
+    "sha256": "05f065f3df13ebfcdf5eb99677715f492bc79225431ac0383d557a9a0a0eb738",
+    "supersedes": "Assistant freeze/thaw cycle and unchanged-default-raster constraint; native fields remain unchanged"
+  },
+  "owner_ui_weather_feedback": {
+    "text": "Also maybe some animations related to winds/currents/precipitations/etc might improve the visuals",
+    "sha256": "c2ebab57fe58319b1cdcc03502e5734b1cd47b772d590a8cb38b0342060ecd30"
+  },
+  "owner_ui_acceptance": {
+    "date": "2026-10-22",
+    "text": "Accepted. Finalize it into S2 description, elaborate technical design and architecture, etc",
+    "sha256": "ec846e9f42e8db0fd5a574c6a38e7342b4329b28c789e44ddaa142db2c45b987",
+    "accepted_prototype_commit": "232eae681ddd9f38e6187a109168d70ce0b64ed5",
+    "scope": "Four-screen visual and interaction baseline; no native implementation, real telemetry, terrain-model choice or snapshot qualification",
+    "task_id": "MC-AI-0520",
+    "requirements_ledger_sha256": "73737951dadc1d27db15c74c2387dc9f1cf8b2b5f80b8eef50bdf3794f134497",
+    "prototype_files_sha256": {
+      "docs/ai/prototypes/s2-ui/app.js": "b356975f3b12198295631a080ae14a80aeca1ed141886e241b424aa4ffd85065",
+      "docs/ai/prototypes/s2-ui/assets/TAMSYN_LICENSE.txt": "a78104a9d1021e24f5766ff9c40ebdfc679c2d9fb1cb524c49330fbc49fd0a26",
+      "docs/ai/prototypes/s2-ui/assets/font.js": "702f06b6498ec7c198ae971d25742a35f0a146a6defdacb15a8dd3c7ab15881d",
+      "docs/ai/prototypes/s2-ui/assets/provenance.json": "4bdcfcdebf2484f7213902a8ff102f46b2cf2e7ad8cda383860e9678229a873b",
+      "docs/ai/prototypes/s2-ui/assets/terrain.png": "d8d97e3480a8b193d953057bf4b1b1bb266c33289327ef5c9d54f465994232fc",
+      "docs/ai/prototypes/s2-ui/assets/world-data-provenance.json": "d4df4cbc43e138a4e57defd55a36c8316018b86c50bb7afd6c482ba50d69086e",
+      "docs/ai/prototypes/s2-ui/assets/world-data.js": "a2126eb42a2990ef430aedc396a99fcba5dc6e4dd7157b6c2f1c7d86a172f908",
+      "docs/ai/prototypes/s2-ui/game-hud.js": "bd95e6ea130e3f05a0f242e98827a203814c9b7dfa3ec21db1ff9bec1f4601c4",
+      "docs/ai/prototypes/s2-ui/generation-view.js": "8be68ff5a86736fabe0e743049429fbc58bfeb8eb98be67a0a3a336481959f85",
+      "docs/ai/prototypes/s2-ui/index.html": "229d3b1c22c4e39dd4a54a20726651628277bcf903542e6e0142914ee5f0b6ff",
+      "docs/ai/prototypes/s2-ui/loading-view.js": "9cc8f9738ee0d765070ff79946f264f0f78fe3ee438c8e4358c1a47385ac5ef3",
+      "docs/ai/prototypes/s2-ui/minimap-view.js": "ca0bb6f115816a27af117eff40442d26760a67d0f5e93925bdd15cf832a72eb6",
+      "docs/ai/prototypes/s2-ui/screens/game.png": "774be7465f9995d8850cdfd38c49f0f53b3d15f7494f829ca46c4d3362c9754e",
+      "docs/ai/prototypes/s2-ui/screens/generation.png": "515607f22e00e5543dec48d6f39715bf63ae14cc8c6e981d427a41977cb83cfb",
+      "docs/ai/prototypes/s2-ui/screens/loading.png": "bda3172a2bf025e61c889f7ead55450efa1f4c00f957ee080f2631d8977424c6",
+      "docs/ai/prototypes/s2-ui/screens/world-map.png": "0fcee10fb92f2d5119226dc6f3419d263939df94f174601f301a022d7e642af5",
+      "docs/ai/prototypes/s2-ui/styles.css": "29d4702f65a4d68f8fc5f6e4a0db323404b9208cffc9fcce105dd81d10e500d4",
+      "docs/ai/prototypes/s2-ui/world-map-view.js": "58154e200fda5ab82dc4dadcb212bd34d272dcaca3e57fcc78e81f9a8befb12f"
+    },
+    "native_source_observations": {
+      "head_at_inspection": "232eae681ddd9f38e6187a109168d70ce0b64ed5",
+      "meaning": "Hashes identify mutable S1 working bytes, not accepted APIs or HEAD contents. Reconcile final S1 before implementation.",
+      "files": {
+        "src/client/include/client/WorldLoading.hpp": "8c229e61bcc6150ece83d34c5eee5aaa1b8f2b784edf2abf46fd9a7571e5b41e",
+        "src/client/WorldLoading.cpp": "4946753a2735e393da66bd4e5a9fb52f685c567cc8fa08d5faf715ab44bc1965",
+        "src/client/include/client/GenerationMapPresentation.hpp": "84ac8cce33e2cdb7ecf1c1c7f9c07595201080ac906ab374cfc158a26656f35c",
+        "src/client/GenerationMapPresentation.cpp": "a0e870de24b37ca50f073d713c11f87d5c70c1507f28c4359e177fdf9524b393",
+        "src/client/GameClient.cpp": "58eb018bc4f72b0b17cd728b99ecd1e4b7413738bfba218a78b368d71a7fd071",
+        "src/client/PlayerClient.cpp": "e8b636ff9f92310174d407d32ffe44efee4fd2051447f26802c788f220176ff2",
+        "src/generation/include/generation/Generation.hpp": "404997f6940708b7f212ffd2e38b81b546a73c35a8d374d084bc3e6801bbfd59",
+        "src/client/include/client/render/VulkanRenderer.hpp": "7186ab0d146dd9642b81a7b0895fd270e8fc861ddb8f0fd09e7d136240b0e5d3"
+      }
+    }
+  }
+}

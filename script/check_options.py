@@ -1,4 +1,4 @@
-SRC_SUBFOLDERS = ('client/', 'server/', 'shared/', 'core/')
+SRC_SUBFOLDERS = ('client/', 'server/', 'shared/', 'generation/', 'core/')
 CODE_EXTS = { '.hpp', '.cpp' }
 SHADER_EXTS = { '.mesh', '.task', '.vert', '.frag', '.comp' }
 

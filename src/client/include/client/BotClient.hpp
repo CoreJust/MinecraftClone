@@ -13,7 +13,7 @@ public:
     { }
 private:
     shared::Direction input() override;
-    void render() override { }
+    void render() override;
 private:
     shared::Direction m_direction{ 0, 0 };
 };

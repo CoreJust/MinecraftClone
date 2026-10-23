@@ -912,6 +912,29 @@ def precommit(root: Path) -> int:
     branch = git(root, "branch", "--show-current").strip()
     if candidate["merge_head"] and branch == "ai-main":
         check_args.extend(("--snapshot-source-commit", candidate["merge_head"]))
+    elif candidate["level"] == "snapshot" and branch == "ai-dev":
+        resolved = subprocess.run(
+            [
+                sys.executable, str(root / "script" / "ai_publish.py"),
+                "--root", str(root), "resolve-tagged-source",
+                "--expected-head", candidate["head"], "--task-id", candidate["task_id"],
+            ],
+            cwd=root, text=True, capture_output=True, check=False,
+        )
+        if resolved.returncode:
+            print(resolved.stderr.strip() or "cannot resolve the tagged snapshot source", file=sys.stderr)
+            return resolved.returncode
+        source = resolved.stdout.strip()
+        if source:
+            check_args.extend((
+                "--snapshot-source-commit", source,
+                "--snapshot-task-id", candidate["task_id"],
+            ))
+    explicit_source = os.environ.get("AI_SNAPSHOT_SOURCE_COMMIT")
+    if (explicit_source and candidate["level"] == "snapshot" and not candidate["merge_head"]
+            and (branch == "ai-dev" or (branch.startswith("codex/ai-") and len(branch) > len("codex/ai-")))
+            and "--snapshot-source-commit" not in check_args):
+        check_args.extend(("--snapshot-source-commit", explicit_source))
     check_args.append("--require-index-match")
     completed = subprocess.run(check_args, cwd=root, check=False)
     return completed.returncode

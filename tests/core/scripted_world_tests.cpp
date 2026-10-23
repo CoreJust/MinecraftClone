@@ -27,7 +27,7 @@ std::string canonicalWorldScript()
 [[nodiscard]]
 std::string_view missingPublicationScript()
 {
-    return R"(@version("0.1.2")
+    return R"(@version(0.1.5)
 @use minecraft
 pub fn generate(seed: u64) {
     let ignored = seed
@@ -38,7 +38,7 @@ pub fn generate(seed: u64) {
 [[nodiscard]]
 std::string_view outOfBoundsScript()
 {
-    return R"(@version("0.1.2")
+    return R"(@version(0.1.5)
 @use minecraft
 pub fn generate(seed: u64) {
     set_block(16i32, 0i32, 0i32, 1i32)

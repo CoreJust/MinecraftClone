@@ -61,6 +61,20 @@ TEST(AndroidInputTest, FlightAscendTapIsLatchedUntilTheNextSimulationInput)
     EXPECT_TRUE(input.consumePress());
 }
 
+TEST(AndroidInputTest, MovementCapabilityToggleConsumesOnePressUntilReleased)
+{
+    AndroidFlightInputLatch input;
+    input.setPressed(true);
+    EXPECT_TRUE(input.consumePress());
+    input.setPressed(true);
+    EXPECT_FALSE(input.consumePress());
+    input.setPressed(false);
+    input.setPressed(true);
+    EXPECT_TRUE(input.consumePress());
+    input.clear();
+    EXPECT_FALSE(input.consumePress());
+}
+
 TEST(AndroidInputTest, FlightAscendLatchClearDropsPendingTapAfterConnectionReset)
 {
     AndroidFlightInputLatch input;

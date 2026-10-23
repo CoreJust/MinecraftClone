@@ -1,5 +1,7 @@
 #include <client/PlayerPresentation.hpp>
 
+#include <client/Camera.hpp>
+
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
 
@@ -91,15 +93,24 @@ constexpr std::array<std::array<float, 4>, shared::PLAYER_PALETTE_COUNT> PLAYER_
 
 void PlayerPresentation::update(
     shared::Player const& player,
-    std::chrono::steady_clock::time_point const received_at
+    std::chrono::steady_clock::time_point const received_at,
+    PlayerPresentationUpdateKind const update_kind
 )
 {
     PlayerPresentationPosition const target = position(player);
+    bool const flight_vertical = player.movement_capabilities.allows(shared::MovementCapability::Flight);
     double const target_vertical_velocity = simulationVerticalVelocity(player);
     for (Sample& sample : m_samples) {
         if (sample.character == player.ch) {
+            std::chrono::steady_clock::duration transition_duration = shared::TICK;
+            if (update_kind == PlayerPresentationUpdateKind::Reconciliation
+                && sample.flight_vertical && flight_vertical && sample.has_transition
+                && received_at < sample.started_at + sample.transition_duration) {
+                transition_duration = sample.started_at + sample.transition_duration - received_at;
+            }
             if (sample.to == target) {
-                if (sample.to_vertical_velocity == target_vertical_velocity) {
+                if (sample.to_vertical_velocity == target_vertical_velocity
+                    && sample.flight_vertical == flight_vertical) {
                     return;
                 }
                 if (!sample.has_transition || received_at >= sample.started_at + shared::TICK) {
@@ -109,6 +120,8 @@ void PlayerPresentation::update(
                     sample.to_vertical_velocity = target_vertical_velocity;
                     sample.has_transition = false;
                     sample.started_at = received_at;
+                    sample.transition_duration = shared::TICK;
+                    sample.flight_vertical = flight_vertical;
                     return;
                 }
                 PlayerPresentationPosition const current = PlayerPresentation::sample(sample, received_at);
@@ -121,6 +134,8 @@ void PlayerPresentation::update(
                     .to_vertical_velocity = target_vertical_velocity,
                     .has_transition = true,
                     .started_at = received_at,
+                    .transition_duration = transition_duration,
+                    .flight_vertical = flight_vertical,
                 };
                 return;
             }
@@ -139,6 +154,8 @@ void PlayerPresentation::update(
                 .to_vertical_velocity = target_vertical_velocity,
                 .has_transition = true,
                 .started_at = received_at,
+                .transition_duration = transition_duration,
+                .flight_vertical = flight_vertical,
             };
             return;
         }
@@ -149,6 +166,7 @@ void PlayerPresentation::update(
         .to = target,
         .to_vertical_velocity = target_vertical_velocity,
         .started_at = received_at,
+        .flight_vertical = flight_vertical,
     });
 }
 
@@ -195,20 +213,22 @@ PlayerPresentationPosition PlayerPresentation::sample(
     std::chrono::steady_clock::duration const elapsed = now - sample.started_at;
     double const alpha = std::min(
         1.0,
-        static_cast<double>(elapsed.count())
-            / static_cast<double>(std::chrono::duration_cast<std::chrono::steady_clock::duration>(shared::TICK).count())
+        static_cast<double>(elapsed.count()) / static_cast<double>(sample.transition_duration.count())
     );
     double const h00 = 2.0 * alpha * alpha * alpha - 3.0 * alpha * alpha + 1.0;
     double const h10 = alpha * alpha * alpha - 2.0 * alpha * alpha + alpha;
     double const h01 = -2.0 * alpha * alpha * alpha + 3.0 * alpha * alpha;
     double const h11 = alpha * alpha * alpha - alpha * alpha;
+    double const interpolated_z = sample.flight_vertical
+        ? sample.from.z + (sample.to.z - sample.from.z) * alpha
+        : h00 * sample.from.z
+            + h10 * sample.from_vertical_velocity * PRESENTATION_TICK_SECONDS
+            + h01 * sample.to.z
+            + h11 * sample.to_vertical_velocity * PRESENTATION_TICK_SECONDS;
     return {
         .x = interpolateWrappedHorizontal({ .from = sample.from.x, .to = sample.to.x }, alpha),
         .y = interpolateWrappedHorizontal({ .from = sample.from.y, .to = sample.to.y }, alpha),
-        .z = h00 * sample.from.z
-            + h10 * sample.from_vertical_velocity * PRESENTATION_TICK_SECONDS
-            + h01 * sample.to.z
-            + h11 * sample.to_vertical_velocity * PRESENTATION_TICK_SECONDS,
+        .z = interpolated_z,
     };
 }
 
@@ -219,6 +239,9 @@ double PlayerPresentation::verticalVelocity(
 {
     if (!sample.has_transition) {
         return 0.0;
+    }
+    if (sample.flight_vertical) {
+        return (sample.to.z - sample.from.z) / std::chrono::duration<double>(sample.transition_duration).count();
     }
     if (now <= sample.started_at) {
         return sample.from_vertical_velocity;

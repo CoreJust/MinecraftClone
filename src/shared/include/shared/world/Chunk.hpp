@@ -7,9 +7,26 @@
 namespace shared {
 
 enum class Block : uint8_t {
-    Air,
-    Stone,
+    Air = 0,
+    Stone = 1,
+    Grass = 2,
+    Dirt = 3,
+    Bedrock = 4,
+    Snow = 5,
+    Ice = 6,
 };
+
+[[nodiscard]]
+constexpr bool isValidBlock(Block const block) noexcept
+{
+    return static_cast<uint8_t>(block) <= static_cast<uint8_t>(Block::Ice);
+}
+
+[[nodiscard]]
+constexpr bool isSolidBlock(Block const block) noexcept
+{
+    return isValidBlock(block) && block != Block::Air;
+}
 
 struct BlockCoordinate final {
     uint8_t x;
@@ -83,11 +100,6 @@ private:
             + coordinate.x;
     }
 
-    [[nodiscard]]
-    static constexpr bool isSupported(Block const block) noexcept
-    {
-        return block == Block::Air || block == Block::Stone;
-    }
 private:
     ChunkCoordinate m_coordinate;
     Blocks m_blocks{};

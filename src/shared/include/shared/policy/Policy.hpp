@@ -1,5 +1,7 @@
 #pragma once
 
+#include <shared/corelang/ExecutionTypes.hpp>
+
 #include <atomic>
 #include <cstdint>
 #include <expected>
@@ -89,10 +91,10 @@ enum class PolicyGroupKind : uint8_t {
     Selector,
 };
 
-enum class PolicyJitMode : uint8_t {
-    Required,
-    Preferred,
-    Disabled,
+enum class PolicyExecutionBackend : uint8_t {
+    Interpreter,
+    Jit,
+    Aot,
 };
 
 enum class PolicyDiagnosticCode : uint8_t {
@@ -111,6 +113,9 @@ enum class PolicyDiagnosticCode : uint8_t {
     CompileFailure,
     RuntimeFailure,
     JitPreparationFailure,
+    AotPreparationFailure,
+    BytecodeLimitExceeded,
+    NativeImageLimitExceeded,
     InterpreterParityFailure,
     Cancelled,
     InstructionLimitExceeded,
@@ -129,6 +134,8 @@ public:
 
 struct PolicyLimits final {
     uint64_t max_source_bytes{uint64_t{64U} * 1024U};
+    uint64_t max_bytecode_bytes{uint64_t{1U} * 1024U * 1024U};
+    uint64_t max_native_image_bytes{uint64_t{4U} * 1024U * 1024U};
     // Bounds total CoreLang VM steps across module initialization, policy entry, and parity runs.
     uint64_t max_instructions{uint64_t{16U} * 1024U};
     uint64_t max_statements{256U};
@@ -247,7 +254,7 @@ bool operator==(PolicyPlan const& left, PolicyPlan const& right) noexcept;
 std::string policyPlanId(PolicyPlan const& plan);
 
 struct PolicyCompileOptions final {
-    PolicyJitMode jit_mode{PolicyJitMode::Preferred};
+    PolicyExecutionBackend backend{PolicyExecutionBackend::Interpreter};
     bool require_interpreter_parity{true};
 };
 
@@ -259,8 +266,7 @@ struct PolicyDiagnostic final {
 
 struct PolicyCompilation final {
     PolicyPlan plan;
-    PolicyJitMode jit_mode{PolicyJitMode::Preferred};
-    bool jit_prepared{false};
+    corelang::BackendReceipt backend_receipt;
     bool interpreter_parity{false};
 };
 
@@ -300,10 +306,7 @@ public:
     PolicyPlan const& plan() const noexcept;
 
     [[nodiscard]]
-    PolicyJitMode jitMode() const noexcept;
-
-    [[nodiscard]]
-    bool jitPrepared() const noexcept;
+    corelang::BackendReceipt const& backendReceipt() const noexcept;
 
     [[nodiscard]]
     bool interpreterParity() const noexcept;
@@ -315,16 +318,14 @@ private:
     PolicySnapshot(
         uint64_t generation,
         PolicyPlan plan,
-        PolicyJitMode jit_mode,
-        bool jit_prepared,
+        corelang::BackendReceipt backend_receipt,
         bool interpreter_parity,
         std::shared_ptr<PolicyCapabilitySnapshot const> capabilities
     );
 
     uint64_t m_generation{0U};
     PolicyPlan m_plan;
-    PolicyJitMode m_jit_mode{PolicyJitMode::Preferred};
-    bool m_jit_prepared{false};
+    corelang::BackendReceipt m_backend_receipt;
     bool m_interpreter_parity{false};
     std::shared_ptr<PolicyCapabilitySnapshot const> m_capabilities;
 
@@ -338,8 +339,8 @@ public:
     [[nodiscard]]
     PolicyLimits const& limits() const noexcept;
 
-    // Compilation is private and side-effect free. It performs all CoreLang
-    // execution and JIT preparation before a candidate can be published.
+    // Compilation is private and side-effect free. It performs selected CoreLang
+    // backend execution and any requested parity check before a candidate is published.
     [[nodiscard]]
     std::expected<PolicyCompilation, PolicyDiagnostic> compile(
         std::string_view source_id,

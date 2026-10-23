@@ -1,4 +1,6 @@
 #version 450 core
+#extension GL_GOOGLE_include_directive : require
+#include "world_curvature.glsl"
 
 struct TextGlyph {
     uint character;
@@ -26,8 +28,10 @@ layout(push_constant) uniform TextParams {
     vec2 resolution;
     float scale;
     uint mode;
+    vec4 curvature_camera;
 } params;
 
+layout(location = 3) out vec3 out_camera_offset;
 layout(location = 0) out vec2 out_pixel_position;
 layout(location = 1) flat out uint out_character;
 layout(location = 2) flat out uint out_packed_color;
@@ -54,6 +58,7 @@ const vec2 WORLD_QUAD_VERTICES[6] = {
 };
 
 void main() {
+    out_camera_offset = vec3(0.0);
     TextGlyph glyph = text.glyphs[gl_InstanceIndex];
     const vec2 quad_vertex = params.mode == TEXT_MODE_SCREEN
         ? SCREEN_QUAD_VERTICES[gl_VertexIndex]
@@ -72,6 +77,13 @@ void main() {
         vec3 world_position = position
             + vec3(glyph.right_x, glyph.right_y, glyph.right_z) * vertex_position.x
             + vec3(glyph.up_x, glyph.up_y, glyph.up_z) * vertex_position.y;
+        if (params.curvature_camera.w > 0.5) {
+            vec3 origin_offset = position - params.curvature_camera.xyz;
+            origin_offset.xy -= round(origin_offset.xy / 65536.0) * 65536.0;
+            world_position = origin_offset + (world_position - position);
+            out_camera_offset = vec3(world_position.xy, worldVisibilityRadius(params.curvature_camera.z));
+            world_position = curvedWorldPosition(world_position, vec2(0.0));
+        }
         gl_Position = params.projection_view * vec4(world_position, 1.0);
     } else {
         gl_Position = vec4(2.0, 2.0, 0.0, 1.0);

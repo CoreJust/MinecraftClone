@@ -1,20 +1,28 @@
+#include <client/TerrainLodPresentation.hpp>
+#include <client/TerrainLodSelection.hpp>
 #include <client/render/StoneFaceCapacity.hpp>
 #include <shared/net/Message.hpp>
+#include <shared/world/Chunk.hpp>
+#include <shared/world/SparseWorld.hpp>
+#include <shared/world/TerrainLod.hpp>
+#include <shared/world/TerrainWorld.hpp>
 #include <shared/world/World.hpp>
+#include <shared/world/WorldCoverage.hpp>
 
 #include <acceptance/EvidenceJson.hpp>
 #include <acceptance/GameBenchmark.hpp>
+#include <acceptance/ReplayInput.hpp>
 #include <gtest/gtest.h>
 #include <vulkan/vulkan_core.h>
 
 #include <array>
 #include <chrono>
-#include <cstddef>
+#include <cstddef>  // IWYU pragma: keep
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <expected>
-#include <memory>
+#include <memory>  // IWYU pragma: keep
 #include <optional>
 #include <ratio>
 #include <span>
@@ -132,7 +140,7 @@ acceptance::GameBenchmarkPresentationTimingEvidence warmupGenerationPresentation
             {
                 .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 3U },
                 .loop_ordinal = 4U,
-                .phase = "speed-200-movement",
+                .phase = "full-radius-movement",
             },
             {
                 .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 4U },
@@ -224,6 +232,68 @@ TEST(GameBenchmark, AcceptsCompleteDriverHistoryWithUnorderedRecords)
     EXPECT_TRUE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
 }
 
+TEST(GameBenchmark, AcceptsCompleteS1DriverHistoryWithMeasuredEndpointAndDrain)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = completePresentationTimingEvidence();
+    evidence.successful_requests[0U].phase = "s1-fill-ramp";
+    evidence.successful_requests[1U].phase = "s1-x30-movement";
+    EXPECT_TRUE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsS1DriverHistoryWhenGenerationChangesAtMovementStart)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = completePresentationTimingEvidence();
+    evidence.successful_requests[0U].phase = "s1-fill-ramp";
+    evidence.successful_requests[1U].phase = "s1-x30-movement";
+    evidence.successful_requests[1U].request.swapchain_generation = 1U;
+    evidence.records.front().request.swapchain_generation = 1U;
+    evidence.records.back().request.swapchain_generation = 1U;
+    ASSERT_TRUE(evidence.capture_endpoint.has_value());
+    if (!evidence.capture_endpoint) {
+        return;
+    }
+    evidence.capture_endpoint->request.swapchain_generation = 1U;
+    evidence.drain_request_ids.front().swapchain_generation = 1U;
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RetiresUnresolvedFrameSubmissionAcrossSwapchainGeneration)
+{
+    acceptance::GameBenchmarkFrameCompletionTracker tracker;
+    EXPECT_TRUE(tracker.track({
+        .sequence_id = 12U,
+        .swapchain_generation = 4U,
+        .frame_slot = 2U,
+        .submitted_offset_ns = 100U,
+        .application_present_id = 8U,
+        .submission_phase = "s1-x30-movement",
+    }));
+
+    EXPECT_FALSE(tracker.confirmFence(5U, 2U, 110U).has_value());
+    EXPECT_TRUE(tracker.hasPendingPhase("s1-x30-movement"));
+    tracker.retireOtherGenerations(5U);
+    EXPECT_FALSE(tracker.hasPendingPhase("s1-x30-movement"));
+
+    EXPECT_TRUE(tracker.track({
+        .sequence_id = 13U,
+        .swapchain_generation = 5U,
+        .frame_slot = 2U,
+        .submitted_offset_ns = 120U,
+        .application_present_id = 1U,
+        .submission_phase = "s1-x30-movement",
+    }));
+    std::optional<acceptance::GameBenchmarkFrameCompletion> const completion = tracker.confirmFence(
+        5U, 2U, 130U
+    );
+    ASSERT_TRUE(completion.has_value());
+    EXPECT_EQ(completion->sequence_id, 13U);
+    EXPECT_EQ(completion->swapchain_generation, 5U);
+    EXPECT_EQ(completion->application_present_id, 1U);
+    EXPECT_EQ(completion->submitted_offset_ns, 120U);
+    EXPECT_EQ(completion->completion_observed_offset_ns, 130U);
+    EXPECT_FALSE(tracker.hasPendingPhase("s1-x30-movement"));
+}
+
 TEST(GameBenchmark, AcceptsExpectedHistoryWithoutLastDrainTimestamp)
 {
     acceptance::GameBenchmarkPresentationTimingEvidence evidence = completePresentationTimingEvidence();
@@ -231,6 +301,16 @@ TEST(GameBenchmark, AcceptsExpectedHistoryWithoutLastDrainTimestamp)
     evidence.polls.back().status = acceptance::GameBenchmarkPresentationPollStatus::Empty;
     evidence.polls.back().returned_count = 0U;
     EXPECT_TRUE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsCompleteHistoryWithoutPostEndpointDrainPoll)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = completePresentationTimingEvidence();
+    evidence.polls.pop_back();
+    evidence.polls.front().status = acceptance::GameBenchmarkPresentationPollStatus::Records;
+    evidence.polls.front().vk_result = static_cast<int32_t>(VK_SUCCESS);
+    evidence.polls.front().returned_count = static_cast<uint32_t>(evidence.records.size());
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
 }
 
 TEST(GameBenchmark, RejectsZeroActualPresentationTime)
@@ -379,6 +459,31 @@ TEST(GameBenchmark, RejectsQualificationWithWrongRadiusBeforeStartingRuntime)
         ASSERT_FALSE(result.has_value());
         EXPECT_NE(result.error().find("fixed radius"), std::string::npos);
     }
+}
+
+TEST(GameBenchmark, AcceptsOrdinaryTurningPerformanceProofAtDefaultRadiusBeforeRuntimeValidation)
+{
+    acceptance::GameBenchmarkOptions options{
+        .cold_duration = std::chrono::seconds::zero(),
+        .workload = acceptance::GameBenchmarkWorkload::OrdinaryTurningMovement,
+        .qualification_proof = "performance",
+    };
+    EXPECT_EQ(options.render_distance, 256U);
+
+    auto const result = acceptance::runGameBenchmark(options);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), "game benchmark has invalid duration limits");
+}
+
+TEST(GameBenchmark, DoesNotUseSpeed200CoverageWorkloadForPerformanceProof)
+{
+    acceptance::GameBenchmarkOptions const options{
+        .workload = acceptance::GameBenchmarkWorkload::Speed200FullRadiusRecovery,
+        .qualification_proof = "performance",
+    };
+    auto const result = acceptance::runGameBenchmark(options);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_NE(result.error().find("fixed radius"), std::string::npos);
 }
 
 static constexpr std::array<char const*, 8U> DIAGNOSTIC_VARIABLES{
@@ -661,6 +766,8 @@ TEST(GameBenchmark, BoundsFullRadiusWarmupTimeoutAndWatchdogBudget)
         .qualification_proof = {},
     };
     EXPECT_EQ(acceptance::gameBenchmarkDeadline(options), 480s);
+    options.workload = acceptance::GameBenchmarkWorkload::OrdinaryTurningMovement;
+    EXPECT_EQ(acceptance::gameBenchmarkDeadline(options), options.deadline);
     options.workload = acceptance::GameBenchmarkWorkload::Speed200Movement;
     EXPECT_EQ(acceptance::gameBenchmarkDeadline(options), options.deadline);
 }
@@ -668,80 +775,43 @@ TEST(GameBenchmark, BoundsFullRadiusWarmupTimeoutAndWatchdogBudget)
 TEST(GameBenchmark, SuccessfulRequestIntervalsIncludeFailedAttemptsAndStayWithinTheirStationaryPhase)
 {
     static constexpr uint64_t MILLISECOND_NS = 1'000'000U;
-    std::array<acceptance::GameBenchmarkFrameSample, 6U> const frames{
-        acceptance::GameBenchmarkFrameSample{
-            .presentation_succeeded = true,
-            .started_offset_ns = 0U,
-            .loop_duration_ns = 2U * MILLISECOND_NS,
-            .terrain_phase = "baseline-stationary",
-            .terrain_near = std::nullopt,
-            .renderer_stone_face_growth = std::nullopt,
-            .diagnostic_frame_slot = std::nullopt,
-            .diagnostic_gpu_timestamp_reason = {},
-            .diagnostic_gpu_terrain_duration_ns = std::nullopt,
-            .latest_gpu_frame_duration_ns = std::nullopt,
-        },
-        acceptance::GameBenchmarkFrameSample{
-            .presentation_succeeded = false,
-            .started_offset_ns = 2U * MILLISECOND_NS,
-            .loop_duration_ns = 8U * MILLISECOND_NS,
-            .terrain_phase = "baseline-stationary",
-            .terrain_near = std::nullopt,
-            .renderer_stone_face_growth = std::nullopt,
-            .diagnostic_frame_slot = std::nullopt,
-            .diagnostic_gpu_timestamp_reason = {},
-            .diagnostic_gpu_terrain_duration_ns = std::nullopt,
-            .latest_gpu_frame_duration_ns = std::nullopt,
-        },
-        acceptance::GameBenchmarkFrameSample{
-            .presentation_succeeded = true,
-            .started_offset_ns = 10U * MILLISECOND_NS,
-            .loop_duration_ns = 2U * MILLISECOND_NS,
-            .terrain_phase = "baseline-stationary",
-            .terrain_near = std::nullopt,
-            .renderer_stone_face_growth = std::nullopt,
-            .diagnostic_frame_slot = std::nullopt,
-            .diagnostic_gpu_timestamp_reason = {},
-            .diagnostic_gpu_terrain_duration_ns = std::nullopt,
-            .latest_gpu_frame_duration_ns = std::nullopt,
-        },
-        acceptance::GameBenchmarkFrameSample{
-            .presentation_succeeded = true,
-            .started_offset_ns = 100U * MILLISECOND_NS,
-            .loop_duration_ns = 2U * MILLISECOND_NS,
-            .terrain_phase = "speed-200-movement",
-            .terrain_near = std::nullopt,
-            .renderer_stone_face_growth = std::nullopt,
-            .diagnostic_frame_slot = std::nullopt,
-            .diagnostic_gpu_timestamp_reason = {},
-            .diagnostic_gpu_terrain_duration_ns = std::nullopt,
-            .latest_gpu_frame_duration_ns = std::nullopt,
-        },
-        acceptance::GameBenchmarkFrameSample{
-            .presentation_succeeded = true,
-            .started_offset_ns = 1'000U * MILLISECOND_NS,
-            .loop_duration_ns = 2U * MILLISECOND_NS,
-            .terrain_phase = "recovered-stationary",
-            .terrain_near = std::nullopt,
-            .renderer_stone_face_growth = std::nullopt,
-            .diagnostic_frame_slot = std::nullopt,
-            .diagnostic_gpu_timestamp_reason = {},
-            .diagnostic_gpu_terrain_duration_ns = std::nullopt,
-            .latest_gpu_frame_duration_ns = std::nullopt,
-        },
-        acceptance::GameBenchmarkFrameSample{
-            .presentation_succeeded = true,
-            .started_offset_ns = 1'020U * MILLISECOND_NS,
-            .loop_duration_ns = 2U * MILLISECOND_NS,
-            .terrain_phase = "recovered-stationary",
-            .terrain_near = std::nullopt,
-            .renderer_stone_face_growth = std::nullopt,
-            .diagnostic_frame_slot = std::nullopt,
-            .diagnostic_gpu_timestamp_reason = {},
-            .diagnostic_gpu_terrain_duration_ns = std::nullopt,
-            .latest_gpu_frame_duration_ns = std::nullopt,
-        },
-    };
+    std::vector<acceptance::GameBenchmarkFrameSample> frames;
+    frames.reserve(6U);
+    acceptance::GameBenchmarkFrameSample& first_baseline_frame = frames.emplace_back();
+    first_baseline_frame.presentation_succeeded = true;
+    first_baseline_frame.started_offset_ns = 0U;
+    first_baseline_frame.loop_duration_ns = 2U * MILLISECOND_NS;
+    first_baseline_frame.terrain_phase = "baseline-stationary";
+
+    acceptance::GameBenchmarkFrameSample& failed_baseline_frame = frames.emplace_back();
+    failed_baseline_frame.presentation_succeeded = false;
+    failed_baseline_frame.started_offset_ns = 2U * MILLISECOND_NS;
+    failed_baseline_frame.loop_duration_ns = 8U * MILLISECOND_NS;
+    failed_baseline_frame.terrain_phase = "baseline-stationary";
+
+    acceptance::GameBenchmarkFrameSample& second_baseline_frame = frames.emplace_back();
+    second_baseline_frame.presentation_succeeded = true;
+    second_baseline_frame.started_offset_ns = 10U * MILLISECOND_NS;
+    second_baseline_frame.loop_duration_ns = 2U * MILLISECOND_NS;
+    second_baseline_frame.terrain_phase = "baseline-stationary";
+
+    acceptance::GameBenchmarkFrameSample& movement_frame = frames.emplace_back();
+    movement_frame.presentation_succeeded = true;
+    movement_frame.started_offset_ns = 100U * MILLISECOND_NS;
+    movement_frame.loop_duration_ns = 2U * MILLISECOND_NS;
+    movement_frame.terrain_phase = "full-radius-movement";
+
+    acceptance::GameBenchmarkFrameSample& first_recovered_frame = frames.emplace_back();
+    first_recovered_frame.presentation_succeeded = true;
+    first_recovered_frame.started_offset_ns = 1'000U * MILLISECOND_NS;
+    first_recovered_frame.loop_duration_ns = 2U * MILLISECOND_NS;
+    first_recovered_frame.terrain_phase = "recovered-stationary";
+
+    acceptance::GameBenchmarkFrameSample& second_recovered_frame = frames.emplace_back();
+    second_recovered_frame.presentation_succeeded = true;
+    second_recovered_frame.started_offset_ns = 1'020U * MILLISECOND_NS;
+    second_recovered_frame.loop_duration_ns = 2U * MILLISECOND_NS;
+    second_recovered_frame.terrain_phase = "recovered-stationary";
 
     auto const baseline = acceptance::gameBenchmarkSuccessfulPresentIntervals(frames, "baseline-stationary");
     ASSERT_EQ(baseline.size(), 1U);
@@ -749,32 +819,340 @@ TEST(GameBenchmark, SuccessfulRequestIntervalsIncludeFailedAttemptsAndStayWithin
     auto const recovered = acceptance::gameBenchmarkSuccessfulPresentIntervals(frames, "recovered-stationary");
     ASSERT_EQ(recovered.size(), 1U);
     EXPECT_EQ(recovered.front(), 20ms);
-    EXPECT_TRUE(acceptance::gameBenchmarkSuccessfulPresentIntervals(frames, "speed-200-movement").empty());
+    EXPECT_TRUE(acceptance::gameBenchmarkSuccessfulPresentIntervals(frames, "full-radius-movement").empty());
+}
+
+TEST(GameBenchmark, FrameBudgetUsesNinetyNinePercentOfFreshCompletionTime)
+{
+    static constexpr uint64_t TARGET_FRAME_DURATION_NS = 1'000'000U;
+    static constexpr uint64_t REQUIRED_WINDOW_DURATION_NS = 1'000'000'000U;
+    static constexpr uint32_t TOTAL_WINDOW_MILLISECONDS = 1'000U;
+    auto const measure = [](uint32_t const late_interval_count) {
+        std::vector<acceptance::GameBenchmarkFrameSample> frames;
+        std::vector<acceptance::GameBenchmarkFrameCompletion> completions;
+        uint32_t const normal_interval_count = TOTAL_WINDOW_MILLISECONDS - late_interval_count * 10U;
+        uint64_t offset_ns = 0U;
+        uint32_t ordinal = 0U;
+        for (uint32_t interval_index = 0U;
+             interval_index < normal_interval_count + late_interval_count;
+             ++interval_index) {
+            uint64_t const duration_ns = interval_index < normal_interval_count
+                ? TARGET_FRAME_DURATION_NS
+                : 10U * TARGET_FRAME_DURATION_NS;
+            uint32_t const frame_slot = ordinal % 3U;
+            ++ordinal;
+            offset_ns += duration_ns;
+            frames.push_back({
+                .loop_ordinal = ordinal,
+                .presentation_succeeded = true,
+                .swapchain_generation = 1U,
+                .submitted_frame_sequence_id = ordinal,
+                .submitted_frame_slot = frame_slot,
+                .submitted_frame_offset_ns = offset_ns,
+                .submitted_frame_phase = "full-radius-movement",
+                .started_offset_ns = offset_ns - duration_ns,
+                .loop_duration_ns = duration_ns,
+                .terrain_phase = "full-radius-movement",
+            });
+            completions.push_back({
+                .sequence_id = ordinal,
+                .swapchain_generation = 1U,
+                .frame_slot = frame_slot,
+                .submitted_offset_ns = offset_ns,
+                .completion_observed_offset_ns = offset_ns,
+                .submission_phase = "full-radius-movement",
+            });
+        }
+        acceptance::GameBenchmarkFrameBudgetWindow const window{
+            .start_offset_ns = 0U,
+            .end_offset_ns = REQUIRED_WINDOW_DURATION_NS,
+            .required_duration_ns = REQUIRED_WINDOW_DURATION_NS,
+            .phase = "full-radius-movement",
+            .complete = true,
+        };
+        return acceptance::gameBenchmarkFrameBudget(
+            frames, completions, TARGET_FRAME_DURATION_NS, window
+        );
+    };
+
+    acceptance::GameBenchmarkFrameBudgetEvidence const exactly_ninety_nine_percent = measure(1U);
+    EXPECT_TRUE(exactly_ninety_nine_percent.passed);
+    EXPECT_EQ(exactly_ninety_nine_percent.required_in_budget_time_permille, 990U);
+    EXPECT_EQ(exactly_ninety_nine_percent.in_budget_time_ns, 990'000'000U);
+    EXPECT_FALSE(measure(2U).passed);
 }
 
 TEST(GameBenchmark, FrameBudgetLimitsOverBudgetTimeInsteadOfOverBudgetFrameCount)
 {
     std::vector<acceptance::GameBenchmarkFrameSample> frames;
+    std::vector<acceptance::GameBenchmarkFrameCompletion> completions;
     frames.reserve(1'001U);
+    completions.reserve(1'000U);
+    uint64_t offset_ns = 0U;
     for (uint32_t index = 0U; index < 999U; ++index) {
-        frames.push_back({ .loop_duration_ns = 1'000'000U });
+        frames.push_back({
+            .loop_ordinal = static_cast<uint64_t>(index) + 1U,
+            .presentation_succeeded = true,
+            .swapchain_generation = 1U,
+            .application_present_id = index + 1U,
+            .submitted_frame_sequence_id = static_cast<uint64_t>(index) + 1U,
+            .submitted_frame_slot = index % 3U,
+            .submitted_frame_offset_ns = offset_ns + 1'000'000U,
+            .submitted_frame_phase = "full-radius-movement",
+            .started_offset_ns = offset_ns,
+            .loop_duration_ns = 1'000'000U,
+            .terrain_phase = "full-radius-movement",
+        });
+        completions.push_back({
+            .sequence_id = static_cast<uint64_t>(index) + 1U,
+            .swapchain_generation = 1U,
+            .frame_slot = index % 3U,
+            .submitted_offset_ns = offset_ns + 1'000'000U,
+            .completion_observed_offset_ns = offset_ns + 1'000'000U,
+            .application_present_id = index + 1U,
+            .submission_phase = "full-radius-movement",
+        });
+        offset_ns += 1'000'000U;
     }
-    frames.push_back({ .loop_duration_ns = 2'000'000U });
-    frames.push_back({ .excluded = true, .loop_duration_ns = 60'000'000'000U });
+    frames.push_back({
+        .loop_ordinal = 1'000U,
+        .presentation_succeeded = true,
+        .swapchain_generation = 1U,
+        .application_present_id = 1'000U,
+        .submitted_frame_sequence_id = 1'000U,
+        .submitted_frame_slot = 0U,
+        .submitted_frame_offset_ns = offset_ns + 1'000'000U,
+        .submitted_frame_phase = "full-radius-movement",
+        .started_offset_ns = offset_ns,
+        .loop_duration_ns = 1'000'000U,
+        .terrain_phase = "full-radius-movement",
+    });
+    completions.push_back({
+        .sequence_id = 1'000U,
+        .swapchain_generation = 1U,
+        .frame_slot = 0U,
+        .submitted_offset_ns = offset_ns + 1'000'000U,
+        .completion_observed_offset_ns = offset_ns + 2'000'000U,
+        .application_present_id = 1'000U,
+        .submission_phase = "full-radius-movement",
+    });
+    frames.push_back({
+        .excluded = true,
+        .submitted_frame_phase = {},
+        .loop_duration_ns = 60'000'000'000U,
+    });
 
+    acceptance::GameBenchmarkFrameBudgetWindow window{
+        .start_offset_ns = 0U,
+        .end_offset_ns = 1'002'000'000U,
+        .required_duration_ns = 1'000'000'000U,
+        .phase = "full-radius-movement",
+        .complete = true,
+    };
     acceptance::GameBenchmarkFrameBudgetEvidence const passing = acceptance::gameBenchmarkFrameBudget(
-        frames, 1'000'000U
+        frames, completions, 1'000'000U, window
     );
     EXPECT_TRUE(passing.passed);
-    EXPECT_EQ(passing.sample_count, 1'000U);
-    EXPECT_EQ(passing.measured_time_ns, 1'001'000'000U);
-    EXPECT_EQ(passing.in_budget_time_ns, 999'000'000U);
+    EXPECT_EQ(passing.sample_count, 1'001U);
+    EXPECT_EQ(passing.fence_confirmed_frame_count, 1'000U);
+    EXPECT_EQ(passing.measured_time_ns, 1'002'000'000U);
+    EXPECT_EQ(passing.in_budget_time_ns, 1'000'000'000U);
 
-    frames[999U].loop_duration_ns = 3'000'000U;
+    completions[999U].completion_observed_offset_ns = offset_ns + 13'000'000U;
+    window.end_offset_ns = 1'013'000'000U;
     acceptance::GameBenchmarkFrameBudgetEvidence const failing = acceptance::gameBenchmarkFrameBudget(
-        frames, 1'000'000U
+        frames, completions, 1'000'000U, window
     );
     EXPECT_FALSE(failing.passed);
+    EXPECT_EQ(failing.measured_time_ns, 1'013'000'000U);
+    EXPECT_EQ(failing.in_budget_time_ns, 1'000'000'000U);
+}
+
+TEST(GameBenchmark, FrameBudgetRejectsSparseFenceCompletionsDespiteFastPresentCadence)
+{
+    std::vector<acceptance::GameBenchmarkFrameSample> frames;
+    frames.reserve(5U);
+    for (uint32_t index = 0U; index < 5U; ++index) {
+        frames.push_back({
+            .loop_ordinal = static_cast<uint64_t>(index) + 1U,
+            .presentation_succeeded = true,
+            .swapchain_generation = 1U,
+            .application_present_id = index + 1U,
+            .submitted_frame_sequence_id = static_cast<uint64_t>(index) + 1U,
+            .submitted_frame_slot = index % 3U,
+            .submitted_frame_offset_ns = (static_cast<uint64_t>(index) + 1U) * 8'000'000U,
+            .submitted_frame_phase = "full-radius-movement",
+            .started_offset_ns = static_cast<uint64_t>(index) * 8'000'000U,
+            .loop_duration_ns = 8'000'000U,
+            .terrain_phase = "full-radius-movement",
+        });
+    }
+    std::vector<acceptance::GameBenchmarkFrameCompletion> completions{
+        {
+            .sequence_id = 1U,
+            .swapchain_generation = 1U,
+            .frame_slot = 0U,
+            .submitted_offset_ns = 8'000'000U,
+            .completion_observed_offset_ns = 24'000'000U,
+            .application_present_id = 1U,
+            .submission_phase = "full-radius-movement",
+        },
+        {
+            .sequence_id = 2U,
+            .swapchain_generation = 1U,
+            .frame_slot = 1U,
+            .submitted_offset_ns = 16'000'000U,
+            .completion_observed_offset_ns = 32'000'000U,
+            .application_present_id = 2U,
+            .submission_phase = "full-radius-movement",
+        },
+    };
+
+    acceptance::GameBenchmarkFrameBudgetWindow const window{
+        .start_offset_ns = 0U,
+        .end_offset_ns = 40'000'000U,
+        .required_duration_ns = 40'000'000U,
+        .phase = "full-radius-movement",
+        .complete = true,
+    };
+    acceptance::GameBenchmarkFrameBudgetEvidence const evidence = acceptance::gameBenchmarkFrameBudget(
+        frames, completions, 8'000'000U, window
+    );
+
+    EXPECT_FALSE(evidence.passed);
+    EXPECT_EQ(evidence.measured_time_ns, 40'000'000U);
+    EXPECT_EQ(evidence.fence_confirmed_frame_count, 2U);
+    EXPECT_EQ(evidence.sample_count, 3U);
+}
+
+TEST(GameBenchmark, FrameBudgetAllowsFenceDrainTailWithoutExtendingMeasurementWindow)
+{
+    std::vector<acceptance::GameBenchmarkFrameSample> frames;
+    std::vector<acceptance::GameBenchmarkFrameCompletion> completions;
+    for (uint32_t index = 0U; index < 3U; ++index) {
+        uint64_t const sequence = static_cast<uint64_t>(index) + 1U;
+        uint64_t const submitted_offset = index < 2U
+            ? sequence * 8'000'000U - 2'000'000U
+            : 23'000'000U;
+        uint64_t const completion_observed_offset = index < 2U
+            ? sequence * 8'000'000U
+            : 28'000'000U;
+        frames.push_back({
+            .loop_ordinal = sequence,
+            .presentation_succeeded = true,
+            .swapchain_generation = 1U,
+            .application_present_id = static_cast<uint32_t>(sequence),
+            .submitted_frame_sequence_id = sequence,
+            .submitted_frame_slot = index,
+            .submitted_frame_offset_ns = submitted_offset,
+            .submitted_frame_phase = "s1-x30-movement",
+            .started_offset_ns = submitted_offset - 4'000'000U,
+            .loop_duration_ns = 4'000'000U,
+            .terrain_phase = "s1-x30-movement",
+        });
+        completions.push_back({
+            .sequence_id = sequence,
+            .swapchain_generation = 1U,
+            .frame_slot = index,
+            .submitted_offset_ns = submitted_offset,
+            .completion_observed_offset_ns = completion_observed_offset,
+            .application_present_id = static_cast<uint32_t>(sequence),
+            .submission_phase = "s1-x30-movement",
+        });
+    }
+    acceptance::GameBenchmarkFrameBudgetWindow const window{
+        .start_offset_ns = 0U,
+        .end_offset_ns = 24'000'000U,
+        .required_duration_ns = 24'000'000U,
+        .phase = "s1-x30-movement",
+        .complete = true,
+        .completion_observation_tail_ns = 10'000'000U,
+    };
+
+    acceptance::GameBenchmarkFrameBudgetEvidence const within_tail = acceptance::gameBenchmarkFrameBudget(
+        frames, completions, 8'000'000U, window
+    );
+    EXPECT_TRUE(within_tail.passed);
+    EXPECT_TRUE(within_tail.measurement_window_complete);
+    EXPECT_EQ(within_tail.measured_time_ns, 24'000'000U);
+    EXPECT_EQ(within_tail.in_budget_time_ns, 24'000'000U);
+    EXPECT_EQ(within_tail.fence_confirmed_frame_count, 3U);
+
+    completions.back().completion_observed_offset_ns = 35'000'000U;
+    acceptance::GameBenchmarkFrameBudgetEvidence const beyond_tail = acceptance::gameBenchmarkFrameBudget(
+        frames, completions, 8'000'000U, window
+    );
+    EXPECT_FALSE(beyond_tail.passed);
+    EXPECT_FALSE(beyond_tail.measurement_window_complete);
+    EXPECT_EQ(beyond_tail.measured_time_ns, 24'000'000U);
+    EXPECT_EQ(beyond_tail.fence_confirmed_frame_count, 2U);
+}
+
+TEST(GameBenchmark, FrameBudgetRejectsMissingOrDuplicateFenceConfirmedCompletionIds)
+{
+    std::vector<acceptance::GameBenchmarkFrameSample> frames{
+        {
+            .loop_ordinal = 1U,
+            .presentation_succeeded = true,
+            .swapchain_generation = 1U,
+            .application_present_id = 1U,
+            .submitted_frame_sequence_id = 1U,
+            .submitted_frame_slot = 0U,
+            .submitted_frame_offset_ns = 8'000'000U,
+            .submitted_frame_phase = "full-radius-movement",
+            .started_offset_ns = 0U,
+            .loop_duration_ns = 8'000'000U,
+            .terrain_phase = "full-radius-movement",
+        },
+        {
+            .loop_ordinal = 2U,
+            .presentation_succeeded = true,
+            .swapchain_generation = 1U,
+            .application_present_id = 2U,
+            .submitted_frame_sequence_id = 2U,
+            .submitted_frame_slot = 1U,
+            .submitted_frame_offset_ns = 16'000'000U,
+            .submitted_frame_phase = "full-radius-movement",
+            .started_offset_ns = 8'000'000U,
+            .loop_duration_ns = 8'000'000U,
+            .terrain_phase = "full-radius-movement",
+        },
+    };
+    std::vector<acceptance::GameBenchmarkFrameCompletion> completions{
+        {
+            .sequence_id = 1U,
+            .swapchain_generation = 1U,
+            .frame_slot = 0U,
+            .submitted_offset_ns = 8'000'000U,
+            .completion_observed_offset_ns = 8'000'000U,
+            .application_present_id = 1U,
+            .submission_phase = "full-radius-movement",
+        },
+        {
+            .sequence_id = 2U,
+            .swapchain_generation = 1U,
+            .frame_slot = 1U,
+            .submitted_offset_ns = 16'000'000U,
+            .completion_observed_offset_ns = 16'000'000U,
+            .application_present_id = 2U,
+            .submission_phase = "full-radius-movement",
+        },
+    };
+    acceptance::GameBenchmarkFrameBudgetWindow const window{
+        .start_offset_ns = 0U,
+        .end_offset_ns = 16'000'000U,
+        .required_duration_ns = 16'000'000U,
+        .phase = "full-radius-movement",
+        .complete = true,
+    };
+
+    frames.front().application_present_id = std::nullopt;
+    frames.front().submitted_frame_sequence_id = std::nullopt;
+    EXPECT_FALSE(acceptance::gameBenchmarkFrameBudget(frames, completions, 8'000'000U, window).passed);
+    frames.front().application_present_id = 1U;
+    frames.front().submitted_frame_sequence_id = 1U;
+    completions.back().sequence_id = 1U;
+    EXPECT_FALSE(acceptance::gameBenchmarkFrameBudget(frames, completions, 8'000'000U, window).passed);
 }
 
 TEST(GameBenchmark, RejectsInvalidRenderDistanceBeforeRuntimeStarts)
@@ -799,28 +1177,225 @@ TEST(GameBenchmark, FullRadiusSequenceRequiresBothExactBarriersAndStationarySamp
     GameBenchmarkFullRadiusSequence sequence{ 30s };
     sequence.start(start);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::InitialWarmup);
-    sequence.observe(start + 10s, std::nullopt);
+    sequence.observe(start + 10s, std::nullopt, false);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::InitialWarmup);
-    sequence.observe(start + 12s, false);
+    sequence.observe(start + 12s, false, false);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::InitialWarmup);
-    sequence.observe(start + 15s, true);
+    sequence.observe(start + 14s, true, false);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::InitialWarmup);
+    sequence.observe(start + 15s, true, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::BaselineStationary);
-    sequence.observe(start + 45s - 1ns, std::nullopt);
+    sequence.observe(start + 45s - 1ns, std::nullopt, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::BaselineStationary);
-    sequence.observe(start + 45s, std::nullopt);
+    sequence.observe(start + 45s, std::nullopt, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Movement);
-    sequence.observe(start + 75s - 1ns, std::nullopt);
+    sequence.observe(start + 75s - 1ns, std::nullopt, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Movement);
-    sequence.observe(start + 75s, std::nullopt);
+    sequence.observe(start + 75s, std::nullopt, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
-    sequence.observe(start + 104s, false);
+    sequence.observe(start + 103s, false, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
-    sequence.observe(start + 105s, true);
+    sequence.observe(start + 104s, true, false);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
+    sequence.observe(start + 104s + 500ms, true, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveredStationary);
-    sequence.observe(start + 135s - 1ns, std::nullopt);
+    sequence.observe(start + 134s + 500ms - 1ns, std::nullopt, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveredStationary);
-    sequence.observe(start + 135s, std::nullopt);
+    sequence.observe(start + 134s + 500ms, std::nullopt, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Complete);
+}
+
+TEST(GameBenchmark, X30MovementWindowStartsWithFirstSuccessfulInput)
+{
+    using Clock = std::chrono::steady_clock;
+    using acceptance::GameBenchmarkFullRadiusPhase;
+    using acceptance::GameBenchmarkFullRadiusSequence;
+
+    Clock::time_point const start{};
+    Clock::time_point const first_input_at = start + 42s;
+    GameBenchmarkFullRadiusSequence sequence{ 30s, true };
+    sequence.start(start);
+    sequence.observe(start, true, true);
+    ASSERT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::BaselineStationary);
+    sequence.observe(start + 30s, std::nullopt, true);
+    ASSERT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Movement);
+
+    sequence.observe(first_input_at - 1ns, std::nullopt, true);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Movement);
+    EXPECT_EQ(sequence.phaseElapsed(first_input_at - 1ns), Clock::duration::zero());
+    sequence.beginMovementWindow(first_input_at);
+    EXPECT_EQ(sequence.phaseElapsed(first_input_at), Clock::duration::zero());
+    sequence.observe(first_input_at + 30s - 1ns, std::nullopt, true);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Movement);
+    sequence.observe(first_input_at + 30s, std::nullopt, true);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
+}
+
+TEST(GameBenchmark, S1MeasurementWindowStartsOnlyAfterReadySuccessfulInputAndStaysFixed)
+{
+    using Clock = std::chrono::steady_clock;
+    Clock::time_point const request_accepted_at{};
+    acceptance::GameBenchmarkS1MovementWindow window;
+
+    EXPECT_FALSE(window.observeSuccessfulInput(request_accepted_at + 10s, false));
+    EXPECT_FALSE(window.startedAt().has_value());
+    EXPECT_TRUE(window.observeSuccessfulInput(request_accepted_at + 20s, true));
+    EXPECT_EQ(window.startedAt(), request_accepted_at + 20s);
+    EXPECT_FALSE(window.observeSuccessfulInput(request_accepted_at + 25s, true));
+    EXPECT_TRUE(window.contains(request_accepted_at + 20s));
+    EXPECT_TRUE(window.contains(request_accepted_at + 50s - 1ns));
+    EXPECT_FALSE(window.contains(request_accepted_at + 50s));
+    EXPECT_FALSE(window.contains(request_accepted_at + 19s));
+}
+
+TEST(GameBenchmark, S1MovementReceiptsRetainSchedulerBoundaryInputAndAcknowledgementTail)
+{
+    static constexpr uint64_t START_NS = 91'316'542U;
+    static constexpr int64_t SCHEDULED_START_NS = 90'931'417;
+    static constexpr uint64_t TICK_NS = 100'000'000U;
+    static constexpr uint32_t INPUT_COUNT = 301U;
+    acceptance::GameBenchmarkEvidence benchmark;
+    benchmark.s1_terrain_performance.emplace();
+    benchmark.frame_budget.emplace();
+    benchmark.frame_budget->measurement_window_start_offset_ns = START_NS;
+    benchmark.frame_budget->measurement_window_end_offset_ns = START_NS + 30'000'000'000U;
+    benchmark.frame_budget->required_window_duration_ns = 30'000'000'000U;
+    auto& evidence = *benchmark.s1_terrain_performance;
+    for (uint32_t index = 0U; index < INPUT_COUNT; ++index) {
+        int64_t const scheduled = SCHEDULED_START_NS + static_cast<int64_t>(index * TICK_NS);
+        uint64_t const sent = index == 0U ? START_NS : static_cast<uint64_t>(scheduled);
+        benchmark.raw_gameplay_inputs.push_back({
+            .sequence = index + 1U,
+            .sent_offset_ns = sent,
+            .scheduled_offset_ns = scheduled,
+        });
+        evidence.movement_authoritative_sphere_updates.push_back({
+            .offset_ns = sent + 10'000'000U,
+            .acknowledged_input_sequence = index + 1U,
+            .playable_sphere = {},
+        });
+    }
+    evidence.movement_authoritative_update_count = INPUT_COUNT;
+    EXPECT_TRUE(acceptance::gameBenchmarkS1MovementReceiptsComplete(benchmark));
+    EXPECT_GT(evidence.movement_authoritative_sphere_updates.back().offset_ns,
+        benchmark.frame_budget->measurement_window_end_offset_ns);
+    evidence.movement_authoritative_sphere_updates.erase(
+        evidence.movement_authoritative_sphere_updates.begin() + 150
+    );
+    --evidence.movement_authoritative_update_count;
+    EXPECT_FALSE(acceptance::gameBenchmarkS1MovementReceiptsComplete(benchmark));
+}
+
+TEST(GameBenchmark, GenericSphereCountsExactAuthoritativeVolumeWithoutRelabelingFullProfiles)
+{
+    shared::PlayerPosition const center{ .x = 128, .y = 128, .z = 128 };
+    shared::SparseWorld world;
+    acceptance::GameBenchmarkFrameSample::PlayableSphere sample{
+        .radius_blocks = 16U,
+        .active_coverage_epoch = std::nullopt,
+        .active_coverage_center = std::nullopt,
+        .world_loading_center = center,
+        .coverage_scope = {},
+        .authoritative_columns_center = std::nullopt,
+    };
+    auto const keys = shared::requiredChunkKeys(center, sample.radius_blocks);
+    ASSERT_FALSE(keys.empty());
+    acceptance::gameBenchmarkObserveGeometricSphere(sample, world);
+    EXPECT_EQ(sample.required_chunks, keys.size());
+    EXPECT_EQ(sample.ready_chunks, 0U);
+    EXPECT_FALSE(sample.ready);
+    for (auto const key : keys) {
+        ASSERT_NE(world.ensureChunk(key), nullptr);
+    }
+    acceptance::gameBenchmarkObserveGeometricSphere(sample, world);
+    EXPECT_EQ(sample.ready_chunks, sample.required_chunks);
+    EXPECT_TRUE(sample.ready);
+    ASSERT_TRUE(world.evict(keys.back()));
+    acceptance::gameBenchmarkObserveGeometricSphere(sample, world);
+    EXPECT_FALSE(sample.ready);
+}
+
+TEST(GameBenchmark, S1CurrentTerrainReadyRequiresHorizontalFullVolumeProfiles)
+{
+    shared::PlayerPosition const center{ .x = 12, .y = 13, .z = 14 };
+    acceptance::GameBenchmarkFrameSample::PlayableSphere sample{
+        .radius_blocks = shared::ACTUAL_TERRAIN_RADIUS_BLOCKS,
+        .active_coverage_epoch = 9U,
+        .active_coverage_center = center,
+        .world_loading_center = center,
+        .ready_chunks = 419'904U,
+        .required_chunks = 419'904U,
+        .ready = true,
+        .coverage_scope = "horizontal_full_volume",
+        .required_authoritative_columns = 6'561U,
+        .resident_authoritative_columns = 6'561U,
+        .vertical_chunk_count = 64U,
+        .authoritative_columns_center = center,
+    };
+
+    EXPECT_TRUE(acceptance::gameBenchmarkS1CurrentTerrainSampleReady(sample));
+    sample.radius_blocks = shared::FULL_WORLD_VISUAL_LOD_RADIUS_BLOCKS;
+    EXPECT_FALSE(acceptance::gameBenchmarkS1CurrentTerrainSampleReady(sample));
+    sample.radius_blocks = 40U;
+    EXPECT_FALSE(acceptance::gameBenchmarkS1CurrentTerrainSampleReady(sample));
+    sample.radius_blocks = shared::ACTUAL_TERRAIN_RADIUS_BLOCKS;
+    sample.coverage_scope = "materialized_sphere";
+    EXPECT_FALSE(acceptance::gameBenchmarkS1CurrentTerrainSampleReady(sample));
+    sample.coverage_scope = "horizontal_full_volume";
+    --sample.resident_authoritative_columns;
+    EXPECT_FALSE(acceptance::gameBenchmarkS1CurrentTerrainSampleReady(sample));
+    ++sample.resident_authoritative_columns;
+    sample.active_coverage_epoch = 0U;
+    EXPECT_FALSE(acceptance::gameBenchmarkS1CurrentTerrainSampleReady(sample));
+    sample.active_coverage_epoch = 9U;
+    sample.authoritative_columns_center->x += 16;
+    EXPECT_FALSE(acceptance::gameBenchmarkS1CurrentTerrainSampleReady(sample));
+    sample.authoritative_columns_center = center;
+    sample.ready_chunks -= 1U;
+    EXPECT_FALSE(acceptance::gameBenchmarkS1CurrentTerrainSampleReady(sample));
+}
+
+TEST(GameBenchmark, S1PreWindowRoutePausesAfterReadyUntilCurrentSphereIsReady)
+{
+    using Clock = std::chrono::steady_clock;
+    static constexpr Clock::time_point READY_INPUT_AT{};
+
+    acceptance::GameBenchmarkS1MovementWindow window;
+
+    EXPECT_FALSE(window.shouldPauseBeforeStart(false, false, false));
+    EXPECT_TRUE(window.shouldPauseBeforeStart(true, false, true));
+    EXPECT_FALSE(window.shouldPauseBeforeStart(true, true, true));
+    EXPECT_TRUE(window.observeSuccessfulInput(READY_INPUT_AT, true));
+    EXPECT_FALSE(window.shouldPauseBeforeStart(true, false, true));
+}
+
+TEST(GameBenchmark, S1FillMovementUsesNormalProfileUntilReadyThenStartsX30)
+{
+    acceptance::GameBenchmarkMovementRouteSample const route =
+        acceptance::gameBenchmarkRepeatingMovementRouteAt(std::chrono::nanoseconds::zero());
+    shared::Direction const fill_direction = acceptance::gameBenchmarkS1MovementDirection(route, false);
+    shared::Direction const ready_direction = acceptance::gameBenchmarkS1MovementDirection(route, true);
+
+    EXPECT_FALSE(fill_direction.accelerated);
+    EXPECT_EQ(fill_direction.speedup, 30U);
+    EXPECT_EQ(fill_direction.x, ready_direction.x);
+    EXPECT_EQ(fill_direction.y, ready_direction.y);
+    EXPECT_EQ(fill_direction.z, ready_direction.z);
+    EXPECT_EQ(fill_direction.view_x, ready_direction.view_x);
+    EXPECT_EQ(fill_direction.view_y, ready_direction.view_y);
+    EXPECT_TRUE(ready_direction.accelerated);
+    EXPECT_EQ(ready_direction.speedup, 30U);
+
+    using Clock = std::chrono::steady_clock;
+    Clock::time_point const start{};
+    acceptance::GameBenchmarkS1MovementWindow window;
+    EXPECT_EQ(window.routeElapsedAt(start + 5s, start, false), 5s);
+    EXPECT_EQ(window.routeElapsedAt(start + 6s, start, true), 0ns);
+    EXPECT_FALSE(window.observeSuccessfulInput(start + 5s, false));
+    EXPECT_FALSE(window.startedAt().has_value());
+    EXPECT_TRUE(window.observeSuccessfulInput(start + 6s, true));
+    EXPECT_EQ(window.startedAt(), start + 6s);
+    EXPECT_EQ(window.routeElapsedAt(start + 7s, start, false), 1s);
 }
 
 TEST(GameBenchmark, FullRadiusWarmupTimeoutsAreIndependentAndFailureIsTerminal)
@@ -832,22 +1407,55 @@ TEST(GameBenchmark, FullRadiusWarmupTimeoutsAreIndependentAndFailureIsTerminal)
     Clock::time_point const start{};
     GameBenchmarkFullRadiusSequence initial_timeout{ 2s };
     initial_timeout.start(start);
-    initial_timeout.observe(start + 2s, std::nullopt);
+    initial_timeout.observe(start + 2s, std::nullopt, true);
     EXPECT_EQ(initial_timeout.phase(), GameBenchmarkFullRadiusPhase::Failed);
-    initial_timeout.observe(start + 3s, true);
+    initial_timeout.observe(start + 3s, true, true);
     EXPECT_EQ(initial_timeout.phase(), GameBenchmarkFullRadiusPhase::Failed);
 
     GameBenchmarkFullRadiusSequence recovery_timeout{ 2s };
     recovery_timeout.start(start);
-    recovery_timeout.observe(start, true);
+    recovery_timeout.observe(start, true, true);
     Clock::time_point const recovery_started = start
         + acceptance::GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE
         + acceptance::GAME_BENCHMARK_FULL_RADIUS_MOVEMENT;
-    recovery_timeout.observe(start + acceptance::GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE, std::nullopt);
-    recovery_timeout.observe(recovery_started, std::nullopt);
+    recovery_timeout.observe(start + acceptance::GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE, std::nullopt, true);
+    recovery_timeout.observe(recovery_started, std::nullopt, true);
     ASSERT_EQ(recovery_timeout.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
-    recovery_timeout.observe(recovery_started + 2s, std::nullopt);
+    recovery_timeout.observe(recovery_started + 2s, std::nullopt, true);
     EXPECT_EQ(recovery_timeout.phase(), GameBenchmarkFullRadiusPhase::Failed);
+}
+
+TEST(GameBenchmark, ControlledStartRequiresSyntheticInputAndOrderedProductionGateReceipts)
+{
+    acceptance::GameBenchmarkStartActionEvidence const complete{
+        .input_source = "synthetic-controlled-start-key",
+        .production_path = "GameClientBenchmarkHooks.start_input_override->GameClient.acceptLoadingStartInput",
+        .synthetic_input_override_invoked = true,
+        .eligible_prompt_rendered_offset_ns = 100U,
+        .synthetic_input_requested_offset_ns = 110U,
+        .key_accepted_offset_ns = 120U,
+        .server_start_acknowledged_offset_ns = 130U,
+        .input_ordinal = 7U,
+        .complete = true,
+    };
+    EXPECT_TRUE(acceptance::gameBenchmarkStartActionComplete(complete));
+
+    auto const reject = [&](acceptance::GameBenchmarkStartActionEvidence invalid) {
+        invalid.complete = true;
+        EXPECT_FALSE(acceptance::gameBenchmarkStartActionComplete(invalid));
+    };
+    auto no_synthetic_input = complete;
+    no_synthetic_input.synthetic_input_override_invoked = false;
+    reject(no_synthetic_input);
+    auto hands_on_only = complete;
+    hands_on_only.input_source = "ordinary-hands-on";
+    reject(hands_on_only);
+    auto ack_before_key = complete;
+    ack_before_key.server_start_acknowledged_offset_ns = 119U;
+    reject(ack_before_key);
+    auto missing_prompt = complete;
+    missing_prompt.eligible_prompt_rendered_offset_ns.reset();
+    reject(missing_prompt);
 }
 
 TEST(GameBenchmark, FullRadiusStationaryEpochsStartAfterDelayedBarrierScans)
@@ -862,27 +1470,27 @@ TEST(GameBenchmark, FullRadiusStationaryEpochsStartAfterDelayedBarrierScans)
     acceptance::GameBenchmarkFullRadiusSequence sequence{WARMUP_TIMEOUT};
     sequence.start(START);
     Clock::time_point const initial_scan_finished = START + INITIAL_FRAME_FINISHED + SCAN_DELAY;
-    sequence.observe(initial_scan_finished, true);
+    sequence.observe(initial_scan_finished, true, true);
     ASSERT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::BaselineStationary);
     EXPECT_EQ(sequence.phaseElapsed(initial_scan_finished), Clock::duration::zero());
     Clock::time_point const movement_started = initial_scan_finished
         + acceptance::GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE;
-    sequence.observe(movement_started - SCAN_DELAY, std::nullopt);
+    sequence.observe(movement_started - SCAN_DELAY, std::nullopt, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::BaselineStationary);
-    sequence.observe(movement_started, std::nullopt);
+    sequence.observe(movement_started, std::nullopt, true);
     ASSERT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Movement);
     Clock::time_point const recovery_started = movement_started + acceptance::GAME_BENCHMARK_FULL_RADIUS_MOVEMENT;
-    sequence.observe(recovery_started, std::nullopt);
+    sequence.observe(recovery_started, std::nullopt, true);
     ASSERT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
     Clock::time_point const recovery_scan_finished = recovery_started + SCAN_DELAY;
-    sequence.observe(recovery_scan_finished, true);
+    sequence.observe(recovery_scan_finished, true, true);
     ASSERT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveredStationary);
     EXPECT_EQ(sequence.phaseElapsed(recovery_scan_finished), Clock::duration::zero());
     Clock::time_point const stationary_finished = recovery_scan_finished
         + acceptance::GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE;
-    sequence.observe(stationary_finished - SCAN_DELAY, std::nullopt);
+    sequence.observe(stationary_finished - SCAN_DELAY, std::nullopt, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveredStationary);
-    sequence.observe(stationary_finished, std::nullopt);
+    sequence.observe(stationary_finished, std::nullopt, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Complete);
 }
 
@@ -894,7 +1502,7 @@ TEST(GameBenchmark, FullRadiusInitialExactBarrierFinishingAfterDeadlineFails)
 
     acceptance::GameBenchmarkFullRadiusSequence sequence{WARMUP_TIMEOUT};
     sequence.start(START);
-    sequence.observe(START + WARMUP_TIMEOUT + 1ns, true);
+    sequence.observe(START + WARMUP_TIMEOUT + 1ns, true, true);
     EXPECT_EQ(sequence.phase(), acceptance::GameBenchmarkFullRadiusPhase::Failed);
 }
 
@@ -907,13 +1515,13 @@ TEST(GameBenchmark, FullRadiusRecoveryExactBarrierFinishingAfterDeadlineFails)
 
     acceptance::GameBenchmarkFullRadiusSequence sequence{WARMUP_TIMEOUT};
     sequence.start(START);
-    sequence.observe(START, true);
+    sequence.observe(START, true, true);
     Clock::time_point const movement_started = START + acceptance::GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE;
-    sequence.observe(movement_started, std::nullopt);
+    sequence.observe(movement_started, std::nullopt, true);
     Clock::time_point const recovery_started = movement_started + acceptance::GAME_BENCHMARK_FULL_RADIUS_MOVEMENT;
-    sequence.observe(recovery_started, std::nullopt);
+    sequence.observe(recovery_started, std::nullopt, true);
     ASSERT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
-    sequence.observe(recovery_started + WARMUP_TIMEOUT + 1ns, true);
+    sequence.observe(recovery_started + WARMUP_TIMEOUT + 1ns, true, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Failed);
 }
 
@@ -951,7 +1559,7 @@ TEST(GameBenchmark, ScriptsDistinctMovementAndCapabilityWorkloads)
     shared::Direction const border = gameBenchmarkDirection(GameBenchmarkWorkload::WrappedBorder, 0U);
     shared::Direction const churn = gameBenchmarkDirection(GameBenchmarkWorkload::PermissionCollisionChurn, 0U);
 
-    EXPECT_EQ(ordinary.x, 1U);
+    EXPECT_EQ(ordinary.x, 127U);
     EXPECT_FALSE(ordinary.accelerated);
     EXPECT_EQ(acceptance::gameBenchmarkWorkloadName(GameBenchmarkWorkload::Speed200Movement),
         "speed-200-movement-v2");
@@ -964,14 +1572,133 @@ TEST(GameBenchmark, ScriptsDistinctMovementAndCapabilityWorkloads)
     EXPECT_FALSE(gameBenchmarkDirection(GameBenchmarkWorkload::PermissionCollisionChurn, 1U)
         .cycle_movement_capabilities);
     EXPECT_EQ(acceptance::gameBenchmarkWorkloadName(GameBenchmarkWorkload::PermissionCollisionChurn),
-        "permission-collision-churn-v1");
-    EXPECT_EQ(static_cast<int8_t>(gameBenchmarkDirection(GameBenchmarkWorkload::OrdinaryMovement, 20U).x), -1);
+        "permission-collision-churn-v2");
+    EXPECT_EQ(acceptance::gameBenchmarkWorkloadName(GameBenchmarkWorkload::OrdinaryMovement),
+        "ordinary-movement-v2");
+    EXPECT_EQ(static_cast<int8_t>(gameBenchmarkDirection(GameBenchmarkWorkload::OrdinaryMovement, 20U).x), -127);
     for (uint64_t const ordinal : { 0U, 19U, 20U, 39U, 40U }) {
         shared::Direction const travel = gameBenchmarkDirection(GameBenchmarkWorkload::Speed200Movement, ordinal);
         EXPECT_EQ(travel.x, 127U);
         EXPECT_TRUE(travel.accelerated);
         EXPECT_EQ(travel.speedup, 200U);
     }
+}
+
+TEST(GameBenchmark, OrdinaryTurningWorkloadFollowsTheElapsedCameraRoute)
+{
+    using acceptance::GameBenchmarkWorkload;
+    using acceptance::gameBenchmarkDirection;
+    static constexpr uint64_t TICKS_PER_SECOND = 10U;
+
+    EXPECT_EQ(acceptance::gameBenchmarkWorkloadName(GameBenchmarkWorkload::OrdinaryTurningMovement),
+        "turning-x30-movement-v3");
+    shared::Direction const forward = gameBenchmarkDirection(GameBenchmarkWorkload::OrdinaryTurningMovement, 0U);
+    shared::Direction const looking_left = gameBenchmarkDirection(
+        GameBenchmarkWorkload::OrdinaryTurningMovement, TICKS_PER_SECOND * 11U
+    );
+    shared::Direction const strafing_back = gameBenchmarkDirection(
+        GameBenchmarkWorkload::OrdinaryTurningMovement, TICKS_PER_SECOND * 19U
+    );
+    shared::Direction const moving_back = gameBenchmarkDirection(
+        GameBenchmarkWorkload::OrdinaryTurningMovement, TICKS_PER_SECOND * 26U
+    );
+    shared::Direction const final_tick = gameBenchmarkDirection(
+        GameBenchmarkWorkload::OrdinaryTurningMovement, TICKS_PER_SECOND * 30U
+    );
+    shared::Direction const after_route = gameBenchmarkDirection(
+        GameBenchmarkWorkload::OrdinaryTurningMovement, TICKS_PER_SECOND * 35U
+    );
+
+    EXPECT_EQ(forward.y, 127U);
+    EXPECT_EQ(forward.z, 127U);
+    EXPECT_TRUE(forward.accelerated);
+    EXPECT_EQ(forward.speedup, 30U);
+    EXPECT_FALSE(forward.cycle_movement_capabilities);
+    EXPECT_LT(static_cast<int8_t>(looking_left.x), 0);
+    EXPECT_GT(looking_left.y, 0U);
+    EXPECT_EQ(static_cast<int8_t>(strafing_back.x), -79);
+    EXPECT_EQ(strafing_back.y, 99U);
+    EXPECT_EQ(static_cast<int8_t>(moving_back.z), 0);
+    EXPECT_NE(forward.x, looking_left.x);
+    EXPECT_EQ(final_tick.x, after_route.x);
+    EXPECT_EQ(final_tick.y, after_route.y);
+    EXPECT_EQ(final_tick.z, after_route.z);
+    EXPECT_EQ(final_tick.view_x, after_route.view_x);
+    EXPECT_EQ(final_tick.view_y, after_route.view_y);
+    EXPECT_EQ(static_cast<int8_t>(final_tick.y), -127);
+    EXPECT_EQ(final_tick.z, 0U);
+}
+
+TEST(GameBenchmark, OrdinaryTurningRouteMovesAndLooksIndependentlyAcrossTheWindow)
+{
+    static constexpr std::chrono::seconds FIRST_LOOK_TURN{ 6 };
+    static constexpr std::chrono::seconds SECOND_LOOK_TURN{ 16 };
+    static constexpr std::chrono::seconds THIRD_LOOK_TURN{ 23 };
+    static constexpr std::chrono::seconds ROUTE_END{ 30 };
+
+    acceptance::GameBenchmarkMovementRouteSample const initial =
+        acceptance::gameBenchmarkMovementRouteAt(std::chrono::seconds::zero());
+    acceptance::GameBenchmarkMovementRouteSample const movingForwardLookingLeft =
+        acceptance::gameBenchmarkMovementRouteAt(FIRST_LOOK_TURN + std::chrono::seconds{ 5 });
+    acceptance::GameBenchmarkMovementRouteSample const strafingLookingBack =
+        acceptance::gameBenchmarkMovementRouteAt(SECOND_LOOK_TURN + std::chrono::seconds{ 3 });
+    acceptance::GameBenchmarkMovementRouteSample const movingBackTurningRight =
+        acceptance::gameBenchmarkMovementRouteAt(THIRD_LOOK_TURN + std::chrono::seconds{ 3 });
+    acceptance::GameBenchmarkMovementRouteSample const ended =
+        acceptance::gameBenchmarkMovementRouteAt(ROUTE_END);
+    shared::Direction const initial_direction = acceptance::gameBenchmarkDirection(initial);
+    shared::Direction const forward_left_direction = acceptance::gameBenchmarkDirection(movingForwardLookingLeft);
+    shared::Direction const strafe_back_direction = acceptance::gameBenchmarkDirection(strafingLookingBack);
+    shared::Direction const reverse_turn_direction = acceptance::gameBenchmarkDirection(movingBackTurningRight);
+
+    EXPECT_EQ(initial.forward, 1);
+    EXPECT_EQ(initial.strafe, 0);
+    EXPECT_EQ(initial.vertical, 1);
+    EXPECT_EQ(initial.yaw_degrees, 0.0);
+    EXPECT_EQ(initial_direction.y, 127U);
+    EXPECT_EQ(initial_direction.z, 127U);
+    EXPECT_EQ(initial_direction.speedup, 30U);
+    EXPECT_EQ(movingForwardLookingLeft.forward, 1);
+    EXPECT_LT(movingForwardLookingLeft.yaw_degrees, -40.0);
+    EXPECT_GT(movingForwardLookingLeft.yaw_degrees, -90.0);
+    EXPECT_NE(forward_left_direction.x, initial_direction.x);
+    EXPECT_EQ(strafingLookingBack.strafe, 1);
+    EXPECT_LT(strafingLookingBack.yaw_degrees, -120.0);
+    EXPECT_NE(strafe_back_direction.x, forward_left_direction.x);
+    EXPECT_EQ(movingBackTurningRight.forward, -1);
+    EXPECT_EQ(movingBackTurningRight.vertical, -1);
+    EXPECT_EQ(static_cast<int8_t>(reverse_turn_direction.z), -127);
+    EXPECT_GT(movingBackTurningRight.yaw_degrees, -180.0);
+    EXPECT_LT(movingBackTurningRight.yaw_degrees, 0.0);
+    EXPECT_NE(reverse_turn_direction.x, strafe_back_direction.x);
+    EXPECT_NE(movingBackTurningRight.pitch_degrees, strafingLookingBack.pitch_degrees);
+    EXPECT_EQ(ended.yaw_degrees, 0.0);
+    EXPECT_EQ(ended.pitch_degrees, 0.0);
+    EXPECT_EQ(
+        acceptance::gameBenchmarkMovementRouteAt(ROUTE_END + std::chrono::seconds{ 10 }),
+        ended
+    );
+}
+
+TEST(GameBenchmark, DiagnosticRouteRepeatsMovementAndLookWithoutChangingTheQualificationSampler)
+{
+    using namespace std::chrono_literals;
+    auto const first_cycle_forward = acceptance::gameBenchmarkMovementRouteAt(1s);
+    auto const second_cycle_forward = acceptance::gameBenchmarkRepeatingMovementRouteAt(31s);
+    auto const first_cycle_look = acceptance::gameBenchmarkMovementRouteAt(11s);
+    auto const second_cycle_look = acceptance::gameBenchmarkRepeatingMovementRouteAt(41s);
+    auto const first_cycle_strafe = acceptance::gameBenchmarkMovementRouteAt(19s);
+    auto const second_cycle_strafe = acceptance::gameBenchmarkRepeatingMovementRouteAt(49s);
+    auto const final_cycle_reverse = acceptance::gameBenchmarkRepeatingMovementRouteAt(83s);
+
+    EXPECT_EQ(second_cycle_forward, first_cycle_forward);
+    EXPECT_EQ(second_cycle_look, first_cycle_look);
+    EXPECT_EQ(second_cycle_strafe, first_cycle_strafe);
+    EXPECT_EQ(final_cycle_reverse, acceptance::gameBenchmarkMovementRouteAt(23s));
+    EXPECT_EQ(acceptance::gameBenchmarkMovementRouteCycleAt(29s), 0U);
+    EXPECT_EQ(acceptance::gameBenchmarkMovementRouteCycleAt(30s), 1U);
+    EXPECT_EQ(acceptance::gameBenchmarkMovementRouteCycleAt(89s), 2U);
+    EXPECT_EQ(acceptance::gameBenchmarkMovementRouteAt(83s), acceptance::gameBenchmarkMovementRouteAt(30s));
 }
 
 TEST(GameBenchmark, Speed200MovementUsesFullWrappedFlightDisplacementPerTick)
@@ -1257,4 +1984,280 @@ TEST(GameBenchmark, CensorsDepartedKeyAndKeepsCurrentMissingEpisodeOpen)
     EXPECT_EQ(evidence.open_mesh_episode_count, 1U);
     EXPECT_EQ(evidence.deadline_miss_count, 0U);
     EXPECT_FALSE(evidence.complete);
+}
+
+TEST(GameBenchmark, S1ReadinessDeadlinesAreIndependentOfPromptOrdering)
+{
+    EXPECT_TRUE(acceptance::gameBenchmarkS1ReadinessDeadlinesMet(3'335'092'166U, 3'308'200'250U));
+#if defined(_WIN32)
+    constexpr uint64_t PLAYABLE_DEADLINE_NS = 15'000'000'000U;
+#else
+    constexpr uint64_t PLAYABLE_DEADLINE_NS = 20'000'000'000U;
+#endif
+    EXPECT_TRUE(acceptance::gameBenchmarkS1ReadinessDeadlinesMet(4'000'000'000U, PLAYABLE_DEADLINE_NS));
+    EXPECT_FALSE(acceptance::gameBenchmarkS1ReadinessDeadlinesMet(4'000'000'001U, 3'308'200'250U));
+    EXPECT_FALSE(acceptance::gameBenchmarkS1ReadinessDeadlinesMet(3'335'092'166U, PLAYABLE_DEADLINE_NS + 1U));
+    EXPECT_FALSE(acceptance::gameBenchmarkS1ReadinessDeadlinesMet(std::nullopt, 3'308'200'250U));
+    EXPECT_FALSE(acceptance::gameBenchmarkS1ReadinessDeadlinesMet(3'335'092'166U, std::nullopt));
+}
+
+TEST(GameBenchmark, S1BoundarySampleRetainsGenuineAuthorityWithFreshReadySphere)
+{
+    shared::PlayerPosition const center{ .x = 12, .y = 13, .z = 14 };
+    acceptance::GameBenchmarkFullRadiusEvidence::AuthoritativePlayableSphereUpdate const authority{
+        .update_ordinal = 1U,
+        .offset_ns = 0U,
+        .state_revision = 8U,
+        .acknowledged_input_sequence = 7U,
+        .authoritative_position = center,
+        .playable_sphere = {},
+    };
+    acceptance::GameBenchmarkFrameSample::PlayableSphere sphere{
+        .radius_blocks = shared::ACTUAL_TERRAIN_RADIUS_BLOCKS,
+        .active_coverage_epoch = 9U,
+        .active_coverage_center = center,
+        .world_loading_center = center,
+        .ready_chunks = 419'904U,
+        .required_chunks = 419'904U,
+        .ready = true,
+        .coverage_scope = "horizontal_full_volume",
+        .required_authoritative_columns = 6'561U,
+        .resident_authoritative_columns = 6'561U,
+        .vertical_chunk_count = 64U,
+        .authoritative_columns_center = center,
+    };
+    acceptance::GameBenchmarkFrameSample::VisualLod const lod{
+        .radius_blocks = shared::FULL_WORLD_VISUAL_LOD_RADIUS_BLOCKS,
+        .terrain_identity = std::nullopt,
+        .coverage_center = std::nullopt,
+    };
+    auto const anchor = acceptance::gameBenchmarkS1TrajectoryAnchorSample(authority, sphere, lod, 91U);
+    ASSERT_TRUE(anchor.has_value());
+    EXPECT_EQ(anchor->update_ordinal, authority.update_ordinal);
+    EXPECT_EQ(anchor->state_revision, authority.state_revision);
+    EXPECT_EQ(anchor->acknowledged_input_sequence, authority.acknowledged_input_sequence);
+    EXPECT_EQ(anchor->offset_ns, 91U);
+    EXPECT_TRUE(acceptance::gameBenchmarkS1CurrentTerrainSampleReady(anchor->playable_sphere));
+    ASSERT_TRUE(anchor->visual_lod.has_value());
+    EXPECT_EQ(anchor->visual_lod->radius_blocks, shared::FULL_WORLD_VISUAL_LOD_RADIUS_BLOCKS);
+    sphere.ready_chunks -= 1U;
+    EXPECT_FALSE(acceptance::gameBenchmarkS1TrajectoryAnchorSample(authority, sphere, lod, 92U));
+    sphere.ready_chunks += 1U;
+    sphere.world_loading_center->x += 1U;
+    EXPECT_FALSE(acceptance::gameBenchmarkS1TrajectoryAnchorSample(authority, sphere, lod, 93U));
+}
+
+TEST(GameBenchmark, BatchedFenceObservationsPreserveCompletenessWithoutCreditingMissingTime)
+{
+    std::vector<acceptance::GameBenchmarkFrameSample> frames;
+    std::vector<acceptance::GameBenchmarkFrameCompletion> completions;
+    for (uint32_t index = 0U; index < 2U; ++index) {
+        uint64_t const sequence = index + 1U;
+        uint64_t const submitted = sequence * 8'000'000U;
+        frames.push_back({
+            .loop_ordinal = sequence,
+            .presentation_succeeded = true,
+            .swapchain_generation = 1U,
+            .application_present_id = index + 1U,
+            .submitted_frame_sequence_id = sequence,
+            .submitted_frame_slot = index,
+            .submitted_frame_offset_ns = submitted,
+            .submitted_frame_phase = "s1-x30-movement",
+            .started_offset_ns = submitted - 8'000'000U,
+            .loop_duration_ns = 8'000'000U,
+            .terrain_phase = "s1-x30-movement",
+        });
+        completions.push_back({
+            .sequence_id = sequence,
+            .swapchain_generation = 1U,
+            .frame_slot = index,
+            .submitted_offset_ns = submitted,
+            .completion_observed_offset_ns = 16'000'000U,
+            .application_present_id = index + 1U,
+            .submission_phase = "s1-x30-movement",
+        });
+    }
+    acceptance::GameBenchmarkFrameBudgetWindow const window{
+        .start_offset_ns = 0U,
+        .end_offset_ns = 16'000'000U,
+        .required_duration_ns = 16'000'000U,
+        .phase = "s1-x30-movement",
+        .complete = true,
+    };
+    auto const evidence = acceptance::gameBenchmarkFrameBudget(frames, completions, 8'333'333U, window);
+    EXPECT_TRUE(evidence.measurement_window_complete);
+    EXPECT_EQ(evidence.fence_confirmed_frame_count, 2U);
+    EXPECT_EQ(evidence.measured_time_ns, 16'000'000U);
+    EXPECT_EQ(evidence.in_budget_time_ns, 0U);
+    EXPECT_FALSE(evidence.passed);
+}
+
+TEST(GameBenchmark, S1VisualReadinessRejectsInactiveSceneWithCorrectRadiusAndNonemptyLeaves)
+{
+    EXPECT_FALSE(acceptance::gameBenchmarkS1VisualLodSampleReady({{
+        .radius_blocks = shared::FULL_WORLD_VISUAL_LOD_RADIUS_BLOCKS,
+        .scene_active = false,
+        .leaf_count = 128U,
+        .terrain_identity = std::nullopt,
+        .coverage_center = std::nullopt,
+    }}));
+}
+
+TEST(GameBenchmark, S1VisualReadinessRejectsEmptyActiveSceneWithCorrectRadius)
+{
+    EXPECT_FALSE(acceptance::gameBenchmarkS1VisualLodSampleReady({{
+        .radius_blocks = shared::FULL_WORLD_VISUAL_LOD_RADIUS_BLOCKS,
+        .scene_active = true,
+        .leaf_count = 0U,
+        .terrain_identity = std::nullopt,
+        .coverage_center = std::nullopt,
+    }}));
+}
+
+TEST(GameBenchmark, S1VisualReadinessRequiresCurrentActualCoverageFromTheSubmittedScene)
+{
+    acceptance::GameBenchmarkFrameSample::VisualLod complete{
+        .radius_blocks = shared::FULL_WORLD_VISUAL_LOD_RADIUS_BLOCKS,
+        .scene_active = true,
+        .leaf_count = 6'561U,
+        .actual_column_count = 6'561U,
+        .terrain_identity = shared::TerrainIdentity{.configuration_identity = "current-configuration"},
+        .session_join_epoch = 1U,
+        .coverage_epoch = 2U,
+        .submitted_frame_count = 3U,
+        .actual_radius_blocks = shared::ACTUAL_TERRAIN_RADIUS_BLOCKS,
+        .required_actual_columns = 6'561U,
+        .presented_current_actual_columns = 6'561U,
+        .coverage_center = shared::PlayerPosition{},
+        .sources_current = true,
+    };
+    EXPECT_TRUE(acceptance::gameBenchmarkS1VisualLodSampleReady(complete));
+    EXPECT_FALSE(acceptance::gameBenchmarkS1VisualLodSampleReady(std::nullopt));
+    for (auto const missing : {0U, 1U, 6'560U}) {
+        auto incomplete = complete;
+        incomplete.presented_current_actual_columns = missing;
+        EXPECT_FALSE(acceptance::gameBenchmarkS1VisualLodSampleReady(incomplete));
+    }
+    complete.sources_current = false;
+    EXPECT_FALSE(acceptance::gameBenchmarkS1VisualLodSampleReady(complete));
+    complete.sources_current = true;
+    complete.session_join_epoch = 0U;
+    EXPECT_FALSE(acceptance::gameBenchmarkS1VisualLodSampleReady(complete));
+}
+
+TEST(GameBenchmark, S1FirstX30InputWaitsForAuthenticatedAnchorWithoutSuppressingFillMovement)
+{
+    acceptance::GameBenchmarkS1MovementWindow window;
+    EXPECT_FALSE(window.shouldPauseBeforeStart(false, false, false));
+    EXPECT_TRUE(window.shouldPauseBeforeStart(true, true, false));
+    EXPECT_FALSE(window.startedAt().has_value());
+    EXPECT_FALSE(window.shouldPauseBeforeStart(true, true, true));
+    auto const sent_at = std::chrono::steady_clock::time_point{};
+    EXPECT_TRUE(window.observeSuccessfulInput(sent_at, true));
+    EXPECT_FALSE(window.shouldPauseBeforeStart(true, true, false));
+    EXPECT_FALSE(window.shouldPauseBeforeStart(true, false, false));
+}
+
+TEST(GameBenchmark, S1RenderedCameraTracksBodyEyeAndWrappedInterpolatedMovement)
+{
+    std::vector<acceptance::GameBenchmarkFrameSample> frames;
+    for (uint32_t index = 0U; index < 30U; ++index) {
+        uint32_t const x = (65'520U + index * 16U) % 65'536U;
+        frames.push_back({
+            .presentation_succeeded = true,
+            .submitted_frame_phase = {},
+            .loop_duration_ns = 1U,
+            .terrain_phase = "s1-x30-movement",
+            .playable_sphere = acceptance::GameBenchmarkFrameSample::PlayableSphere{
+                .active_coverage_epoch = std::nullopt,
+                .active_coverage_center = std::nullopt,
+                .world_loading_center = shared::PlayerPosition{
+                    .x = static_cast<int32_t>(x), .y = 32, .z = 96,
+                },
+                .coverage_scope = {},
+                .authoritative_columns_center = std::nullopt,
+            },
+            .visual_lod = acceptance::GameBenchmarkFrameSample::VisualLod{
+                .terrain_identity = std::nullopt,
+                .submitted_frame_count = index + 1U,
+                .coverage_center = std::nullopt,
+            },
+            .presented_player = acceptance::GameBenchmarkFrameSample::PresentedPlayer{
+                .body = {static_cast<double>((x + 65'528U) % 65'536U), 32.0, 96.0},
+                .submitted_frame_count = index + 1U,
+            },
+            .diagnostic_camera = {
+                static_cast<double>((x + 65'528U) % 65'536U) + 0.3125,
+                32.3125, 97.625, 0.0, 0.0, 0.0, 70.0,
+            },
+        });
+    }
+    EXPECT_TRUE(acceptance::gameBenchmarkS1RenderedCameraTrajectoryComplete(frames));
+    for (auto& frame : frames) {
+        frame.diagnostic_camera[0] = 1e9;
+    }
+    EXPECT_FALSE(acceptance::gameBenchmarkS1RenderedCameraTrajectoryComplete(frames));
+}
+
+TEST(GameBenchmark, S1RenderedCameraRejectsStationaryViewWhileAuthorityMoves)
+{
+    std::vector<acceptance::GameBenchmarkFrameSample> frames;
+    frames.reserve(30U);
+    for (uint32_t index = 0U; index < 30U; ++index) {
+        frames.push_back({
+            .presentation_succeeded = true,
+            .submitted_frame_phase = {},
+            .loop_duration_ns = 1U,
+            .terrain_phase = "s1-x30-movement",
+            .playable_sphere = acceptance::GameBenchmarkFrameSample::PlayableSphere{
+                .active_coverage_epoch = std::nullopt,
+                .active_coverage_center = std::nullopt,
+                .world_loading_center = shared::PlayerPosition{
+                    .x = static_cast<int32_t>(index), .y = 32, .z = 96,
+                },
+                .coverage_scope = {},
+                .authoritative_columns_center = std::nullopt,
+            },
+            .visual_lod = acceptance::GameBenchmarkFrameSample::VisualLod{
+                .terrain_identity = std::nullopt,
+                .submitted_frame_count = index + 1U,
+                .coverage_center = std::nullopt,
+            },
+            .presented_player = acceptance::GameBenchmarkFrameSample::PresentedPlayer{
+                .body = {0.0, 32.0, 96.0}, .submitted_frame_count = index + 1U,
+            },
+            .diagnostic_camera = {0.3125, 32.3125, 97.625, 0.0, 0.0, 0.0, 70.0},
+        });
+    }
+    EXPECT_FALSE(acceptance::gameBenchmarkS1RenderedCameraTrajectoryComplete(frames));
+}
+
+TEST(GameBenchmark, S1PresentedSceneCoverageUsesExactWrappedActualKeys)
+{
+    client::TerrainLodScene scene;
+    for (int32_t y = -40; y <= 40; ++y) {
+        for (int32_t x = -40; x <= 40; ++x) {
+            scene.authority_sources.push_back({
+                .coordinate = {
+                    .x = (x + 4'096) % 4'096, .y = (y + 4'096) % 4'096, .z = 0,
+                },
+                .identity = scene.identity,
+            });
+            scene.leaves.push_back({
+                .level = shared::TerrainLodLevel::L3,
+                .x = static_cast<uint32_t>((x + 4'096) % 4'096),
+                .y = static_cast<uint32_t>((y + 4'096) % 4'096),
+            });
+        }
+    }
+    EXPECT_EQ(acceptance::gameBenchmarkS1PresentedCurrentColumnCount(scene, {}), 6'561U);
+    scene.authority_sources.back().identity.seed += 1U;
+    EXPECT_EQ(acceptance::gameBenchmarkS1PresentedCurrentColumnCount(scene, {}), 6'560U);
+    scene.authority_sources.back().identity = scene.identity;
+    scene.leaves.back().x = 41U;
+    EXPECT_EQ(acceptance::gameBenchmarkS1PresentedCurrentColumnCount(scene, {}), 6'560U);
+    scene.leaves.push_back(scene.leaves.front());
+    EXPECT_EQ(acceptance::gameBenchmarkS1PresentedCurrentColumnCount(scene, {}), 6'560U);
+    scene.leaves.back().level = shared::TerrainLodLevel::L0;
+    EXPECT_EQ(acceptance::gameBenchmarkS1PresentedCurrentColumnCount(scene, {}), 6'560U);
 }

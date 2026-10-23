@@ -4,9 +4,12 @@
 
 #include <shared/net/Message.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
+#include <shared/world/TerrainWorld.hpp>
 #include <shared/world/WorldGeneration.hpp>
 
 #include <gtest/gtest.h>
+
+#include <testsupport/TerrainFixtures.hpp>
 
 #include <algorithm>
 #include <array>
@@ -20,6 +23,37 @@
 #include <vector>
 
 namespace {
+
+shared::SurfaceTile surfaceFor(
+    shared::HeightTileKey const key,
+    uint64_t const revision,
+    shared::HeightTile::Heights const& heights
+)
+{
+    return testsupport::makeSurfaceTile(
+        key,
+        testsupport::makeTerrainIdentity(42U, revision),
+        heights
+    );
+}
+
+shared::HeightTile::Heights flatHeights(uint16_t const height = 2U)
+{
+    shared::HeightTile::Heights heights;
+    heights.fill(height);
+    return heights;
+}
+
+client::HeightTileReplacementResult acceptFlatTile(
+    client::PreviewResidency& residency,
+    shared::HeightTileKey const key,
+    client::HeightTileRevision const revision,
+    uint64_t const token
+)
+{
+    shared::HeightTile::Heights const heights = flatHeights();
+    return residency.accept(key, revision, token, heights, surfaceFor(key, revision.revision, heights));
+}
 
 struct PreviewSeamPublicationFixture final {
     static constexpr uint16_t TILE_SPAN = static_cast<uint16_t>(shared::HeightTile::SIDE_LENGTH);
@@ -42,6 +76,7 @@ struct PreviewSeamPublicationFixture final {
             },
         },
         .detail = shared::HeightTileSurfaceDetail::Coarse2,
+        .identity = {},
     };
     shared::HeightTileSurfaceMesh installed_east{
         .coordinate = {.x = EAST_TILE_X, .y = 0},
@@ -56,6 +91,7 @@ struct PreviewSeamPublicationFixture final {
             },
         },
         .detail = shared::HeightTileSurfaceDetail::Coarse2,
+        .identity = {},
     };
     shared::HeightTileSurfaceMesh candidate_west{
         .coordinate = {.x = 0, .y = 0},
@@ -70,6 +106,7 @@ struct PreviewSeamPublicationFixture final {
             },
         },
         .detail = shared::HeightTileSurfaceDetail::Fine,
+        .identity = {},
     };
     client::PreviewMeshSeamBridgeSet installed_west_bridges;
     client::PreviewMeshSeamBridgeSet installed_east_bridges;
@@ -109,8 +146,12 @@ TEST(PreviewMeshingTest, BuildsFromReceivedHeightsAndNeighborWithoutRegenerating
     center_heights.fill(12U);
     shared::HeightTile::Heights western_heights;
     western_heights.fill(20U);
-    auto const center = residency.accept({.x = 100, .y = 101}, {1U, 1U}, 1U, center_heights);
-    auto const west = residency.accept({.x = 99, .y = 101}, {1U, 1U}, 2U, western_heights);
+    shared::HeightTileKey const center_key{ .x = 100, .y = 101 };
+    shared::HeightTileKey const west_key{ .x = 99, .y = 101 };
+    auto const center = residency.accept(
+        center_key, {1U, 1U}, 1U, center_heights, surfaceFor(center_key, 1U, center_heights));
+    auto const west = residency.accept(
+        west_key, {1U, 1U}, 2U, western_heights, surfaceFor(west_key, 1U, western_heights));
     ASSERT_EQ(center.replacement, client::HeightTileReplacement::Published);
     ASSERT_EQ(west.replacement, client::HeightTileReplacement::Published);
 
@@ -134,10 +175,24 @@ TEST(PreviewMeshingTest, CapturedGeometryRequiresCurrentReceivedHeightsAndNeighb
     client::PreviewResidency residency{ REVISION };
     shared::HeightTile::Heights heights;
     heights.fill(8U);
-    ASSERT_EQ(residency.accept(KEY, REVISION, 1U, heights).replacement,
+    ASSERT_EQ(residency.accept(KEY, REVISION, 1U, heights, surfaceFor(KEY, REVISION.revision, heights)).replacement,
         client::HeightTileReplacement::Published);
     client::PreviewMeshSource source{ .tile = residency.resident(KEY), .neighbors = {} };
     EXPECT_TRUE(source.matchesGeometry(source.tile, source.neighbors, source.neighbor_details));
+    EXPECT_FALSE(source.matchesGeometry(
+        source.tile,
+        source.neighbors,
+        source.neighbor_details,
+        shared::HeightTileSurfaceDetail::Coarse2
+    ));
+    source.detail = shared::HeightTileSurfaceDetail::Coarse2;
+    EXPECT_TRUE(source.matchesGeometry(
+        source.tile,
+        source.neighbors,
+        source.neighbor_details,
+        shared::HeightTileSurfaceDetail::Coarse2
+    ));
+    source.detail = shared::HeightTileSurfaceDetail::Fine;
     auto changed_details = source.neighbor_details;
     changed_details[0U] = shared::HeightTileSurfaceDetail::Coarse2;
     EXPECT_FALSE(source.matchesGeometry(source.tile, source.neighbors, changed_details));
@@ -145,7 +200,7 @@ TEST(PreviewMeshingTest, CapturedGeometryRequiresCurrentReceivedHeightsAndNeighb
     changed_neighbors[0U] = source.tile;
     EXPECT_FALSE(source.matchesGeometry(source.tile, changed_neighbors, source.neighbor_details));
     heights.fill(16U);
-    ASSERT_EQ(residency.accept(KEY, REVISION, 2U, heights).replacement,
+    ASSERT_EQ(residency.accept(KEY, REVISION, 2U, heights, surfaceFor(KEY, REVISION.revision, heights)).replacement,
         client::HeightTileReplacement::Published);
     EXPECT_FALSE(source.matchesGeometry(residency.resident(KEY), source.neighbors, source.neighbor_details));
 }
@@ -155,7 +210,8 @@ TEST(PreviewMeshingTest, AppliesTheSelectedVisualDetail)
     client::PreviewResidency residency{{.generation = 1U, .revision = 1U}};
     shared::HeightTile::Heights heights;
     heights.fill(12U);
-    auto const tile = residency.accept({.x = 100, .y = 101}, {1U, 1U}, 1U, heights);
+    shared::HeightTileKey const key{ .x = 100, .y = 101 };
+    auto const tile = residency.accept(key, {1U, 1U}, 1U, heights, surfaceFor(key, 1U, heights));
     ASSERT_EQ(tile.replacement, client::HeightTileReplacement::Published);
 
     shared::HeightTileSurfaceMesh const mesh = client::buildPreviewMesh({
@@ -181,10 +237,10 @@ TEST(PreviewMeshingTest, FirstPublicationUsesEachCertifiedDetailWithoutDuplicate
     static constexpr client::HeightTileRevision REVISION{ .generation = 1U, .revision = 1U };
     static constexpr client::HeightTileRevision NEXT_REVISION{ .generation = 2U, .revision = 2U };
     client::PreviewResidency residency{ REVISION };
-    auto const current = residency.accept(KEY, REVISION, 1U, {});
+    auto const current = acceptFlatTile(residency, KEY, REVISION, 1U);
     ASSERT_EQ(current.replacement, client::HeightTileReplacement::Published);
     residency.advanceRevision(NEXT_REVISION);
-    auto const next = residency.accept(KEY, NEXT_REVISION, 2U, {});
+    auto const next = acceptFlatTile(residency, KEY, NEXT_REVISION, 2U);
     ASSERT_EQ(next.replacement, client::HeightTileReplacement::Published);
     for (shared::HeightTileSurfaceDetail const detail : DETAILS) {
         EXPECT_EQ(client::previewMeshCoarseDetail(detail), detail);
@@ -204,11 +260,11 @@ TEST(PreviewMeshingTest, PublishesOnlyCurrentRevisionAndNeverRegressesToCoarse)
     static constexpr client::HeightTileRevision FIRST_REVISION{ .generation = 1U, .revision = 1U };
     static constexpr client::HeightTileRevision NEXT_REVISION{ .generation = 2U, .revision = 2U };
     client::PreviewResidency residency{ FIRST_REVISION };
-    auto const first = residency.accept(KEY, FIRST_REVISION, 1U, {});
+    auto const first = acceptFlatTile(residency, KEY, FIRST_REVISION, 1U);
     ASSERT_EQ(first.replacement, client::HeightTileReplacement::Published);
 
     residency.advanceRevision(NEXT_REVISION);
-    auto const current = residency.accept(KEY, NEXT_REVISION, 1U, {});
+    auto const current = acceptFlatTile(residency, KEY, NEXT_REVISION, 1U);
     ASSERT_EQ(current.replacement, client::HeightTileReplacement::Published);
 
     EXPECT_FALSE(client::previewMeshCanPublish(
@@ -243,7 +299,7 @@ TEST(PreviewMeshingTest, KeepsFinalRetryWhenFailedUploadRetainsCurrentVisibleTil
     static constexpr client::HeightTileRevision REVISION{ .generation = 1U, .revision = 1U };
     static constexpr client::HeightTileRevision NEXT_REVISION{ .generation = 2U, .revision = 2U };
     client::PreviewResidency residency{ REVISION };
-    auto const current = residency.accept(KEY, REVISION, 1U, {});
+    auto const current = acceptFlatTile(residency, KEY, REVISION, 1U);
     ASSERT_EQ(current.replacement, client::HeightTileReplacement::Published);
 
     EXPECT_EQ(
@@ -264,7 +320,7 @@ TEST(PreviewMeshingTest, KeepsFinalRetryWhenFailedUploadRetainsCurrentVisibleTil
     );
 
     residency.advanceRevision(NEXT_REVISION);
-    auto const next = residency.accept(KEY, NEXT_REVISION, 2U, {});
+    auto const next = acceptFlatTile(residency, KEY, NEXT_REVISION, 2U);
     ASSERT_EQ(next.replacement, client::HeightTileReplacement::Published);
     EXPECT_EQ(
         client::previewMeshStageForTile(
@@ -297,7 +353,7 @@ TEST(PreviewMeshingTest, KeepsDistantTilePublicationFinalAcrossInterestTraversal
     std::array<client::HeightTileHandle, TILE_KEYS.size()> visible_tiles{};
     std::array<client::HeightTileHandle, TILE_KEYS.size()> current_tiles{};
     for (uint32_t index = 0U; index < TILE_KEYS.size(); ++index) {
-        auto const accepted = residency.accept(TILE_KEYS[index], REVISION, index + 1U, {});
+        auto const accepted = acceptFlatTile(residency, TILE_KEYS[index], REVISION, index + 1U);
         ASSERT_EQ(accepted.replacement, client::HeightTileReplacement::Published);
         current_tiles[index] = accepted.handle;
     }
@@ -421,8 +477,12 @@ TEST(PreviewMeshingTest, RebuildsWrappedSeamFacesFromTheCurrentNeighborRevision)
     center_heights.fill(12U);
     shared::HeightTile::Heights west_heights;
     west_heights.fill(20U);
-    auto const center = residency.accept({.x = 0, .y = 101}, {1U, 1U}, 1U, center_heights);
-    auto const old_west = residency.accept({.x = 4'095, .y = 101}, {1U, 1U}, 2U, west_heights);
+    shared::HeightTileKey const center_key{ .x = 0, .y = 101 };
+    shared::HeightTileKey const west_key{ .x = 4'095, .y = 101 };
+    auto const center = residency.accept(
+        center_key, {1U, 1U}, 1U, center_heights, surfaceFor(center_key, 1U, center_heights));
+    auto const old_west = residency.accept(
+        west_key, {1U, 1U}, 2U, west_heights, surfaceFor(west_key, 1U, west_heights));
     ASSERT_EQ(center.replacement, client::HeightTileReplacement::Published);
     ASSERT_EQ(old_west.replacement, client::HeightTileReplacement::Published);
     shared::HeightTileSurfaceMesh const old_mesh = client::buildPreviewMesh({
@@ -434,7 +494,8 @@ TEST(PreviewMeshingTest, RebuildsWrappedSeamFacesFromTheCurrentNeighborRevision)
     }));
 
     west_heights.fill(4U);
-    auto const current_west = residency.accept({.x = 4'095, .y = 101}, {1U, 1U}, 3U, west_heights);
+    auto const current_west = residency.accept(
+        west_key, {1U, 1U}, 3U, west_heights, surfaceFor(west_key, 1U, west_heights));
     ASSERT_EQ(current_west.replacement, client::HeightTileReplacement::Published);
     shared::HeightTileSurfaceMesh const current_mesh = client::buildPreviewMesh({
         .tile = center.handle,
@@ -458,8 +519,12 @@ TEST(PreviewMeshingTest, PreservesSeamsBetweenDifferentNeighborDetails)
     shared::HeightTile::Heights east_heights;
     east_heights.fill(BASE_HEIGHT);
     east_heights[0U] = EDGE_HEIGHT;
-    auto const west = residency.accept({.x = 0, .y = 0}, {1U, 1U}, 1U, west_heights);
-    auto const east = residency.accept({.x = 1, .y = 0}, {1U, 1U}, 2U, east_heights);
+    shared::HeightTileKey const west_key{ .x = 0, .y = 0 };
+    shared::HeightTileKey const east_key{ .x = 1, .y = 0 };
+    auto const west = residency.accept(
+        west_key, {1U, 1U}, 1U, west_heights, surfaceFor(west_key, 1U, west_heights));
+    auto const east = residency.accept(
+        east_key, {1U, 1U}, 2U, east_heights, surfaceFor(east_key, 1U, east_heights));
     ASSERT_EQ(west.replacement, client::HeightTileReplacement::Published);
     ASSERT_EQ(east.replacement, client::HeightTileReplacement::Published);
 
@@ -503,8 +568,12 @@ TEST(PreviewMeshingTest, PreservesSeamsWhenNeighborMeshesPublishOutOfOrder)
     shared::HeightTile::Heights east_heights;
     east_heights.fill(EAST_HEIGHT);
     east_heights[0U] = WEST_HEIGHT;
-    auto const west = residency.accept({.x = 0, .y = 0}, {1U, 1U}, 1U, west_heights);
-    auto const east = residency.accept({.x = 1, .y = 0}, {1U, 1U}, 2U, east_heights);
+    shared::HeightTileKey const west_key{ .x = 0, .y = 0 };
+    shared::HeightTileKey const east_key{ .x = 1, .y = 0 };
+    auto const west = residency.accept(
+        west_key, {1U, 1U}, 1U, west_heights, surfaceFor(west_key, 1U, west_heights));
+    auto const east = residency.accept(
+        east_key, {1U, 1U}, 2U, east_heights, surfaceFor(east_key, 1U, east_heights));
     ASSERT_EQ(west.replacement, client::HeightTileReplacement::Published);
     ASSERT_EQ(east.replacement, client::HeightTileReplacement::Published);
 
@@ -659,8 +728,12 @@ TEST(PreviewMeshingTest, BuildsTransitionBridgeAtNormalizedWorldWrapBoundary)
     shared::HeightTile::Heights east_heights;
     east_heights.fill(15U);
     east_heights[0U] = 16U;
-    auto const west = residency.accept({.x = 4'095, .y = 0}, {1U, 1U}, 1U, west_heights);
-    auto const east = residency.accept({.x = 0, .y = 0}, {1U, 1U}, 2U, east_heights);
+    shared::HeightTileKey const west_key{ .x = 4'095, .y = 0 };
+    shared::HeightTileKey const east_key{ .x = 0, .y = 0 };
+    auto const west = residency.accept(
+        west_key, {1U, 1U}, 1U, west_heights, surfaceFor(west_key, 1U, west_heights));
+    auto const east = residency.accept(
+        east_key, {1U, 1U}, 2U, east_heights, surfaceFor(east_key, 1U, east_heights));
     ASSERT_EQ(west.replacement, client::HeightTileReplacement::Published);
     ASSERT_EQ(east.replacement, client::HeightTileReplacement::Published);
 
@@ -723,6 +796,7 @@ TEST(PreviewMeshingTest, LimitsOneResultToFourNeighborBridgeUpdates)
                 .v_extent = shared::HeightTile::SIDE_LENGTH,
             }},
             .detail = shared::HeightTileSurfaceDetail::Fine,
+            .identity = {},
         };
     };
     shared::HeightTileSurfaceMesh const low_mesh = flatMesh({.x = 10, .y = 10}, 15U);

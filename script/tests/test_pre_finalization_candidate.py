@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -41,6 +42,46 @@ class PreFinalizationCandidateTests(unittest.TestCase):
             text=True,
             capture_output=True,
         )
+        # These cases exercise the historical S7 selector, so pin its release
+        # identity instead of inheriting the current checkout version.
+        project_info = cls.root / "src/shared/include/shared/ProjectInfo.hpp"
+        info = project_info.read_text(encoding="utf-8")
+        for pattern, replacement in (
+            (r'MINOR_VERSION_NAME\{ "[^\"]+" \}', 'MINOR_VERSION_NAME{ "Initiation" }'),
+            (r"\.minor\s*=\s*\d+", ".minor = 0"),
+            (r"\.patch\s*=\s*\d+", ".patch = 7"),
+        ):
+            info, count = re.subn(pattern, replacement, info, count=1)
+            if count != 1:
+                raise AssertionError(f"could not pin historical S7 identity with {pattern}")
+        project_info.write_text(info, encoding="utf-8")
+
+        cmake = cls.root / "CMakeLists.txt"
+        cmake_text, count = re.subn(
+            r"(?m)^    VERSION 0\.1\.1$",
+            "    VERSION 0.1.0",
+            cmake.read_text(encoding="utf-8"),
+            count=1,
+        )
+        if count != 1:
+            raise AssertionError("could not pin historical S7 CMake version")
+        cmake.write_text(cmake_text, encoding="utf-8")
+
+        manifest_path = cls.root / "vcpkg.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["version-string"] = "0.1.0"
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+        readme = cls.root / "README.md"
+        readme_text, count = re.subn(
+            r"(?m)^Version EarlyDev 0\.1\.1 BasicBlocks\.$",
+            "Version EarlyDev 0.1.0 Initiation.",
+            readme.read_text(encoding="utf-8"),
+            count=1,
+        )
+        if count != 1:
+            raise AssertionError("could not pin historical S7 README version")
+        readme.write_text(readme_text, encoding="utf-8")
         subprocess.run(["git", "init", "--quiet"], cwd=cls.root, check=True)
         # This fixture owns its temporary repository. Keep Git's background
         # maintenance from racing TemporaryDirectory.cleanup after commits.
@@ -52,11 +93,7 @@ class PreFinalizationCandidateTests(unittest.TestCase):
             source = REPOSITORY / relative
             target = cls.root / relative
             shutil.copy2(source, target)
-        project_info = cls.root / "src/shared/include/shared/ProjectInfo.hpp"
-        patch_match = re.search(r"\.patch = (\d+),", project_info.read_text(encoding="utf-8"))
-        if patch_match is None:
-            raise AssertionError("ProjectInfo.hpp does not contain a patch version")
-        cls.snapshot_index = int(patch_match.group(1))
+        cls.snapshot_index = 7
         history_relative = "docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md"
         history = cls.root / history_relative
         undated, replacements = re.subn(

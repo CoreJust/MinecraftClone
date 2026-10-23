@@ -3,6 +3,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -10,7 +11,55 @@
 #include <stdexcept>
 #include <unordered_map>
 
+namespace shared {
+
+enum class Block : uint8_t;
+struct ChunkCoordinate;
+struct HeightTileSurfaceQuad;
+struct MeshFace;
+
+} // namespace shared
+
 namespace client {
+
+// std430 FaceInstance packs material_id into extents.z (byte offset 24).
+// The direct, indexed-instanced, and indexed-block vertex paths share this layout.
+struct alignas(16) StoneFaceInstance final {
+    int32_t x = 0;
+    int32_t y = 0;
+    int32_t z = 0;
+    uint32_t direction = 0U;
+    uint32_t u_extent = 1U;
+    uint32_t v_extent = 1U;
+    uint32_t material_id = 1U;
+    uint32_t reserved_1 = 0U;
+
+    static constexpr uint32_t TERRAIN_TRIANGLE = 6U;
+    static constexpr uint32_t TERRAIN_HEIGHT_SCALE = 32U;
+
+    // XY coordinates are blocks; Z coordinates are unsigned fixed point at 1/32 block.
+    [[nodiscard]]
+    static StoneFaceInstance fromTerrainTriangle(
+        std::array<std::array<int32_t, 3>, 3> const& vertices, shared::Block material);
+
+    // Temperatures use signed fixed point at 1/32 degree Celsius.
+    [[nodiscard]]
+    static StoneFaceInstance fromTerrainSurfaceTriangle(
+        std::array<std::array<int32_t, 3>, 3> const& vertices,
+        std::array<int32_t, 3> const& temperatures
+    );
+
+    constexpr bool operator==(StoneFaceInstance const&) const noexcept = default;
+
+    [[nodiscard]]
+    static StoneFaceInstance fromChunkFace(shared::ChunkCoordinate coordinate, shared::MeshFace const& face);
+
+    [[nodiscard]]
+    static StoneFaceInstance fromHeightTileQuad(shared::HeightTileSurfaceQuad const& quad);
+};
+
+static_assert(sizeof(StoneFaceInstance) == 32U);
+static_assert(offsetof(StoneFaceInstance, material_id) == 24U);
 
 class StoneIndirectDraws final {
 public:

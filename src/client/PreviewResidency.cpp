@@ -1,12 +1,21 @@
 #include <client/PreviewResidency.hpp>
 
 #include <shared/net/Message.hpp>
+#include <shared/world/Chunk.hpp>
 #include <shared/world/HeightTileInterest.hpp>
+#include <shared/world/TerrainWorld.hpp>
+#include <generation/Generation.hpp>
 
 #include <algorithm>
+#include <string>
 #include <utility>
 
 namespace client {
+
+uint64_t HeightTile::byteSize() const noexcept
+{
+    return sizeof(HeightTile) + m_surface.identity.configuration_identity.capacity() + 1U;
+}
 
 void PreviewResidency::advanceRevision(HeightTileRevision const revision)
 {
@@ -29,9 +38,30 @@ HeightTileReplacementResult PreviewResidency::accept(
     HeightTileKey const key,
     HeightTileRevision const revision,
     uint64_t const token,
-    std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> heights
+    std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> heights,
+    shared::SurfaceTile surface
 )
 {
+    if (key != shared::normalizeHeightTileKey(key)
+        || surface.coordinate != shared::ChunkCoordinate{ .x = key.x, .y = key.y, .z = 0 }
+        || surface.identity.revision != revision.revision
+        || !shared::isValidSurfaceTile(surface)) {
+        return {
+            .replacement = HeightTileReplacement::InvalidSurface,
+            .handle = nullptr,
+            .evicted_key = std::nullopt,
+        };
+    }
+    for (uint32_t index = 0U; index < heights.size(); ++index) {
+        uint32_t const expected_height = static_cast<uint32_t>(surface.columns[index].highest_solid_z) + 1U;
+        if (heights[index] != expected_height || heights[index] > generation::MAX_HEIGHT + 1U) {
+            return {
+                .replacement = HeightTileReplacement::InvalidSurface,
+                .handle = nullptr,
+                .evicted_key = std::nullopt,
+            };
+        }
+    }
     if (revision != m_revision || token == 0U || token <= knownToken(key)) {
         return {
             .replacement = HeightTileReplacement::Stale,
@@ -40,8 +70,18 @@ HeightTileReplacementResult PreviewResidency::accept(
         };
     }
     auto existing = m_residents.find(key);
+    HeightTileHandle const tile{ new HeightTile{ key, revision, token, heights, std::move(surface) } };
+    uint64_t const incoming_bytes = tile->byteSize();
+    uint64_t const replaced_bytes = existing == m_residents.end()
+        ? 0U
+        : existing->second.tile->byteSize();
     std::optional<HeightTileKey> evicted_key;
-    if (existing == m_residents.end() && !makeRoom(key, evicted_key)) {
+    if (!makeRoom(
+            key,
+            incoming_bytes,
+            replaced_bytes,
+            existing != m_residents.end(),
+            evicted_key)) {
         return {
             .replacement = HeightTileReplacement::BudgetExceeded,
             .handle = nullptr,
@@ -49,14 +89,14 @@ HeightTileReplacementResult PreviewResidency::accept(
         };
     }
 
-    HeightTileHandle const tile{ new HeightTile{ key, revision, token, heights } };
     uint64_t const touch = m_touch++;
     if (existing == m_residents.end()) {
         m_residents.emplace(key, Resident{ .tile = tile, .touch = touch });
-        m_resident_bytes += HeightTile::byteSize();
     } else {
+        m_resident_bytes -= replaced_bytes;
         existing->second = Resident{ .tile = tile, .touch = touch };
     }
+    m_resident_bytes += incoming_bytes;
     m_resident_order.emplace_back(key, touch);
     recordToken(key, token);
     markChanged(key, HeightTileChangeKind::Upsert);
@@ -81,8 +121,8 @@ bool PreviewResidency::evict(
     if (resident == m_residents.end()) {
         return false;
     }
+    m_resident_bytes -= resident->second.tile->byteSize();
     m_residents.erase(resident);
-    m_resident_bytes -= HeightTile::byteSize();
     markChanged(key, HeightTileChangeKind::Remove);
     return true;
 }
@@ -170,15 +210,19 @@ void PreviewResidency::markChanged(HeightTileKey const key, HeightTileChangeKind
 
 bool PreviewResidency::makeRoom(
     HeightTileKey const protected_key,
+    uint64_t const incoming_bytes,
+    uint64_t const replaced_bytes,
+    bool const replacing,
     std::optional<HeightTileKey>& evicted_key
 )
 {
     if (m_limits.max_resident_tiles == 0U
-        || HeightTile::byteSize() > m_limits.max_resident_bytes) {
+        || incoming_bytes > m_limits.max_resident_bytes
+        || replaced_bytes > m_resident_bytes) {
         return false;
     }
-    while (m_residents.size() >= m_limits.max_resident_tiles
-        || m_resident_bytes > m_limits.max_resident_bytes - HeightTile::byteSize()) {
+    while ((!replacing && m_residents.size() >= m_limits.max_resident_tiles)
+        || m_resident_bytes - replaced_bytes > m_limits.max_resident_bytes - incoming_bytes) {
         auto victim = m_residents.end();
         while (!m_resident_order.empty()) {
             auto const [candidate_key, candidate_touch] = m_resident_order.front();
@@ -195,8 +239,8 @@ bool PreviewResidency::makeRoom(
         }
         HeightTileKey const key = victim->first;
         recordToken(key, victim->second.tile->token());
+        m_resident_bytes -= victim->second.tile->byteSize();
         m_residents.erase(victim);
-        m_resident_bytes -= HeightTile::byteSize();
         ++m_eviction_count;
         evicted_key = key;
         markChanged(key, HeightTileChangeKind::Remove);

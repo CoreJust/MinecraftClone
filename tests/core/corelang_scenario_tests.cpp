@@ -1,10 +1,11 @@
+#include <shared/corelang/ExecutionTypes.hpp>
 #include <shared/scenario/Scenario.hpp>
 
 #include <acceptance/EvidenceJson.hpp>
 #include <acceptance/ScenarioRunner.hpp>
-
 #include <gtest/gtest.h>
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <expected>
@@ -12,6 +13,8 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -46,7 +49,40 @@ public:
     [[nodiscard]] bool isCancellationRequested() const noexcept override { return true; }
 };
 
-TEST(CoreLangScenario, LowersComplexMultiClientFlightScriptIntoTypedNativeOperations)
+class CancelAfterChecks final : public shared::ScenarioCancellation {
+public:
+    explicit CancelAfterChecks(uint32_t const cancel_at_check)
+        : m_cancel_at_check(cancel_at_check)
+    {
+    }
+
+    [[nodiscard]] bool isCancellationRequested() const noexcept override
+    {
+        return ++m_checks >= m_cancel_at_check;
+    }
+
+    [[nodiscard]] uint32_t checks() const noexcept { return m_checks; }
+
+private:
+    uint32_t m_cancel_at_check;
+    mutable uint32_t m_checks{0U};
+};
+
+class CountCancellationChecks final : public shared::ScenarioCancellation {
+public:
+    [[nodiscard]] bool isCancellationRequested() const noexcept override
+    {
+        ++m_checks;
+        return false;
+    }
+
+    [[nodiscard]] uint32_t checks() const noexcept { return m_checks; }
+
+private:
+    mutable uint32_t m_checks{0U};
+};
+
+TEST(CoreLangScenario, LowersBare015MultiClientFlightScriptIntoTypedNativeOperations)
 {
     auto const result = shared::parseScenarioSource(
         "s5_flight_multiplayer.core",
@@ -66,7 +102,267 @@ TEST(CoreLangScenario, LowersComplexMultiClientFlightScriptIntoTypedNativeOperat
     EXPECT_NE(std::get_if<shared::ScenarioCameraInputOperation>(&result->operations()[1].data), nullptr);
     EXPECT_EQ(result->totalTicks(), 10U);
     EXPECT_EQ(result->evidenceCount(), 2U);
+    ASSERT_TRUE(result->executionReceipt().has_value());
+    EXPECT_EQ(result->executionReceipt()->requested_backend, shared::corelang::Backend::Interpreter);
+    EXPECT_EQ(result->executionReceipt()->actual_backend, shared::corelang::Backend::Interpreter);
     EXPECT_FALSE(shared::scenarioReplayId(*result).empty());
+}
+
+TEST(CoreLangScenario, SelectedBackendsReportActualExecutionAndMatchInterpreterPlan)
+{
+    std::string const source = readScenario("s5_flight_camera.core");
+    auto const interpreter = shared::parseScenarioSource("backend-parity.core", source, scenarioLimits());
+
+    ASSERT_TRUE(interpreter.has_value()) << interpreter.error().message;
+    ASSERT_TRUE(interpreter->executionReceipt().has_value());
+    EXPECT_EQ(
+        interpreter->executionReceipt()->requested_backend,
+        shared::corelang::Backend::Interpreter
+    );
+    EXPECT_EQ(
+        interpreter->executionReceipt()->actual_backend,
+        shared::corelang::Backend::Interpreter
+    );
+    EXPECT_NE(interpreter->executionReceipt()->source_sha256, (std::array<uint8_t, 32U>{}));
+    EXPECT_NE(interpreter->executionReceipt()->bytecode_sha256, (std::array<uint8_t, 32U>{}));
+
+    for (shared::corelang::Backend const backend : {
+             shared::corelang::Backend::Jit,
+             shared::corelang::Backend::Aot,
+         }) {
+        auto const selected = shared::parseScenarioSource(
+            "backend-parity.core",
+            source,
+            scenarioLimits(),
+            shared::ScenarioExecutionOptions{.backend = backend}
+        );
+        if (!selected) {
+            EXPECT_EQ(selected.error().code, shared::ScenarioDiagnosticCode::CoreLangRuntimeFailure);
+            EXPECT_NE(selected.error().message.find("unavailable"), std::string::npos);
+            continue;
+        }
+
+        ASSERT_TRUE(selected->executionReceipt().has_value());
+        EXPECT_EQ(selected->executionReceipt()->requested_backend, backend);
+        EXPECT_EQ(selected->executionReceipt()->actual_backend, backend);
+        EXPECT_EQ(selected->executionReceipt()->source_sha256, interpreter->executionReceipt()->source_sha256);
+        EXPECT_EQ(selected->executionReceipt()->bytecode_sha256, interpreter->executionReceipt()->bytecode_sha256);
+        EXPECT_EQ(shared::scenarioReplayId(*selected), shared::scenarioReplayId(*interpreter));
+        if (backend == shared::corelang::Backend::Aot) {
+            EXPECT_TRUE(selected->executionReceipt()->native_image_sha256.has_value());
+        }
+    }
+}
+
+TEST(CoreLangScenario, BoundsBackendArtifactsAndPreservesFiniteLoopExecution)
+{
+    std::string const source = readScenario("s5_flight_camera.core");
+
+    shared::ScenarioExecutionOptions artifact_limited{};
+    artifact_limited.limits.max_bytecode_bytes = 1U;
+    auto const oversized = shared::parseScenarioSource(
+        "oversized-backend-artifact.core",
+        source,
+        scenarioLimits(),
+        artifact_limited
+    );
+    ASSERT_FALSE(oversized.has_value());
+    EXPECT_EQ(oversized.error().code, shared::ScenarioDiagnosticCode::CoreLangCompileFailure);
+    EXPECT_NE(oversized.error().message.find("bytecode"), std::string::npos);
+
+    shared::ScenarioExecutionOptions image_limited{};
+    image_limited.backend = shared::corelang::Backend::Aot;
+    image_limited.limits.max_native_image_bytes = 1U;
+    auto const oversized_image = shared::parseScenarioSource(
+        "oversized-native-image.core",
+        source,
+        scenarioLimits(),
+        image_limited
+    );
+    ASSERT_FALSE(oversized_image.has_value());
+    EXPECT_EQ(oversized_image.error().code, shared::ScenarioDiagnosticCode::CoreLangRuntimeFailure);
+    EXPECT_TRUE(
+        oversized_image.error().message.find("native-image-too-large") != std::string::npos
+        || oversized_image.error().message.find("backend-unavailable") != std::string::npos
+    );
+
+    shared::ScenarioExecutionOptions instruction_limited{};
+    instruction_limited.limits.max_instructions = 1U;
+    auto const over_limit = shared::parseScenarioSource(
+        "oversized-instruction-plan.core",
+        source,
+        scenarioLimits(),
+        instruction_limited
+    );
+    ASSERT_FALSE(over_limit.has_value());
+    EXPECT_EQ(over_limit.error().code, shared::ScenarioDiagnosticCode::CoreLangRuntimeFailure);
+
+    static constexpr std::string_view FINITE_LOOP_SOURCE = R"(@version(0.1.5)
+@use minecraft
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(1u64)
+    playerXYZ("alice", '@'c8, 0i32, 0i32, 0i32, 0i16, 0i16, 0i16)
+    for index in 0i32..2i32 {
+        wait(1u64)
+    }
+}
+)";
+    auto const finite_loop = shared::parseScenarioSource(
+        "finite-loop.core",
+        FINITE_LOOP_SOURCE,
+        scenarioLimits()
+    );
+    ASSERT_TRUE(finite_loop.has_value()) << finite_loop.error().message;
+    EXPECT_EQ(finite_loop->totalTicks(), 2U);
+    ASSERT_EQ(finite_loop->operations().size(), 2U);
+}
+
+TEST(CoreLangScenario, EnforcesCombinedBackendComparisonBudgets)
+{
+    using Backend = shared::corelang::Backend;
+    using DiagnosticCode = shared::ScenarioDiagnosticCode;
+    struct BudgetCase final {
+        Backend backend;
+        uint64_t max_execution_count;
+        uint64_t max_instructions;
+        std::optional<DiagnosticCode> expected_error;
+    };
+    static constexpr std::string_view SOURCE = R"core(@version(0.1.5)
+@use minecraft
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(1u64)
+    playerXYZ("alice", '@'c8, 0i32, 0i32, 0i32, 0i16, 0i16, 0i16)
+    wait(1u64)
+}
+)core";
+    static constexpr std::array<BudgetCase, 24U> BUDGET_CASES{
+        BudgetCase{Backend::Interpreter, 1U, 16U, DiagnosticCode::CoreLangRuntimeFailure},
+        BudgetCase{Backend::Jit, 1U, 16U, DiagnosticCode::InvalidLimits},
+        BudgetCase{Backend::Aot, 1U, 16U, DiagnosticCode::InvalidLimits},
+        BudgetCase{Backend::Interpreter, 1U, 17U, std::nullopt},
+        BudgetCase{Backend::Jit, 1U, 17U, DiagnosticCode::InvalidLimits},
+        BudgetCase{Backend::Aot, 1U, 17U, DiagnosticCode::InvalidLimits},
+        BudgetCase{Backend::Interpreter, 1U, 33U, std::nullopt},
+        BudgetCase{Backend::Jit, 1U, 33U, DiagnosticCode::InvalidLimits},
+        BudgetCase{Backend::Aot, 1U, 33U, DiagnosticCode::InvalidLimits},
+        BudgetCase{Backend::Interpreter, 1U, 34U, std::nullopt},
+        BudgetCase{Backend::Jit, 1U, 34U, DiagnosticCode::InvalidLimits},
+        BudgetCase{Backend::Aot, 1U, 34U, DiagnosticCode::InvalidLimits},
+        BudgetCase{Backend::Interpreter, 2U, 16U, DiagnosticCode::CoreLangRuntimeFailure},
+        BudgetCase{Backend::Jit, 2U, 16U, DiagnosticCode::CoreLangRuntimeFailure},
+        BudgetCase{Backend::Aot, 2U, 16U, DiagnosticCode::CoreLangRuntimeFailure},
+        BudgetCase{Backend::Interpreter, 2U, 17U, std::nullopt},
+        BudgetCase{Backend::Jit, 2U, 17U, DiagnosticCode::CoreLangRuntimeFailure},
+        BudgetCase{Backend::Aot, 2U, 17U, DiagnosticCode::CoreLangRuntimeFailure},
+        BudgetCase{Backend::Interpreter, 2U, 33U, std::nullopt},
+        BudgetCase{Backend::Jit, 2U, 33U, DiagnosticCode::CoreLangRuntimeFailure},
+        BudgetCase{Backend::Aot, 2U, 33U, DiagnosticCode::CoreLangRuntimeFailure},
+        BudgetCase{Backend::Interpreter, 2U, 34U, std::nullopt},
+        BudgetCase{Backend::Jit, 2U, 34U, std::nullopt},
+        BudgetCase{Backend::Aot, 2U, 34U, std::nullopt},
+    };
+
+    for (BudgetCase const& budget_case : BUDGET_CASES) {
+        SCOPED_TRACE(
+            ::testing::Message{}
+                << "backend=" << static_cast<uint32_t>(budget_case.backend)
+                << ", execution_count=" << budget_case.max_execution_count
+                << ", instructions=" << budget_case.max_instructions
+        );
+        shared::ScenarioExecutionOptions execution{.backend = budget_case.backend};
+        execution.limits.max_execution_count = budget_case.max_execution_count;
+        execution.limits.max_instructions = budget_case.max_instructions;
+
+        auto const plan = shared::parseScenarioSource("budget.core", SOURCE, scenarioLimits(), execution);
+
+        EXPECT_EQ(plan.has_value(), !budget_case.expected_error.has_value());
+        if (budget_case.expected_error.has_value()) {
+            if (plan) {
+                continue;
+            }
+            EXPECT_EQ(plan.error().code, *budget_case.expected_error);
+            std::string_view const error_name = *budget_case.expected_error == DiagnosticCode::InvalidLimits
+                ? "invalid-configuration"
+                : "instruction-limit-exceeded";
+            EXPECT_NE(plan.error().message.find(error_name), std::string::npos);
+            continue;
+        }
+        ASSERT_TRUE(plan.has_value()) << plan.error().message;
+        EXPECT_EQ(plan->totalTicks(), 1U);
+        ASSERT_TRUE(plan->executionReceipt().has_value());
+        auto const& receipt = *plan->executionReceipt();
+        EXPECT_EQ(receipt.requested_backend, budget_case.backend);
+        EXPECT_EQ(receipt.actual_backend, budget_case.backend);
+        EXPECT_EQ(receipt.native_image_sha256.has_value(), budget_case.backend == Backend::Aot);
+        if (receipt.native_image_sha256.has_value()) {
+            EXPECT_NE(*receipt.native_image_sha256, (std::array<uint8_t, 32U>{}));
+        }
+    }
+}
+
+TEST(CoreLangScenario, ForwardsCancellationIntoBoundedCompilation)
+{
+    CancelAfterChecks const cancellation{3U};
+    auto const result = shared::parseScenarioSource(
+        "compile-cancelled.core",
+        readScenario("s5_flight_camera.core"),
+        scenarioLimits(),
+        shared::ScenarioExecutionOptions{},
+        &cancellation
+    );
+
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code, shared::ScenarioDiagnosticCode::Cancelled);
+    EXPECT_EQ(cancellation.checks(), 3U);
+}
+
+TEST(CoreLangScenario, PreservesCoreLangCompilationDiagnosticSourceLocation)
+{
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
+@use minecraft
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(1u64)
+    missingHost()
+}
+)";
+    auto const result = shared::parseScenarioSource("bad-source-location.core", SOURCE, scenarioLimits());
+
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code, shared::ScenarioDiagnosticCode::CoreLangCompileFailure);
+    EXPECT_EQ(result.error().location.line, 6U);
+    EXPECT_EQ(result.error().location.column, 5U);
+}
+
+TEST(CoreLangScenario, ForwardsCancellationIntoBoundedExecution)
+{
+    std::string const source = readScenario("s5_flight_camera.core");
+    CountCancellationChecks compile_counter;
+    shared::ScenarioExecutionOptions instruction_limited{};
+    instruction_limited.limits.max_instructions = 1U;
+    auto const bounded = shared::parseScenarioSource(
+        "execution-cancelled.core",
+        source,
+        scenarioLimits(),
+        instruction_limited,
+        &compile_counter
+    );
+    ASSERT_FALSE(bounded.has_value());
+    EXPECT_EQ(bounded.error().code, shared::ScenarioDiagnosticCode::CoreLangRuntimeFailure);
+
+    CancelAfterChecks const cancellation{compile_counter.checks() + 1U};
+    auto const cancelled = shared::parseScenarioSource(
+        "execution-cancelled.core",
+        source,
+        scenarioLimits(),
+        shared::ScenarioExecutionOptions{},
+        &cancellation
+    );
+    ASSERT_FALSE(cancelled.has_value());
+    EXPECT_EQ(cancelled.error().code, shared::ScenarioDiagnosticCode::Cancelled);
+    EXPECT_EQ(cancellation.checks(), compile_counter.checks() + 1U);
 }
 
 TEST(CoreLangScenario, RunsScriptedDirectAndCameraFlightThroughTheAuthoritativeRunner)
@@ -94,8 +390,15 @@ TEST(CoreLangScenario, RunsScriptedDirectAndCameraFlightThroughTheAuthoritativeR
         .deadline = std::chrono::seconds{5},
         .network_poll_interval = std::chrono::milliseconds{1},
     };
-    auto const multiplayer_result = acceptance::runScenario(*multiplayer, options);
-    auto const camera_result = acceptance::runScenario(*camera, options);
+    using RunResult = std::expected<acceptance::RuntimeEvidence, std::string>;
+    std::unique_ptr<RunResult const> const multiplayer_result_owner{
+        new RunResult{acceptance::runScenario(*multiplayer, options)}
+    };
+    auto const& multiplayer_result = *multiplayer_result_owner;
+    std::unique_ptr<RunResult const> const camera_result_owner{
+        new RunResult{acceptance::runScenario(*camera, options)}
+    };
+    auto const& camera_result = *camera_result_owner;
     auto const boundary_result = acceptance::runScenario(*boundary, options);
 
     ASSERT_TRUE(multiplayer_result.has_value()) << multiplayer_result.error();
@@ -134,14 +437,14 @@ TEST(CoreLangScenario, RejectsInvalidScriptAfterPrivateCandidateMutation)
 
 TEST(CoreLangScenario, RejectsUnknownMixedLimitedAndCancelledSourcesBeforePublishingAPlan)
 {
-    static constexpr std::string_view VALID_PREFIX = R"(@version("0.1.2")
+    static constexpr std::string_view VALID_PREFIX = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("flight3d-v1")
     seed(1u64)
     playerXYZ("alice", '@'c8, 0i32, 0i32, 0i32, 0i16, 0i16, 0i16)
 )";
-    static constexpr std::string_view LIMITED = R"(@version("0.1.2")
+    static constexpr std::string_view LIMITED = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("flight3d-v1")
@@ -150,7 +453,7 @@ pub fn scenario() {
     wait(2u64)
 }
 )";
-    static constexpr std::string_view MAX_TICK_THEN_INPUT = R"(@version("0.1.2")
+    static constexpr std::string_view MAX_TICK_THEN_INPUT = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("flight3d-v1")
@@ -171,8 +474,19 @@ pub fn scenario() {
     );
     EXPECT_EQ(
         shared::parseScenarioSource(
-            "mixed.core", "@version(\"0.1.2\")\nscenario 1\n", scenarioLimits()
+            "legacy-012.core", "@version(\"0.1.2\")\n", scenarioLimits()
         ).error().code,
+        shared::ScenarioDiagnosticCode::UnknownSourceHeader
+    );
+    EXPECT_EQ(
+        shared::parseScenarioSource(
+            "legacy-013.core", "@version(\"0.1.3\")\n", scenarioLimits()
+        ).error().code,
+        shared::ScenarioDiagnosticCode::UnknownSourceHeader
+    );
+    EXPECT_EQ(
+        shared::parseScenarioSource("malformed-015.core", "@version(0.1.5)\nscenario 1\n", scenarioLimits())
+            .error().code,
         shared::ScenarioDiagnosticCode::CoreLangCompileFailure
     );
 
@@ -268,7 +582,7 @@ TEST(CoreLangScenario, RunsPermissionFlightPhaseAndJumpAssertionsOnTheAuthoritat
 
 TEST(CoreLangScenario, RejectsCollisionBypassWithoutFlightPermission)
 {
-    static constexpr std::string_view SOURCE = R"(@version("0.1.2")
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("flight3d-v1")

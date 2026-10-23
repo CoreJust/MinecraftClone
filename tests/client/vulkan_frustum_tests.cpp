@@ -193,3 +193,93 @@ TEST(VulkanFrustumTest, MatchesCornerCullingAcrossFovFramebufferAndWideTerrainDi
 }
 
 } // namespace
+
+TEST(VulkanFrustumTest, CurvaturePreservesCameraAxisAndKnownHorizonDrop)
+{
+    EXPECT_EQ(client::curvedWorldPosition({ 0.0F, 0.0F, 500.0F }), (glm::vec3{ 0.0F, 0.0F, 500.0F }));
+    EXPECT_EQ(client::curvedWorldPosition({ 8192.0F, 0.0F, 500.0F }).z, 244.0F);
+    EXPECT_EQ(client::curvedWorldPosition({ 16'384.0F, 0.0F, 500.0F }).z, -524.0F);
+}
+
+TEST(VulkanFrustumTest, CurvedBoundsContainInteriorAxisAndPeriodicSeam)
+{
+    auto const bounds = client::curvedBoundsNearestToCamera(
+        { 65'530.0F, 0.0F, 10.0F }, { 65'540.0F, 10.0F, 20.0F }, { 0.0, 5.0, 1000.0 }
+    );
+    EXPECT_FLOAT_EQ(bounds.minimum.x, -6.0F);
+    EXPECT_FLOAT_EQ(bounds.maximum.x, 4.0F);
+    EXPECT_FLOAT_EQ(bounds.maximum.z, -980.0F);
+    for (float const x : { -6.0F, 0.0F, 4.0F }) {
+        for (float const y : { -5.0F, 0.0F, 5.0F }) {
+            auto const point = client::curvedWorldPosition({ x, y, -990.0F });
+            EXPECT_GE(point.z, bounds.minimum.z);
+            EXPECT_LE(point.z, bounds.maximum.z);
+        }
+    }
+}
+
+TEST(VulkanFrustumTest, HorizontalVisibilityUsesRadiusAndIgnoresRelativeHeight)
+{
+    EXPECT_TRUE(client::insideWorldVisibility(
+        { { 16'383.0F, 0.0F, -1.0e8F }, { 16'384.0F, 1.0F, -1.0e7F } }, 16'384.0F
+    ));
+    EXPECT_FALSE(client::insideWorldVisibility(
+        { { 16'384.0F, 0.0F, 0.0F }, { 16'385.0F, 1.0F, 1.0F } }, 16'384.0F
+    ));
+    EXPECT_FALSE(client::insideWorldVisibility(
+        { { 12'000.0F, 12'000.0F, 0.0F }, { 12'001.0F, 12'001.0F, 1.0F } }, 16'384.0F
+    ));
+    EXPECT_TRUE(client::insideWorldVisibility(
+        { { 12'000.0F, 12'000.0F, 0.0F }, { 12'001.0F, 12'001.0F, 1.0F } }, 32'768.0F
+    ));
+    EXPECT_FALSE(client::insideWorldVisibility(
+        { { 32'768.0F, 0.0F, 0.0F }, { 32'769.0F, 1.0F, 1.0F } }, 32'768.0F
+    ));
+}
+
+TEST(VulkanFrustumTest, CurvedProjectionRetainsVisibleTerrainAtBothExtremeAltitudes)
+{
+    for (double const altitude : { -65'536.0, 65'536.0 }) {
+        client::Camera const camera{
+            { .position = { 0.0, 0.0, altitude },
+              .angles = { .yaw_degrees = 0.0, .pitch_degrees = altitude > 0.0 ? -89.0 : 89.0 } },
+            { .far_plane = client::curvedWorldFarPlane(altitude, 50'000.0) },
+        };
+        auto const projection = camera.projectionMatrix(1920U, 1080U);
+        ASSERT_TRUE(projection.has_value());
+        client::VulkanFrustum const frustum{ *projection * camera.viewMatrix() };
+        auto const terrain = client::curvedWorldPosition({ 1000.0F, 0.0F, 0.0F });
+        EXPECT_TRUE(frustum.intersects(terrain, terrain));
+    }
+    EXPECT_DOUBLE_EQ(client::curvedWorldFarPlane(0.0, 100'000.0), 100'000.0);
+}
+
+TEST(VulkanFrustumTest, AltitudeVisibilityPreservesLowHorizonAndReachesHalfWorld)
+{
+    for (double const altitude : { -65'536.0, 0.0, 384.0, 1'408.0 }) {
+        EXPECT_FLOAT_EQ(client::worldVisibilityRadius(altitude), 16'384.0F);
+    }
+    EXPECT_FLOAT_EQ(client::worldVisibilityRadius(2'688.0), 24'576.0F);
+    EXPECT_FLOAT_EQ(client::worldVisibilityRadius(4'480.0), 32'768.0F);
+    EXPECT_FLOAT_EQ(client::worldVisibilityRadius(65'536.0), 32'768.0F);
+    EXPECT_FALSE(client::insideWorldVisibility(
+        { { 24'000.0F, 0.0F, -10'000.0F }, { 24'001.0F, 1.0F, -9'999.0F } },
+        client::worldVisibilityRadius(384.0)
+    ));
+    EXPECT_TRUE(client::insideWorldVisibility(
+        { { 24'000.0F, 0.0F, -10'000.0F }, { 24'001.0F, 1.0F, -9'999.0F } },
+        client::worldVisibilityRadius(4'480.0)
+    ));
+}
+
+TEST(VulkanFrustumTest, AltitudeVisibilityGrowsContinuouslyWithoutShrinkingNearCoverage)
+{
+    float previous = client::worldVisibilityRadius(-1'000.0);
+    for (int32_t altitude = -999; altitude <= 8'192; ++altitude) {
+        float const radius = client::worldVisibilityRadius(altitude);
+        EXPECT_GE(radius, previous);
+        EXPECT_GE(radius, 16'384.0F);
+        EXPECT_LE(radius, 32'768.0F);
+        previous = radius;
+    }
+}

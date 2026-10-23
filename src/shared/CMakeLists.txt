@@ -1,4 +1,7 @@
-target_sources(mc
+add_subdirectory(corelang)
+target_link_libraries(mc_game_core PRIVATE mc_terrain_corelang)
+
+target_sources(mc_game_core
     PRIVATE
         net/Message.cpp
         policy/CoreLangPolicy.cpp
@@ -6,7 +9,6 @@ target_sources(mc
         scenario/Scenario.cpp
         world/CanonicalWorld.cpp
         world/ScriptedWorld.cpp
-        world/Chunk.cpp
         world/ChunkMesher.cpp
         world/ChunkMeshLod.cpp
         world/HeightTileSurfaceMesher.cpp
@@ -14,6 +16,7 @@ target_sources(mc
         world/WorldGeneration.cpp
         world/WorldGenerationScheduler.cpp
         world/SparseWorld.cpp
+        world/WorldCoverage.cpp
         world/World.cpp
 )
 
@@ -35,4 +38,4 @@ configure_file(
     "${PROJECT_BINARY_DIR}/generated/shared/HeightTileScript.hpp"
     @ONLY
 )
-target_include_directories(mc PRIVATE "${PROJECT_BINARY_DIR}/generated")
+target_include_directories(mc_game_core PRIVATE "${PROJECT_BINARY_DIR}/generated")

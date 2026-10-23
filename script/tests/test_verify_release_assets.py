@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,11 +41,20 @@ class VerifyReleaseAssetsTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
-        source = Path(__file__).resolve().parents[2]
         project = self.root / "src/shared/include/shared/ProjectInfo.hpp"
         project.parent.mkdir(parents=True)
-        shutil.copyfile(source / project.relative_to(self.root), project)
-        shutil.copyfile(source / "vcpkg.json", self.root / "vcpkg.json")
+        project.write_text(
+            'constexpr std::string_view MAJOR_VERSION_NAME{ "EarlyDev" };\n'
+            'constexpr std::string_view MINOR_VERSION_NAME{ "Initiation" };\n'
+            "constexpr ProjectVersion PROJECT_VERSION{\n"
+            "    .epoch = 0,\n"
+            "    .major = 1,\n"
+            "    .minor = 0,\n"
+            "    .patch = 7,\n"
+            "};\n",
+            encoding="utf-8",
+        )
+        (self.root / "vcpkg.json").write_text('{"version-string": "0.1.0"}\n', encoding="utf-8")
         self.payloads = {
             "macos": b"macos archive",
             "windows": b"windows archive",

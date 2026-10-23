@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>S2 UI prototype</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="prototype">
+    <header class="outside-frame">
+      <nav aria-label="Prototype screens">
+        <a href="#loading">1 Loading</a>
+        <a href="#generation">2 Generation</a>
+        <a href="#game">3 Game</a>
+        <a href="#map">4 World map</a>
+      </nav>
+      <p>Native atlas seed 42; formation, FPS, memory and vertical position are examples; no live world connection</p>
+    </header>
+    <main class="screen">
+      <canvas id="screen" tabindex="0" role="img" aria-label="S2 UI prototype screen"></canvas>
+    </main>
+  </div>
+  <script src="./assets/font.js"></script>
+  <script src="./assets/world-data.js"></script>
+  <script src="./loading-view.js"></script>
+  <script src="./generation-view.js"></script>
+  <script src="./minimap-view.js"></script>
+  <script src="./game-hud.js"></script>
+  <script src="./world-map-view.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

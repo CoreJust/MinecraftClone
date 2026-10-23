@@ -25,14 +25,30 @@ class VerifyMacosLsanTests(unittest.TestCase):
     def setUp(self):
         self.verifier = load_module()
 
-    def test_suppression_file_accepts_only_the_three_exact_sites(self):
-        valid = "\n".join(self.verifier.EXPECTED_SUPPRESSIONS) + "\n"
+    def test_suppression_file_accepts_only_the_four_exact_sites(self):
+        reviewed = (
+            "leak:AMCP::Utility::Dispatch_Queue::install_mig_server",
+            "leak:AutoreleasePoolPage::autoreleaseNoPage",
+            "leak:__CFTSDGetTable",
+            "leak:__103-[CFPrefsSearchListSource synchronouslySendSystemMessage:andUserMessage:andDirectMessage:replyHandler:]_block_invoke.49",
+        )
+        valid = "\n".join(reviewed) + "\n"
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "macos_lsan.supp"
             path.write_text(valid, encoding="utf-8")
-            self.assertEqual(self.verifier.read_suppressions(path), self.verifier.EXPECTED_SUPPRESSIONS)
-            path.write_text(valid + "leak:CoreFoundation\n", encoding="utf-8")
-            with self.assertRaisesRegex(self.verifier.VerificationError, "exactly the three"):
+            self.assertEqual(self.verifier.read_suppressions(path), reviewed)
+            for extra in (
+                "leak:CoreFoundation",
+                "leak:CFPrefsSearchListSource",
+                "leak:AMCP::Utility::Dispatch_Queue::install_mach_port_death_notification",
+                "leak:HALC_ProxyObjectMap::_ReleaseObject",
+            ):
+                with self.subTest(extra=extra):
+                    path.write_text(valid + extra + "\n", encoding="utf-8")
+                    with self.assertRaisesRegex(self.verifier.VerificationError, "exactly the four"):
+                        self.verifier.read_suppressions(path)
+            path.write_text(valid.replace(reviewed[-1], "leak:CFPrefsSearchListSource"), encoding="utf-8")
+            with self.assertRaisesRegex(self.verifier.VerificationError, "exactly the four"):
                 self.verifier.read_suppressions(path)
 
     def test_sanitizer_environment_keeps_leak_detection_and_exact_suppression_path(self):

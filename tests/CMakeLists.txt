@@ -16,6 +16,7 @@ add_library(mc_test_support STATIC
     testsupport/include/testsupport/AdverseTransport.hpp
     testsupport/ImageComparison.cpp
     testsupport/include/testsupport/ImageComparison.hpp
+    testsupport/include/testsupport/TerrainFixtures.hpp
 )
 target_include_directories(mc_test_support
     PUBLIC
@@ -95,6 +96,15 @@ if(MC_REGISTER_SERVER_ONLY_BUILD_TEST)
     )
 endif()
 
+if(MC_BUILD_CLIENT AND NOT ANDROID)
+    configure_file(cmake/column_map_cpu_consumer_test.cmake.in
+        "${CMAKE_CURRENT_BINARY_DIR}/column_map_cpu_consumer_test.cmake" @ONLY)
+    add_test(NAME MinecraftClone.ColumnMapCpuConsumer
+        COMMAND ${CMAKE_COMMAND} "-DMC_TEST_CONFIGURATION=$<CONFIG>"
+            -P "${CMAKE_CURRENT_BINARY_DIR}/column_map_cpu_consumer_test.cmake")
+    set_tests_properties(MinecraftClone.ColumnMapCpuConsumer PROPERTIES RUN_SERIAL TRUE TIMEOUT 720)
+endif()
+
 option(MC_ENABLE_STONE_RENDERER_ACCEPTANCE "Run S5 offscreen stone acceptance" OFF)
 if(MC_ENABLE_STONE_RENDERER_ACCEPTANCE)
     if(NOT MC_BUILD_CLIENT OR ANDROID)
@@ -112,6 +122,23 @@ if(MC_ENABLE_STONE_RENDERER_ACCEPTANCE)
         LABELS "renderer;gpu"
         FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
     )
+endif()
+
+if(TARGET mc_world_map)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(
+        NAME TerrainWorldMap.Cli
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/../script/tests/test_world_map_cli.py
+            --executable $<TARGET_FILE:mc_world_map>
+    )
+    set_tests_properties(TerrainWorldMap.Cli PROPERTIES TIMEOUT 180 LABELS "generation;tools")
+    add_test(
+        NAME MinecraftClone.TerrainTextureAssets
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/../script/generate_terrain_textures.py --check
+    )
+    set_tests_properties(MinecraftClone.TerrainTextureAssets PROPERTIES TIMEOUT 30 LABELS "client;assets")
 endif()
 
 if(MC_BUILD_CLIENT AND NOT ANDROID)
@@ -137,9 +164,18 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
 endif()
 
 add_executable(mc_tests
+    generation/climate_tests.cpp
+    generation/coastal_tests.cpp
+    generation/generation_tests.cpp
+    generation/geology_tests.cpp
+    generation/hydrology_tests.cpp
+    generation/numpy_random_tests.cpp
+    generation/reference_tests.cpp
     core/algorithm_tests.cpp
     core/byte_io_tests.cpp
     core/crash_handler_tests.cpp
+    core/corelang_backend_tests.cpp
+    core/corelang_terrain_plan_tests.cpp
     core/corelang_policy_tests.cpp
     core/defer_tests.cpp
     core/enum_bits_tests.cpp
@@ -161,6 +197,12 @@ add_executable(mc_tests
     core/shared_message_tests.cpp
     core/scenario_parser_tests.cpp
     core/chunk_tests.cpp
+    core/terrain_world_tests.cpp
+    core/terrain_lod_tests.cpp
+            core/world_coverage_tests.cpp
+    core/terrain_world_reference_tests.cpp
+    core/world_preparation_tests.cpp
+    core/height_tile_worker_pool_tests.cpp
     core/chunk_mesher_tests.cpp
     core/chunk_mesh_lod_tests.cpp
     core/height_tile_surface_mesher_tests.cpp
@@ -199,6 +241,49 @@ endif()
 
 if(WIN32)
     set(MC_SERVER_NUMERIC_RUNTIME_FILES)
+    set(MC_VCPKG_LIBRARY_LINKAGE)
+    set(MC_VCPKG_TRIPLET_PREFIX)
+    if(VCPKG_TARGET_TRIPLET)
+        set(MC_VCPKG_TRIPLET_CANDIDATES)
+        foreach(triplet_overlay IN LISTS VCPKG_OVERLAY_TRIPLETS)
+            list(APPEND MC_VCPKG_TRIPLET_CANDIDATES
+                "${triplet_overlay}/${VCPKG_TARGET_TRIPLET}.cmake")
+        endforeach()
+        get_filename_component(vcpkg_toolchain_name "${CMAKE_TOOLCHAIN_FILE}" NAME)
+        if(vcpkg_toolchain_name STREQUAL "vcpkg.cmake")
+            get_filename_component(vcpkg_toolchain_dir "${CMAKE_TOOLCHAIN_FILE}" DIRECTORY)
+            get_filename_component(vcpkg_scripts_dir "${vcpkg_toolchain_dir}/.." ABSOLUTE)
+            get_filename_component(vcpkg_root "${vcpkg_scripts_dir}/.." ABSOLUTE)
+            list(APPEND MC_VCPKG_TRIPLET_CANDIDATES
+                "${vcpkg_root}/triplets/${VCPKG_TARGET_TRIPLET}.cmake"
+                "${vcpkg_root}/triplets/community/${VCPKG_TARGET_TRIPLET}.cmake")
+        elseif(VCPKG_ROOT)
+            list(APPEND MC_VCPKG_TRIPLET_CANDIDATES
+                "${VCPKG_ROOT}/triplets/${VCPKG_TARGET_TRIPLET}.cmake"
+                "${VCPKG_ROOT}/triplets/community/${VCPKG_TARGET_TRIPLET}.cmake")
+        elseif(DEFINED ENV{VCPKG_ROOT})
+            list(APPEND MC_VCPKG_TRIPLET_CANDIDATES
+                "$ENV{VCPKG_ROOT}/triplets/${VCPKG_TARGET_TRIPLET}.cmake"
+                "$ENV{VCPKG_ROOT}/triplets/community/${VCPKG_TARGET_TRIPLET}.cmake")
+        endif()
+        if(VCPKG_INSTALLED_DIR)
+            get_filename_component(MC_VCPKG_TRIPLET_PREFIX
+                "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}" ABSOLUTE)
+        endif()
+        foreach(triplet_candidate IN LISTS MC_VCPKG_TRIPLET_CANDIDATES)
+            if(EXISTS "${triplet_candidate}")
+                file(STRINGS "${triplet_candidate}" triplet_linkage_lines
+                    REGEX "^[ \t]*set\\([ \t]*VCPKG_LIBRARY_LINKAGE[ \t]+")
+                list(LENGTH triplet_linkage_lines triplet_linkage_line_count)
+                if(triplet_linkage_line_count EQUAL 1 AND
+                   triplet_linkage_lines MATCHES
+                       "^[ \t]*set\\([ \t]*VCPKG_LIBRARY_LINKAGE[ \t]+\"?(static|dynamic)\"?[ \t]*\\)")
+                    set(MC_VCPKG_LIBRARY_LINKAGE "${CMAKE_MATCH_1}")
+                endif()
+                break()
+            endif()
+        endforeach()
+    endif()
     foreach(numeric_library IN ITEMS CoreLangNumerics_MPFR_LIBRARY CoreLangNumerics_GMP_LIBRARY)
         if(DEFINED ${numeric_library} AND EXISTS "${${numeric_library}}")
             get_filename_component(numeric_library_dir "${${numeric_library}}" DIRECTORY)
@@ -209,7 +294,15 @@ if(WIN32)
                 "${numeric_prefix}/bin/lib${numeric_name}*.dll"
             )
             if(NOT numeric_runtime_files)
-                message(FATAL_ERROR "Missing Windows runtime DLL for ${numeric_library}: ${numeric_prefix}/bin/${numeric_name}*.dll")
+                get_filename_component(numeric_prefix_absolute "${numeric_prefix}" ABSOLUTE)
+                if(MC_VCPKG_LIBRARY_LINKAGE STREQUAL "static" AND
+                   MC_VCPKG_TRIPLET_PREFIX AND
+                   "${numeric_prefix_absolute}" STREQUAL "${MC_VCPKG_TRIPLET_PREFIX}")
+                    continue()
+                endif()
+                message(FATAL_ERROR
+                    "Missing Windows runtime DLL for ${numeric_library}: "
+                    "${numeric_prefix}/bin/${numeric_name}*.dll (linkage is not declared static)")
             endif()
             list(APPEND MC_SERVER_NUMERIC_RUNTIME_FILES ${numeric_runtime_files})
         endif()
@@ -237,6 +330,8 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             android/input_state_tests.cpp
             acceptance/evidence_json_tests.cpp
             acceptance/game_benchmark_tests.cpp
+            acceptance/column_map_replay_tests.cpp
+            acceptance/replay_input_tests.cpp
             acceptance/adverse_network_tests.cpp
             acceptance/framebuffer_extent_tests.cpp
             acceptance/image_evidence_tests.cpp
@@ -248,6 +343,19 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/debug_hud_tests.cpp
             client/frame_scheduler_tests.cpp
             client/game_client_audio_tests.cpp
+            client/world_loading_tests.cpp
+            client/terrain_lod_source_tests.cpp
+            client/terrain_lod_selection_tests.cpp
+            client/terrain_lod_presentation_tests.cpp
+            client/terrain_lod_runtime_tests.cpp
+            client/terrain_lod_upload_plan_tests.cpp
+            client/column_map_presentation_tests.cpp
+            client/column_map_client_tests.cpp
+            client/column_map_client_integration_tests.cpp
+            client/generation_map_presentation_tests.cpp
+            client/map_image_data_tests.cpp
+            client/presentation_frame_progress_tests.cpp
+            client/bot_client_tests.cpp
             client/game_client_benchmark_tests.cpp
             client/game_client_lifecycle_tests.cpp
             client/gui_renderer_tests.cpp
@@ -258,7 +366,9 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/game_client_prediction_tests.cpp
             client/player_presentation_tests.cpp
             client/player_client_capture_plan_tests.cpp
+            client/player_client_input_state_tests.cpp
             client/player_preview_lod_tests.cpp
+            client/preview_mesh_connectivity_tests.cpp
             client/preview_mesh_work_queue_tests.cpp
             client/preview_meshing_tests.cpp
             client/stone_face_capacity_tests.cpp
@@ -312,6 +422,8 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
         "trivial.frag.spv;vulkan1.2"
         "text.vert.spv;vulkan1.2"
         "text.frag.spv;vulkan1.2"
+        "map.vert.spv;vulkan1.2"
+        "map.frag.spv;vulkan1.2"
     )
         list(GET SHADER_TARGET_ENV 0 SHADER_FILE)
         list(GET SHADER_TARGET_ENV 1 VULKAN_TARGET_ENV)
@@ -332,6 +444,7 @@ option(MC_ENABLE_RENDERER_SMOKE "Run noninteractive GPU smoke (requires a deskto
 if(MC_BUILD_CLIENT AND NOT ANDROID AND MC_ENABLE_RENDERER_SMOKE)
     add_executable(
         mc_renderer_smoke
+        client/player_client_focus_tests.cpp
         client/player_client_reset_tests.cpp
         client/renderer_smoke_tests.cpp
         main.cpp
@@ -420,3 +533,11 @@ if(MC_ENABLE_RENDERER_GOLDEN)
         FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
     )
 endif()
+
+target_include_directories(mc_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/generation
+)
+target_compile_definitions(mc_tests PRIVATE
+    MC_TERRAIN_REFERENCE_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/terrain_v2"
+)

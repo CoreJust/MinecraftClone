@@ -1,12 +1,18 @@
+#include <client/TerrainLodPresentation.hpp>
 #include <client/render/HeightTileDrawIndex.hpp>
 #include <client/render/InstalledShaderAssets.hpp>
+#include <client/render/ShaderAssets.hpp>
 #include <client/render/StoneIndirectDraws.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/world/ChunkMesher.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
+#include <shared/world/TerrainWorld.hpp>
+
+#include <generation/Generation.hpp>
 
 #include <core/graphics/vulkan/Vulkan.hpp>
+#include <core/kernel/Spirv.hpp>
 #include <core/platform/glfw/GlfwWindow.hpp>
 
 #define GLFW_INCLUDE_NONE
@@ -23,10 +29,12 @@
 #include <exception>
 #include <expected>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -36,6 +44,20 @@
 #endif
 
 namespace {
+
+class TerrainFragmentAssets final : public client::ShaderAssets {
+public:
+    explicit TerrainFragmentAssets(bool const solid) : m_solid(solid) {}
+
+    [[nodiscard]] core::kernel::SpirvModule load(std::string_view const name) const override
+    {
+        return m_installed.load(m_solid && name == "stone.frag.spv" ? "stone_solid.frag.spv" : name);
+    }
+
+private:
+    client::InstalledShaderAssets m_installed;
+    bool m_solid;
+};
 
 constexpr uint32_t WIDTH = 640U;
 constexpr uint32_t HEIGHT = 480U;
@@ -203,6 +225,94 @@ protected:
     std::optional<client::VulkanOffscreenRenderer> m_renderer;
 };
 
+TEST_F(StoneRendererAcceptanceTest, CanonicalClimateMatchesPhysicalMaterialDespiteWrongInterpolatedTemperature)
+{
+    auto synthetic = std::make_shared<generation::GlobalAtlas>();
+    synthetic->configuration.resolution = 256U;
+    synthetic->vertical_scale = 1.0;
+    synthetic->elevation.assign(256U * 256U, 16.0F);
+    synthetic->temperature.assign(256U * 256U, 12.0F);
+    synthetic->precipitation.assign(256U * 256U, 0.3F);
+    synthetic->water_level.assign(256U * 256U, 0.0F);
+    synthetic->ocean_mask.assign(256U * 256U, 0U);
+    synthetic->lake_mask.assign(256U * 256U, 0U);
+    synthetic->river_mask.assign(256U * 256U, 0U);
+    synthetic->temperature[0U] = -4.0F;
+    synthetic->temperature[1U] = 2.0F;
+    synthetic->temperature[256U] = 0.0F;
+    synthetic->temperature[257U] = -1.0F;
+
+    m_renderer.reset();
+    for (bool const solid_fragment : {false, true}) {
+        SCOPED_TRACE(solid_fragment ? "solid fragment" : "textured fragment");
+        TerrainFragmentAssets const assets{solid_fragment};
+        client::VulkanOffscreenRenderer renderer{assets, true};
+        auto const verify = [&](std::shared_ptr<generation::GlobalAtlas const> const& atlas,
+            uint32_t const x, uint32_t const y, shared::Block const expected, int32_t const wrong_temperature) {
+            SCOPED_TRACE(testing::Message{} << "XY=" << x << ',' << y << " material=" << static_cast<int>(expected));
+            shared::TerrainWorld const world{atlas};
+            auto const surface = world.sampleSurface({
+                .x = static_cast<int32_t>(x / 16U), .y = static_cast<int32_t>(y / 16U), .z = 0,
+            });
+            auto const& column = surface.columns[y % 16U * 16U + x % 16U];
+            ASSERT_EQ(column.materialAt(column.highest_solid_z, atlas->block_sea_level), expected);
+            int32_t const height = (static_cast<int32_t>(column.highest_solid_z) + 1) * 32;
+            int32_t const px = static_cast<int32_t>(x);
+            int32_t const py = static_cast<int32_t>(y);
+            std::array<std::array<int32_t, 3>, 4> const corners{{
+                {px - 1, py - 1, height}, {px + 1, py - 1, height},
+                {px + 1, py + 1, height}, {px - 1, py + 1, height},
+            }};
+            auto make_scene = [&](bool const climate_surface, shared::Block const material) {
+                auto scene = std::make_shared<client::TerrainLodScene>();
+                scene->shading_atlas = atlas;
+                scene->block_sea_level = atlas->block_sea_level;
+                for (auto const indices : {std::array{0U, 1U, 2U}, std::array{0U, 2U, 3U}}) {
+                    std::array<std::array<int32_t, 3>, 3> const vertices{
+                        corners[indices[0]], corners[indices[1]], corners[indices[2]],
+                    };
+                    scene->faces.push_back(climate_surface
+                        ? client::StoneFaceInstance::fromTerrainSurfaceTriangle(vertices,
+                            {wrong_temperature, wrong_temperature, wrong_temperature})
+                        : client::StoneFaceInstance::fromTerrainTriangle(vertices, material));
+                }
+                return scene;
+            };
+            renderer.setCamera({
+                .position = {static_cast<double>(x), static_cast<double>(y) - 3.0,
+                    static_cast<double>(height) / 32.0 + 4.0},
+                .angles = {.pitch_degrees = -55.0},
+            });
+            renderer.setTerrainLodScene(make_scene(false, expected));
+            auto const physical = render(renderer);
+            renderer.setTerrainLodScene(make_scene(false,
+                expected == shared::Block::Grass ? shared::Block::Snow : shared::Block::Grass));
+            auto const wrong_material = render(renderer);
+            ASSERT_NE(wrong_material.rgba8, physical.rgba8) << "the material comparison must cover visible terrain";
+            renderer.setTerrainLodScene(make_scene(true, expected));
+            auto const climate = render(renderer);
+            EXPECT_EQ(climate.rgba8, physical.rgba8)
+                << "canonical field shading must match the physical material, independent of legacy vertex temperature";
+            EXPECT_EQ(renderer.validationErrorCount(), 0U);
+        };
+
+        // The old affine L0 fan gives -2 C here; canonical bilinear climate is -1.671875 C.
+        verify(synthetic, 80U, 64U, shared::Block::Grass, -64);
+        verify(synthetic, 65'535U, 64U, shared::Block::Snow, 0);
+        auto const owner_atlas = generation::prepareAtlas({.seed = 42U, .resolution = 256U});
+        verify(owner_atlas, 32'631U, 48'477U, shared::Block::Snow, 0);
+        for (auto const elevation : {0.0F, -1.0F, -5.0F}) {
+            auto shoreline = std::make_shared<generation::GlobalAtlas>(*synthetic);
+            shoreline->temperature.assign(256U * 256U, -2.0F);
+            shoreline->elevation.assign(256U * 256U, elevation);
+            shoreline->ocean_mask.assign(256U * 256U, elevation < 0.0F ? 1U : 0U);
+            shared::Block const expected = elevation >= 0.0F ? shared::Block::Snow
+                : (elevation == -1.0F ? shared::Block::Ice : shared::Block::Stone);
+            verify(shoreline, 128U, 128U, expected, 0);
+        }
+    }
+}
+
 TEST_F(StoneRendererAcceptanceTest, DeterministicChunkRendersFromAboveAndBelow)
 {
     shared::ChunkMesh const mesh = deterministicChunk();
@@ -232,14 +342,9 @@ TEST_F(StoneRendererAcceptanceTest, AllThreeQuadModesHaveByteIdenticalOffscreenO
     };
     shared::ChunkMesh mesh = deterministicChunk();
     std::vector<shared::MeshFace> visible_faces = std::move(mesh.faces);
-    mesh.faces.assign(
-        client::StoneIndirectDraws::QUADS_PER_INDEX_BLOCK,
-        shared::MeshFace{
-            .local_origin = { .x = 240U, .y = 240U, .z = 240U },
-            .direction = shared::FaceDirection::PositiveZ,
-            .material = shared::Block::Stone,
-        }
-    );
+    ASSERT_FALSE(visible_faces.empty());
+    // Keep the original mesh beyond a complete index block using valid chunk-local geometry.
+    mesh.faces.assign(client::StoneIndirectDraws::QUADS_PER_INDEX_BLOCK, visible_faces.front());
     mesh.faces.insert(mesh.faces.end(), visible_faces.begin(), visible_faces.end());
     auto const capture_mode = [&](char const* const mode) {
         ScopedStoneSetting const selected{ "MC_DIAGNOSTIC_INDEXED_STONE_QUADS", mode };

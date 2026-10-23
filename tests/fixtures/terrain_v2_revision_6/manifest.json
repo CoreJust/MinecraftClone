@@ -1,0 +1,398 @@
+{
+  "configuration_identities": {
+    "0": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=0;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+    "1": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=1;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+    "2004": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=2004;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+    "42": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=42;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+    "777": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=777;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+    "8800555": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=8800555;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1"
+  },
+  "configuration_identity_schema": "terrain-v2 canonical identity with model-revision=6",
+  "fields": [
+    {
+      "bytes": 1403,
+      "coordinate_set": "revision6_top_material",
+      "dtype": "|u1",
+      "file": "seed-0/top_material_v6.raw",
+      "name": "top_material_v6",
+      "order": "C",
+      "seed": 0,
+      "sha256": "78186e74170a919f20031c44168368c2557b76b9935e583e8c4b1b329b254543",
+      "shape": [
+        1403
+      ],
+      "unit": "Terrain-v2 material ID"
+    },
+    {
+      "bytes": 1403,
+      "coordinate_set": "revision6_top_material",
+      "dtype": "|u1",
+      "file": "seed-1/top_material_v6.raw",
+      "name": "top_material_v6",
+      "order": "C",
+      "seed": 1,
+      "sha256": "78186e74170a919f20031c44168368c2557b76b9935e583e8c4b1b329b254543",
+      "shape": [
+        1403
+      ],
+      "unit": "Terrain-v2 material ID"
+    },
+    {
+      "bytes": 1403,
+      "coordinate_set": "revision6_top_material",
+      "dtype": "|u1",
+      "file": "seed-42/top_material_v6.raw",
+      "name": "top_material_v6",
+      "order": "C",
+      "seed": 42,
+      "sha256": "dc5f2c0a0b6ef4e643b54b93e54c5687642356bbc68558872b63b8b2a89042cd",
+      "shape": [
+        1403
+      ],
+      "unit": "Terrain-v2 material ID"
+    },
+    {
+      "bytes": 144,
+      "coordinate_set": "feedback6_owner_ray_points",
+      "dtype": "<u4",
+      "file": "seed-42/owner_point_xy.raw",
+      "name": "owner_point_xy",
+      "order": "C",
+      "seed": 42,
+      "sha256": "295eba959912375560dbad8f6bfe5eb2814cc99d030a846bd9ca51a0ea78132d",
+      "shape": [
+        18,
+        2
+      ],
+      "unit": "integer world block coordinates [x,y]"
+    },
+    {
+      "bytes": 72,
+      "coordinate_set": "feedback6_revision5_height_blocks",
+      "dtype": "<i4",
+      "file": "seed-42/owner_height_v5.raw",
+      "name": "owner_height_v5",
+      "order": "C",
+      "seed": 42,
+      "sha256": "f93b3899ab0a2bd6ad42d8bb3cdd5e35aa8f2c25cbd3b941660acd7dd0a213a7",
+      "shape": [
+        18
+      ],
+      "unit": "revision-5 highest solid block Z"
+    },
+    {
+      "bytes": 144,
+      "coordinate_set": "feedback6_revision5_temperature",
+      "dtype": "<f8",
+      "file": "seed-42/owner_temperature_v5.raw",
+      "name": "owner_temperature_v5",
+      "order": "C",
+      "seed": 42,
+      "sha256": "7b1455e32536e2bdce1f8edd9fc2ae837dc7b6a97e74fab8c238dcd155807c8a",
+      "shape": [
+        18
+      ],
+      "unit": "degrees Celsius"
+    },
+    {
+      "bytes": 144,
+      "coordinate_set": "feedback6_revision5_precipitation",
+      "dtype": "<f8",
+      "file": "seed-42/owner_precipitation_v5.raw",
+      "name": "owner_precipitation_v5",
+      "order": "C",
+      "seed": 42,
+      "sha256": "93fd10a5e4015f60c1b3d6aaa14af2889375e897198feed9f3f1f3272b8f70b8",
+      "shape": [
+        18
+      ],
+      "unit": "normalized flux"
+    },
+    {
+      "bytes": 18,
+      "coordinate_set": "feedback6_revision5_top_material",
+      "dtype": "|u1",
+      "file": "seed-42/owner_top_material_v5.raw",
+      "name": "owner_top_material_v5",
+      "order": "C",
+      "seed": 42,
+      "sha256": "ec78a44790d5440d48c58fd4eb5bbf00497fd9f6c8a30abe7431a2e6a9e2e85e",
+      "shape": [
+        18
+      ],
+      "unit": "Terrain-v2 material ID"
+    },
+    {
+      "bytes": 18,
+      "coordinate_set": "feedback6_revision5_ground_material",
+      "dtype": "|u1",
+      "file": "seed-42/owner_ground_material_v5.raw",
+      "name": "owner_ground_material_v5",
+      "order": "C",
+      "seed": 42,
+      "sha256": "e5f114affab78addb01983ca6bd296b9a580f6f33a455a1bb67bddddd297c2d1",
+      "shape": [
+        18
+      ],
+      "unit": "Terrain-v2 material ID"
+    },
+    {
+      "bytes": 18,
+      "coordinate_set": "feedback6_revision6_top_material",
+      "dtype": "|u1",
+      "file": "seed-42/owner_top_material_v6.raw",
+      "name": "owner_top_material_v6",
+      "order": "C",
+      "seed": 42,
+      "sha256": "30e7354829408aed30950379b7d061ccffad4e1ce25013a1c81c796e297e35bb",
+      "shape": [
+        18
+      ],
+      "unit": "Terrain-v2 material ID"
+    },
+    {
+      "bytes": 1403,
+      "coordinate_set": "revision6_top_material",
+      "dtype": "|u1",
+      "file": "seed-777/top_material_v6.raw",
+      "name": "top_material_v6",
+      "order": "C",
+      "seed": 777,
+      "sha256": "dab072501b538bc80b3ff3a4f3bc502b7d51af3d25abd3b9cc809c32b751ae6b",
+      "shape": [
+        1403
+      ],
+      "unit": "Terrain-v2 material ID"
+    },
+    {
+      "bytes": 1403,
+      "coordinate_set": "revision6_top_material",
+      "dtype": "|u1",
+      "file": "seed-2004/top_material_v6.raw",
+      "name": "top_material_v6",
+      "order": "C",
+      "seed": 2004,
+      "sha256": "dc5f2c0a0b6ef4e643b54b93e54c5687642356bbc68558872b63b8b2a89042cd",
+      "shape": [
+        1403
+      ],
+      "unit": "Terrain-v2 material ID"
+    },
+    {
+      "bytes": 1403,
+      "coordinate_set": "revision6_top_material",
+      "dtype": "|u1",
+      "file": "seed-8800555/top_material_v6.raw",
+      "name": "top_material_v6",
+      "order": "C",
+      "seed": 8800555,
+      "sha256": "a6bf8958337e65e327fff3c8b855abcf5f1ba55b5016d6d9cfa12b1b4a9db5dc",
+      "shape": [
+        1403
+      ],
+      "unit": "Terrain-v2 material ID"
+    }
+  ],
+  "material_rule": {
+    "exposed_land": "Snow when temperature <= -2 C; otherwise Grass independent of precipitation",
+    "ground_material": "unchanged revision-5 Dirt or Ice rule",
+    "height_climate_and_atlas": "unchanged revision-5 values",
+    "submerged": "unchanged revision-5 Dirt/soil-band/Stone rule"
+  },
+  "model_revision": 6,
+  "oracle": {
+    "owner_ray_source": "feedback-6 probe raw coordinates, replayed with pinned revision-5 Python sampler and approved revision-4 atlas fields",
+    "revision5_surface_oracle": "script/terrain_revision_5_reference.py",
+    "revision5_surface_oracle_sha256": "2f0fb6b653c71dd45fdd734145b9f9ad43e06722f13fdb1c97464a100f53d9cb",
+    "runtime": {
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "python": "3.14.6"
+    },
+    "scope": "The revision-6 change is material classification only; these references do not claim universal host-libm equivalence.",
+    "source": "script/terrain_revision_6_reference.py",
+    "source_sha256": "f355a11dd4e0a4c05d47e08fb805705997c5e1a8479ee7baf6156a52166e8057"
+  },
+  "owner_samples": [
+    {
+      "ray_distance_blocks": 0,
+      "view": "image1",
+      "x": 14942,
+      "y": 44726
+    },
+    {
+      "ray_distance_blocks": 8,
+      "view": "image1",
+      "x": 14937,
+      "y": 44731
+    },
+    {
+      "ray_distance_blocks": 16,
+      "view": "image1",
+      "x": 14931,
+      "y": 44736
+    },
+    {
+      "ray_distance_blocks": 32,
+      "view": "image1",
+      "x": 14920,
+      "y": 44745
+    },
+    {
+      "ray_distance_blocks": 64,
+      "view": "image1",
+      "x": 14898,
+      "y": 44765
+    },
+    {
+      "ray_distance_blocks": 128,
+      "view": "image1",
+      "x": 14853,
+      "y": 44804
+    },
+    {
+      "ray_distance_blocks": 256,
+      "view": "image1",
+      "x": 14764,
+      "y": 44883
+    },
+    {
+      "ray_distance_blocks": 512,
+      "view": "image1",
+      "x": 14585,
+      "y": 45040
+    },
+    {
+      "ray_distance_blocks": 1024,
+      "view": "image1",
+      "x": 14227,
+      "y": 45354
+    },
+    {
+      "ray_distance_blocks": 0,
+      "view": "images2-3",
+      "x": 11993,
+      "y": 43207
+    },
+    {
+      "ray_distance_blocks": 8,
+      "view": "images2-3",
+      "x": 11999,
+      "y": 43210
+    },
+    {
+      "ray_distance_blocks": 16,
+      "view": "images2-3",
+      "x": 12005,
+      "y": 43213
+    },
+    {
+      "ray_distance_blocks": 32,
+      "view": "images2-3",
+      "x": 12018,
+      "y": 43219
+    },
+    {
+      "ray_distance_blocks": 64,
+      "view": "images2-3",
+      "x": 12042,
+      "y": 43231
+    },
+    {
+      "ray_distance_blocks": 128,
+      "view": "images2-3",
+      "x": 12091,
+      "y": 43256
+    },
+    {
+      "ray_distance_blocks": 256,
+      "view": "images2-3",
+      "x": 12190,
+      "y": 43305
+    },
+    {
+      "ray_distance_blocks": 512,
+      "view": "images2-3",
+      "x": 12386,
+      "y": 43403
+    },
+    {
+      "ray_distance_blocks": 1024,
+      "view": "images2-3",
+      "x": 12780,
+      "y": 43599
+    }
+  ],
+  "revision4_full_atlas_archive_sha256": "690393f062e5e2d78c3bfc495066d8150165068b486731d46354d56427d55a6d",
+  "revision4_manifest_sha256": "9a2644bbe81a88876bac4f84f334f8c0a5d3525295e83122dcce10f92f02d6eb",
+  "revision5_fields_are_material_inputs_only": true,
+  "revision5_manifest_sha256": "593da126bfebecc56f2412424aba50a160105a3471d2b5c58f2c1146108294f2",
+  "revision5_oracle_source_sha256": "2f0fb6b653c71dd45fdd734145b9f9ad43e06722f13fdb1c97464a100f53d9cb",
+  "schema": "minecraftclone.terrain-v2-model-revision-6-surface-material-reference.v1",
+  "seeds": [
+    {
+      "changed_top_material_count": 0,
+      "configuration_identity": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=0;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+      "point_count": 1403,
+      "revision5_height_v5_sha256": "be0a5f43c962172129003dce99990fa523895446d0d487ceba73c4380b2e8750",
+      "revision5_point_xy_sha256": "379db5aca5fa0416acc2362bd703775f41bbca1c722783345a8c390a34d834a4",
+      "revision5_top_material_v5_sha256": "78186e74170a919f20031c44168368c2557b76b9935e583e8c4b1b329b254543",
+      "revision6_top_material_sha256": "78186e74170a919f20031c44168368c2557b76b9935e583e8c4b1b329b254543",
+      "seed": 0
+    },
+    {
+      "changed_top_material_count": 0,
+      "configuration_identity": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=1;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+      "point_count": 1403,
+      "revision5_height_v5_sha256": "5418854037d3445943fb67b96e38006615d77d51d7ec930e60f214009681803e",
+      "revision5_point_xy_sha256": "379db5aca5fa0416acc2362bd703775f41bbca1c722783345a8c390a34d834a4",
+      "revision5_top_material_v5_sha256": "78186e74170a919f20031c44168368c2557b76b9935e583e8c4b1b329b254543",
+      "revision6_top_material_sha256": "78186e74170a919f20031c44168368c2557b76b9935e583e8c4b1b329b254543",
+      "seed": 1
+    },
+    {
+      "changed_top_material_count": 0,
+      "configuration_identity": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=42;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+      "owner_point_count": 18,
+      "owner_top_material_changed_count": 3,
+      "point_count": 1403,
+      "revision5_height_v5_sha256": "26581c9e0e760062ba80bc16c72bfab4480a08f066c05c0a4a866f1992c10669",
+      "revision5_point_xy_sha256": "379db5aca5fa0416acc2362bd703775f41bbca1c722783345a8c390a34d834a4",
+      "revision5_top_material_v5_sha256": "dc5f2c0a0b6ef4e643b54b93e54c5687642356bbc68558872b63b8b2a89042cd",
+      "revision6_top_material_sha256": "dc5f2c0a0b6ef4e643b54b93e54c5687642356bbc68558872b63b8b2a89042cd",
+      "seed": 42
+    },
+    {
+      "changed_top_material_count": 0,
+      "configuration_identity": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=777;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+      "point_count": 1403,
+      "revision5_height_v5_sha256": "570d65fb330f98809e45fa5a8e58fd5ed464b662710c471648a7f01784e89c53",
+      "revision5_point_xy_sha256": "379db5aca5fa0416acc2362bd703775f41bbca1c722783345a8c390a34d834a4",
+      "revision5_top_material_v5_sha256": "dab072501b538bc80b3ff3a4f3bc502b7d51af3d25abd3b9cc809c32b751ae6b",
+      "revision6_top_material_sha256": "dab072501b538bc80b3ff3a4f3bc502b7d51af3d25abd3b9cc809c32b751ae6b",
+      "seed": 777
+    },
+    {
+      "changed_top_material_count": 0,
+      "configuration_identity": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=2004;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+      "point_count": 1403,
+      "revision5_height_v5_sha256": "eceac4f14de75e37d8d2314bd17f2e91e12126ed663bae56b0f207df361cad55",
+      "revision5_point_xy_sha256": "379db5aca5fa0416acc2362bd703775f41bbca1c722783345a8c390a34d834a4",
+      "revision5_top_material_v5_sha256": "dc5f2c0a0b6ef4e643b54b93e54c5687642356bbc68558872b63b8b2a89042cd",
+      "revision6_top_material_sha256": "dc5f2c0a0b6ef4e643b54b93e54c5687642356bbc68558872b63b8b2a89042cd",
+      "seed": 2004
+    },
+    {
+      "changed_top_material_count": 1215,
+      "configuration_identity": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=8800555;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+      "point_count": 1403,
+      "revision5_height_v5_sha256": "37ebdfd9a3e1c2ff3aba7449c6798bdb6d096c9a580f6ae69b8afaa435d2b343",
+      "revision5_point_xy_sha256": "379db5aca5fa0416acc2362bd703775f41bbca1c722783345a8c390a34d834a4",
+      "revision5_top_material_v5_sha256": "dab072501b538bc80b3ff3a4f3bc502b7d51af3d25abd3b9cc809c32b751ae6b",
+      "revision6_top_material_sha256": "a6bf8958337e65e327fff3c8b855abcf5f1ba55b5016d6d9cfa12b1b4a9db5dc",
+      "seed": 8800555
+    }
+  ],
+  "source_map_sha256": "5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704",
+  "terrain_version": 2
+}

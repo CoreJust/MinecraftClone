@@ -23,6 +23,7 @@ EXPECTED_SUPPRESSIONS = (
     "leak:AMCP::Utility::Dispatch_Queue::install_mig_server",
     "leak:AutoreleasePoolPage::autoreleaseNoPage",
     "leak:__CFTSDGetTable",
+    "leak:__103-[CFPrefsSearchListSource synchronouslySendSystemMessage:andUserMessage:andDirectMessage:replyHandler:]_block_invoke.49",
 )
 EXPECTED_LEAK = re.compile(
     r"Direct leak of 4096 byte\(s\) in 1 object\(s\) allocated from:\n(?P<stack>.*?)(?=\n\s*\n|\nSUMMARY:)",
@@ -44,7 +45,7 @@ def read_suppressions(path: Path) -> tuple[str, ...]:
         raise VerificationError(f"cannot read LSan suppressions at {path}: {error}") from error
     if entries != EXPECTED_SUPPRESSIONS:
         raise VerificationError(
-            "macOS LSan suppression file must contain exactly the three reviewed allocation sites"
+            "macOS LSan suppression file must contain exactly the four reviewed allocation sites"
         )
     return entries
 

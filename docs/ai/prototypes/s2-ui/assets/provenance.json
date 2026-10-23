@@ -1,0 +1,37 @@
+{
+  "status": "UI prototype assets; current mutable S1 source, not new game art or measured telemetry. Rejected image-generated concepts are not part of this prototype.",
+  "head_at_inspection": "46cb6132f54a435f9aae8381b189e847fbc22591",
+  "assets": [
+    {
+      "source": "docs/ai/report-evidence/ED-011-S1/ordinary-grass-01.png",
+      "asset": "terrain.png",
+      "sha256": "d8d97e3480a8b193d953057bf4b1b1bb266c33289327ef5c9d54f465994232fc",
+      "description": "Copied unchanged native S1 work-in-progress capture; source/model qualification not established by this UI prototype."
+    },
+    {
+      "source": "src/client/render/shaders/text.frag",
+      "asset": "font.js",
+      "source_sha256": "67d82a03c7d2d1d4ac992b26999b144f3ad53d7efa481b63772d9e4bcf16427a",
+      "description": "Exact 96-glyph FONT_DATA, unsigned 32-bit words; rendering uses the existing 8x16 shader bit order."
+    }
+  ],
+  "superseded_assets": {
+    "commit": "1acd46105f1b7b944a8f116e7adaf8e7a6cc8980",
+    "reason": "Screenshot classifier and effects replaced by one aligned native atlas fixture.",
+    "records": [
+      {
+        "source": "docs/ai/report-evidence/ED-011-S1/map-frost-final-climate-and-drainage.png",
+        "asset": "maps.png",
+        "sha256": "9d5d14a02d7b89df1e591fef11cff87a71f626f51beac35d7a71d51ef922010d",
+        "description": "Copied unchanged native S1 work-in-progress capture; source/model qualification not established by this UI prototype."
+      },
+      {
+        "source": "docs/ai/report-evidence/ED-011-S1/map-frost-final-climate-and-drainage.png",
+        "asset": "map-source.js",
+        "source_sha256": "9d5d14a02d7b89df1e591fef11cff87a71f626f51beac35d7a71d51ef922010d",
+        "description": "Identical PNG bytes encoded as a data URI for offline browser canvas reads. Visual animation/material projection are UI illustrations, not world-generation or LOD qualification."
+      }
+    ]
+  },
+  "atlas_provenance": "world-data-provenance.json"
+}

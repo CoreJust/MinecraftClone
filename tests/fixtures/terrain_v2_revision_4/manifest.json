@@ -1,0 +1,1474 @@
+{
+  "approved_candidate_full_atlas_archive": {
+    "raw_field_bytes": 5898240,
+    "retained_path": "/Users/core-just/.codex/task-evidence/mc-s1-20261019/terrain-v2-revision-4/approved-candidate-full-atlas-fields.zip",
+    "sha256": "690393f062e5e2d78c3bfc495066d8150165068b486731d46354d56427d55a6d"
+  },
+  "configuration_identities": {
+    "0": "terrain-v2;model-revision=4;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=0;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+    "1": "terrain-v2;model-revision=4;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=1;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+    "2004": "terrain-v2;model-revision=4;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=2004;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+    "42": "terrain-v2;model-revision=4;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=42;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+    "777": "terrain-v2;model-revision=4;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=777;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+    "8800555": "terrain-v2;model-revision=4;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=8800555;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1"
+  },
+  "fields": [
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-42/stage__geology_elevation.raw",
+      "name": "stage__geology_elevation",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "eaeb9665ed62d0055c7caaa480ca23b892ce7576c1f13a98527d737d6524ad52",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-0/atlas__elevation.raw",
+      "name": "atlas__elevation",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "0d44e11f3ee163cc6b12eb030574d358128b1efb98a1fb2196181334032217ce",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-0/atlas__temperature.raw",
+      "name": "atlas__temperature",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "e4614218502df0d9019ac019a390cd2377abdd5b135b080f7ec301cc3e9165c6",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "degrees Celsius"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-0/atlas__water_level.raw",
+      "name": "atlas__water_level",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "4f533950ccb13d0cab008839651866cdb8b6bbaa17bf933ad551cebb2fa12050",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-0/atlas__ocean_mask.raw",
+      "name": "atlas__ocean_mask",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "6b662fc787ce089e33df667da037f87783e34bc90774d2f5037127bf2038860d",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-0/atlas__lake_mask.raw",
+      "name": "atlas__lake_mask",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "d218e06ad8dd4192a6e09d706719f365ec7ca8f6f78902512a2c0d173368b8de",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-0/atlas__river_mask.raw",
+      "name": "atlas__river_mask",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "86d6e4867c11ba234e6bce1d980669939c19e72643446aaae339dc59052005c0",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-1/atlas__elevation.raw",
+      "name": "atlas__elevation",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "8ddd640b87db03cd1b8b822436cd7ccf00c33cb37977db6470848537e7b7d26f",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-1/atlas__temperature.raw",
+      "name": "atlas__temperature",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "89962c5a333923c93450a44ec4967387c01a0d47bb4217c5a3d7aff82b623754",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "degrees Celsius"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-1/atlas__water_level.raw",
+      "name": "atlas__water_level",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "d55bde3614f76178341412a63d19130d01129fe21e52f0cefe0a72f74114acb5",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-1/atlas__ocean_mask.raw",
+      "name": "atlas__ocean_mask",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "219a3d704537805882351ec978d88fc4368523159f78320f9fae179e63481bfe",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-1/atlas__lake_mask.raw",
+      "name": "atlas__lake_mask",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "d0a2791245cab950743145b8e6243b1db2080cb7eefae2cdbb79adb3afdc6ec6",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-1/atlas__river_mask.raw",
+      "name": "atlas__river_mask",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "1a8e3eb72d5fea80dda2aaf132693a18ee1693bec1dfa9aa340be9f9b63c6eb8",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-42/atlas__elevation.raw",
+      "name": "atlas__elevation",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "845b5f04a336a6055adcc302ead5acbfdbba944268d3eaec385622a04d48ad7e",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-42/atlas__temperature.raw",
+      "name": "atlas__temperature",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "a59e6dcaa9514e677a95bc4125259bb56246e979e401c89e04b7666fe36c8ff3",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "degrees Celsius"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-42/atlas__water_level.raw",
+      "name": "atlas__water_level",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "48ef231890af9bcd479e2b47a02340f2505f2be8e322476f5b136d003507ccd9",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-42/atlas__ocean_mask.raw",
+      "name": "atlas__ocean_mask",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "9e831ecb8dd8f89747136872d6aefe35a4ae7236d11c0fde4b7156f690380437",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-42/atlas__lake_mask.raw",
+      "name": "atlas__lake_mask",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "20bc71a75fab966c146b3e2265ea7b29ee72cfd664585b6f48a6cb11e83ea7cf",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-42/atlas__river_mask.raw",
+      "name": "atlas__river_mask",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "aabce6e78f870e1b56a19c72a767b6cd86b514ff7406c8e5c353158e17fb53ab",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-777/atlas__elevation.raw",
+      "name": "atlas__elevation",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "c52e3a1dac44d03f53cb5ff3a93f6722b9b70e09884ebfb6c2bb56bc1093bed0",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-777/atlas__temperature.raw",
+      "name": "atlas__temperature",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "2d57141ee5b43734712808b79f4fd8bd093f2ebcb0733571d5bffe57f5023c43",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "degrees Celsius"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-777/atlas__water_level.raw",
+      "name": "atlas__water_level",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "f96afc7f47e6b9d87ede8d9364f4eab7d1d38307b8473321eaf9f1af0f0f41ab",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-777/atlas__ocean_mask.raw",
+      "name": "atlas__ocean_mask",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "0a9e84fb88881d5fa35d22cfd96d5cc9f0efe102c416672155449bab3ae494fb",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-777/atlas__lake_mask.raw",
+      "name": "atlas__lake_mask",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "d5d634885309eee9965854d1492f1153651dd97977289808c707c097b3b47eb9",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-777/atlas__river_mask.raw",
+      "name": "atlas__river_mask",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "c1837351320b68f8285319b74ab9a4d094d86b0e90e27886e6a99410e1ab07ed",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-2004/atlas__elevation.raw",
+      "name": "atlas__elevation",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "9c7b2a35340b4a5c6fcb460ec285eb0c41ce5673bf4edcf5ecefe5f1f7b7286e",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-2004/atlas__temperature.raw",
+      "name": "atlas__temperature",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "bbfb984ec032b610fa6ef85a2adf1a1a9ccc55c54c8181f36c44057ce3e1df44",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "degrees Celsius"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-2004/atlas__water_level.raw",
+      "name": "atlas__water_level",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "a91df3ec2b7533bdf7b972e01d270ad162b6253b340fb81c175722b8954ca854",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-2004/atlas__ocean_mask.raw",
+      "name": "atlas__ocean_mask",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "3a43f0431c48f84f5207705c7f6e6eee25e31986147748e6a473ad5bf1ed5ffc",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-2004/atlas__lake_mask.raw",
+      "name": "atlas__lake_mask",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "b55f59575ef0438b5cb35bf86c2448d3b667e3cbe1f96e7c393b8e6e5488a460",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-2004/atlas__river_mask.raw",
+      "name": "atlas__river_mask",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "e857baa27086227463234060b4ee4932fe992626e9e37d301569aab936b736ce",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-8800555/atlas__elevation.raw",
+      "name": "atlas__elevation",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "e31e0d2662e9070f2767353b134acdb1962275245f1beef4f25fab2a45244668",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-8800555/atlas__temperature.raw",
+      "name": "atlas__temperature",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "0f3c73f7d0beb95ebf2bde4af33b3b9bd3035c5d49286b4535c79fcc9a9f52a0",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "degrees Celsius"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "<f4",
+      "file": "seed-8800555/atlas__water_level.raw",
+      "name": "atlas__water_level",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "b4567337bc399cc9afa0ad313cfef6333ae4c8720e07b65be23123d61ccd8c9e",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "geological kilometres"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-8800555/atlas__ocean_mask.raw",
+      "name": "atlas__ocean_mask",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "bb2119e404bac8acde0c476698cede43957252ee9940985aa86def3b318c73e4",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-8800555/atlas__lake_mask.raw",
+      "name": "atlas__lake_mask",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "atlas_indices_0_16_to_240",
+      "dtype": "|u1",
+      "file": "seed-8800555/atlas__river_mask.raw",
+      "name": "atlas__river_mask",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "2a16562f1ff4dd95370785dd5de0f12fd72b8c8e87149fb5603641fd9611b5d6",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "mask"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "<i4",
+      "file": "seed-0/height.raw",
+      "name": "height",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "bb0251b075a5beb08b5e6be82c2629bc86bd8f66ce4bdc8fc04883bcf7efbe43",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "block z"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-0/top_material.raw",
+      "name": "top_material",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "6479f165c9d9464f937221860deeb08fac2eaf722a3c121a5b60a870b6cdf56e",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "material ID"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-0/ground_material.raw",
+      "name": "ground_material",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "ee1281c0464b376264f2462d90203b12a7f41677b6842ce601c2f741cf2bcbd8",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "material ID"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-0/pixel_rgba.raw",
+      "name": "pixel_rgba",
+      "order": "C row-major [y,x,channel]",
+      "seed": 0,
+      "sha256": "8ab20fb4814b01172c6e8b4e67ee9ac57f0bfd7b5e1321c1c929d138be5fe5c1",
+      "shape": [
+        16,
+        16,
+        4
+      ],
+      "unit": "RGBA8"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "<i4",
+      "file": "seed-1/height.raw",
+      "name": "height",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "5781781f9a526681afa8a3d61e03b4a48013a3e3bab2c373046576a57f67ecec",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "block z"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-1/top_material.raw",
+      "name": "top_material",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "738944ad9bfc524a4f8f1294e45b69bf3e7576e72abb91c11ebc96a8b7e9d32c",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "material ID"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-1/ground_material.raw",
+      "name": "ground_material",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "92b82a23eacf2997805914b8423eb909a2e2604d4ffbd5d6cf8983111b4482c5",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "material ID"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-1/pixel_rgba.raw",
+      "name": "pixel_rgba",
+      "order": "C row-major [y,x,channel]",
+      "seed": 1,
+      "sha256": "5d3b632b663e9a2726460a4cd215c49ac6cb73d6ed51c5aa96f4d59cc2017302",
+      "shape": [
+        16,
+        16,
+        4
+      ],
+      "unit": "RGBA8"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "<i4",
+      "file": "seed-42/height.raw",
+      "name": "height",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "e6b714dd2e71ee786ed2def3970ceae3f8f0b81796260fb84e978f51d9fd3c43",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "block z"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-42/top_material.raw",
+      "name": "top_material",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "6388ebf7c334f1a8957d7dfe2512c4887b417c765d02b80c4a7158c0ed3971ca",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "material ID"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-42/ground_material.raw",
+      "name": "ground_material",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "7f9c36c326d15bd0e197e91f1d85ccdbbfe69bc13aa37af150b8eddcd6f16680",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "material ID"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-42/pixel_rgba.raw",
+      "name": "pixel_rgba",
+      "order": "C row-major [y,x,channel]",
+      "seed": 42,
+      "sha256": "3f39cd3c0dac99f0117b02122a17f154b0cc7cade0e06449ea263fc38a77823d",
+      "shape": [
+        16,
+        16,
+        4
+      ],
+      "unit": "RGBA8"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "<i4",
+      "file": "seed-777/height.raw",
+      "name": "height",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "1729bcd6b00d0020a1144dd7e0c5b91018f04f7aabf1c1a52bfcaa39428b7b34",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "block z"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-777/top_material.raw",
+      "name": "top_material",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "5a547dda2fa569d55c0e10c00d2eb58ac63f4564f79fc6a057482722b1e9af71",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "material ID"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-777/ground_material.raw",
+      "name": "ground_material",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "330309b6cb8e198af6878cce235b36b33ba68b2a59cb6e6d83d1b5295501bf16",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "material ID"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-777/pixel_rgba.raw",
+      "name": "pixel_rgba",
+      "order": "C row-major [y,x,channel]",
+      "seed": 777,
+      "sha256": "6342545af947d135f24c8df09ca341a172a4f6b563650e2601684a9051b50db6",
+      "shape": [
+        16,
+        16,
+        4
+      ],
+      "unit": "RGBA8"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "<i4",
+      "file": "seed-2004/height.raw",
+      "name": "height",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "9a7fe7e70f032843c54144fb6e99ee16de2e0a36ff45828349593ffdbe93472e",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "block z"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-2004/top_material.raw",
+      "name": "top_material",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "310d237ab7c978cd215e2a61a6bf57f361b3e9a8ddd92284abe19bcdb6d58782",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "material ID"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-2004/ground_material.raw",
+      "name": "ground_material",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "724b3011fdca8c8e0567f1ae7a60006f7ca1e8fde146be5199c67be6bbe99a23",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "material ID"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-2004/pixel_rgba.raw",
+      "name": "pixel_rgba",
+      "order": "C row-major [y,x,channel]",
+      "seed": 2004,
+      "sha256": "d5337e0fcf672f38cc1f5d9fb66e97c41c2ef36d935a84f1d00f91099224bfc3",
+      "shape": [
+        16,
+        16,
+        4
+      ],
+      "unit": "RGBA8"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "<i4",
+      "file": "seed-8800555/height.raw",
+      "name": "height",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "97939d76a0514b15fda373575dcb1e3e386ecdd3ee7444c063580f0f48d17672",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "block z"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-8800555/top_material.raw",
+      "name": "top_material",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "f82123ca192e808a6c69921b0b0dd7e580def6067ea97642f7909cc1a64e53fe",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "material ID"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-8800555/ground_material.raw",
+      "name": "ground_material",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "724e4248369907944bbb3a920f8ad819266788228ac8c8bff28a4484e9b2080f",
+      "shape": [
+        16,
+        16
+      ],
+      "unit": "material ID"
+    },
+    {
+      "coordinate_set": "world_blocks_128_plus_4096_k",
+      "dtype": "|u1",
+      "file": "seed-8800555/pixel_rgba.raw",
+      "name": "pixel_rgba",
+      "order": "C row-major [y,x,channel]",
+      "seed": 8800555,
+      "sha256": "fd0a65518009876af91ade1bd3fb09f594d72167d0e94d343b7c9e348474f85b",
+      "shape": [
+        16,
+        16,
+        4
+      ],
+      "unit": "RGBA8"
+    }
+  ],
+  "full_atlas_fields": [
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-0/fields/height.f32le",
+      "name": "atlas__elevation",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "7e86353b4901e7ae8b56436b6a096ec3e942d42a09447761a75ed6ce08cb50b1",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-0/fields/temperature.f32le",
+      "name": "atlas__temperature",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "8ed3e59d1f1b281c3852194c65c29608bec1ced9e6f26524b02f63edb06ab246",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-0/fields/water.f32le",
+      "name": "atlas__water_level",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "d4a5f12fadc9dd1f79df9c98a696e8a94547efe02cf8e7dfc1c64f6556a075d4",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-0/fields/ocean-mask.u8",
+      "name": "atlas__ocean_mask",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "f30fcc2c6ce4240b5a8cb05ea21e9474404c65d058c25f9d9c1c79c609bbe776",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-0/fields/lake-mask.u8",
+      "name": "atlas__lake_mask",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "b8dbeedeacca2f25e624fbb252df0bb27eae3a26eb453e0f954fcc9cfad1d65b",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-0/fields/river-mask.u8",
+      "name": "atlas__river_mask",
+      "order": "C row-major [y,x]",
+      "seed": 0,
+      "sha256": "481654734b4b3b421f180f95c26587fd21cc10a5c68fc9bbd50c8970beb6e7da",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-1/fields/height.f32le",
+      "name": "atlas__elevation",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "3f1fd1a6285f8c2d944da9dc65cd75c657ee13fd11b49fac35ccaefa55a321f1",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-1/fields/temperature.f32le",
+      "name": "atlas__temperature",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "4a202129dc225f90f90fb477d46784b4a2804385fea958a149e846329e7b09a9",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-1/fields/water.f32le",
+      "name": "atlas__water_level",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "72de30204f134761adba8b3aedf188d77635929ef6bf3329f076e26c81060223",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-1/fields/ocean-mask.u8",
+      "name": "atlas__ocean_mask",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "b9c8ed35e9d24b4ad39c8e730afc6c577f86a4e6f472f5519fa748b49f514cd5",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-1/fields/lake-mask.u8",
+      "name": "atlas__lake_mask",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "fec3b4c49dabfa977878f11f4ce7a25aef17a5f8d46f7fd399219590ee105cea",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-1/fields/river-mask.u8",
+      "name": "atlas__river_mask",
+      "order": "C row-major [y,x]",
+      "seed": 1,
+      "sha256": "5753bcbee9fe4239abb51e4aa17cd93e0c10c2e89b38c44e55f6874e3efc6a7a",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-42/fields/height.f32le",
+      "name": "atlas__elevation",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "b7f91a8bec8ace0f9c48b920f9e300f358c8f06a975b78deb259360911c87220",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-42/fields/temperature.f32le",
+      "name": "atlas__temperature",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "0fcd9da13fe3863c41d4cc7a22836e0d59a17d84c588a210c5092f788d7dae3f",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-42/fields/water.f32le",
+      "name": "atlas__water_level",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "2a78ec842af6d595c26bb9a80894b4a40313fd6922dc9b5cce744a67acca459f",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-42/fields/ocean-mask.u8",
+      "name": "atlas__ocean_mask",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "2fce1d6a7dde49fd55fce99b2fb481de2b58e41ff556297886d55148ebdd85af",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-42/fields/lake-mask.u8",
+      "name": "atlas__lake_mask",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "9bf0c0190d5f716c6bfb1ef769705ecb2eefba9fcdb313bc2acc73fd9a91623a",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-42/fields/river-mask.u8",
+      "name": "atlas__river_mask",
+      "order": "C row-major [y,x]",
+      "seed": 42,
+      "sha256": "9c502a3771204de768735ec4b3e566e4765c15b766c014e989e51bfe5355fa4d",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-777/fields/height.f32le",
+      "name": "atlas__elevation",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "94c641afe5fa4c8a7def5a2ddbdcdeb75523f6f944be7b7645e552b2dd0c89dc",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-777/fields/temperature.f32le",
+      "name": "atlas__temperature",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "a5d23c0d5f11d5f7f6b8d4a3129e6248f1bfc498de46ac5b1a446d06aa8e7720",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-777/fields/water.f32le",
+      "name": "atlas__water_level",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "f099f4f417b42b6374c097b7022ba1c13546dd61a2ed52ec0d74cc5619f91e02",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-777/fields/ocean-mask.u8",
+      "name": "atlas__ocean_mask",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "e48d915dc6d030fb7971a530b4bb8020e49ca90a89f621a105900f4bd04b2307",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-777/fields/lake-mask.u8",
+      "name": "atlas__lake_mask",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "1c52de87dc2684fc496f5a8ebb5bec7ab4ddb764fcdfc316973f35671b130102",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-777/fields/river-mask.u8",
+      "name": "atlas__river_mask",
+      "order": "C row-major [y,x]",
+      "seed": 777,
+      "sha256": "67676653004438bb220f4058640d9668333d490ad483ddbedfbc90b9d882f557",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-2004/fields/height.f32le",
+      "name": "atlas__elevation",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "45a8551fa3365f220f566e53ccf5e6a39e4899addeda399dc3b1cf978b32f6da",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-2004/fields/temperature.f32le",
+      "name": "atlas__temperature",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "fb1efeca505e12344f3b942c66a6206ca504ba5a2d513eff4accb1d3f89e6c42",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-2004/fields/water.f32le",
+      "name": "atlas__water_level",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "1027dda585bee0c8bc8c43caeb5405ccfa049578a0081ff12bc57935ce141dd3",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-2004/fields/ocean-mask.u8",
+      "name": "atlas__ocean_mask",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "65e313d51199a944ff413cadf42f712e6fd41db908c422bb72bd84f8a9351856",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-2004/fields/lake-mask.u8",
+      "name": "atlas__lake_mask",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "6acbb4d8fadcf8ce49bb8e28ba1349d7bd9d93fd0b8f1513c3de210cb0ddcd47",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-2004/fields/river-mask.u8",
+      "name": "atlas__river_mask",
+      "order": "C row-major [y,x]",
+      "seed": 2004,
+      "sha256": "19ef9d4509d93e4de47a382f62e99298510a8b441c958bbd33ef6ba2595d3270",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-8800555/fields/height.f32le",
+      "name": "atlas__elevation",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "e49c78e826c1e7b4dba7ea47b4d0024c8d960b559d0fd7ddcb149470bcb67b73",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-8800555/fields/temperature.f32le",
+      "name": "atlas__temperature",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "a47c1f7dfc4459bbba2722d44f2bf2f3cb5f03f7c4e87c2873846ccccc0d43ae",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 262144,
+      "dtype": "<f4",
+      "file": "approved-candidate/seed-8800555/fields/water.f32le",
+      "name": "atlas__water_level",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "8a7afadfbdf262bc7d117f3a786710497a8cbb6de5ee4ec99f6758e9d251744e",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-8800555/fields/ocean-mask.u8",
+      "name": "atlas__ocean_mask",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "3a44426ef031f00f19eaca168f9035c5591eba95f90afc7cb5a0778d50994af9",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-8800555/fields/lake-mask.u8",
+      "name": "atlas__lake_mask",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "d4e588046e1bb847d4fb99dfa470e27490f3610d63c797624f54db4f820d1f7a",
+      "shape": [
+        256,
+        256
+      ]
+    },
+    {
+      "bytes": 65536,
+      "dtype": "|u1",
+      "file": "approved-candidate/seed-8800555/fields/river-mask.u8",
+      "name": "atlas__river_mask",
+      "order": "C row-major [y,x]",
+      "seed": 8800555,
+      "sha256": "b8f9bc02407d1776eb1fccaf2257373bb7f5a1da73cef8cf20431d032485e0e4",
+      "shape": [
+        256,
+        256
+      ]
+    }
+  ],
+  "model_revision": 4,
+  "numerical_kernel_identity": "shelf-exp=exp64-to-f32-v1",
+  "provenance": {
+    "approved_candidate_operation": "float shelf_exponent = -0.5F * continental_offset * continental_offset; float shelf = static_cast<float>(std::exp(static_cast<double>(shelf_exponent)));",
+    "mac": {
+      "build_type": "Release",
+      "candidate_output_identity_recorded_as": {
+        "0": "terrain-v2;model-revision=3;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=0;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1",
+        "1": "terrain-v2;model-revision=3;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=1;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1",
+        "2004": "terrain-v2;model-revision=3;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=2004;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1",
+        "42": "terrain-v2;model-revision=3;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=42;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1",
+        "777": "terrain-v2;model-revision=3;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=777;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1",
+        "8800555": "terrain-v2;model-revision=3;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=8800555;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1"
+      },
+      "compiler": "AppleClang 17.0.0.17000603",
+      "fp_contract": "off",
+      "geology_cpp_sha256": "b2ef908bcf6044b9f39664413613c243f447f2c454a992b13e1edb913238d13e",
+      "mc_world_map_sha256": "84aab7d255e664b8666b87729a00c80daef60e4b323ca6c02c7f0081b8c1724c"
+    },
+    "original_python_fixture_unchanged": true,
+    "original_python_reference_manifest_sha256": "d0e6ade7aed51a34a864c1dc497d3b3921d10204a8cc3602b71f7d53ab96db97",
+    "scope_note": "Cross-OS equality is observed only for the six listed seeds at resolution 256 under these recorded builds and the tested shelf-exponent inputs; no universal libm exactness is claimed.",
+    "windows": {
+      "atlas_archive_sha256": "8787c42579b6767e24e37a1fbb6d11b8941e0f6a74fd8b7b754d50993a3e8235",
+      "compiler": "MSVC 19.44.35229.0",
+      "fp_mode": "/fp:strict",
+      "geology_cpp_sha256": "a9bdb53ae501818f5035a93159c35dea289da85b5d1733fc4f696362caa6c5dc",
+      "mc_world_map_sha256": "029f89d9ce274ad0c10a7c825055b28831ed42c5e8d6a2827e874c94c9dcaccd",
+      "observed_raw_float_values_equal_mac": 1179648,
+      "observed_raw_mask_arrays_equal_mac": 18,
+      "observed_surface_sample_files_equal_mac_and_v3": 24,
+      "surface_archive_sha256": "7630233080a9aabcb04e5b01bb058b57d87d80bf74399f1c6405f2dd8b6c6814"
+    }
+  },
+  "resolution": 256,
+  "sample_grid": {
+    "atlas": {
+      "order": "C row-major [y,x]",
+      "x": [
+        0,
+        16,
+        32,
+        48,
+        64,
+        80,
+        96,
+        112,
+        128,
+        144,
+        160,
+        176,
+        192,
+        208,
+        224,
+        240
+      ],
+      "y": [
+        0,
+        16,
+        32,
+        48,
+        64,
+        80,
+        96,
+        112,
+        128,
+        144,
+        160,
+        176,
+        192,
+        208,
+        224,
+        240
+      ]
+    },
+    "surface": {
+      "order": "C row-major [y,x]",
+      "x_blocks": [
+        128,
+        4224,
+        8320,
+        12416,
+        16512,
+        20608,
+        24704,
+        28800,
+        32896,
+        36992,
+        41088,
+        45184,
+        49280,
+        53376,
+        57472,
+        61568
+      ],
+      "y_blocks": [
+        128,
+        4224,
+        8320,
+        12416,
+        16512,
+        20608,
+        24704,
+        28800,
+        32896,
+        36992,
+        41088,
+        45184,
+        49280,
+        53376,
+        57472,
+        61568
+      ]
+    }
+  },
+  "schema": "minecraftclone.terrain-v2-model-revision-reference.v1",
+  "seeds": [
+    0,
+    1,
+    42,
+    777,
+    2004,
+    8800555
+  ],
+  "source_map_sha256": "5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704",
+  "supersedes_configuration_identity_prefix": "terrain-v2;model-revision=3;",
+  "terrain_version": 2
+}

@@ -65,6 +65,8 @@ TEST(HeightTileInterestRegionTest, NormalizedCenterAndRadiusDefineValueAndClearR
 
 TEST(HeightTileInterestRegionTest, InvalidRadiusUsesTheSharedAssertionContract)
 {
+    // Re-exec so assertion exit cannot clean up worker handles inherited from earlier tests.
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
     client::HeightTileInterestRegion region;
     EXPECT_EXIT(region.set({ .x = 0, .y = 0 }, 0U), ::testing::ExitedWithCode(1),
         "invalid height-tile interest radius");

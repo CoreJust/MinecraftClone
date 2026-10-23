@@ -1,0 +1,145 @@
+{
+  "call_stream": {
+    "fresh_after_raw_stream": true,
+    "generator_seed": 42
+  },
+  "calls": [
+    {
+      "arguments": {
+        "high": 3,
+        "low": -2,
+        "size": [
+          2
+        ]
+      },
+      "dtype": "<i8",
+      "method": "integers",
+      "name": "integers(-2,3,size=2)",
+      "shape": [
+        2
+      ],
+      "values": [
+        -2,
+        1
+      ]
+    },
+    {
+      "arguments": {
+        "high": "2*pi",
+        "low": 0.0
+      },
+      "bits_le": [
+        "776b74c4780f0640"
+      ],
+      "dtype": "<f8",
+      "method": "uniform",
+      "name": "uniform(0,2*pi)",
+      "shape": [],
+      "values": 2.757554564287996
+    },
+    {
+      "arguments": {
+        "high": 65536.0,
+        "low": 0.0,
+        "size": [
+          2,
+          2
+        ]
+      },
+      "bits_le": [
+        "42db4d58a279eb40",
+        "11c0c2c1d650e640",
+        "809333b5011cb840",
+        "ead8b05d4c38ef40"
+      ],
+      "dtype": "<f8",
+      "method": "uniform",
+      "name": "uniform(0,65536,size=(2,2))",
+      "shape": [
+        2,
+        2
+      ],
+      "values": [
+        [
+          56269.07327931236,
+          45702.71115243447
+        ],
+        [
+          6172.006671165,
+          63938.386436866436
+        ]
+      ]
+    },
+    {
+      "arguments": {
+        "size": [
+          4
+        ]
+      },
+      "bits_le": [
+        "488bf7a5415be83f",
+        "92f576547027e93f",
+        "68b1410b0766c03f",
+        "6ebe758a1fd3dc3f"
+      ],
+      "dtype": "<f8",
+      "method": "random",
+      "name": "random(4)",
+      "shape": [
+        4
+      ],
+      "values": [
+        0.761139701990353,
+        0.7860643052769538,
+        0.12811363267554587,
+        0.45038593789556713
+      ]
+    },
+    {
+      "arguments": {
+        "kappa": 1.8,
+        "mu": 0.75,
+        "size": [
+          3
+        ]
+      },
+      "bits_le": [
+        "349c8d7336a2f33f",
+        "60a860e2112ff1bf",
+        "6c3cbf1d443af93f"
+      ],
+      "dtype": "<f8",
+      "method": "vonmises",
+      "name": "vonmises(0.75,1.8,size=3)",
+      "shape": [
+        3
+      ],
+      "values": [
+        1.2271027101321694,
+        -1.0739916651605412,
+        1.5767251169197847
+      ]
+    }
+  ],
+  "random_raw_call": {
+    "name": "bit_generator.random_raw(8)",
+    "seed": 42,
+    "values_hex": [
+      "c621fbcd16d92688",
+      "705a5661a791ffc1",
+      "dbcd12c26eda1624",
+      "b286b60e1600888d",
+      "181c01b5339381eb",
+      "f9c262ed86c7538c",
+      "c2da0d2fbc5a4471",
+      "c93b82a3b7ac9740"
+    ]
+  },
+  "runtime": {
+    "bit_generator": "PCG64",
+    "numpy": "2.5.4",
+    "python": "3.12.14"
+  },
+  "schema": "minecraftclone.terrain-v2-rng-oracle.v1",
+  "seed": 42
+}

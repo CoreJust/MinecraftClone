@@ -319,7 +319,7 @@ end
 
 TEST(ScenarioRunner, TraversesDistantGeneratedChunksWithinTheConfiguredResidencyBound)
 {
-    static constexpr std::string_view SOURCE = R"(@version("0.1.3")
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("sparse-world-v1")

@@ -1,7 +1,10 @@
 #include <shared/world/HeightTileSurfaceMesher.hpp>
 
+#include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/TerrainWorld.hpp>
 #include <shared/world/WorldGeneration.hpp>
+#include <generation/Generation.hpp>
 
 #include <algorithm>
 #include <array>
@@ -10,6 +13,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
@@ -34,6 +38,149 @@ constexpr uint32_t index(uint32_t const x, uint32_t const y) noexcept
     return y * SIDE_LENGTH + x;
 }
 
+uint32_t detailCellSize(shared::HeightTileSurfaceDetail detail);
+
+struct MaterialRun final {
+    int32_t lower = 0;
+    int32_t upper = 0;
+    shared::Block material = shared::Block::Stone;
+
+    constexpr bool operator==(MaterialRun const&) const noexcept = default;
+};
+
+struct MaterialProfile final {
+    std::array<MaterialRun, shared::HeightTileSurfaceMesh::MAXIMUM_MATERIAL_RUNS_PER_COLUMN> runs{};
+    uint32_t count = 0U;
+
+    constexpr bool operator==(MaterialProfile const&) const noexcept = default;
+};
+
+[[nodiscard]]
+bool hasCanonicalSurface(shared::HeightTile const& tile) noexcept
+{
+    return shared::isValidTerrainIdentity(tile.surface.identity)
+        && tile.surface.coordinate.x == tile.coordinate.x
+        && tile.surface.coordinate.y == tile.coordinate.y
+        && tile.surface.coordinate.z == 0
+        && tile.surface.block_sea_level < shared::WorldExtent::DEPTH;
+}
+
+[[nodiscard]]
+shared::TerrainColumn columnAtReducedHeight(
+    shared::TerrainColumn column,
+    uint16_t const highest_solid_z,
+    uint32_t const sea_level
+) noexcept
+{
+    column.highest_solid_z = highest_solid_z;
+    column.submerged = highest_solid_z < sea_level;
+    uint32_t const ground_first = column.submerged
+        ? (sea_level > 4U ? sea_level - 4U : 1U)
+        : (highest_solid_z > 4U ? static_cast<uint32_t>(highest_solid_z) - 4U : 1U);
+    column.ground_first_z = static_cast<uint16_t>(std::max(ground_first, 1U));
+    uint32_t const ground_end = column.submerged
+        ? static_cast<uint32_t>(highest_solid_z) + 1U
+        : highest_solid_z;
+    column.ground_end_z = static_cast<uint16_t>(std::min(
+        std::max(ground_end, ground_first),
+        generation::WORLD_DEPTH_BLOCKS
+    ));
+    return column;
+}
+
+[[nodiscard]]
+shared::Block surfaceMaterialAt(
+    shared::SurfaceTile const* const surface,
+    shared::HeightTileSurfaceMesh const& mesh,
+    shared::HeightTileSurfaceDirection const edge,
+    // Edge position, column top and sample height are distinct geometric coordinates.
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+    uint32_t const along,
+    int32_t const top_height,
+    int32_t const z
+)
+{
+    if (surface == nullptr
+        || !shared::isValidTerrainIdentity(surface->identity)
+        || surface->identity != mesh.identity
+        || surface->coordinate.x != mesh.coordinate.x
+        || surface->coordinate.y != mesh.coordinate.y
+        || surface->coordinate.z != 0
+        || surface->block_sea_level >= shared::WorldExtent::DEPTH
+        || top_height <= 0 || top_height > static_cast<int32_t>(shared::WorldExtent::DEPTH)) {
+        return shared::Block::Stone;
+    }
+    uint32_t const cell_size = detailCellSize(mesh.detail);
+    bool const x_edge = edge == shared::HeightTileSurfaceDirection::NegativeX
+        || edge == shared::HeightTileSurfaceDirection::PositiveX;
+    bool const negative_edge = edge == shared::HeightTileSurfaceDirection::NegativeX
+        || edge == shared::HeightTileSurfaceDirection::NegativeY;
+    uint32_t const cell_perpendicular = negative_edge
+        ? 0U
+        : SIDE_LENGTH - cell_size;
+    uint32_t const source_x = x_edge
+        ? cell_perpendicular + cell_size / 2U
+        : (along / cell_size) * cell_size + cell_size / 2U;
+    uint32_t const source_y = x_edge
+        ? (along / cell_size) * cell_size + cell_size / 2U
+        : cell_perpendicular + cell_size / 2U;
+    uint32_t const column_index = index(source_x, source_y);
+    shared::TerrainColumn const column = columnAtReducedHeight(
+        surface->columns[column_index],
+        static_cast<uint16_t>(top_height - 1),
+        surface->block_sea_level
+    );
+    if (z < 0 || z > column.highest_solid_z) {
+        return shared::Block::Stone;
+    }
+    return column.materialAt(static_cast<uint16_t>(z), surface->block_sea_level);
+}
+
+[[nodiscard]]
+shared::Block materialAt(
+    shared::HeightTile const& tile,
+    uint32_t const column_index,
+    int32_t const z,
+    bool const canonical_surface
+) noexcept
+{
+    if (!canonical_surface) {
+        return shared::Block::Stone;
+    }
+    shared::TerrainColumn const& column = tile.surface.columns[column_index];
+    if (static_cast<uint32_t>(column.highest_solid_z) + 1U != tile.heights[column_index]
+        || z < 0 || z > column.highest_solid_z) {
+        return shared::Block::Stone;
+    }
+    return column.materialAt(static_cast<uint16_t>(z), tile.surface.block_sea_level);
+}
+
+[[nodiscard]]
+MaterialProfile materialProfile(
+    shared::HeightTile const& tile,
+    // The column index precedes the half-open vertical interval [lower, upper).
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+    uint32_t const column_index,
+    int32_t const lower,
+    int32_t const upper,
+    bool const canonical_surface
+)
+{
+    MaterialProfile profile;
+    for (int32_t z = lower; z < upper; ++z) {
+        shared::Block const material = materialAt(tile, column_index, z, canonical_surface);
+        if (profile.count != 0U && profile.runs[profile.count - 1U].material == material) {
+            profile.runs[profile.count - 1U].upper = z + 1;
+            continue;
+        }
+        if (profile.count == profile.runs.size()) {
+            throw std::invalid_argument{ "terrain column has too many material layers" };
+        }
+        profile.runs[profile.count++] = { .lower = z, .upper = z + 1, .material = material };
+    }
+    return profile;
+}
+
 [[nodiscard]]
 constexpr int32_t worldCoordinate(int32_t const tile_coordinate, uint32_t const local_coordinate) noexcept
 {
@@ -41,7 +188,7 @@ constexpr int32_t worldCoordinate(int32_t const tile_coordinate, uint32_t const 
 }
 
 [[nodiscard]]
-uint16_t heightAt(
+std::optional<uint16_t> heightAt(
     shared::HeightTile const& tile,
     shared::HeightTileSurfaceNeighbors const& neighbors,
     int32_t const x,
@@ -63,10 +210,14 @@ uint16_t heightAt(
     if (y >= static_cast<int32_t>(SIDE_LENGTH) && neighbors.positive_y.has_value()) {
         return (*neighbors.positive_y)[index(static_cast<uint32_t>(x), 0U)];
     }
-    return 0U;
+    return std::nullopt;
 }
 
-void appendTopQuads(shared::HeightTileSurfaceMesh& mesh, shared::HeightTile const& tile)
+void appendTopQuads(
+    shared::HeightTileSurfaceMesh& mesh,
+    shared::HeightTile const& tile,
+    bool const canonical_surface
+)
 {
     std::array<bool, shared::HeightTile::SAMPLE_COUNT> consumed{};
     for (uint32_t y = 0U; y < SIDE_LENGTH; ++y) {
@@ -76,9 +227,13 @@ void appendTopQuads(shared::HeightTileSurfaceMesh& mesh, shared::HeightTile cons
             if (height == 0U || consumed[start]) {
                 continue;
             }
+            shared::Block const material = materialAt(tile, start, static_cast<int32_t>(height) - 1,
+                canonical_surface);
             uint32_t width = 1U;
             while (x + width < SIDE_LENGTH && !consumed[index(x + width, y)]
-                && tile.heights[index(x + width, y)] == height) {
+                && tile.heights[index(x + width, y)] == height
+                && materialAt(tile, index(x + width, y), static_cast<int32_t>(height) - 1,
+                    canonical_surface) == material) {
                 ++width;
             }
             uint32_t depth = 1U;
@@ -86,7 +241,9 @@ void appendTopQuads(shared::HeightTileSurfaceMesh& mesh, shared::HeightTile cons
             while (y + depth < SIDE_LENGTH && matches) {
                 for (uint32_t column = 0U; column < width; ++column) {
                     uint32_t const candidate = index(x + column, y + depth);
-                    if (consumed[candidate] || tile.heights[candidate] != height) {
+                    if (consumed[candidate] || tile.heights[candidate] != height
+                        || materialAt(tile, candidate, static_cast<int32_t>(height) - 1,
+                            canonical_surface) != material) {
                         matches = false;
                         break;
                     }
@@ -107,6 +264,7 @@ void appendTopQuads(shared::HeightTileSurfaceMesh& mesh, shared::HeightTile cons
                 .direction = shared::HeightTileSurfaceDirection::PositiveZ,
                 .u_extent = static_cast<uint16_t>(width),
                 .v_extent = static_cast<uint16_t>(depth),
+                .material = material,
             });
         }
     }
@@ -123,90 +281,76 @@ int64_t shortestTileDisplacement(int32_t const from, int32_t const to) noexcept
     return displacement;
 }
 
-void appendXQuads(
+void appendWallQuads(
     shared::HeightTileSurfaceMesh& mesh,
     shared::HeightTile const& tile,
     shared::HeightTileSurfaceNeighbors const& neighbors,
-    shared::HeightTileSurfaceDirection const direction
+    shared::HeightTileSurfaceDirection const direction,
+    bool const canonical_surface
 )
 {
-    int32_t const offset = direction == shared::HeightTileSurfaceDirection::NegativeX ? -1 : 1;
-    for (uint32_t x = 0U; x < SIDE_LENGTH; ++x) {
-        uint32_t y = 0U;
-        while (y < SIDE_LENGTH) {
-            uint16_t const height = tile.heights[index(x, y)];
-            uint16_t const adjacent = heightAt(tile, neighbors, static_cast<int32_t>(x) + offset, static_cast<int32_t>(y));
-            if (height <= adjacent) {
-                ++y;
+    bool const x_wall = direction == shared::HeightTileSurfaceDirection::NegativeX
+        || direction == shared::HeightTileSurfaceDirection::PositiveX;
+    bool const negative = direction == shared::HeightTileSurfaceDirection::NegativeX
+        || direction == shared::HeightTileSurfaceDirection::NegativeY;
+    int32_t const offset = negative ? -1 : 1;
+    for (uint32_t perpendicular = 0U; perpendicular < SIDE_LENGTH; ++perpendicular) {
+        uint32_t along = 0U;
+        while (along < SIDE_LENGTH) {
+            uint32_t const x = x_wall ? perpendicular : along;
+            uint32_t const y = x_wall ? along : perpendicular;
+            uint32_t const column_index = index(x, y);
+            uint16_t const height = tile.heights[column_index];
+            std::optional<uint16_t> const adjacent = heightAt(
+                tile,
+                neighbors,
+                static_cast<int32_t>(x) + (x_wall ? offset : 0),
+                static_cast<int32_t>(y) + (x_wall ? 0 : offset)
+            );
+            if (!adjacent.has_value() || height <= *adjacent) {
+                ++along;
                 continue;
             }
-            uint32_t span = 1U;
-            while (y + span < SIDE_LENGTH) {
-                uint16_t const next_height = tile.heights[index(x, y + span)];
-                uint16_t const next_adjacent = heightAt(
-                    tile,
-                    neighbors,
-                    static_cast<int32_t>(x) + offset,
-                    static_cast<int32_t>(y + span)
-                );
-                if (next_height != height || next_adjacent != adjacent) {
-                    break;
-                }
-                ++span;
-            }
-            mesh.quads.push_back({
-                .x = worldCoordinate(tile.coordinate.x, x),
-                .y = worldCoordinate(tile.coordinate.y, y),
-                .z = static_cast<int32_t>(adjacent),
-                .direction = direction,
-                .u_extent = static_cast<uint16_t>(span),
-                .v_extent = static_cast<uint16_t>(height - adjacent),
-            });
-            y += span;
-        }
-    }
-}
 
-void appendYQuads(
-    shared::HeightTileSurfaceMesh& mesh,
-    shared::HeightTile const& tile,
-    shared::HeightTileSurfaceNeighbors const& neighbors,
-    shared::HeightTileSurfaceDirection const direction
-)
-{
-    int32_t const offset = direction == shared::HeightTileSurfaceDirection::NegativeY ? -1 : 1;
-    for (uint32_t y = 0U; y < SIDE_LENGTH; ++y) {
-        uint32_t x = 0U;
-        while (x < SIDE_LENGTH) {
-            uint16_t const height = tile.heights[index(x, y)];
-            uint16_t const adjacent = heightAt(tile, neighbors, static_cast<int32_t>(x), static_cast<int32_t>(y) + offset);
-            if (height <= adjacent) {
-                ++x;
-                continue;
-            }
+            MaterialProfile const profile = materialProfile(
+                tile,
+                column_index,
+                *adjacent,
+                height,
+                canonical_surface
+            );
             uint32_t span = 1U;
-            while (x + span < SIDE_LENGTH) {
-                uint16_t const next_height = tile.heights[index(x + span, y)];
-                uint16_t const next_adjacent = heightAt(
+            while (along + span < SIDE_LENGTH) {
+                uint32_t const next_x = x_wall ? perpendicular : along + span;
+                uint32_t const next_y = x_wall ? along + span : perpendicular;
+                uint32_t const next_index = index(next_x, next_y);
+                uint16_t const next_height = tile.heights[next_index];
+                std::optional<uint16_t> const next_adjacent = heightAt(
                     tile,
                     neighbors,
-                    static_cast<int32_t>(x + span),
-                    static_cast<int32_t>(y) + offset
+                    static_cast<int32_t>(next_x) + (x_wall ? offset : 0),
+                    static_cast<int32_t>(next_y) + (x_wall ? 0 : offset)
                 );
-                if (next_height != height || next_adjacent != adjacent) {
+                if (!next_adjacent.has_value() || next_height != height || *next_adjacent != *adjacent
+                    || materialProfile(tile, next_index, *next_adjacent, next_height, canonical_surface) != profile) {
                     break;
                 }
                 ++span;
             }
-            mesh.quads.push_back({
-                .x = worldCoordinate(tile.coordinate.x, x),
-                .y = worldCoordinate(tile.coordinate.y, y),
-                .z = static_cast<int32_t>(adjacent),
-                .direction = direction,
-                .u_extent = static_cast<uint16_t>(span),
-                .v_extent = static_cast<uint16_t>(height - adjacent),
-            });
-            x += span;
+
+            for (uint32_t run = 0U; run < profile.count; ++run) {
+                MaterialRun const material_run = profile.runs[run];
+                mesh.quads.push_back({
+                    .x = worldCoordinate(tile.coordinate.x, x),
+                    .y = worldCoordinate(tile.coordinate.y, y),
+                    .z = material_run.lower,
+                    .direction = direction,
+                    .u_extent = static_cast<uint16_t>(span),
+                    .v_extent = static_cast<uint16_t>(material_run.upper - material_run.lower),
+                    .material = material_run.material,
+                });
+            }
+            along += span;
         }
     }
 }
@@ -216,7 +360,9 @@ shared::HeightTile reduceTile(shared::HeightTile const& tile, uint32_t const cel
     shared::HeightTile coarse_tile{
         .coordinate = tile.coordinate,
         .heights = {},
+        .surface = tile.surface,
     };
+    bool const canonical_surface = hasCanonicalSurface(tile);
     for (uint32_t coarse_y = 0U; coarse_y < SIDE_LENGTH; coarse_y += cell_size) {
         for (uint32_t coarse_x = 0U; coarse_x < SIDE_LENGTH; coarse_x += cell_size) {
             uint32_t height_sum = 0U;
@@ -229,9 +375,25 @@ shared::HeightTile reduceTile(shared::HeightTile const& tile, uint32_t const cel
             uint16_t const height = static_cast<uint16_t>(
                 (height_sum + cell_area / 2U) / cell_area
             );
+            uint32_t const representative_index = index(
+                coarse_x + cell_size / 2U,
+                coarse_y + cell_size / 2U
+            );
+            shared::TerrainColumn reduced_column = tile.surface.columns[representative_index];
+            if (canonical_surface
+                && static_cast<uint32_t>(reduced_column.highest_solid_z) + 1U == tile.heights[representative_index]
+                && height != 0U) {
+                reduced_column = columnAtReducedHeight(
+                    reduced_column,
+                    static_cast<uint16_t>(height - 1U),
+                    tile.surface.block_sea_level
+                );
+            }
             for (uint32_t y = coarse_y; y < coarse_y + cell_size; ++y) {
                 for (uint32_t x = coarse_x; x < coarse_x + cell_size; ++x) {
-                    coarse_tile.heights[index(x, y)] = height;
+                    uint32_t const coarse_index = index(x, y);
+                    coarse_tile.heights[coarse_index] = height;
+                    coarse_tile.surface.columns[coarse_index] = reduced_column;
                 }
             }
         }
@@ -292,11 +454,12 @@ void appendReducedQuads(
 )
 {
     shared::HeightTile const coarse_tile = reduceTile(tile, cell_size);
-    appendTopQuads(mesh, coarse_tile);
-    appendXQuads(mesh, coarse_tile, neighbors, shared::HeightTileSurfaceDirection::NegativeX);
-    appendXQuads(mesh, coarse_tile, neighbors, shared::HeightTileSurfaceDirection::PositiveX);
-    appendYQuads(mesh, coarse_tile, neighbors, shared::HeightTileSurfaceDirection::NegativeY);
-    appendYQuads(mesh, coarse_tile, neighbors, shared::HeightTileSurfaceDirection::PositiveY);
+    bool const canonical_surface = hasCanonicalSurface(coarse_tile);
+    appendTopQuads(mesh, coarse_tile, canonical_surface);
+    appendWallQuads(mesh, coarse_tile, neighbors, shared::HeightTileSurfaceDirection::NegativeX, canonical_surface);
+    appendWallQuads(mesh, coarse_tile, neighbors, shared::HeightTileSurfaceDirection::PositiveX, canonical_surface);
+    appendWallQuads(mesh, coarse_tile, neighbors, shared::HeightTileSurfaceDirection::NegativeY, canonical_surface);
+    appendWallQuads(mesh, coarse_tile, neighbors, shared::HeightTileSurfaceDirection::PositiveY, canonical_surface);
 }
 
 [[nodiscard]]
@@ -561,7 +724,6 @@ HeightTileSurfaceBounds HeightTileSurfaceMesher::boundsForTile(
     }
     auto const includeNeighbor = [&includeHeight](std::optional<HeightTile::Heights> const& heights) noexcept {
         if (!heights.has_value()) {
-            includeHeight(0U);
             return;
         }
         for (uint16_t const height : *heights) {
@@ -643,7 +805,7 @@ HeightTileSurfaceFaceAreas heightTileSurfaceFaceAreas(
                     : perpendicular + static_cast<int32_t>(cell_size);
                 bool const boundary = adjacent < 0 || adjacent >= static_cast<int32_t>(SIDE_LENGTH);
                 uint32_t const along_start = x_edge ? cell_y : cell_x;
-                auto const adjacentHeight = [&](uint32_t const offset) {
+                auto const adjacentHeight = [&](uint32_t const offset) -> std::optional<uint16_t> {
                     return heightAt(
                         reduced,
                         compatible_neighbors,
@@ -655,24 +817,28 @@ HeightTileSurfaceFaceAreas heightTileSurfaceFaceAreas(
                 if (boundary) {
                     uint32_t along = along_start;
                     while (along < along_start + cell_size) {
-                        uint16_t const adjacent_height = adjacentHeight(along);
+                        std::optional<uint16_t> const adjacent_height = adjacentHeight(along);
+                        if (!adjacent_height.has_value()) {
+                            ++along;
+                            continue;
+                        }
                         uint32_t span = 1U;
                         while (along + span < along_start + cell_size
                             && adjacentHeight(along + span) == adjacent_height) {
                             ++span;
                         }
-                        if (height > adjacent_height) {
-                            uint32_t const wall_area = span * static_cast<uint32_t>(height - adjacent_height);
+                        if (height > *adjacent_height) {
+                            uint32_t const wall_area = span * static_cast<uint32_t>(height - *adjacent_height);
                             maximum_area = std::max(maximum_area, wall_area);
                         }
                         along += span;
                     }
                 } else {
-                    uint16_t const adjacent_height = adjacentHeight(along_start);
-                    if (height > adjacent_height) {
+                    std::optional<uint16_t> const adjacent_height = adjacentHeight(along_start);
+                    if (adjacent_height.has_value() && height > *adjacent_height) {
                         maximum_area = std::max(
                             maximum_area,
-                            cell_size * static_cast<uint32_t>(height - adjacent_height)
+                            cell_size * static_cast<uint32_t>(height - *adjacent_height)
                         );
                     }
                 }
@@ -708,16 +874,18 @@ HeightTileSurfaceMesh HeightTileSurfaceMesher::build(
         .coordinate = tile.coordinate,
         .quads = {},
         .detail = detail,
+        .identity = tile.surface.identity,
     };
+    bool const canonical_surface = hasCanonicalSurface(tile);
     HeightTileSurfaceNeighbors const compatible_neighbors = neighborsAtSelectedDetail(neighbors);
     switch (detail) {
     case HeightTileSurfaceDetail::Fine:
         mesh.quads.reserve(HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT);
-        appendTopQuads(mesh, tile);
-        appendXQuads(mesh, tile, compatible_neighbors, HeightTileSurfaceDirection::NegativeX);
-        appendXQuads(mesh, tile, compatible_neighbors, HeightTileSurfaceDirection::PositiveX);
-        appendYQuads(mesh, tile, compatible_neighbors, HeightTileSurfaceDirection::NegativeY);
-        appendYQuads(mesh, tile, compatible_neighbors, HeightTileSurfaceDirection::PositiveY);
+        appendTopQuads(mesh, tile, canonical_surface);
+        appendWallQuads(mesh, tile, compatible_neighbors, HeightTileSurfaceDirection::NegativeX, canonical_surface);
+        appendWallQuads(mesh, tile, compatible_neighbors, HeightTileSurfaceDirection::PositiveX, canonical_surface);
+        appendWallQuads(mesh, tile, compatible_neighbors, HeightTileSurfaceDirection::NegativeY, canonical_surface);
+        appendWallQuads(mesh, tile, compatible_neighbors, HeightTileSurfaceDirection::PositiveY, canonical_surface);
         break;
     case HeightTileSurfaceDetail::Coarse2:
         mesh.quads.reserve(reducedQuadReservation(COARSE2_CELL_SIZE));
@@ -745,7 +913,9 @@ HeightTileSurfaceMesh HeightTileSurfaceMesher::build(
 HeightTileSurfaceSeamBridge heightTileSurfaceSeamBridge(
     HeightTileSurfaceMesh const& first,
     HeightTileSurfaceMesh const& second,
-    HeightTileSurfaceDirection const first_edge
+    HeightTileSurfaceDirection const first_edge,
+    SurfaceTile const* const first_surface,
+    SurfaceTile const* const second_surface
 )
 {
     HeightTileSurfaceDirection const second_edge = oppositeDirection(first_edge);
@@ -762,7 +932,7 @@ HeightTileSurfaceSeamBridge heightTileSurfaceSeamBridge(
     EdgeSurfaceProfile const first_profile = edgeSurfaceProfile(first, first_edge);
     EdgeSurfaceProfile const second_profile = edgeSurfaceProfile(second, second_edge);
     HeightTileSurfaceSeamBridge bridge;
-    std::map<std::tuple<bool, int32_t, int32_t>, std::pair<uint32_t, size_t>> spans;
+    std::map<std::tuple<bool, int32_t, int32_t, uint8_t>, std::pair<uint32_t, size_t>> spans;
     for (uint32_t along_offset = 0U; along_offset < HeightTile::SIDE_LENGTH; ++along_offset) {
         int32_t const first_height = first_profile.top[along_offset];
         int32_t const second_height = second_profile.top[along_offset];
@@ -777,32 +947,58 @@ HeightTileSurfaceSeamBridge heightTileSurfaceSeamBridge(
         covered.insert(covered.end(), second_covered.begin(), second_covered.end());
         auto& quads = first_is_higher ? bridge.first : bridge.second;
         shared::HeightTileSurfaceMesh const& owner = first_is_higher ? first : second;
+        SurfaceTile const* const owner_surface = first_is_higher ? first_surface : second_surface;
         shared::HeightTileSurfaceDirection const owner_edge = first_is_higher ? first_edge : second_edge;
         uint32_t const owner_edge_offset = first_is_higher ? first_edge_offset : second_edge_offset;
+        int32_t const owner_height = first_is_higher ? first_height : second_height;
         std::ranges::sort(covered, {}, &VerticalInterval::lower);
         int32_t cursor = lower;
         auto const appendGap = [&](int32_t const gap_lower, int32_t const gap_upper) {
             if (gap_lower >= gap_upper) {
                 return;
             }
-            auto const key = std::tuple{ first_is_higher, gap_lower, gap_upper };
-            auto const previous = spans.find(key);
-            if (previous != spans.end() && previous->second.first + 1U == along_offset) {
-                ++quads[previous->second.second].u_extent;
-                previous->second.first = along_offset;
-                return;
+            int32_t segment_lower = gap_lower;
+            while (segment_lower < gap_upper) {
+                shared::Block const material = surfaceMaterialAt(
+                    owner_surface,
+                    owner,
+                    owner_edge,
+                    along_offset,
+                    owner_height,
+                    segment_lower
+                );
+                int32_t segment_upper = segment_lower + 1;
+                while (segment_upper < gap_upper
+                    && surfaceMaterialAt(owner_surface, owner, owner_edge, along_offset,
+                        owner_height, segment_upper) == material) {
+                    ++segment_upper;
+                }
+                auto const key = std::tuple{
+                    first_is_higher,
+                    segment_lower,
+                    segment_upper,
+                    static_cast<uint8_t>(material),
+                };
+                auto const previous = spans.find(key);
+                if (previous != spans.end() && previous->second.first + 1U == along_offset) {
+                    ++quads[previous->second.second].u_extent;
+                    previous->second.first = along_offset;
+                } else {
+                    uint32_t const local_x = x_edge ? owner_edge_offset : along_offset;
+                    uint32_t const local_y = x_edge ? along_offset : owner_edge_offset;
+                    quads.push_back({
+                        .x = worldCoordinate(owner.coordinate.x, local_x),
+                        .y = worldCoordinate(owner.coordinate.y, local_y),
+                        .z = segment_lower,
+                        .direction = owner_edge,
+                        .u_extent = 1U,
+                        .v_extent = static_cast<uint16_t>(segment_upper - segment_lower),
+                        .material = material,
+                    });
+                    spans.insert_or_assign(key, std::pair{ along_offset, quads.size() - 1U });
+                }
+                segment_lower = segment_upper;
             }
-            uint32_t const local_x = x_edge ? owner_edge_offset : along_offset;
-            uint32_t const local_y = x_edge ? along_offset : owner_edge_offset;
-            quads.push_back({
-                .x = worldCoordinate(owner.coordinate.x, local_x),
-                .y = worldCoordinate(owner.coordinate.y, local_y),
-                .z = gap_lower,
-                .direction = owner_edge,
-                .u_extent = 1U,
-                .v_extent = static_cast<uint16_t>(gap_upper - gap_lower),
-            });
-            spans.insert_or_assign(key, std::pair{ along_offset, quads.size() - 1U });
         };
         for (VerticalInterval const interval : covered) {
             int32_t const clipped_lower = std::max(lower, interval.lower);

@@ -86,7 +86,8 @@ analysis-only.
 
 ASan requires instrumented Release vcpkg/private dependencies with matching
 runtime/iterator/annotation settings, `/Zi` compiler and `/DEBUG` linker symbols.
-C++ `/analyze /W4 /WX /EHsc` uses Debug dependencies; `/analyze:external-`
+C++ `/analyze /W4 /WX /EHsc` uses shipping Release/MT dependencies matching
+CoreCpp/CoreLang consumer ABI; `/analyze:external-`
 excludes imported/system headers only. Nested builds retain flags and run serially;
 qualify both Windows rows before promotion.
 

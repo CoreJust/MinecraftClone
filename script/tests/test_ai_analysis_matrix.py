@@ -996,10 +996,10 @@ class AnalysisMatrixTests(unittest.TestCase):
             all(row["timeout_seconds"] <= self.matrix.MAX_ROW_TIMEOUT_SECONDS for row in self.manifest["rows"])
         )
 
-    def test_manifest_rejects_a_row_over_the_ten_minute_stage_limit(self):
+    def test_manifest_rejects_a_row_over_the_bounded_stage_limit(self):
         manifest = copy.deepcopy(self.manifest)
         manifest["rows"][0]["timeout_seconds"] = self.matrix.MAX_ROW_TIMEOUT_SECONDS + 1
-        with self.assertRaisesRegex(self.matrix.MatrixError, "between 1 and 600"):
+        with self.assertRaisesRegex(self.matrix.MatrixError, "between 1 and 3600"):
             self.matrix.validate_manifest(manifest)
 
     def test_tool_probes_use_tree_terminating_runner_with_remaining_row_budget(self):
@@ -1032,7 +1032,7 @@ class AnalysisMatrixTests(unittest.TestCase):
                     "cmake",
                     "--preset",
                     "analysis-clang-static",
-                    "-DCMAKE_CXX_FLAGS={env:CXXFLAGS} -Xanalyzer -analyzer-output=text",
+                    "-DCMAKE_CXX_FLAGS={env:CXXFLAGS} -Xclang -analyzer-output=text",
                 ],
                 ["cmake", "--build", "--preset", "analysis-clang-static"],
             ],
@@ -1044,7 +1044,7 @@ class AnalysisMatrixTests(unittest.TestCase):
         effective_commands = self.matrix._effective_command_argv(row, environment)
         self.assertEqual(
             effective_commands[0][-1],
-            f"-DCMAKE_CXX_FLAGS={cxxflags} -Xanalyzer -analyzer-output=text",
+            f"-DCMAKE_CXX_FLAGS={cxxflags} -Xclang -analyzer-output=text",
         )
         self.assertTrue(
             any(
@@ -1054,7 +1054,7 @@ class AnalysisMatrixTests(unittest.TestCase):
         )
         self.assertIn("--verbose", effective_commands[1])
 
-    def test_every_matrix_build_command_is_capped_at_two_parallel_jobs(self):
+    def test_every_matrix_build_command_respects_host_parallel_cap(self):
         for row in self.manifest["rows"]:
             inherited_environment = {
                 name: f"/captured/{name.lower()}"
@@ -1069,7 +1069,7 @@ class AnalysisMatrixTests(unittest.TestCase):
                     with self.subTest(row=row["id"]):
                         self.assertTrue(
                             any(
-                                command[index : index + 2] == ["--parallel", "2"]
+                                command[index : index + 2] == ["--parallel", "1" if row["platform"] == "windows" else "2"]
                                 for index in range(len(command) - 1)
                             )
                         )
@@ -1096,7 +1096,7 @@ class AnalysisMatrixTests(unittest.TestCase):
 
     def test_tsan_runs_the_full_suite_with_bounded_test_parallelism(self):
         row = next(item for item in self.manifest["rows"] if item["id"] == "macos_tsan")
-        self.assertEqual(row["timeout_seconds"], 600)
+        self.assertEqual(row["timeout_seconds"], 3600)
         self.assertEqual(row["commands"][-1], [
             "ctest", "--test-dir", "build/analysis-macos-tsan",
             "--output-on-failure", "--no-tests=error", "--parallel", "2",
@@ -1118,7 +1118,7 @@ class AnalysisMatrixTests(unittest.TestCase):
                         ["cmake", "--build", "--preset", preset],
                         [
                             "ctest", "--test-dir", build_directory, "--output-on-failure",
-                            "--no-tests=error", "--parallel", "4",
+                            "--no-tests=error", "--parallel", "1",
                         ],
                     ],
                 )
@@ -2467,7 +2467,7 @@ class AnalysisMatrixTests(unittest.TestCase):
         )
         self.assertIn("linux_lsan", self.matrix.REQUIRED_ROW_IDS)
         linux_lsan = next(row for row in self.manifest["rows"] if row["id"] == "linux_lsan")
-        self.assertEqual(linux_lsan["required_compile_flags"], ["-fsanitize=leak"])
+        self.assertEqual(linux_lsan["required_compile_flags"], ["-fsanitize=leak", "-fexperimental-library"])
         self.assertTrue(linux_lsan.get("analysis_only"))
         self.assertFalse(any(command[0] == "leaks" for command in row["commands"]))
         configure_index = row["commands"].index(["cmake", "--preset", "analysis-macos-asan"])
@@ -2567,6 +2567,10 @@ class AnalysisMatrixTests(unittest.TestCase):
         variables = configure["analysis-windows-analyze"]["cacheVariables"]
         row = next(row for row in self.manifest["rows"] if row["id"] == "windows_msvc_analyze")
         self.assertEqual(row["flags"], ["/analyze", "/W4", "/WX"])
+        self.assertEqual(variables["CMAKE_BUILD_TYPE"], "Release")
+        self.assertEqual(variables["CMAKE_MSVC_RUNTIME_LIBRARY"], "MultiThreaded")
+        self.assertEqual(variables["CMAKE_C_FLAGS"], "/analyze /W4 /WX /analyze:external-")
+        self.assertEqual(variables["CMAKE_CXX_FLAGS"], "/analyze /W4 /WX /EHsc /analyze:external-")
 
         for language in ("C", "CXX"):
             with self.subTest(language=language):
@@ -2627,7 +2631,7 @@ class AnalysisMatrixTests(unittest.TestCase):
                 command = commands[0]
                 self.assertIn("--no-tests=error", command)
                 self.assertIn("--parallel", command)
-                self.assertEqual(command[command.index("--parallel") + 1], "4")
+                self.assertEqual(command[command.index("--parallel") + 1], "1")
                 self.assertFalse(set(command) & {"-R", "-E", "-I", "--tests-from-file", "--exclude-from-file"})
 
     def test_android_hwasan_release_has_an_isolated_application_id(self):

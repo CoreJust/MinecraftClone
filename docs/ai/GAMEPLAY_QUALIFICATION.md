@@ -1,73 +1,78 @@
 # Full-radius gameplay qualification
 
-`speed-200-full-radius-recovery-v1` requires exact CPU/renderer coverage and
-empty delivery/residency/mesh/worker/removal queues. `terrain-coverage` fixes
-radius256 (205,861 tiles); `performance` fixes128. Both use30s baseline,30s
-full-axis `x=127` travel at x200, complete recovery closer to the movement end
-than start by wrapped Chebyshev distance, then30s stationary. Returning to the
-origin fails. Qualification warmups are180s;1–1,800s overrides are diagnostic.
-Count every attempt; movement/recovery require all225 center-radius7 meshes
-and complete raw radial bands. Reject short performance windows; quality and
-120Hz/99.8% thresholds stay fixed. Longer exposure is not an engine fix or
-representativeness guarantee.
+S1 `performance` uses render distance 256, `turning-x30-movement-v2`: 30 s baseline,
+30 s accelerated turning at speed 30, recovery, then 30 s stationary. First successful
+movement send starts forward, forward-looking-left, strafe-looking-back and
+backward-turning-right phases. Yaw/pitch/ascent/descent use production paths.
+`terrain-coverage` remains x200 recovery at radius 256; both require exact
+CPU/renderer barriers and ≤180 s warmups. Recovery must be nearer the movement
+destination than the start by wrapped Chebyshev distance.
 
-The [S7-only Mac exception](S7-CADENCE-EXCEPTION-2026-10-18.md) reports
-`accepted_exception`, never performance PASS; defaults and other gates stay strict.
+The v1 replay's ±1 axes invalidated its x30 receipts. The replacement records
+keyboard intent, full-scale production directions, rendered camera poses and
+authoritative positions under `mc.x30-authoritative-trajectory.v1`. The verifier
+recomputes every integer 3D Flight step, XY wrapping and Z bounds at speed 30.
+It requires contiguous scheduled 100 ms deadlines, sends within their serviced
+tick, and matching ACKs within one server tick. The ACK tail may extend one tick
+beyond movement; the frame window stays fixed. Missing ticks, slow motion,
+unchanged view, missing vertical motion or incomplete ACKs fail. See the
+[owner contract](decisions/earlydev_0_1_1_s1_performance.md#representative-movement-and-actual-speed).
 
-Preregister one performance capture per candidate; retain failures, never retry
-to cherry-pick. The v25 normal10/6/10s recovery failure remains3/1,201 lost slots
-at119.699493Hz and must remain visible in comparisons.
+First public full Ready requires once-primed exact 768 reserve, then current 640;
+counters remain 640. S1 uses `mc.s1-lod-performance.v2`: each movement loop, authoritative update and
+trajectory anchor must certify horizontal full-volume 640 coverage. Require 6,561
+resident/required XY columns, 64 vertical chunks and 419,904 chunk equivalents,
+positive session coverage epoch, and the same current required XY chunk center.
+Announcement lag is allowed; the older announced center cannot substitute for
+the current required set. Separate active nonempty visual 320 LOD evidence is
+required. Dense 48 start/dense 80 cache do not prove full 640. Generic 320 benchmarks
+retain exact geometric chunk sets queried through `hasAuthoritativeChunk`;
+never reinterpret their counters as S1 profile counts. Prior 40/72 readiness
+receipts preserve the invalid unit interpretation and are not current passes.
+Before the first x30 send, build a fresh anchor from matching authoritative
+position and the current full-profile/visual sample; prior readiness alone is
+insufficient. Loading deadlines retain
+the original request-accepted T0 through world preparation and client startup.
+At least 99% of the fixed moving window must meet the fresh-frame target: 120 Hz
+on Mac (8,333,333 ns) and 300 Hz on Windows (3,333,333 ns), from distinct frame
+submissions whose per-slot GPU fences later succeed. The harness uses synthetic
+input through the production start gate; it bypasses live GLFW and mouse-look.
 
-Derive diagnostic10/6/10s prefixes from the full raw capture: select raw attempts
-starting before each phase's first attempt plus its cutoff. Keep whole intervals
-under unchanged generation/ID/first-subsequent-attempt attribution; recompute
-attempt/success/failure, loop, request-rate and cadence summaries. Never truncate
-or replace qualification windows with prefixes.
+Historical S7 secondary/exception flags report deferred or
+[accepted exception](S7-CADENCE-EXCEPTION-2026-10-18.md), never performance PASS.
+The active registry waives neither platform.
 
-The default verifier requires both local Mac and Windows Release proofs at all
-levels; minor/major keep this full-platform policy. Only the Snapshot 7 registry
-selects `--s7-windows-secondary`: both Mac proofs remain mandatory, while
-Windows is reported `deferred`, never passed. That profile rejects Windows
-rows and Windows-labelled release assets; it does not reuse or relabel old
-receipts. Capture one proof per invocation: native `--gameplay-proof` fixes the
-radius and records `qualification_proof`; schema `mc.gameplay-proof.v2` binds
-rows. Merge four receipts for the full profile or two Mac receipts for selected
-S7, all from one candidate and identical per-platform build/dependency
-identities. Legacy, stale, altered, incomplete, timed-out or inconsistent
-evidence fails. Verification recomputes raw loops, server and stationary
-summaries, rates and intervals; each Mac proof needs complete measured phases,
-at least two successful completions per phase and finite positive intervals.
+Preregister one capture per candidate; retain failures and never retry to
+cherry-pick. Keep the historical v25 normal 10/6/10-second recovery failure
+(3/1,201 lost slots at 119.699493 Hz) visible in comparisons.
 
-Coverage cadence is diagnostic; 500 FPS is later work. Mac performance uses
-normal FIFO and driver-reported `VK_GOOGLE_display_timing`, not CPU completion
-spacing. Require 120 Hz with ≥99.8% stability in each window: missed-slot ratio
-≤0.002, median one refresh slot and mean rate ≥119.76 Hz. Actual-timing evidence
-binds request IDs, loop/phase, timestamps, ordered poll results and a bounded
-drain through a frozen endpoint. Lock the presentation generation at the first
-baseline request; never bridge generations or invent timestamps. Unsupported or
-incomplete timing, late generation changes, query errors and unresolved endpoint
-timestamps fail; evidence does not prove physical scanout. Require ≥500 measured
-intervals per performance phase, attributed to the first subsequent raw
-attempt, including skipped, startup and closing attempts. Mac uses adjacent
-actual-present timestamps; monotonic loop ordinals expose gaps.
+Diagnostic prefixes retain raw timing/generation attribution, never qualification.
 
-Every measurement-generation successful request through that endpoint, including
-warmup predecessors, needs exactly one positive increasing timestamp.
-Post-endpoint drain IDs are declared; returned timestamps are order-checked,
-but need not all arrive.
+Require four Mac/Windows Release receipts for both proofs, one candidate with
+matching build/dependency identities; no S7 waivers/reuse. Native `--gameplay-proof`
+fixes workload/radius under `mc.gameplay-proof.v2`. Reject stale, altered,
+incomplete, timed-out or inconsistent evidence. Recompute loops, server/stationary
+summaries, rates, fence intervals and coupled movement coverage.
 
-When full-platform Windows qualification is selected, immediate presentation
-must be negotiated; each window needs 120 Hz and ≥99.8% of successful intervals
-≤8,333,334 ns, with interval-time overage share ≤0.002. Its performance proof
-also needs ≥99.8% of measured baseline/movement/recovered loop time within that
-8,333,334 ns budget. Mac loop budget and CPU rates remain diagnostic. Acquire
-deferral under the production acquisition deadline counts as an unsuccessful attempt,
-not a fatal error; raw attempt/success/failure totals must reconcile. Renderer,
-validation or device errors fail.
+Fresh-frame and platform-presentation gates remain independent. Mac requires normal FIFO and
+`VK_GOOGLE_display_timing`; Windows requires immediate mode. Neither replaces the
+fence-confirmed 120/300 Hz thresholds or proves physical scanout. Mac timing binds
+request IDs, loop/phase, timestamps and ordered poll results through a bounded
+drain to a frozen endpoint. Lock generation at the first baseline request; never
+bridge generations or invent timestamps.
+Unsupported timing, generation changes, query errors or unresolved endpoint
+timestamps fail. Require 500 driver intervals per Mac performance phase.
+Mac FIFO timing requires at least 119.76 Hz, a one-refresh median and at most
+0.2% lost slots. Windows separately checks 120 Hz request cadence with its 99.8%
+interval rules.
 
-Neither proof replaces frame inspection or analyzer qualification. The S7
-Windows-deferred record makes no Windows runtime claim; the later full-platform
-profile still requires separate Windows runtime acceptance.
+Every measurement-generation success through the endpoint, including warmup,
+needs one positive increasing timestamp. Drain IDs are declared and ordered; not
+all must arrive.
+
+Acquire deferral under the production deadline counts as an unsuccessful attempt;
+raw attempt/success/failure totals must reconcile. Renderer, validation or device
+errors fail. Frame inspection and analyzer qualification remain required.
 
 Production Release commands:
 
@@ -76,18 +81,12 @@ python3 script/ci/verify_gameplay_gate.py --root . --record macos --proof terrai
   --executable build/release/mc_main --receipt /absolute/path/macos-terrain.json \
   --macos-package /absolute/path/normal-package \
   --macos-package-manifest /absolute/path/normal-package/manifest.json
-# For the Snapshot 7 selection, capture both Mac proofs and merge them with:
-# python3 script/ci/verify_gameplay_gate.py --root . --receipt /absolute/path/gameplay-aggregate.json \
-#   --s7-windows-secondary --merge /absolute/path/macos-terrain.json /absolute/path/macos-performance.json
-# Full-platform minor/major qualification also captures both Windows proofs and merges all four receipts.
 ```
 
-Use `script/package_snapshot.py`; verify manifest/inventory, source Release
-executable, `MinecraftClone.command` bytes, relative ICD and Mach-O closure.
-Reject inherited `DYLD_*`/`VK_*`; bind receipts to loader/MoltenVK hashes and
-invocation. Retain `.macos` beside the receipt and in transit; launch its normal
-command and recheck closures. Bare source captures fail. Package hashes do not
-prove library mapping; PID maps are unobserved.
+Use `script/package_snapshot.py`; verify inventory, source executable, launcher,
+relative ICD and Mach-O closure. Reject inherited `DYLD_*`/`VK_*`; bind loader
+hashes/invocation. Retain `.macos`, launch normally and recheck closures.
+Bare source captures fail; package hashes do not prove runtime library mapping.
 
 With separate Windows build/desktop accounts, the recorder sends only the
 runtime package to the desktop helper:
@@ -96,14 +95,12 @@ runtime package to the desktop helper:
 python script/ci/verify_gameplay_gate.py --root C:\task\source --record windows `
   --executable C:\task\build\mc_main.exe --receipt C:\task\proof\windows-gameplay.json `
   --desktop-package C:\task\runtime --desktop-package-manifest C:\task\runtime-manifest.json `
-  --desktop-task-id mc-s7-0465-terrain --proof terrain-coverage
+  --desktop-task-id <task-id> --proof terrain-coverage
 ```
 
-The UTF-8/BOM manifest lists relative paths, sizes and SHA-256 for executable,
-DLLs, SPIR-V and assets; reject unlisted, duplicate, escaping or reparse inputs.
-Keep source/dependencies private. Broker binds task, arguments, hashes, timeout
-and process identity; recheck runtime inputs around polling. Keep build/launch
-paths separate and reports helper-relative.
+The UTF-8/BOM manifest binds executable/DLL/SPIR-V/assets by relative path,
+size and hash; reject unlisted, duplicate, escaping or reparse inputs. Keep source
+private; the broker binds task, arguments, hashes, timeout and process identity.
 
 Reject build-account `MC_DIAGNOSTIC_*`; require the native selector and false
 `diagnostic_overrides_present` marker. Recognized diagnostic overrides invalidate proof
@@ -111,20 +108,13 @@ even at `0`; registry values are not proof. Diagnostic options/evidence:
 [runtime acceptance](../ACCEPTANCE.md) and [rendering guide](../code/RENDERING.md).
 Diagnostic captures cannot qualify.
 
-Native process timeout is two warmups plus 120 s for the fixed sample and
-loop-boundary allowance (480 s with the 180 s default warmups); the Windows
-desktop polling deadline adds a separate 60 s startup allowance. Poll uncertainty never
-resubmits; exceptions cancel/wait the owned UUID up to 30 s; lost responses
-recover one request. The helper owns only the direct process; this benchmark
-uses threads. Retain failed receipts, `.raw.json` and sibling `.desktop`
-runtime/manifest/helper evidence. Cleanup failure, stale reports or nonzero
-exit fail; bare reports lack provenance.
+Native timeout is two warmups plus 120 seconds (480 seconds with the 180-second
+default); Windows polling adds 60 seconds for startup. Polling never resubmits;
+cancellation waits up to 30 seconds. Retain failed receipts, `.raw.json` and
+`.desktop` runtime/helper evidence. Cleanup failure or nonzero exit fails.
 
-Hash production/tests/embedded `scenarios/**`, Release graph, executable,
-configuration, dependencies and raw bytes before/after with stable globs.
-Retain failures, raw files and sidecars/relocation; refused publication keeps
-raw bytes. Docs/backlog do not change source identity; keep executable/report
-through promotion.
+Hash source/scenarios, Release graph, executable, configuration, dependencies and
+raw bytes before/after; retain failures, sidecars and promotion artifacts.
 
 ```sh
 python3 script/ci/verify_gameplay_gate.py --root . \
@@ -135,6 +125,5 @@ python3 script/ci/verify_gameplay_gate.py --root . \
   --receipt build/ai-checks/gameplay-aggregate.json --candidate-commit <full-source-SHA>
 ```
 
-Merge hashes before path resolution; release verifies offline
-(`proof: true`, `reuse: false`). Analysis or renderer smoke cannot replace
-gameplay evidence.
+Merge hashes before resolving paths; verify offline (`proof: true`, `reuse: false`).
+Smoke/analysis never replaces gameplay evidence.

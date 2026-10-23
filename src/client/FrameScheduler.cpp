@@ -11,6 +11,7 @@ FrameScheduler::FrameScheduler(
     std::chrono::milliseconds const simulation_period
 ) noexcept
     : m_next_simulation(started_at)
+    , m_last_simulation(started_at)
     , m_simulation_period(std::max(simulation_period, std::chrono::milliseconds{ 1 }))
 { }
 
@@ -19,7 +20,9 @@ bool FrameScheduler::simulationDue(std::chrono::steady_clock::time_point const n
     if (now < m_next_simulation) {
         return false;
     }
-    m_next_simulation = now + m_simulation_period;
+    auto const periods = (now - m_next_simulation) / m_simulation_period + 1;
+    m_next_simulation += m_simulation_period * periods;
+    m_last_simulation = m_next_simulation - m_simulation_period;
     return true;
 }
 

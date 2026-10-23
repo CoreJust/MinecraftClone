@@ -1,6 +1,7 @@
 #pragma once
 
 #include <shared/world/Chunk.hpp>
+#include <shared/world/TerrainWorld.hpp>
 
 #include <array>
 #include <cstdint>
@@ -9,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <stop_token>
 #include <unordered_map>
 #include <vector>
 
@@ -43,12 +45,15 @@ inline constexpr std::array<uint32_t, 5> REGISTERED_WORLD_GENERATION_EXTENTS{
 
 inline constexpr uint32_t MAX_GENERATION_STAGE_OUTPUT_BYTES = 4U * 1'024U;
 inline constexpr uint64_t MAX_GENERATION_OUTPUT_BUDGET_BYTES = uint64_t{1U} * 1'024U * 1'024U;
+inline constexpr uint64_t MAX_GENERATION_REGIONAL_RESULT_BUDGET_BYTES = uint64_t{32U} * 1'024U * 1'024U;
+inline constexpr uint64_t MAX_GENERATION_REGIONAL_RETENTION_BUDGET_BYTES = uint64_t{32U} * 1'024U * 1'024U;
 
 enum class GenerationAdmission : uint8_t {
     Accepted,
     QueueFull,
     Duplicate,
     InvalidPlan,
+    CapacityExceeded,
 };
 
 enum class GenerationState : uint8_t {
@@ -121,6 +126,11 @@ struct GenerationJob final {
     GenerationPriorityScores priority_scores{};
     std::optional<GenerationRegionKey> region;
     std::shared_ptr<std::vector<uint8_t> const> inherited_ancestor_data;
+    std::optional<TerrainIdentity> terrain_identity;
+    uint64_t world_epoch = 0U;
+    uint64_t attempt = 0U;
+    std::shared_ptr<RegionalArtifact const> inherited_region = nullptr;
+    std::shared_ptr<std::stop_source> cancellation_source = nullptr;
 
     bool operator==(GenerationJob const&) const noexcept = default;
 };
@@ -130,6 +140,7 @@ struct GenerationResult final {
     bool succeeded = false;
     bool cancelled = false;
     std::shared_ptr<std::vector<uint8_t> const> output;
+    std::shared_ptr<RegionalArtifact const> regional_artifact = nullptr;
 
     bool operator==(GenerationResult const&) const noexcept = default;
 };
@@ -167,6 +178,22 @@ public:
     );
 
     [[nodiscard]]
+    bool complete(
+        GenerationJob const& completed_job,
+        bool succeeded,
+        bool cancelled = false,
+        std::vector<uint8_t> output = {}
+    );
+
+    [[nodiscard]]
+    bool completeRegional(
+        GenerationJob const& completed_job,
+        bool succeeded,
+        bool cancelled,
+        std::shared_ptr<RegionalArtifact const> output
+    );
+
+    [[nodiscard]]
     bool retry(GenerationJobId id);
 
     [[nodiscard]]
@@ -189,12 +216,20 @@ public:
     [[nodiscard]]
     uint64_t resultCount() const noexcept;
 
+    [[nodiscard]]
+    uint64_t regionalResultBytes() const noexcept;
+
 private:
     friend class WorldGenerationCoordinator;
 
     struct AdmissionResult final {
         GenerationAdmission admission;
         std::optional<GenerationJob> job;
+    };
+
+    struct SubmissionAttempt final {
+        uint64_t world_epoch;
+        uint64_t attempt;
     };
 
     struct JobState final {
@@ -215,14 +250,22 @@ private:
         GenerationStage stage,
         GenerationPriorityScores priority_scores = {},
         std::optional<GenerationRegionKey> region = std::nullopt,
-        std::shared_ptr<std::vector<uint8_t> const> inherited_ancestor_data = nullptr
+        std::shared_ptr<std::vector<uint8_t> const> inherited_ancestor_data = nullptr,
+        std::optional<TerrainIdentity> const& terrain_identity = std::nullopt,
+        SubmissionAttempt const& submission_attempt = {0U, 0U},
+        std::shared_ptr<RegionalArtifact const> const& inherited_region = nullptr
     );
+
+    [[nodiscard]]
+    bool updatePriority(GenerationJobId id, GenerationPriorityScores priority_scores);
 
 private:
     uint64_t m_max_pending_jobs;
     uint64_t m_max_output_bytes;
     uint64_t m_output_bytes = 0U;
+    uint64_t m_regional_result_bytes = 0U;
     GenerationJobId m_next_id = 1U;
+    uint64_t m_next_attempt = 1U;
     std::deque<GenerationJobId> m_queue;
     std::unordered_map<GenerationJobId, JobState> m_jobs;
     std::deque<GenerationResult> m_results;
@@ -251,6 +294,20 @@ public:
     );
 
     [[nodiscard]]
+    bool updatePriority(
+        ChunkCoordinate coordinate,
+        uint64_t revision,
+        uint64_t seed,
+        GenerationPriorityScores priority_scores
+    );
+
+    void setTerrainContext(std::shared_ptr<TerrainWorld const> terrain_world, uint64_t world_epoch);
+
+    // Adds the accepted leaf lease to a preview copy without changing its stream revision.
+    [[nodiscard]]
+    std::optional<GenerationJob> bindTerrainLeaf(GenerationJob job);
+
+    [[nodiscard]]
     std::optional<GenerationJob> takeNext();
 
     [[nodiscard]]
@@ -262,6 +319,21 @@ public:
         bool succeeded,
         bool cancelled = false,
         std::vector<uint8_t> output = {}
+    );
+
+    [[nodiscard]]
+    bool complete(
+        GenerationJob const& completed_job,
+        bool succeeded,
+        bool cancelled = false
+    );
+
+    [[nodiscard]]
+    bool completeRegional(
+        GenerationJob const& completed_job,
+        bool succeeded,
+        bool cancelled,
+        std::shared_ptr<RegionalArtifact const> output
     );
 
     [[nodiscard]]
@@ -293,6 +365,9 @@ public:
     [[nodiscard]]
     uint64_t refinementOutputBytes() const noexcept;
 
+    [[nodiscard]]
+    uint64_t regionalArtifactBytes() const noexcept;
+
 private:
     struct GenerationIdentity final {
         ChunkCoordinate coordinate;
@@ -312,6 +387,19 @@ private:
         uint64_t operator()(GenerationRegionKey const& key) const noexcept;
     };
 
+    struct RegionalArtifactKey final {
+        GenerationRegionKey region;
+        TerrainIdentity terrain_identity;
+        uint64_t world_epoch;
+
+        bool operator==(RegionalArtifactKey const&) const = default;
+    };
+
+    struct RegionalArtifactKeyHash final {
+        [[nodiscard]]
+        uint64_t operator()(RegionalArtifactKey const& key) const noexcept;
+    };
+
     struct PlanStage final {
         GenerationStage stage;
         std::optional<GenerationRegionKey> region;
@@ -320,6 +408,22 @@ private:
     struct RefinementOutput final {
         std::shared_ptr<std::vector<uint8_t> const> bytes;
         uint64_t last_access = 0U;
+    };
+
+    struct RegionalArtifactEntry final {
+        std::shared_ptr<RegionalArtifact const> artifact;
+        uint64_t storage_bytes = 0U;
+        uint64_t last_access = 0U;
+    };
+
+    struct RegionFlight final {
+        GenerationJobId job_id = 0U;
+        std::vector<GenerationIdentity> subscribers;
+        GenerationPriorityScores priority_scores{};
+        bool priority_initialized = false;
+        uint64_t reserved_bytes = 0U;
+        std::shared_ptr<RegionalArtifact const> result = nullptr;
+        bool result_ready = false;
     };
 
     struct Pipeline final {
@@ -331,6 +435,9 @@ private:
         bool result_ready = false;
         std::shared_ptr<std::vector<uint8_t> const> result_output;
         std::shared_ptr<std::vector<uint8_t> const> final_refinement_output;
+        std::shared_ptr<RegionalArtifact const> result_region = nullptr;
+        std::shared_ptr<RegionalArtifact const> parent_region = nullptr;
+        uint64_t attempt = 0U;
     };
 
     [[nodiscard]]
@@ -338,6 +445,26 @@ private:
 
     [[nodiscard]]
     GenerationAdmission submitNextStage(GenerationIdentity const& identity, Pipeline& pipeline);
+
+    [[nodiscard]]
+    bool retainRegionalArtifact(
+        RegionalArtifactKey const& key,
+        std::shared_ptr<RegionalArtifact const> artifact
+    );
+
+    [[nodiscard]]
+    bool reserveRegionalArtifactStorage(uint64_t bytes);
+
+    [[nodiscard]]
+    std::optional<RegionalArtifactKey> parentArtifactKey(GenerationRegionKey const& region) const;
+
+    [[nodiscard]]
+    RegionFlight* flightFor(GenerationJobId id) noexcept;
+
+    [[nodiscard]]
+    RegionFlight const* flightFor(GenerationJobId id) const noexcept;
+
+    void discardFlight(GenerationJobId id, GenerationState state) noexcept;
 
     [[nodiscard]]
     std::shared_ptr<std::vector<uint8_t> const> nearestCompletedAncestor(
@@ -359,8 +486,15 @@ private:
     uint64_t m_max_pending_jobs;
     uint64_t m_revision;
     uint64_t m_seed;
+    std::shared_ptr<TerrainWorld const> m_terrain_world = nullptr;
+    TerrainIdentity m_terrain_identity{};
+    uint64_t m_world_epoch = 0U;
+    uint64_t m_next_attempt = 1U;
     uint64_t m_refinement_output_bytes = 0U;
     uint64_t m_refinement_access_clock = 0U;
+    uint64_t m_regional_artifact_bytes = 0U;
+    uint64_t m_regional_artifact_reserved_bytes = 0U;
+    uint64_t m_regional_artifact_access_clock = 0U;
     std::vector<GenerationPriorityDimension> m_priority_order{
         GenerationPriorityDimension::Distance,
         GenerationPriorityDimension::View,
@@ -369,6 +503,9 @@ private:
     bool m_priority_order_configured = false;
     std::unordered_map<GenerationIdentity, Pipeline, GenerationIdentityHash> m_pipelines;
     std::unordered_map<GenerationRegionKey, RefinementOutput, RefinementOutputHash> m_refinement_outputs;
+    std::unordered_map<RegionalArtifactKey, RegionalArtifactEntry, RegionalArtifactKeyHash>
+        m_regional_artifacts;
+    std::unordered_map<RegionalArtifactKey, RegionFlight, RegionalArtifactKeyHash> m_region_flights;
 };
 
 } // namespace shared

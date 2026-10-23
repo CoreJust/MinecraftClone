@@ -1,11 +1,9 @@
+#include <shared/corelang/Execution.hpp>
+#include <shared/corelang/ExecutionTypes.hpp>
 #include <shared/policy/Policy.hpp>
-
 #include <core/lang/Bytecode.hpp>
 #include <core/lang/Compiler.hpp>
-#include <core/lang/CoreLang.hpp>
-#include <core/lang/Diagnostic.hpp>
 #include <core/lang/Registry.hpp>
-#include <core/lang/Runtime.hpp>
 #include <core/lang/Value.hpp>
 
 #include <algorithm>
@@ -16,7 +14,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <functional>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -24,12 +21,12 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <unordered_map>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace shared {
@@ -280,14 +277,47 @@ PolicyDiagnosticCode collectorFailureCode(std::string_view const message) noexce
 }
 
 [[nodiscard]]
-core::lang::JitMode coreJitMode(PolicyJitMode const mode) noexcept
+corelang::Backend coreBackend(PolicyExecutionBackend const backend) noexcept
 {
-    switch (mode) {
-        case PolicyJitMode::Required: return core::lang::JitMode::Required;
-        case PolicyJitMode::Preferred: return core::lang::JitMode::Preferred;
-        case PolicyJitMode::Disabled: return core::lang::JitMode::Disabled;
+    switch (backend) {
+        case PolicyExecutionBackend::Interpreter: return corelang::Backend::Interpreter;
+        case PolicyExecutionBackend::Jit: return corelang::Backend::Jit;
+        case PolicyExecutionBackend::Aot: return corelang::Backend::Aot;
     }
-    return core::lang::JitMode::Disabled;
+    return corelang::Backend::Interpreter;
+}
+
+[[nodiscard]]
+PolicyDiagnosticCode backendErrorCode(
+    corelang::BackendError const& error,
+    PolicyExecutionBackend const backend
+) noexcept
+{
+    switch (error.code) {
+        case corelang::BackendErrorCode::Cancelled: return PolicyDiagnosticCode::Cancelled;
+        case corelang::BackendErrorCode::InvalidConfiguration: return PolicyDiagnosticCode::InvalidLimits;
+        case corelang::BackendErrorCode::SourceTooLarge: return PolicyDiagnosticCode::SourceTooLarge;
+        case corelang::BackendErrorCode::BytecodeTooLarge: return PolicyDiagnosticCode::BytecodeLimitExceeded;
+        case corelang::BackendErrorCode::NativeImageTooLarge: return PolicyDiagnosticCode::NativeImageLimitExceeded;
+        case corelang::BackendErrorCode::CompileFailed: return PolicyDiagnosticCode::CompileFailure;
+        case corelang::BackendErrorCode::InvalidArtifact:
+        case corelang::BackendErrorCode::UnboundedExecution:
+            return PolicyDiagnosticCode::UnboundedExecution;
+        case corelang::BackendErrorCode::InvalidHostCalls:
+        case corelang::BackendErrorCode::InvalidManifest:
+            return PolicyDiagnosticCode::InvalidDeclaration;
+        case corelang::BackendErrorCode::InstructionLimitExceeded:
+            return PolicyDiagnosticCode::InstructionLimitExceeded;
+        case corelang::BackendErrorCode::BackendUnavailable:
+            return backend == PolicyExecutionBackend::Aot
+                ? PolicyDiagnosticCode::AotPreparationFailure
+                : PolicyDiagnosticCode::JitPreparationFailure;
+        case corelang::BackendErrorCode::InvalidResultType:
+            return PolicyDiagnosticCode::RuntimeFailure;
+        case corelang::BackendErrorCode::ExecutionFailed:
+            return collectorFailureCode(error.message);
+    }
+    return PolicyDiagnosticCode::RuntimeFailure;
 }
 
 struct HostSpec final {
@@ -333,6 +363,7 @@ core::lang::CustomManifest manifest(HostSpec const& spec)
             .parameters = std::vector<core::lang::BorrowAccess>(spec.arguments.size()),
             .returns = {},
         },
+        .clobber_regions = {},
     };
     result.digest = core::lang::customManifestDigest(result);
     return result;
@@ -596,102 +627,80 @@ private:
 
 namespace {
 
+struct ExecutedPolicy final {
+    PolicyPlan plan;
+    corelang::BackendReceipt backend_receipt;
+};
+
 [[nodiscard]]
-std::expected<PolicyPlan, PolicyDiagnostic> executePolicy(
+corelang::ExecutionLimits executionLimits(PolicyLimits const& limits) noexcept
+{
+    return {
+        .max_source_bytes = limits.max_source_bytes,
+        .max_bytecode_bytes = limits.max_bytecode_bytes,
+        .max_native_image_bytes = limits.max_native_image_bytes,
+        .max_instructions = limits.max_instructions,
+        .max_execution_count = 2U,
+    };
+}
+
+[[nodiscard]]
+std::expected<ExecutedPolicy, PolicyDiagnostic> executePolicy(
     std::string_view const source_id,
-    core::lang::CompileResult const& compiled,
+    corelang::CompiledProgram const& compiled,
     PolicyLimits const& limits,
     PolicyCancellation const* const cancellation,
-    PolicyJitMode const jit_mode,
-    bool* const jit_prepared
+    PolicyExecutionBackend const backend
 )
 {
     PolicyCollector collector{source_id, limits, cancellation};
     std::vector<HostSpec> const specs = hostSpecs();
-    std::vector<core::lang::CustomProvider> providers;
-    providers.reserve(specs.size());
+    std::vector<corelang::ExecutionHostCall> host_calls;
+    host_calls.reserve(compiled.compiled.artifact.customs.size());
     for (HostSpec const& spec : specs) {
         core::lang::CustomManifest const host_manifest = manifest(spec);
-        providers.push_back({
+        auto const imported = std::ranges::find(
+            compiled.compiled.artifact.customs,
+            host_manifest.provider_key,
+            &core::lang::CustomManifest::provider_key
+        );
+        if (imported == compiled.compiled.artifact.customs.end()) {
+            continue;
+        }
+        host_calls.push_back({
             .manifest = host_manifest,
             .invoke = [&collector, host_call = spec.call](
-                core::lang::CustomContext&,
                 std::span<core::lang::Value const> const arguments
-            ) {
+            ) -> std::expected<core::lang::Value, std::string> {
                 auto const result = collector.call(host_call, arguments);
                 if (!result) {
-                    return core::lang::CustomOutcome{core::lang::CustomFail{
-                        .code = 1U,
-                        .message = result.error(),
-                    }};
+                    return std::unexpected(result.error());
                 }
-                return core::lang::CustomOutcome{core::lang::CustomComplete{.value = unitValue()}};
+                return unitValue();
             },
-            .cancel = {},
         });
     }
-
-    core::lang::RuntimeOptions runtime_options;
-    runtime_options.jit_mode = coreJitMode(jit_mode);
-    runtime_options.jit_diagnostic = [jit_prepared](core::lang::JitDiagnostic const&) {
-        if (jit_prepared) {
-            *jit_prepared = false;
-        }
+    corelang::CancellationCheck const cancellation_requested = [cancellation] {
+        return cancellation != nullptr && cancellation->isCancellationRequested();
     };
-    core::lang::Runtime runtime{runtime_options};
-    for (core::lang::CustomProvider& provider : providers) {
-        auto const registered = runtime.registerProvider(std::move(provider));
-        if (!registered) {
-            return std::unexpected(diagnostic(
-                PolicyDiagnosticCode::RuntimeFailure,
-                source_id,
-                registered.error().message
-            ));
-        }
-    }
-    if (cancellation && cancellation->isCancellationRequested()) {
-        return std::unexpected(diagnostic(
-            PolicyDiagnosticCode::Cancelled,
-            source_id,
-            "policy compilation was cancelled"
-        ));
-    }
-    auto const program = runtime.load(compiled.bytes);
-    if (!program) {
-        return std::unexpected(diagnostic(
-            jit_mode == PolicyJitMode::Required
-                ? PolicyDiagnosticCode::JitPreparationFailure
-                : PolicyDiagnosticCode::RuntimeFailure,
-            source_id,
-            program.error().message
-        ));
-    }
-    if (jit_prepared && jit_mode == PolicyJitMode::Disabled) {
-        *jit_prepared = false;
-    }
-    auto const executed = runtime.execute(*program, source_id, "policy", {}, {});
+    corelang::ExecutionLimits const execution_limits = executionLimits(limits);
+    auto const executed = corelang::executeBounded({
+        .program = compiled,
+        .module_id = source_id,
+        .entry = "policy",
+        .backend = coreBackend(backend),
+        .expected_result_type = type(core::lang::TypeKind::Unit),
+        .limits = execution_limits,
+        .execution_count = 1U,
+        .host_calls = std::move(host_calls),
+        .stop_token = {},
+        .cancellation_requested = cancellation_requested,
+    });
     if (!executed) {
         return std::unexpected(diagnostic(
-            PolicyDiagnosticCode::RuntimeFailure,
+            backendErrorCode(executed.error(), backend),
             source_id,
             executed.error().message
-        ));
-    }
-    if (auto const* const failed = std::get_if<core::lang::Failed>(&*executed)) {
-        std::string_view const message = failed->failure.message;
-        return std::unexpected(diagnostic(
-            failed->failure.code == core::lang::FailureCode::Cancelled
-                ? PolicyDiagnosticCode::Cancelled
-                : collectorFailureCode(message),
-            source_id,
-            std::string{message}
-        ));
-    }
-    if (!std::holds_alternative<core::lang::Completed>(*executed)) {
-        return std::unexpected(diagnostic(
-            PolicyDiagnosticCode::RuntimeFailure,
-            source_id,
-            "policy program did not complete"
         ));
     }
     auto plan = std::move(collector).build();
@@ -702,193 +711,10 @@ std::expected<PolicyPlan, PolicyDiagnostic> executePolicy(
             plan.error()
         ));
     }
-    return std::move(*plan);
-}
-
-[[nodiscard]]
-std::expected<uint64_t, PolicyDiagnostic> boundedInstructionCount(
-    std::string_view const source_id,
-    core::lang::Artifact const& artifact,
-    PolicyLimits const& limits,
-    uint64_t const execution_count
-)
-{
-    auto fail = [source_id](PolicyDiagnosticCode const code, std::string message) {
-        return std::unexpected(diagnostic(code, source_id, std::move(message)));
+    return ExecutedPolicy{
+        .plan = std::move(*plan),
+        .backend_receipt = executed->receipt,
     };
-    std::vector<uint8_t> state(artifact.functions.size(), 0U);
-    std::vector<uint64_t> costs(artifact.functions.size(), 0U);
-    std::function<std::expected<uint64_t, PolicyDiagnostic>(uint64_t)> count_function;
-    count_function = [&](uint64_t const function_index) -> std::expected<uint64_t, PolicyDiagnostic> {
-        if (function_index >= artifact.functions.size()) {
-            return fail(PolicyDiagnosticCode::UnboundedExecution, "policy bytecode has an invalid function target");
-        }
-        uint8_t& function_state = state[static_cast<std::vector<uint8_t>::size_type>(function_index)];
-        if (function_state == 1U) {
-            return fail(PolicyDiagnosticCode::UnboundedExecution, "policy bytecode contains recursive calls");
-        }
-        if (function_state == 2U) {
-            return costs[static_cast<std::vector<uint64_t>::size_type>(function_index)];
-        }
-        function_state = 1U;
-
-        core::lang::Function const& function = artifact.functions[
-            static_cast<std::vector<core::lang::Function>::size_type>(function_index)
-        ];
-        std::vector<uint64_t> block_costs(function.blocks.size(), 0U);
-        std::vector<uint8_t> block_state(function.blocks.size(), 0U);
-        std::function<std::expected<uint64_t, PolicyDiagnostic>(uint64_t)> count_block;
-        count_block = [&](uint64_t const block_index) -> std::expected<uint64_t, PolicyDiagnostic> {
-            if (block_index >= function.blocks.size()) {
-                return fail(PolicyDiagnosticCode::UnboundedExecution, "policy bytecode has an invalid block target");
-            }
-            uint8_t& block_mark = block_state[static_cast<std::vector<uint8_t>::size_type>(block_index)];
-            if (block_mark == 1U) {
-                return fail(PolicyDiagnosticCode::UnboundedExecution, "policy bytecode contains a control-flow cycle");
-            }
-            if (block_mark == 2U) {
-                return block_costs[static_cast<std::vector<uint64_t>::size_type>(block_index)];
-            }
-            block_mark = 1U;
-
-            core::lang::Block const& block = function.blocks[
-                static_cast<std::vector<core::lang::Block>::size_type>(block_index)
-            ];
-            if (block.instructions.empty()) {
-                return fail(PolicyDiagnosticCode::UnboundedExecution, "policy bytecode contains an empty block");
-            }
-            uint64_t local_cost = 0U;
-            for (core::lang::Instruction const& instruction : block.instructions) {
-                if (instruction.opcode == core::lang::Op::IndirectCall
-                    || instruction.opcode == core::lang::Op::StaticBegin) {
-                    return fail(
-                        PolicyDiagnosticCode::UnboundedExecution,
-                        "policy declarations may not use indirect calls or static initialization"
-                    );
-                }
-                if (local_cost == limits.max_instructions) {
-                    return fail(PolicyDiagnosticCode::InstructionLimitExceeded, "policy exceeds the instruction-step limit");
-                }
-                ++local_cost;
-                if (instruction.opcode == core::lang::Op::Call) {
-                    if (instruction.operands.size() < 2U
-                        || instruction.operands[1U] != instruction.operands.size() - 2U) {
-                        return fail(PolicyDiagnosticCode::UnboundedExecution, "policy bytecode has a malformed call");
-                    }
-                    auto const callee_cost = count_function(instruction.operands[0U]);
-                    if (!callee_cost) {
-                        return std::unexpected(callee_cost.error());
-                    }
-                    if (*callee_cost > limits.max_instructions - local_cost) {
-                        return fail(PolicyDiagnosticCode::InstructionLimitExceeded, "policy exceeds the instruction-step limit");
-                    }
-                    local_cost += *callee_cost;
-                }
-            }
-
-            std::vector<uint64_t> successors;
-            core::lang::Instruction const& terminator = block.instructions.back();
-            if (terminator.opcode == core::lang::Op::Branch) {
-                if (terminator.operands.size() < 2U
-                    || terminator.operands[1U] != terminator.operands.size() - 2U) {
-                    return fail(PolicyDiagnosticCode::UnboundedExecution, "policy bytecode has a malformed branch");
-                }
-                successors.push_back(terminator.operands[0U]);
-            } else if (terminator.opcode == core::lang::Op::ConditionalBranch) {
-                if (terminator.operands.size() < 5U) {
-                    return fail(PolicyDiagnosticCode::UnboundedExecution, "policy bytecode has a malformed conditional branch");
-                }
-                uint64_t const true_count = terminator.operands[2U];
-                if (true_count > terminator.operands.size() - 3U) {
-                    return fail(PolicyDiagnosticCode::UnboundedExecution, "policy bytecode has a malformed conditional branch");
-                }
-                uint64_t const false_offset = 3U + true_count;
-                if (false_offset + 2U > terminator.operands.size()
-                    || terminator.operands[false_offset + 1U] != terminator.operands.size() - (false_offset + 2U)) {
-                    return fail(PolicyDiagnosticCode::UnboundedExecution, "policy bytecode has a malformed conditional branch");
-                }
-                successors.push_back(terminator.operands[1U]);
-                successors.push_back(terminator.operands[false_offset]);
-            } else if (terminator.opcode != core::lang::Op::ReturnValue
-                && terminator.opcode != core::lang::Op::ReturnUnit
-                && terminator.opcode != core::lang::Op::Halt) {
-                return fail(PolicyDiagnosticCode::UnboundedExecution, "policy bytecode has a non-terminal block ending");
-            }
-
-            uint64_t longest_successor = 0U;
-            for (uint64_t const successor : successors) {
-                auto const successor_cost = count_block(successor);
-                if (!successor_cost) {
-                    return std::unexpected(successor_cost.error());
-                }
-                longest_successor = std::max(longest_successor, *successor_cost);
-            }
-            if (local_cost > limits.max_instructions
-                || longest_successor > limits.max_instructions - local_cost) {
-                return fail(PolicyDiagnosticCode::InstructionLimitExceeded, "policy exceeds the instruction-step limit");
-            }
-            block_mark = 2U;
-            block_costs[static_cast<std::vector<uint64_t>::size_type>(block_index)] = local_cost + longest_successor;
-            return block_costs[static_cast<std::vector<uint64_t>::size_type>(block_index)];
-        };
-
-        if (function.blocks.empty()) {
-            return fail(PolicyDiagnosticCode::UnboundedExecution, "policy entry has no executable bytecode");
-        }
-        auto const cost = count_block(0U);
-        if (!cost) {
-            return std::unexpected(cost.error());
-        }
-        function_state = 2U;
-        costs[static_cast<std::vector<uint64_t>::size_type>(function_index)] = *cost;
-        return *cost;
-    };
-
-    uint64_t total = 0U;
-    auto add_entry = [&](uint64_t const function_index) -> std::expected<void, PolicyDiagnostic> {
-        if (function_index == core::lang::NO_OPERAND) {
-            return {};
-        }
-        auto const cost = count_function(function_index);
-        if (!cost) {
-            return std::unexpected(cost.error());
-        }
-        if (*cost > limits.max_instructions - std::min(total, limits.max_instructions)) {
-            return std::unexpected(diagnostic(
-                PolicyDiagnosticCode::InstructionLimitExceeded,
-                source_id,
-                "policy exceeds the instruction-step limit"
-            ));
-        }
-        total += *cost;
-        return {};
-    };
-    for (core::lang::Module const& module : artifact.modules) {
-        auto const added = add_entry(module.init_function);
-        if (!added) {
-            return std::unexpected(added.error());
-        }
-    }
-    for (core::lang::Module const& module : artifact.modules) {
-        if (module.id != source_id) {
-            continue;
-        }
-        for (core::lang::Export const& exported : module.exports) {
-            if (exported.kind == core::lang::ExportKind::Function && exported.name == "policy") {
-                auto const added = add_entry(exported.target);
-                if (!added) {
-                    return std::unexpected(added.error());
-                }
-            }
-        }
-    }
-    if (execution_count > 1U) {
-        if (total > limits.max_instructions / execution_count) {
-            return fail(PolicyDiagnosticCode::InstructionLimitExceeded, "policy exceeds the instruction-step limit");
-        }
-        total *= execution_count;
-    }
-    return total;
 }
 
 } // namespace
@@ -1035,15 +861,13 @@ std::string policyPlanId(PolicyPlan const& plan)
 PolicySnapshot::PolicySnapshot(
     uint64_t const generation,
     PolicyPlan plan,
-    PolicyJitMode const jit_mode,
-    bool const jit_prepared,
+    corelang::BackendReceipt backend_receipt,
     bool const interpreter_parity,
     std::shared_ptr<PolicyCapabilitySnapshot const> capabilities
 )
     : m_generation(generation)
     , m_plan(std::move(plan))
-    , m_jit_mode(jit_mode)
-    , m_jit_prepared(jit_prepared)
+    , m_backend_receipt(std::move(backend_receipt))
     , m_interpreter_parity(interpreter_parity)
     , m_capabilities(std::move(capabilities))
 {
@@ -1059,14 +883,9 @@ PolicyPlan const& PolicySnapshot::plan() const noexcept
     return m_plan;
 }
 
-PolicyJitMode PolicySnapshot::jitMode() const noexcept
+corelang::BackendReceipt const& PolicySnapshot::backendReceipt() const noexcept
 {
-    return m_jit_mode;
-}
-
-bool PolicySnapshot::jitPrepared() const noexcept
-{
-    return m_jit_prepared;
+    return m_backend_receipt;
 }
 
 bool PolicySnapshot::interpreterParity() const noexcept
@@ -1125,7 +944,8 @@ std::expected<PolicyCompilation, PolicyDiagnostic> PolicyHost::compile(
     PolicyCancellation const* const cancellation
 ) const
 {
-    auto const invalid_limits = m_limits.max_source_bytes == 0U || m_limits.max_instructions == 0U
+    auto const invalid_limits = m_limits.max_source_bytes == 0U || m_limits.max_bytecode_bytes == 0U
+        || m_limits.max_native_image_bytes == 0U || m_limits.max_instructions == 0U
         || m_limits.max_statements == 0U
         || m_limits.max_groups == 0U || m_limits.max_members_per_group == 0U
         || m_limits.max_selectors == 0U || m_limits.max_presets == 0U
@@ -1184,76 +1004,72 @@ std::expected<PolicyCompilation, PolicyDiagnostic> PolicyHost::compile(
         .defaults = {"minecraft"},
         .restrictions = {},
     };
-    core::lang::CompileOptions compile_options;
-    compile_options.cancelled = [cancellation] {
-        return cancellation && cancellation->isCancellationRequested();
+    corelang::CancellationCheck const cancellation_requested = [cancellation] {
+        return cancellation != nullptr && cancellation->isCancellationRequested();
     };
-    auto const compiled = core::lang::compile(
+    corelang::ExecutionLimits const execution_limits = executionLimits(m_limits);
+    auto const compiled = corelang::compileBounded(
         core::lang::Source{.id = std::string{source_id}, .text = std::string{source}},
         registry,
-        compile_options
+        execution_limits,
+        {},
+        cancellation_requested
     );
     if (!compiled) {
-        if (cancellation && cancellation->isCancellationRequested()) {
-            return std::unexpected(diagnostic(
-                PolicyDiagnosticCode::Cancelled,
-                source_id,
-                "policy compilation was cancelled"
-            ));
-        }
-        std::string message = "CoreLang compilation failed";
-        if (!compiled.error().empty()) {
-            message = compiled.error().front().message;
-        }
-        return std::unexpected(diagnostic(PolicyDiagnosticCode::CompileFailure, source_id, std::move(message)));
+        return std::unexpected(diagnostic(
+            backendErrorCode(compiled.error(), options.backend),
+            source_id,
+            compiled.error().message
+        ));
     }
 
     uint64_t const execution_count = options.require_interpreter_parity
-            && options.jit_mode != PolicyJitMode::Disabled
+            && options.backend != PolicyExecutionBackend::Interpreter
         ? 2U
         : 1U;
-    auto const instruction_count = boundedInstructionCount(
+    auto const instruction_count = corelang::boundedInstructionCount(
+        *compiled,
         source_id,
-        compiled->artifact,
-        m_limits,
+        "policy",
+        execution_limits,
         execution_count
     );
     if (!instruction_count) {
-        return std::unexpected(instruction_count.error());
+        return std::unexpected(diagnostic(
+            backendErrorCode(instruction_count.error(), options.backend),
+            source_id,
+            instruction_count.error().message
+        ));
     }
 
-    bool jit_prepared = options.jit_mode != PolicyJitMode::Disabled;
-    auto first = executePolicy(source_id, *compiled, m_limits, cancellation, options.jit_mode, &jit_prepared);
+    auto first = executePolicy(source_id, *compiled, m_limits, cancellation, options.backend);
     if (!first) {
         return std::unexpected(first.error());
     }
-    bool interpreter_parity = options.jit_mode == PolicyJitMode::Disabled;
+    bool interpreter_parity = options.backend == PolicyExecutionBackend::Interpreter;
     if (options.require_interpreter_parity && !interpreter_parity) {
-        bool interpreted_jit_prepared = false;
         auto interpreted = executePolicy(
             source_id,
             *compiled,
             m_limits,
             cancellation,
-            PolicyJitMode::Disabled,
-            &interpreted_jit_prepared
+            PolicyExecutionBackend::Interpreter
         );
         if (!interpreted) {
             return std::unexpected(interpreted.error());
         }
-        if (*first != *interpreted) {
+        if (first->plan != interpreted->plan) {
             return std::unexpected(diagnostic(
                 PolicyDiagnosticCode::InterpreterParityFailure,
                 source_id,
-                "CoreLang policy produced different native and interpreter plans"
+                "CoreLang policy produced different selected-backend and interpreter plans"
             ));
         }
         interpreter_parity = true;
     }
     return PolicyCompilation{
-        .plan = std::move(*first),
-        .jit_mode = options.jit_mode,
-        .jit_prepared = jit_prepared,
+        .plan = std::move(first->plan),
+        .backend_receipt = std::move(first->backend_receipt),
         .interpreter_parity = interpreter_parity,
     };
 }
@@ -1580,8 +1396,7 @@ std::expected<uint64_t, PolicyDiagnostic> PolicyHost::publish(
     auto next = std::shared_ptr<PolicySnapshot const>(new PolicySnapshot(
         next_generation,
         std::move(compilation.plan),
-        compilation.jit_mode,
-        compilation.jit_prepared,
+        std::move(compilation.backend_receipt),
         compilation.interpreter_parity,
         std::move(materialized)
     ));
@@ -1621,6 +1436,9 @@ std::string_view policyDiagnosticCodeName(PolicyDiagnosticCode const code) noexc
         case PolicyDiagnosticCode::CompileFailure: return "compile-failure";
         case PolicyDiagnosticCode::RuntimeFailure: return "runtime-failure";
         case PolicyDiagnosticCode::JitPreparationFailure: return "jit-preparation-failure";
+        case PolicyDiagnosticCode::AotPreparationFailure: return "aot-preparation-failure";
+        case PolicyDiagnosticCode::BytecodeLimitExceeded: return "bytecode-limit-exceeded";
+        case PolicyDiagnosticCode::NativeImageLimitExceeded: return "native-image-limit-exceeded";
         case PolicyDiagnosticCode::InterpreterParityFailure: return "interpreter-parity-failure";
         case PolicyDiagnosticCode::Cancelled: return "cancelled";
         case PolicyDiagnosticCode::InstructionLimitExceeded: return "instruction-limit-exceeded";

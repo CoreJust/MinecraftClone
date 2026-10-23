@@ -4,7 +4,6 @@ import contextlib
 import importlib.util
 import io
 import json
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -32,8 +31,18 @@ class VerifyAnalysisGateTests(unittest.TestCase):
     def s7_version(self, root):
         project = root / "src/shared/include/shared/ProjectInfo.hpp"
         project.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(REPOSITORY / project.relative_to(root), project)
-        shutil.copyfile(REPOSITORY / "vcpkg.json", root / "vcpkg.json")
+        project.write_text(
+            'constexpr std::string_view MAJOR_VERSION_NAME{ "EarlyDev" };\n'
+            'constexpr std::string_view MINOR_VERSION_NAME{ "Initiation" };\n'
+            "constexpr ProjectVersion PROJECT_VERSION{\n"
+            "    .epoch = 0,\n"
+            "    .major = 1,\n"
+            "    .minor = 0,\n"
+            "    .patch = 7,\n"
+            "};\n",
+            encoding="utf-8",
+        )
+        (root / "vcpkg.json").write_text('{"version-string": "0.1.0"}\n', encoding="utf-8")
 
     def _paths(self, root: Path) -> tuple[Path, Path]:
         self.s7_version(root)

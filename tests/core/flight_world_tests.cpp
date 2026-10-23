@@ -1,10 +1,13 @@
+#include <shared/net/Message.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/TerrainWorld.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
 #include <shared/world/WorldGenerationScheduler.hpp>
 
 #include <gtest/gtest.h>
+#include <testsupport/TerrainFixtures.hpp>
 
 #include <algorithm>
 #include <array>
@@ -254,6 +257,119 @@ TEST(FlightWorldTest, MaterializedTerrainSupportsLandingAndJumping)
     );
 }
 
+TEST(FlightWorldTest, ProfileOnlyTerrainSupportsGravityAndJumpingWithoutDenseChunks)
+{
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = testsupport::makeSurfaceTile({ .x = 0, .y = 0 }, identity,
+        testsupport::makeHeightSamples(61U));
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(collision_world.setTerrainIdentity(identity));
+    ASSERT_TRUE(collision_world.publishAuthoritativeSurface(surface));
+    ASSERT_EQ(collision_world.residentChunkCount(), 0U);
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 61 });
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
+
+    for (uint32_t tick = 0U; tick < 32U; ++tick) {
+        static_cast<void>(world.movePlayer(1U, {}));
+    }
+    ASSERT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), 61.0);
+    ASSERT_TRUE(world.movePlayer(1U, { .x = 0U, .y = 0U, .z = 127U }));
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), 61.6125);
+    for (uint32_t tick = 0U; tick < 32U; ++tick) {
+        static_cast<void>(world.movePlayer(1U, {}));
+    }
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), 61.0);
+    EXPECT_EQ(collision_world.residentChunkCount(), 0U);
+}
+
+TEST(FlightWorldTest, ProfileSupportPreservesEditedCavityFloorBelowThePlayer)
+{
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = testsupport::makeSurfaceTile({ .x = 0, .y = 0 }, identity,
+        testsupport::makeHeightSamples(61U));
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(collision_world.setTerrainIdentity(identity));
+    ASSERT_TRUE(collision_world.publishAuthoritativeSurface(surface));
+    for (int32_t z = 10; z <= 25; ++z) {
+        ASSERT_TRUE(collision_world.setBlock({ .x = 4, .y = 4, .z = z }, shared::Block::Air));
+    }
+    auto const edited_column = collision_world.authoritativeColumn(4, 4);
+    ASSERT_TRUE(edited_column.has_value());
+    if (!edited_column) {
+        return;
+    }
+    ASSERT_NE(edited_column->dense_blocks, nullptr);
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 12 });
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
+
+    for (uint32_t tick = 0U; tick < 32U; ++tick) {
+        static_cast<void>(world.movePlayer(1U, {}));
+    }
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), 10.0);
+}
+
+TEST(FlightWorldTest, ProfileSupportBoundsTerrainQueriesWhileEntityHeightExceedsTerrain)
+{
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = testsupport::makeSurfaceTile({ .x = 0, .y = 0 }, identity,
+        testsupport::makeHeightSamples(1'021U));
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(collision_world.setTerrainIdentity(identity));
+    ASSERT_TRUE(collision_world.publishAuthoritativeSurface(surface));
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 65'000 });
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
+    ASSERT_TRUE(world.movePlayer(1U, {}));
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), 64'999.9125);
+    ASSERT_TRUE(world.setPlayerPosition(1U, { .x = 4, .y = 4, .z = 1'025 }));
+    for (uint32_t tick = 0U; tick < 32U; ++tick) {
+        static_cast<void>(world.movePlayer(1U, {}));
+    }
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), 1'021.0);
+    EXPECT_EQ(collision_world.residentChunkCount(), 0U);
+}
+
+TEST(FlightWorldTest, ProfileSlopeAllowsDiagonalReverseAndRejectsEmbeddedBypassRemoval)
+{
+    auto heights = testsupport::makeHeightSamples(10U);
+    for (uint32_t y = 0U; y < shared::Chunk::SIDE_LENGTH; ++y) {
+        for (uint32_t x = 6U; x < shared::Chunk::SIDE_LENGTH; ++x) {
+            heights[y * shared::Chunk::SIDE_LENGTH + x] = 11U;
+        }
+    }
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = testsupport::makeSurfaceTile({ .x = 0, .y = 0 }, identity, heights);
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(collision_world.setTerrainIdentity(identity));
+    ASSERT_TRUE(collision_world.publishAuthoritativeSurface(surface));
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 10 });
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+    ASSERT_TRUE(world.movePlayer(1U, {
+        .x = 127U, .y = 0U, .z = 127U, .accelerated = true, .speedup = 15U,
+    }));
+    ASSERT_TRUE(world.movePlayer(1U, {
+        .x = static_cast<uint8_t>(-127), .y = 0U, .z = static_cast<uint8_t>(-127),
+        .accelerated = true, .speedup = 15U,
+    }));
+    EXPECT_DOUBLE_EQ(shared::playerPositionX(requiredValue(world.player(1U))), 4.0);
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), 10.0);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 3U }));
+    ASSERT_TRUE(world.movePlayer(1U, {
+        .x = 0U, .y = 0U, .z = static_cast<uint8_t>(-127),
+    }));
+    EXPECT_FALSE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+    ASSERT_TRUE(world.movePlayer(1U, { .x = 0U, .y = 0U, .z = 127U }));
+    EXPECT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+    EXPECT_EQ(collision_world.residentChunkCount(), 0U);
+}
+
 TEST(FlightWorldTest, MaterializedSupportUsesTheHighestColumnUnderThePlayerFootprint)
 {
     static constexpr uint8_t FALL_TICKS = 32U;
@@ -301,6 +417,50 @@ TEST(FlightWorldTest, MaterializedSupportUsesTheHighestColumnUnderThePlayerFootp
 
     ASSERT_TRUE(world.player(1U).has_value());
     EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), 16.0);
+}
+
+TEST(FlightWorldTest, EveryValidNonAirMaterialSupportsLanding)
+{
+    static constexpr std::array<shared::Block, 6> SOLID_MATERIALS{
+        shared::Block::Stone,
+        shared::Block::Grass,
+        shared::Block::Dirt,
+        shared::Block::Bedrock,
+        shared::Block::Snow,
+        shared::Block::Ice,
+    };
+    static constexpr uint8_t TERRAIN_HEIGHT = 8U;
+    static constexpr uint8_t FALL_TICKS = 32U;
+
+    for (shared::Block const material : SOLID_MATERIALS) {
+        shared::SparseWorld collision_world;
+        shared::Chunk::Blocks blocks;
+        blocks.fill(shared::Block::Air);
+        for (uint8_t block_z = 0U; block_z < TERRAIN_HEIGHT; ++block_z) {
+            uint32_t const block_index = static_cast<uint32_t>(block_z)
+                    * shared::Chunk::SIDE_LENGTH * shared::Chunk::SIDE_LENGTH
+                + 4U * shared::Chunk::SIDE_LENGTH + 4U;
+            blocks[block_index] = material;
+        }
+        ASSERT_TRUE(collision_world.publishMaterializedChunk(
+            shared::Chunk{ { .x = 0, .y = 0, .z = 0 }, blocks },
+            collision_world.options().revision,
+            collision_world.options().seed
+        )) << "material: " << static_cast<uint32_t>(material);
+
+        shared::World world{ shared::WorldMode::Flight };
+        world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 16 });
+        ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
+        world.setCollisionWorld(&collision_world);
+
+        for (uint8_t tick = 0U; tick < FALL_TICKS; ++tick) {
+            static_cast<void>(world.movePlayer(1U, { .x = 0U, .y = 0U }));
+        }
+
+        ASSERT_TRUE(world.player(1U).has_value());
+        EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), TERRAIN_HEIGHT)
+            << "material: " << static_cast<uint32_t>(material);
+    }
 }
 
 TEST(FlightWorldTest, MaterializationCandidatesCoverSweptBodyHeight)
@@ -578,6 +738,85 @@ TEST(FlightWorldTest, AcceleratedFlightCanClimbAfterAdvancingAcrossTerrainStep)
     }));
     ASSERT_TRUE(world.player(1U).has_value());
     EXPECT_GT(shared::playerPositionZ(requiredValue(world.player(1U))), static_cast<double>(terrain_height));
+}
+
+TEST(FlightWorldTest, MaterializedStepAllowsClearAscendingDiagonalAndReverseFlight)
+{
+    shared::Chunk::Blocks blocks;
+    blocks.fill(shared::Block::Air);
+    for (uint32_t y = 0U; y < shared::Chunk::SIDE_LENGTH; ++y) {
+        for (uint32_t x = 0U; x < shared::Chunk::SIDE_LENGTH; ++x) {
+            uint32_t const ground_end = x >= 6U ? 11U : 10U;
+            for (uint32_t z = 0U; z < ground_end; ++z) {
+                blocks[z * shared::Chunk::FACE_BLOCK_COUNT + y * shared::Chunk::SIDE_LENGTH + x]
+                    = shared::Block::Stone;
+            }
+        }
+    }
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(collision_world.publishMaterializedChunk(
+        shared::Chunk{ { .x = 0, .y = 0, .z = 0 }, blocks },
+        collision_world.options().revision,
+        collision_world.options().seed
+    ));
+    ASSERT_TRUE(collision_world.publishMaterializedChunk(
+        shared::Chunk{ { .x = 0, .y = 0, .z = 1 } },
+        collision_world.options().revision,
+        collision_world.options().seed
+    ));
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 10 });
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+
+    ASSERT_TRUE(world.movePlayer(1U, {
+        .x = 127U, .y = 0U, .z = 127U, .accelerated = true, .speedup = 15U,
+    }));
+    shared::Player const elevated = requiredValue(world.player(1U));
+    EXPECT_DOUBLE_EQ(shared::playerPositionX(elevated), 9.9265);
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(elevated), 15.9265);
+
+    ASSERT_TRUE(world.movePlayer(1U, {
+        .x = static_cast<uint8_t>(-127), .y = 0U, .z = static_cast<uint8_t>(-127),
+        .accelerated = true, .speedup = 15U,
+    }));
+    shared::Player const returned = requiredValue(world.player(1U));
+    EXPECT_DOUBLE_EQ(shared::playerPositionX(returned), 4.0);
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(returned), 10.0);
+}
+
+TEST(FlightWorldTest, MaterializedWallStillBlocksTheSweptAscendingDiagonal)
+{
+    shared::Chunk::Blocks blocks;
+    blocks.fill(shared::Block::Air);
+    for (uint32_t z = 0U; z < shared::Chunk::SIDE_LENGTH; ++z) {
+        for (uint32_t y = 0U; y < shared::Chunk::SIDE_LENGTH; ++y) {
+            blocks[z * shared::Chunk::FACE_BLOCK_COUNT + y * shared::Chunk::SIDE_LENGTH + 6U]
+                = shared::Block::Stone;
+        }
+    }
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(collision_world.publishMaterializedChunk(
+        shared::Chunk{ { .x = 0, .y = 0, .z = 0 }, blocks },
+        collision_world.options().revision,
+        collision_world.options().seed
+    ));
+    ASSERT_TRUE(collision_world.publishMaterializedChunk(
+        shared::Chunk{ { .x = 0, .y = 0, .z = 1 } },
+        collision_world.options().revision,
+        collision_world.options().seed
+    ));
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 10 });
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+
+    static_cast<void>(world.movePlayer(1U, {
+        .x = 127U, .y = 0U, .z = 127U, .accelerated = true, .speedup = 15U,
+    }));
+    shared::Player const stopped = requiredValue(world.player(1U));
+    EXPECT_LE(shared::playerPositionX(stopped) + 0.625, 6.0);
+    EXPECT_GT(shared::playerPositionZ(stopped), 10.0);
 }
 
 TEST(FlightWorldTest, CollisionSweepsDescendingDiagonalFlightThroughAnotherBody)
@@ -884,10 +1123,50 @@ TEST(FlightWorldTest, WrapsHorizontalBoundsAndRejectsVerticalBounds)
     EXPECT_FALSE(world.setPlayerPosition(1, {
         .x = shared::World::FLIGHT_MIN_CELL,
         .y = 0,
-        .z = shared::World::FLIGHT_MAX_Z + 1,
+        .z = 65'536,
     }));
     ASSERT_TRUE(world.player(1).has_value());
     EXPECT_EQ(requiredValue(world.player(1)).x, shared::World::FLIGHT_MAX_CELL);
+}
+
+TEST(FlightWorldTest, EntityHeightCrossesTerrainCeilingAndStopsAtEntityLimit)
+{
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', {
+        .x = 32'768,
+        .y = 32'768,
+        .z = static_cast<int32_t>(shared::WorldExtent::DEPTH - 1U),
+    });
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 3U }));
+    ASSERT_TRUE(world.setPlayerPosition(1U, {
+        .x = 32'768,
+        .y = 32'768,
+        .z = static_cast<int32_t>(shared::WorldExtent::DEPTH - 1U),
+        .z_subcell = 9'990U,
+    }));
+    ASSERT_TRUE(world.movePlayer(1U, { .x = 0U, .y = 0U, .z = 127U }));
+    ASSERT_TRUE(world.player(1U).has_value());
+    EXPECT_EQ(requiredValue(world.player(1U)).z, static_cast<int32_t>(shared::WorldExtent::DEPTH));
+
+    EXPECT_TRUE(world.setPlayerPosition(1U, {
+        .x = 32'768,
+        .y = 32'768,
+        .z = static_cast<int32_t>(shared::WorldExtent::DEPTH),
+    }));
+    EXPECT_TRUE(world.setPlayerPosition(1U, {
+        .x = 32'768,
+        .y = 32'768,
+        .z = 65'535,
+        .z_subcell = shared::SUBCELLS_PER_CELL - 1U,
+    }));
+    EXPECT_FALSE(world.setPlayerPosition(1U, {
+        .x = 32'768,
+        .y = 32'768,
+        .z = 65'536,
+    }));
+    ASSERT_TRUE(world.player(1U).has_value());
+    EXPECT_EQ(requiredValue(world.player(1U)).z, 65'535);
+    EXPECT_EQ(requiredValue(world.player(1U)).z_subcell, shared::SUBCELLS_PER_CELL - 1U);
 }
 
 TEST(FlightWorldTest, CanonicalConfigurationIdentifiesTheSeededChunk)

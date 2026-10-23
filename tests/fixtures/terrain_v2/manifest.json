@@ -1,0 +1,5404 @@
+{
+  "bundle": {
+    "files": {
+      "prototype/render_maps.py": "19c596dcc7b9cce5b91d7307fadc246e89e64e18a2b19729d87a3360e4df9a65",
+      "results/qualification-v3.json": "45669fe481d79ead36d198ece3271198e98b0a073c5b89ae589d36a6a9c914b1",
+      "results/seed-matrix-v3/frozen-model.json": "9c4fb3a65204128faea78d275fd9de867d35f367d9e46470209b510e984e82f6",
+      "results/seed-matrix-v3/seed-0-n256/identity.json": "88da6e6e2dacc5d27a0aac9c61bd933f1f29e2501bd7d0781eb6aa565afde200",
+      "results/seed-matrix-v3/seed-0-n256/world.npz": "9664d575bcf33cef06d65002d33f9dcb4d6cd96c18434f44c7ab5a45bbdaa602",
+      "results/seed-matrix-v3/seed-1-n256/identity.json": "d27cd3a580f6f730b034b02259f2d23afa53bf2f0e58b2b196cc5ba2a34545e9",
+      "results/seed-matrix-v3/seed-1-n256/world.npz": "94df826fc9c381dfd2aa0c89a2a58a2d194085ad117977c1312242d649aba525",
+      "results/seed-matrix-v3/seed-2004-n256/identity.json": "cf284ce2799d38035565d9abc58b3e2d07a7c05ea51c06b0711d198b9bc3d6b4",
+      "results/seed-matrix-v3/seed-2004-n256/world.npz": "232ebc48c0e3bbd77b411e143560b687be8a8dd3ea720ea6f0b8819c29f89b7c",
+      "results/seed-matrix-v3/seed-42-n256/identity.json": "76000b9e10cc429bb44c8cc71572bae9686780b2b4c02b4ad5c7167e9b87cf19",
+      "results/seed-matrix-v3/seed-42-n256/world.npz": "6567458eefb3b11f856ad2e3c1d5f9ab8ab0c2e39e0bc837c34cf8e36daeb545",
+      "results/seed-matrix-v3/seed-777-n256/identity.json": "602699a72c74d1ce6fa98f513fd0f109198192e560a78f995f038565b7b50c37",
+      "results/seed-matrix-v3/seed-777-n256/world.npz": "c7c78100ad72f1037401fe2fcbdd2b22ecca4c8ecbb48a86977a64ebc5f6262f",
+      "results/seed-matrix-v3/seed-8800555-n256/identity.json": "13e104566bfa02ed8cc6bcfb0e73e9995e8cda0ece58097aff0e669cb51ff4df",
+      "results/seed-matrix-v3/seed-8800555-n256/world.npz": "b4ed773f6f49f39f188d2b8ef0fa82e528b27d0280b1766c3eace8acc0de6fdf",
+      "results/seed-matrix-v3/source/climate.py": "b5e1cc8188376d66ec231373e84a3dc6fa2a34c4a434d53d49ebafe4eee29a6f",
+      "results/seed-matrix-v3/source/coastal.py": "fbcf5d1709d042d668bde49fa59dcf755dbee97e89fa75103b7be25c3c6fadee",
+      "results/seed-matrix-v3/source/common.py": "23ff4496b6738d31e6fff63f52ac5acd4760b9b27ed398d7bfa5fb22435c7bd9",
+      "results/seed-matrix-v3/source/geology.py": "aade3e716eb5c3805ebc88067472845bfd8d5db2ffb837d2a037de4d8aff9f36",
+      "results/seed-matrix-v3/source/hydrology.py": "6d5f655ef1cfb3bae1f450a9c22883f8f9e56eba19390502d0130507598a47ab",
+      "results/seed-matrix-v3/source/pipeline.py": "6eac193b7b912ef30b5696dd4cffee37103762701b91850184f4bbf7679aa616",
+      "results/seed-matrix-v3/source/refinement.py": "180aa8f538fd41a9acae113b207167250d0debe15d243904be2a5fedcab21349"
+    },
+    "root": "/Users/core-just/.codex/reports/minecraft-worldgen-2026-10-19/bundle"
+  },
+  "model": {
+    "architecture": "arm64",
+    "model_sha256": "5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704",
+    "packages": {
+      "matplotlib": "3.11.2",
+      "numpy": "2.5.4",
+      "pillow": "13.0.0",
+      "psutil": "7.2.2",
+      "scipy": "1.18.1"
+    },
+    "python": "3.12.14",
+    "sources": {
+      "climate.py": "b5e1cc8188376d66ec231373e84a3dc6fa2a34c4a434d53d49ebafe4eee29a6f",
+      "coastal.py": "fbcf5d1709d042d668bde49fa59dcf755dbee97e89fa75103b7be25c3c6fadee",
+      "common.py": "23ff4496b6738d31e6fff63f52ac5acd4760b9b27ed398d7bfa5fb22435c7bd9",
+      "geology.py": "aade3e716eb5c3805ebc88067472845bfd8d5db2ffb837d2a037de4d8aff9f36",
+      "hydrology.py": "6d5f655ef1cfb3bae1f450a9c22883f8f9e56eba19390502d0130507598a47ab",
+      "pipeline.py": "6eac193b7b912ef30b5696dd4cffee37103762701b91850184f4bbf7679aa616",
+      "refinement.py": "180aa8f538fd41a9acae113b207167250d0debe15d243904be2a5fedcab21349"
+    }
+  },
+  "palette": [
+    {
+      "hex": "#bdd9ed",
+      "id": 0,
+      "name": "Air",
+      "rgba": [
+        189,
+        217,
+        237,
+        255
+      ]
+    },
+    {
+      "hex": "#808080",
+      "id": 1,
+      "name": "Stone",
+      "rgba": [
+        128,
+        128,
+        128,
+        255
+      ]
+    },
+    {
+      "hex": "#5c9345",
+      "id": 2,
+      "name": "Grass",
+      "rgba": [
+        92,
+        147,
+        69,
+        255
+      ]
+    },
+    {
+      "hex": "#886748",
+      "id": 3,
+      "name": "Dirt",
+      "rgba": [
+        136,
+        103,
+        72,
+        255
+      ]
+    },
+    {
+      "hex": "#2a2831",
+      "id": 4,
+      "name": "Bedrock",
+      "rgba": [
+        42,
+        40,
+        49,
+        255
+      ]
+    },
+    {
+      "hex": "#f4f7fa",
+      "id": 5,
+      "name": "Snow",
+      "rgba": [
+        244,
+        247,
+        250,
+        255
+      ]
+    },
+    {
+      "hex": "#80c9d6",
+      "id": 6,
+      "name": "Ice",
+      "rgba": [
+        128,
+        201,
+        214,
+        255
+      ]
+    }
+  ],
+  "palette_source": {
+    "file": "prototype/render_maps.py",
+    "sha256": "19c596dcc7b9cce5b91d7307fadc246e89e64e18a2b19729d87a3360e4df9a65"
+  },
+  "rng_oracle": {
+    "calls": [
+      "integers(-2,3,size=2)",
+      "uniform(0,2*pi)",
+      "uniform(0,65536,size=(2,2))",
+      "random(4)",
+      "vonmises(0.75,1.8,size=3)"
+    ],
+    "file": "rng_oracle_seed42.json",
+    "raw_word_count": 8,
+    "sha256": "6c907e55dee4a7e0f2581d4280ae1fcd28748ed4e9e0b7075b6430ae498bcc2e"
+  },
+  "samples": {
+    "atlas_indices_x": [
+      0,
+      16,
+      32,
+      48,
+      64,
+      80,
+      96,
+      112,
+      128,
+      144,
+      160,
+      176,
+      192,
+      208,
+      224,
+      240
+    ],
+    "atlas_indices_y": [
+      0,
+      16,
+      32,
+      48,
+      64,
+      80,
+      96,
+      112,
+      128,
+      144,
+      160,
+      176,
+      192,
+      208,
+      224,
+      240
+    ],
+    "order": "C row-major [y,x]",
+    "surface_blocks_x": [
+      128,
+      4224,
+      8320,
+      12416,
+      16512,
+      20608,
+      24704,
+      28800,
+      32896,
+      36992,
+      41088,
+      45184,
+      49280,
+      53376,
+      57472,
+      61568
+    ],
+    "surface_blocks_y": [
+      128,
+      4224,
+      8320,
+      12416,
+      16512,
+      20608,
+      24704,
+      28800,
+      32896,
+      36992,
+      41088,
+      45184,
+      49280,
+      53376,
+      57472,
+      61568
+    ]
+  },
+  "schema": "minecraftclone.terrain-reference.v1",
+  "seeds": [
+    {
+      "config": {
+        "climate_iterations": 80,
+        "coastal_elaboration": true,
+        "currents": true,
+        "epochs": 12,
+        "erosion_steps": 3,
+        "initial_climate_iterations": 24,
+        "seed": 0,
+        "size": 256,
+        "wind_sign": 1
+      },
+      "config_sha256": "77f51f26c5391fb4e70dd5e8f049d36f4885e299916b2597c763a3a64b62378a",
+      "fields": [
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__geology_elevation.raw",
+          "name": "stage__geology_elevation",
+          "order": "C",
+          "sha256": "837a97cef3ea6bb2dfe4ab5283e7e7fe7929c5b51725afd536a7b498cec5436f",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__geology_uplift.raw",
+          "name": "stage__geology_uplift",
+          "order": "C",
+          "sha256": "d1e8fd62e49ec6d853fe505af16ee84e832ab49b68bbe3c24965beb70d4d6055",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__geology_subduction.raw",
+          "name": "stage__geology_subduction",
+          "order": "C",
+          "sha256": "30014511aab5bc290620b1f78d522c7a170160d8fb25794640ac8ab7d05b5fd9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__geology_divergence.raw",
+          "name": "stage__geology_divergence",
+          "order": "C",
+          "sha256": "cdff1dff2fe4ff6fd2785092f82e1106e1be23ad01eb244ab7678b3328c687d8",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__geology_continental.raw",
+          "name": "stage__geology_continental",
+          "order": "C",
+          "sha256": "31bed88ba77d2b0a8908bf0f54aa7505a83f59f8de1732671e7f057003cba5b2",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "continentality fraction"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__coastal_elevation.raw",
+          "name": "stage__coastal_elevation",
+          "order": "C",
+          "sha256": "0ab154465a6666ed08590bb0aeec1e5b4d5cd1a61370367fc7ad4443f0c94d16",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__initial_drainage_elevation.raw",
+          "name": "stage__initial_drainage_elevation",
+          "order": "C",
+          "sha256": "0ab154465a6666ed08590bb0aeec1e5b4d5cd1a61370367fc7ad4443f0c94d16",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__initial_drainage_filled.raw",
+          "name": "stage__initial_drainage_filled",
+          "order": "C",
+          "sha256": "d8e6f3c5a173806fd92cdb0057d9d7e64e24155f54fe0796e6d8dbc322fa2f7f",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__initial_drainage_water_level.raw",
+          "name": "stage__initial_drainage_water_level",
+          "order": "C",
+          "sha256": "09293c11b74a3a3c9b5fdc9cc1711be8c4d683ed676a536adfc854da6682fc67",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__initial_drainage_flow_accumulation.raw",
+          "name": "stage__initial_drainage_flow_accumulation",
+          "order": "C",
+          "sha256": "27b7adbdf614e6e624c3971b0f1112d23baf77c72cf5b519a845c8285c6c8a5c",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__provisional_climate_temperature.raw",
+          "name": "stage__provisional_climate_temperature",
+          "order": "C",
+          "sha256": "4d5c44b2590605102341795086c0d45629afbbfb9fb69f7f074b435836d1f00d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__provisional_climate_precipitation.raw",
+          "name": "stage__provisional_climate_precipitation",
+          "order": "C",
+          "sha256": "8890e41d8006058d6b156a0050468f874e8af514ae8de2d7374cb07ea04cac1c",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__provisional_climate_moisture.raw",
+          "name": "stage__provisional_climate_moisture",
+          "order": "C",
+          "sha256": "ba3719d364be3a5b8f4d447ba70198f0cbf0edf1b9a0c4a5038fc8a7f1d18628",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__terrain_erosion_elevation.raw",
+          "name": "stage__terrain_erosion_elevation",
+          "order": "C",
+          "sha256": "0d44e11f3ee163cc6b12eb030574d358128b1efb98a1fb2196181334032217ce",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__terrain_erosion_filled.raw",
+          "name": "stage__terrain_erosion_filled",
+          "order": "C",
+          "sha256": "8cbfcdb10ad429f7e833a735e2acea98fb45cc698eada2f11e48c2b7e7ec2cbd",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__terrain_erosion_water_level.raw",
+          "name": "stage__terrain_erosion_water_level",
+          "order": "C",
+          "sha256": "4f533950ccb13d0cab008839651866cdb8b6bbaa17bf933ad551cebb2fa12050",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__terrain_erosion_flow_accumulation.raw",
+          "name": "stage__terrain_erosion_flow_accumulation",
+          "order": "C",
+          "sha256": "3f407335c93aa2349ab9fee857198ef3dae46c89db0dbcf5696b66923f493474",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__final_climate_temperature.raw",
+          "name": "stage__final_climate_temperature",
+          "order": "C",
+          "sha256": "e4614218502df0d9019ac019a390cd2377abdd5b135b080f7ec301cc3e9165c6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__final_climate_precipitation.raw",
+          "name": "stage__final_climate_precipitation",
+          "order": "C",
+          "sha256": "1e3a9faeb33b713579112b0fc82d3bfb911e66d468369bcb798c9e1894cf0038",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/stage__final_climate_moisture.raw",
+          "name": "stage__final_climate_moisture",
+          "order": "C",
+          "sha256": "4185aa6a5a37c14b570e50694a346b29cd6d0c5df6c8c0f9190523c133cf7d25",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__elevation.raw",
+          "name": "atlas__elevation",
+          "order": "C",
+          "sha256": "0d44e11f3ee163cc6b12eb030574d358128b1efb98a1fb2196181334032217ce",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__filled.raw",
+          "name": "atlas__filled",
+          "order": "C",
+          "sha256": "8cbfcdb10ad429f7e833a735e2acea98fb45cc698eada2f11e48c2b7e7ec2cbd",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__water_level.raw",
+          "name": "atlas__water_level",
+          "order": "C",
+          "sha256": "4f533950ccb13d0cab008839651866cdb8b6bbaa17bf933ad551cebb2fa12050",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__flow_accumulation.raw",
+          "name": "atlas__flow_accumulation",
+          "order": "C",
+          "sha256": "9096b38812728bcb07f99ace5a654e9bd2b3989ee0744f5e40e72b5fcb9ffd17",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__temperature.raw",
+          "name": "atlas__temperature",
+          "order": "C",
+          "sha256": "e4614218502df0d9019ac019a390cd2377abdd5b135b080f7ec301cc3e9165c6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__precipitation.raw",
+          "name": "atlas__precipitation",
+          "order": "C",
+          "sha256": "1e3a9faeb33b713579112b0fc82d3bfb911e66d468369bcb798c9e1894cf0038",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__moisture.raw",
+          "name": "atlas__moisture",
+          "order": "C",
+          "sha256": "4185aa6a5a37c14b570e50694a346b29cd6d0c5df6c8c0f9190523c133cf7d25",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__wind_u.raw",
+          "name": "atlas__wind_u",
+          "order": "C",
+          "sha256": "912acd814a494e6f9bf3f4494763237ac466379cb54283c619251b2a0b8cb151",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__wind_v.raw",
+          "name": "atlas__wind_v",
+          "order": "C",
+          "sha256": "aecd32a0def1f01e1fc9de52f77b565e43e26dec9268381eaff33359c771a463",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__current_u.raw",
+          "name": "atlas__current_u",
+          "order": "C",
+          "sha256": "9832b89c9bb40e92995938189ed8b4c22421cc1027349ee0d790c9eab8a5da4e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__current_v.raw",
+          "name": "atlas__current_v",
+          "order": "C",
+          "sha256": "c13bfffa59fd7346348281fce94145267d55b5558d4d7fc00c5db04b538a048e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__uplift.raw",
+          "name": "atlas__uplift",
+          "order": "C",
+          "sha256": "d1e8fd62e49ec6d853fe505af16ee84e832ab49b68bbe3c24965beb70d4d6055",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__island_arc_uplift.raw",
+          "name": "atlas__island_arc_uplift",
+          "order": "C",
+          "sha256": "cad5f643e193bf508f42266876be2ffd9ca5ad78b48b9578457f6dd459d031a5",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__hotspot.raw",
+          "name": "atlas__hotspot",
+          "order": "C",
+          "sha256": "1692e7f3f73338e6f480d1a0776f2e53251da2064496eb6fbb730778995cc64b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__subduction.raw",
+          "name": "atlas__subduction",
+          "order": "C",
+          "sha256": "30014511aab5bc290620b1f78d522c7a170160d8fb25794640ac8ab7d05b5fd9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__divergence.raw",
+          "name": "atlas__divergence",
+          "order": "C",
+          "sha256": "cdff1dff2fe4ff6fd2785092f82e1106e1be23ad01eb244ab7678b3328c687d8",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__continental.raw",
+          "name": "atlas__continental",
+          "order": "C",
+          "sha256": "31bed88ba77d2b0a8908bf0f54aa7505a83f59f8de1732671e7f057003cba5b2",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "continentality fraction"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__tectonic_elevation.raw",
+          "name": "atlas__tectonic_elevation",
+          "order": "C",
+          "sha256": "837a97cef3ea6bb2dfe4ab5283e7e7fe7929c5b51725afd536a7b498cec5436f",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__plate_vx.raw",
+          "name": "atlas__plate_vx",
+          "order": "C",
+          "sha256": "c1b6a3ec2265a39d8bd72fd06ee3d9722d5268f1ddda1157571514d7e223442b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "world units per tectonic epoch"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-0/atlas__plate_vy.raw",
+          "name": "atlas__plate_vy",
+          "order": "C",
+          "sha256": "7addb997e0dc9ba27f384b80d1276faa16b5761bec877f7a18c24663d7bcca93",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "world units per tectonic epoch"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-0/stage__initial_drainage_downstream.raw",
+          "name": "stage__initial_drainage_downstream",
+          "order": "C",
+          "sha256": "55d2279e7ad207a6fb55dd89d9101eac7e1a24ef0cadc078ee7b16e9e37a3042",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-0/stage__terrain_erosion_downstream.raw",
+          "name": "stage__terrain_erosion_downstream",
+          "order": "C",
+          "sha256": "e3667dcce4807f6630c4cded652ac9ef768e83923711580cc57f5bcb1729e6fd",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-0/atlas__downstream.raw",
+          "name": "atlas__downstream",
+          "order": "C",
+          "sha256": "e3667dcce4807f6630c4cded652ac9ef768e83923711580cc57f5bcb1729e6fd",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-0/atlas__lake_id.raw",
+          "name": "atlas__lake_id",
+          "order": "C",
+          "sha256": "75d120ebcdb7892b5400874d60ff73c25f409093bf787fde09127a6699b21ca5",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "1-based periodic lake component ID; 0 means no lake"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-0/atlas__outlet_id.raw",
+          "name": "atlas__outlet_id",
+          "order": "C",
+          "sha256": "cef586cdc7d782b01d26bf0a53e4e60ce81c0d2d74d0a2358d4d0a7dafc9c7e9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] terminal root cell index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i2",
+          "file": "seed-0/stage__geology_plate_id.raw",
+          "name": "stage__geology_plate_id",
+          "order": "C",
+          "sha256": "b825dc8a04baa5004f7d1643167384871a2fdcc307e7abc83eaa9ca6fbfee7b0",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "plate index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i2",
+          "file": "seed-0/atlas__plate_id.raw",
+          "name": "atlas__plate_id",
+          "order": "C",
+          "sha256": "b825dc8a04baa5004f7d1643167384871a2fdcc307e7abc83eaa9ca6fbfee7b0",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "plate index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/stage__initial_drainage_ocean_mask.raw",
+          "name": "stage__initial_drainage_ocean_mask",
+          "order": "C",
+          "sha256": "6b662fc787ce089e33df667da037f87783e34bc90774d2f5037127bf2038860d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/stage__initial_drainage_lake_mask.raw",
+          "name": "stage__initial_drainage_lake_mask",
+          "order": "C",
+          "sha256": "d218e06ad8dd4192a6e09d706719f365ec7ca8f6f78902512a2c0d173368b8de",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/stage__initial_drainage_river_mask.raw",
+          "name": "stage__initial_drainage_river_mask",
+          "order": "C",
+          "sha256": "7fefda248cb3512bdec1645ae79900364d54644c6c5bf7c5e5189ea68a342d42",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/stage__terrain_erosion_ocean_mask.raw",
+          "name": "stage__terrain_erosion_ocean_mask",
+          "order": "C",
+          "sha256": "6b662fc787ce089e33df667da037f87783e34bc90774d2f5037127bf2038860d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/stage__terrain_erosion_lake_mask.raw",
+          "name": "stage__terrain_erosion_lake_mask",
+          "order": "C",
+          "sha256": "d218e06ad8dd4192a6e09d706719f365ec7ca8f6f78902512a2c0d173368b8de",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/stage__terrain_erosion_river_mask.raw",
+          "name": "stage__terrain_erosion_river_mask",
+          "order": "C",
+          "sha256": "118592acec5501d446fb62fc772719d3a8c9513583047097e729f0e96e828311",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/atlas__ocean_mask.raw",
+          "name": "atlas__ocean_mask",
+          "order": "C",
+          "sha256": "6b662fc787ce089e33df667da037f87783e34bc90774d2f5037127bf2038860d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/atlas__lake_mask.raw",
+          "name": "atlas__lake_mask",
+          "order": "C",
+          "sha256": "d218e06ad8dd4192a6e09d706719f365ec7ca8f6f78902512a2c0d173368b8de",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/atlas__river_mask.raw",
+          "name": "atlas__river_mask",
+          "order": "C",
+          "sha256": "86d6e4867c11ba234e6bce1d980669939c19e72643446aaae339dc59052005c0",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/atlas__fjord_candidate_mask.raw",
+          "name": "atlas__fjord_candidate_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/atlas__harbour_candidate_mask.raw",
+          "name": "atlas__harbour_candidate_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/atlas__snow_mask.raw",
+          "name": "atlas__snow_mask",
+          "order": "C",
+          "sha256": "8949c71e2ab9682d8c795767b425527a7c0283c0e891695ba29202fa2ec0d5de",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-0/atlas__climate_zone.raw",
+          "name": "atlas__climate_zone",
+          "order": "C",
+          "sha256": "0f74ca6f11a78fa7b0eedb076ce3be771d6caacf635ad405c847d3f5057ccdca",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "climate-zone code: 0 water, 1 warm arid, 2 warm humid, 3 temperate, 4 cold, 5 snow"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "<i4",
+          "file": "seed-0/height.raw",
+          "name": "height",
+          "order": "C",
+          "sha256": "bb0251b075a5beb08b5e6be82c2629bc86bd8f66ce4bdc8fc04883bcf7efbe43",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "highest solid block Z"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-0/top_material.raw",
+          "name": "top_material",
+          "order": "C",
+          "sha256": "6479f165c9d9464f937221860deeb08fac2eaf722a3c121a5b60a870b6cdf56e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "Terrain-v2 material palette ID"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-0/ground_material.raw",
+          "name": "ground_material",
+          "order": "C",
+          "sha256": "ee1281c0464b376264f2462d90203b12a7f41677b6842ce601c2f741cf2bcbd8",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "Terrain-v2 material palette ID"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-0/pixel_rgba.raw",
+          "name": "pixel_rgba",
+          "order": "C",
+          "sha256": "8ab20fb4814b01172c6e8b4e67ee9ac57f0bfd7b5e1321c1c929d138be5fe5c1",
+          "shape": [
+            16,
+            16,
+            4
+          ],
+          "unit": "top material RGBA8"
+        },
+        {
+          "coordinate_set": "atlas_scalar",
+          "dtype": "<f8",
+          "file": "seed-0/atlas__vertical_scale.raw",
+          "name": "atlas__vertical_scale",
+          "order": "C",
+          "sha256": "e527e3e1efdbdfc82f9caa0a4f310edd85146077708e4064ef183b3ac0ef60ab",
+          "shape": [],
+          "unit": "blocks per geology-km"
+        }
+      ],
+      "identity_sha256": "88da6e6e2dacc5d27a0aac9c61bd933f1f29e2501bd7d0781eb6aa565afde200",
+      "seed": 0,
+      "world_npz_sha256": "9664d575bcf33cef06d65002d33f9dcb4d6cd96c18434f44c7ab5a45bbdaa602"
+    },
+    {
+      "config": {
+        "climate_iterations": 80,
+        "coastal_elaboration": true,
+        "currents": true,
+        "epochs": 12,
+        "erosion_steps": 3,
+        "initial_climate_iterations": 24,
+        "seed": 1,
+        "size": 256,
+        "wind_sign": 1
+      },
+      "config_sha256": "ecaf574c9462755ec5667568c23c5068d7ef9815f684aa57c80e1f8283f78294",
+      "fields": [
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__geology_elevation.raw",
+          "name": "stage__geology_elevation",
+          "order": "C",
+          "sha256": "ba0782d75f949f3c148e58d263f9b31f88b4516fdea712626e7a53c1b819fdfa",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__geology_uplift.raw",
+          "name": "stage__geology_uplift",
+          "order": "C",
+          "sha256": "d5a32c68957ab834a612013597f77eff34e3267d191c32728da51fbc6615b131",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__geology_subduction.raw",
+          "name": "stage__geology_subduction",
+          "order": "C",
+          "sha256": "6d30b133ba9f1ee6d9eb69a337dbfbdfe0986d13514edbec761b56778a6afd38",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__geology_divergence.raw",
+          "name": "stage__geology_divergence",
+          "order": "C",
+          "sha256": "4947b9bc5f7cbf68887ef6e9da26a68ae733bba366facbab3e92ef5a3afa113b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__geology_continental.raw",
+          "name": "stage__geology_continental",
+          "order": "C",
+          "sha256": "be8d2e9794b13c54f31f8118c298014e602c9cdf4e6e6808ad22827c0098f275",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "continentality fraction"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__coastal_elevation.raw",
+          "name": "stage__coastal_elevation",
+          "order": "C",
+          "sha256": "fc077d04f7df1136e8ada8ef6f66dcb351f82283a299da9fb09ee0b32931c79b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__initial_drainage_elevation.raw",
+          "name": "stage__initial_drainage_elevation",
+          "order": "C",
+          "sha256": "fc077d04f7df1136e8ada8ef6f66dcb351f82283a299da9fb09ee0b32931c79b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__initial_drainage_filled.raw",
+          "name": "stage__initial_drainage_filled",
+          "order": "C",
+          "sha256": "31edc233af7850f358e442d275f32c0885d0fc7de87dd2c87dc7ab3c5a703178",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__initial_drainage_water_level.raw",
+          "name": "stage__initial_drainage_water_level",
+          "order": "C",
+          "sha256": "082be107c5986357b3e2a40db01c6c9d89f75361f3036ca8f66215d0398d511e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__initial_drainage_flow_accumulation.raw",
+          "name": "stage__initial_drainage_flow_accumulation",
+          "order": "C",
+          "sha256": "447d86eb61f12369e7d9cb33d5be5f95414a1c55a10b2a9792290747e0589968",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__provisional_climate_temperature.raw",
+          "name": "stage__provisional_climate_temperature",
+          "order": "C",
+          "sha256": "3a86795a56ca168fe8ee8155e63076b6eeef537c3aa940637af11d96fc004ead",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__provisional_climate_precipitation.raw",
+          "name": "stage__provisional_climate_precipitation",
+          "order": "C",
+          "sha256": "b9795829961ba60b6dfc026fc7aa05125e32288cfc3fc2ae233dc18cd70598a4",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__provisional_climate_moisture.raw",
+          "name": "stage__provisional_climate_moisture",
+          "order": "C",
+          "sha256": "b569b65bd9b07c8ff69697046a466a0d02b782f8e82a4a1524b77ea97732b87a",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__terrain_erosion_elevation.raw",
+          "name": "stage__terrain_erosion_elevation",
+          "order": "C",
+          "sha256": "8ddd640b87db03cd1b8b822436cd7ccf00c33cb37977db6470848537e7b7d26f",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__terrain_erosion_filled.raw",
+          "name": "stage__terrain_erosion_filled",
+          "order": "C",
+          "sha256": "9b8c0b0e825d63c939be2c6aa83e3b8baa35abe5337cde7d185150020f23cce5",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__terrain_erosion_water_level.raw",
+          "name": "stage__terrain_erosion_water_level",
+          "order": "C",
+          "sha256": "d55bde3614f76178341412a63d19130d01129fe21e52f0cefe0a72f74114acb5",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__terrain_erosion_flow_accumulation.raw",
+          "name": "stage__terrain_erosion_flow_accumulation",
+          "order": "C",
+          "sha256": "4340ff613dd1301857fa01e6556faa197d1bdc5746dea305f1818cdadc5c9e28",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__final_climate_temperature.raw",
+          "name": "stage__final_climate_temperature",
+          "order": "C",
+          "sha256": "89962c5a333923c93450a44ec4967387c01a0d47bb4217c5a3d7aff82b623754",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__final_climate_precipitation.raw",
+          "name": "stage__final_climate_precipitation",
+          "order": "C",
+          "sha256": "b4b5af44edb07101a5a86f6f98a9faa4033a8410049ae3f71a2ea82b9d39e166",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/stage__final_climate_moisture.raw",
+          "name": "stage__final_climate_moisture",
+          "order": "C",
+          "sha256": "5ec9a2ef52e4bac91a978416c0c6422baf63c92bb820f66c83a16195378fb2b7",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__elevation.raw",
+          "name": "atlas__elevation",
+          "order": "C",
+          "sha256": "8ddd640b87db03cd1b8b822436cd7ccf00c33cb37977db6470848537e7b7d26f",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__filled.raw",
+          "name": "atlas__filled",
+          "order": "C",
+          "sha256": "9b8c0b0e825d63c939be2c6aa83e3b8baa35abe5337cde7d185150020f23cce5",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__water_level.raw",
+          "name": "atlas__water_level",
+          "order": "C",
+          "sha256": "d55bde3614f76178341412a63d19130d01129fe21e52f0cefe0a72f74114acb5",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__flow_accumulation.raw",
+          "name": "atlas__flow_accumulation",
+          "order": "C",
+          "sha256": "f1ca65bde54e38d27ece040e711a8a4c7663038eda17a4f9a28873b161849fd1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__temperature.raw",
+          "name": "atlas__temperature",
+          "order": "C",
+          "sha256": "89962c5a333923c93450a44ec4967387c01a0d47bb4217c5a3d7aff82b623754",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__precipitation.raw",
+          "name": "atlas__precipitation",
+          "order": "C",
+          "sha256": "b4b5af44edb07101a5a86f6f98a9faa4033a8410049ae3f71a2ea82b9d39e166",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__moisture.raw",
+          "name": "atlas__moisture",
+          "order": "C",
+          "sha256": "5ec9a2ef52e4bac91a978416c0c6422baf63c92bb820f66c83a16195378fb2b7",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__wind_u.raw",
+          "name": "atlas__wind_u",
+          "order": "C",
+          "sha256": "ffe4fddba334603452328860f42a9b59d41a2f7f95084471ce8efbc5e6c3108e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__wind_v.raw",
+          "name": "atlas__wind_v",
+          "order": "C",
+          "sha256": "06c7f3bdf7fbb8a0d9008a216a80c05e7ed9708eba6c72f1fa1fcbccc84160a1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__current_u.raw",
+          "name": "atlas__current_u",
+          "order": "C",
+          "sha256": "06a2099868a0690b75fefb84980b8382901e0c07df856934d90c01e79ca45944",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__current_v.raw",
+          "name": "atlas__current_v",
+          "order": "C",
+          "sha256": "8513fea3151c2ab434950c92bcba388bf34f1e2776ac38509b008b16c33fb760",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__uplift.raw",
+          "name": "atlas__uplift",
+          "order": "C",
+          "sha256": "d5a32c68957ab834a612013597f77eff34e3267d191c32728da51fbc6615b131",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__island_arc_uplift.raw",
+          "name": "atlas__island_arc_uplift",
+          "order": "C",
+          "sha256": "d3ff9c951a9fb3e2394f44dd44b2f4b3d3a45a026e9c0c4e5f43892e7edfb4f5",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__hotspot.raw",
+          "name": "atlas__hotspot",
+          "order": "C",
+          "sha256": "e37161d26b7073d334aa44dd69c58ece6623903ae546efc302a32f4d5887f73d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__subduction.raw",
+          "name": "atlas__subduction",
+          "order": "C",
+          "sha256": "6d30b133ba9f1ee6d9eb69a337dbfbdfe0986d13514edbec761b56778a6afd38",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__divergence.raw",
+          "name": "atlas__divergence",
+          "order": "C",
+          "sha256": "4947b9bc5f7cbf68887ef6e9da26a68ae733bba366facbab3e92ef5a3afa113b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__continental.raw",
+          "name": "atlas__continental",
+          "order": "C",
+          "sha256": "be8d2e9794b13c54f31f8118c298014e602c9cdf4e6e6808ad22827c0098f275",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "continentality fraction"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__tectonic_elevation.raw",
+          "name": "atlas__tectonic_elevation",
+          "order": "C",
+          "sha256": "ba0782d75f949f3c148e58d263f9b31f88b4516fdea712626e7a53c1b819fdfa",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__plate_vx.raw",
+          "name": "atlas__plate_vx",
+          "order": "C",
+          "sha256": "908aab266feb8a09f8a3095109760a89b21986650eee48b68a517c10217bc91f",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "world units per tectonic epoch"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-1/atlas__plate_vy.raw",
+          "name": "atlas__plate_vy",
+          "order": "C",
+          "sha256": "820b2b893c5494837ce787c8d6d6bead3829119ae013b7af1baaf1740d0e9d1a",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "world units per tectonic epoch"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-1/stage__initial_drainage_downstream.raw",
+          "name": "stage__initial_drainage_downstream",
+          "order": "C",
+          "sha256": "d7a84b7626024b797c5a4398a122266c59d027feb52618a587ad75e499e24bb9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-1/stage__terrain_erosion_downstream.raw",
+          "name": "stage__terrain_erosion_downstream",
+          "order": "C",
+          "sha256": "d7a84b7626024b797c5a4398a122266c59d027feb52618a587ad75e499e24bb9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-1/atlas__downstream.raw",
+          "name": "atlas__downstream",
+          "order": "C",
+          "sha256": "d7a84b7626024b797c5a4398a122266c59d027feb52618a587ad75e499e24bb9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-1/atlas__lake_id.raw",
+          "name": "atlas__lake_id",
+          "order": "C",
+          "sha256": "74dfd24188732c38a3903cb20872c6057700d846020a20b0471a68211a08b265",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "1-based periodic lake component ID; 0 means no lake"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-1/atlas__outlet_id.raw",
+          "name": "atlas__outlet_id",
+          "order": "C",
+          "sha256": "079d8f216fe581a380f6472cc4da0872313cc83a3258db40c99c7080b054abe9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] terminal root cell index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i2",
+          "file": "seed-1/stage__geology_plate_id.raw",
+          "name": "stage__geology_plate_id",
+          "order": "C",
+          "sha256": "77bbb55ae825ade7b178e357d74c1629d7e126940dcdcbd1b21e38c7ab9a6a23",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "plate index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i2",
+          "file": "seed-1/atlas__plate_id.raw",
+          "name": "atlas__plate_id",
+          "order": "C",
+          "sha256": "77bbb55ae825ade7b178e357d74c1629d7e126940dcdcbd1b21e38c7ab9a6a23",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "plate index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/stage__initial_drainage_ocean_mask.raw",
+          "name": "stage__initial_drainage_ocean_mask",
+          "order": "C",
+          "sha256": "219a3d704537805882351ec978d88fc4368523159f78320f9fae179e63481bfe",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/stage__initial_drainage_lake_mask.raw",
+          "name": "stage__initial_drainage_lake_mask",
+          "order": "C",
+          "sha256": "d0a2791245cab950743145b8e6243b1db2080cb7eefae2cdbb79adb3afdc6ec6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/stage__initial_drainage_river_mask.raw",
+          "name": "stage__initial_drainage_river_mask",
+          "order": "C",
+          "sha256": "51e139209d8c2602594d15f7763fa4dd5c7ca12aaf33a634daf8b30b69fcc8fc",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/stage__terrain_erosion_ocean_mask.raw",
+          "name": "stage__terrain_erosion_ocean_mask",
+          "order": "C",
+          "sha256": "219a3d704537805882351ec978d88fc4368523159f78320f9fae179e63481bfe",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/stage__terrain_erosion_lake_mask.raw",
+          "name": "stage__terrain_erosion_lake_mask",
+          "order": "C",
+          "sha256": "d0a2791245cab950743145b8e6243b1db2080cb7eefae2cdbb79adb3afdc6ec6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/stage__terrain_erosion_river_mask.raw",
+          "name": "stage__terrain_erosion_river_mask",
+          "order": "C",
+          "sha256": "e035eb4a4ee4506ed65b84b179f738b2805de8ebe6657534a8d977adc7b39990",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/atlas__ocean_mask.raw",
+          "name": "atlas__ocean_mask",
+          "order": "C",
+          "sha256": "219a3d704537805882351ec978d88fc4368523159f78320f9fae179e63481bfe",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/atlas__lake_mask.raw",
+          "name": "atlas__lake_mask",
+          "order": "C",
+          "sha256": "d0a2791245cab950743145b8e6243b1db2080cb7eefae2cdbb79adb3afdc6ec6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/atlas__river_mask.raw",
+          "name": "atlas__river_mask",
+          "order": "C",
+          "sha256": "1a8e3eb72d5fea80dda2aaf132693a18ee1693bec1dfa9aa340be9f9b63c6eb8",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/atlas__fjord_candidate_mask.raw",
+          "name": "atlas__fjord_candidate_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/atlas__harbour_candidate_mask.raw",
+          "name": "atlas__harbour_candidate_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/atlas__snow_mask.raw",
+          "name": "atlas__snow_mask",
+          "order": "C",
+          "sha256": "4a3bc754a8188d7464749a4f26f7e197c1c223deac8eb3bd6a7287bc96f1343b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-1/atlas__climate_zone.raw",
+          "name": "atlas__climate_zone",
+          "order": "C",
+          "sha256": "78378175a139384cb4d1e621e3b03e3c24d4cf970c939a9e61bfe68e0a23828a",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "climate-zone code: 0 water, 1 warm arid, 2 warm humid, 3 temperate, 4 cold, 5 snow"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "<i4",
+          "file": "seed-1/height.raw",
+          "name": "height",
+          "order": "C",
+          "sha256": "5781781f9a526681afa8a3d61e03b4a48013a3e3bab2c373046576a57f67ecec",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "highest solid block Z"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-1/top_material.raw",
+          "name": "top_material",
+          "order": "C",
+          "sha256": "738944ad9bfc524a4f8f1294e45b69bf3e7576e72abb91c11ebc96a8b7e9d32c",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "Terrain-v2 material palette ID"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-1/ground_material.raw",
+          "name": "ground_material",
+          "order": "C",
+          "sha256": "92b82a23eacf2997805914b8423eb909a2e2604d4ffbd5d6cf8983111b4482c5",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "Terrain-v2 material palette ID"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-1/pixel_rgba.raw",
+          "name": "pixel_rgba",
+          "order": "C",
+          "sha256": "5d3b632b663e9a2726460a4cd215c49ac6cb73d6ed51c5aa96f4d59cc2017302",
+          "shape": [
+            16,
+            16,
+            4
+          ],
+          "unit": "top material RGBA8"
+        },
+        {
+          "coordinate_set": "atlas_scalar",
+          "dtype": "<f8",
+          "file": "seed-1/atlas__vertical_scale.raw",
+          "name": "atlas__vertical_scale",
+          "order": "C",
+          "sha256": "6dac34d238e8bfb5d1f4889ae3df6a8ff582c0e4d0d750eb764d73050f9b7dff",
+          "shape": [],
+          "unit": "blocks per geology-km"
+        }
+      ],
+      "identity_sha256": "d27cd3a580f6f730b034b02259f2d23afa53bf2f0e58b2b196cc5ba2a34545e9",
+      "seed": 1,
+      "world_npz_sha256": "94df826fc9c381dfd2aa0c89a2a58a2d194085ad117977c1312242d649aba525"
+    },
+    {
+      "config": {
+        "climate_iterations": 80,
+        "coastal_elaboration": true,
+        "currents": true,
+        "epochs": 12,
+        "erosion_steps": 3,
+        "initial_climate_iterations": 24,
+        "seed": 42,
+        "size": 256,
+        "wind_sign": 1
+      },
+      "config_sha256": "e1bc63d944719f3f39469d5e073a4fab6534ac18731306bbe6740fb2ff8c09ac",
+      "fields": [
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__geology_elevation.raw",
+          "name": "stage__geology_elevation",
+          "order": "C",
+          "sha256": "eaeb9665ed62d0055c7caaa480ca23b892ce7576c1f13a98527d737d6524ad52",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__geology_uplift.raw",
+          "name": "stage__geology_uplift",
+          "order": "C",
+          "sha256": "9051b436ea641f421477fec8498344f767aa2da07b275fc41d8fceb6970b75c4",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__geology_subduction.raw",
+          "name": "stage__geology_subduction",
+          "order": "C",
+          "sha256": "decf50e9407b6b3b55e071dde7780a664caa7b075e927a751f6983102b593468",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__geology_divergence.raw",
+          "name": "stage__geology_divergence",
+          "order": "C",
+          "sha256": "93c071b37929fba625d04a770b9e24f0c0c391af452458667679ce28bc1dbcc6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__geology_continental.raw",
+          "name": "stage__geology_continental",
+          "order": "C",
+          "sha256": "ba761cec3c1da1d63ba54e5354d3612ad2668e69f482c29660386a5ea1e20a31",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "continentality fraction"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__coastal_elevation.raw",
+          "name": "stage__coastal_elevation",
+          "order": "C",
+          "sha256": "e701cb23c4447fdb980ba7b2a93a85ebb46733d1c916c2799a1a1cd4f6db48fe",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__initial_drainage_elevation.raw",
+          "name": "stage__initial_drainage_elevation",
+          "order": "C",
+          "sha256": "e701cb23c4447fdb980ba7b2a93a85ebb46733d1c916c2799a1a1cd4f6db48fe",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__initial_drainage_filled.raw",
+          "name": "stage__initial_drainage_filled",
+          "order": "C",
+          "sha256": "e9355372480bb8f47a460a2e20c19787d9f2e97017e4df663a751107eaea383c",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__initial_drainage_water_level.raw",
+          "name": "stage__initial_drainage_water_level",
+          "order": "C",
+          "sha256": "ad41719655954c657104438b988093c3c1e4ede50760434d61e470427a3b7d3e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__initial_drainage_flow_accumulation.raw",
+          "name": "stage__initial_drainage_flow_accumulation",
+          "order": "C",
+          "sha256": "e41d03ae7b1dea3e6890e2073456d2fb80a27d001896a78000389d9b927d20a3",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__provisional_climate_temperature.raw",
+          "name": "stage__provisional_climate_temperature",
+          "order": "C",
+          "sha256": "2318c51c1173b75f87e29c745e3961c2a40b83c8596dc70eba3c88f62326996a",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__provisional_climate_precipitation.raw",
+          "name": "stage__provisional_climate_precipitation",
+          "order": "C",
+          "sha256": "0de6573a3145c48a99c6cf8c32256074c21d89a9707d34fad702464b8b118876",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__provisional_climate_moisture.raw",
+          "name": "stage__provisional_climate_moisture",
+          "order": "C",
+          "sha256": "bd2a75e1534c57ce0924c14be22d47c892293e3dfca65df6f3311d8fc76ebf43",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__terrain_erosion_elevation.raw",
+          "name": "stage__terrain_erosion_elevation",
+          "order": "C",
+          "sha256": "845b5f04a336a6055adcc302ead5acbfdbba944268d3eaec385622a04d48ad7e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__terrain_erosion_filled.raw",
+          "name": "stage__terrain_erosion_filled",
+          "order": "C",
+          "sha256": "70aa814ed1679166448a8b483cb869493363a76862e67c1ad460e31409e41e65",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__terrain_erosion_water_level.raw",
+          "name": "stage__terrain_erosion_water_level",
+          "order": "C",
+          "sha256": "48ef231890af9bcd479e2b47a02340f2505f2be8e322476f5b136d003507ccd9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__terrain_erosion_flow_accumulation.raw",
+          "name": "stage__terrain_erosion_flow_accumulation",
+          "order": "C",
+          "sha256": "d8e94cd0e6bb5462241f8340f12f9a7514bd20d965c2b6fd840cc4ced401ed4b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__final_climate_temperature.raw",
+          "name": "stage__final_climate_temperature",
+          "order": "C",
+          "sha256": "a59e6dcaa9514e677a95bc4125259bb56246e979e401c89e04b7666fe36c8ff3",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__final_climate_precipitation.raw",
+          "name": "stage__final_climate_precipitation",
+          "order": "C",
+          "sha256": "9d3e2bf6de14385398d62ee048f8c6a73080430615481126fa34012c8919e75b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/stage__final_climate_moisture.raw",
+          "name": "stage__final_climate_moisture",
+          "order": "C",
+          "sha256": "7907b61f0b26c5dfc47f57d9fe529e264b0f7a2497d8d4866c3cff16879a7f8d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__elevation.raw",
+          "name": "atlas__elevation",
+          "order": "C",
+          "sha256": "845b5f04a336a6055adcc302ead5acbfdbba944268d3eaec385622a04d48ad7e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__filled.raw",
+          "name": "atlas__filled",
+          "order": "C",
+          "sha256": "70aa814ed1679166448a8b483cb869493363a76862e67c1ad460e31409e41e65",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__water_level.raw",
+          "name": "atlas__water_level",
+          "order": "C",
+          "sha256": "48ef231890af9bcd479e2b47a02340f2505f2be8e322476f5b136d003507ccd9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__flow_accumulation.raw",
+          "name": "atlas__flow_accumulation",
+          "order": "C",
+          "sha256": "e47c62c5dff5ebd6e8113baf7db218c74984cdeac3a2f76e14f7982c5211b5e4",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__temperature.raw",
+          "name": "atlas__temperature",
+          "order": "C",
+          "sha256": "a59e6dcaa9514e677a95bc4125259bb56246e979e401c89e04b7666fe36c8ff3",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__precipitation.raw",
+          "name": "atlas__precipitation",
+          "order": "C",
+          "sha256": "9d3e2bf6de14385398d62ee048f8c6a73080430615481126fa34012c8919e75b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__moisture.raw",
+          "name": "atlas__moisture",
+          "order": "C",
+          "sha256": "7907b61f0b26c5dfc47f57d9fe529e264b0f7a2497d8d4866c3cff16879a7f8d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__wind_u.raw",
+          "name": "atlas__wind_u",
+          "order": "C",
+          "sha256": "a5742de393cb0c357481014d8882e16a947d1685acce8406493d89770e4e18f3",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__wind_v.raw",
+          "name": "atlas__wind_v",
+          "order": "C",
+          "sha256": "713c6b4ade908c8d56e79ba28f319ce11b1f378f4e1597903a271e1ecd5ac7b2",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__current_u.raw",
+          "name": "atlas__current_u",
+          "order": "C",
+          "sha256": "92a6b4a539b4eaf2607e364a7616a8ad6d455b17588273ab4ef4529c287c27b4",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__current_v.raw",
+          "name": "atlas__current_v",
+          "order": "C",
+          "sha256": "b12129cb572a5a8b82c050ad5342d23428b05407b944144baf42ba2893475880",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__uplift.raw",
+          "name": "atlas__uplift",
+          "order": "C",
+          "sha256": "9051b436ea641f421477fec8498344f767aa2da07b275fc41d8fceb6970b75c4",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__island_arc_uplift.raw",
+          "name": "atlas__island_arc_uplift",
+          "order": "C",
+          "sha256": "09cc4214153221022d8fe6e3b3359ea9c7fd2f6b5949be4fecb3fa0ce3399af9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__hotspot.raw",
+          "name": "atlas__hotspot",
+          "order": "C",
+          "sha256": "c9e236c3bc00ab6bee2267c25b406d776b62327a603b5bcc2a5d1395d16bed85",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__subduction.raw",
+          "name": "atlas__subduction",
+          "order": "C",
+          "sha256": "decf50e9407b6b3b55e071dde7780a664caa7b075e927a751f6983102b593468",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__divergence.raw",
+          "name": "atlas__divergence",
+          "order": "C",
+          "sha256": "93c071b37929fba625d04a770b9e24f0c0c391af452458667679ce28bc1dbcc6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__continental.raw",
+          "name": "atlas__continental",
+          "order": "C",
+          "sha256": "ba761cec3c1da1d63ba54e5354d3612ad2668e69f482c29660386a5ea1e20a31",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "continentality fraction"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__tectonic_elevation.raw",
+          "name": "atlas__tectonic_elevation",
+          "order": "C",
+          "sha256": "eaeb9665ed62d0055c7caaa480ca23b892ce7576c1f13a98527d737d6524ad52",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__plate_vx.raw",
+          "name": "atlas__plate_vx",
+          "order": "C",
+          "sha256": "a5cf2b1f4f3b61cb26b0df9b7d070a5bac2210f0c85a43459059b03b01a6d98a",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "world units per tectonic epoch"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-42/atlas__plate_vy.raw",
+          "name": "atlas__plate_vy",
+          "order": "C",
+          "sha256": "33b6082631e7a682b857c1ac51751d6bdcfec126b1c49adb59142d9211bb9b41",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "world units per tectonic epoch"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-42/stage__initial_drainage_downstream.raw",
+          "name": "stage__initial_drainage_downstream",
+          "order": "C",
+          "sha256": "f38840b40df00d158a42ae9a7ed0b38156e86dd129adbc149a798941d3a25386",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-42/stage__terrain_erosion_downstream.raw",
+          "name": "stage__terrain_erosion_downstream",
+          "order": "C",
+          "sha256": "6470c54e39749f6539b6136565c9ca4ea49d650fb43f36a9bb7135af85fb2669",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-42/atlas__downstream.raw",
+          "name": "atlas__downstream",
+          "order": "C",
+          "sha256": "6470c54e39749f6539b6136565c9ca4ea49d650fb43f36a9bb7135af85fb2669",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-42/atlas__lake_id.raw",
+          "name": "atlas__lake_id",
+          "order": "C",
+          "sha256": "143129ddf9c0b43dbac377115c0a124c38b6c9f970ef1e30e2b1be9a86581f64",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "1-based periodic lake component ID; 0 means no lake"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-42/atlas__outlet_id.raw",
+          "name": "atlas__outlet_id",
+          "order": "C",
+          "sha256": "33e6dab68ed89bd66d497d27ae2ea0fbe2ae5efdcb2aa0e62aa34fcbe590bb11",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] terminal root cell index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i2",
+          "file": "seed-42/stage__geology_plate_id.raw",
+          "name": "stage__geology_plate_id",
+          "order": "C",
+          "sha256": "ee9221b91d04fd36fec6d9111ccd514f13d3ab5d5c6b066e1bbfd725fc930561",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "plate index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i2",
+          "file": "seed-42/atlas__plate_id.raw",
+          "name": "atlas__plate_id",
+          "order": "C",
+          "sha256": "ee9221b91d04fd36fec6d9111ccd514f13d3ab5d5c6b066e1bbfd725fc930561",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "plate index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/stage__initial_drainage_ocean_mask.raw",
+          "name": "stage__initial_drainage_ocean_mask",
+          "order": "C",
+          "sha256": "9e831ecb8dd8f89747136872d6aefe35a4ae7236d11c0fde4b7156f690380437",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/stage__initial_drainage_lake_mask.raw",
+          "name": "stage__initial_drainage_lake_mask",
+          "order": "C",
+          "sha256": "20bc71a75fab966c146b3e2265ea7b29ee72cfd664585b6f48a6cb11e83ea7cf",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/stage__initial_drainage_river_mask.raw",
+          "name": "stage__initial_drainage_river_mask",
+          "order": "C",
+          "sha256": "fad2d45d74755646593afd48fbc4494f6e4e2b03d9942c06c9ac9170c1024b78",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/stage__terrain_erosion_ocean_mask.raw",
+          "name": "stage__terrain_erosion_ocean_mask",
+          "order": "C",
+          "sha256": "9e831ecb8dd8f89747136872d6aefe35a4ae7236d11c0fde4b7156f690380437",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/stage__terrain_erosion_lake_mask.raw",
+          "name": "stage__terrain_erosion_lake_mask",
+          "order": "C",
+          "sha256": "20bc71a75fab966c146b3e2265ea7b29ee72cfd664585b6f48a6cb11e83ea7cf",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/stage__terrain_erosion_river_mask.raw",
+          "name": "stage__terrain_erosion_river_mask",
+          "order": "C",
+          "sha256": "d9a42658aa3120f6a76aed05770daf45169a158f92e8d6b4cd2dbf027f0da5f6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/atlas__ocean_mask.raw",
+          "name": "atlas__ocean_mask",
+          "order": "C",
+          "sha256": "9e831ecb8dd8f89747136872d6aefe35a4ae7236d11c0fde4b7156f690380437",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/atlas__lake_mask.raw",
+          "name": "atlas__lake_mask",
+          "order": "C",
+          "sha256": "20bc71a75fab966c146b3e2265ea7b29ee72cfd664585b6f48a6cb11e83ea7cf",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/atlas__river_mask.raw",
+          "name": "atlas__river_mask",
+          "order": "C",
+          "sha256": "aabce6e78f870e1b56a19c72a767b6cd86b514ff7406c8e5c353158e17fb53ab",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/atlas__fjord_candidate_mask.raw",
+          "name": "atlas__fjord_candidate_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/atlas__harbour_candidate_mask.raw",
+          "name": "atlas__harbour_candidate_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/atlas__snow_mask.raw",
+          "name": "atlas__snow_mask",
+          "order": "C",
+          "sha256": "be3801f8294035ab3f3fb046d8ef6f19ba4e1909a3d5cd02300e62160071d0ad",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-42/atlas__climate_zone.raw",
+          "name": "atlas__climate_zone",
+          "order": "C",
+          "sha256": "7b2a74ed7891a45a1d522a2d58f57c681fccb1ab4978f19f2cde66fc2d03e3ce",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "climate-zone code: 0 water, 1 warm arid, 2 warm humid, 3 temperate, 4 cold, 5 snow"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "<i4",
+          "file": "seed-42/height.raw",
+          "name": "height",
+          "order": "C",
+          "sha256": "e6b714dd2e71ee786ed2def3970ceae3f8f0b81796260fb84e978f51d9fd3c43",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "highest solid block Z"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-42/top_material.raw",
+          "name": "top_material",
+          "order": "C",
+          "sha256": "6388ebf7c334f1a8957d7dfe2512c4887b417c765d02b80c4a7158c0ed3971ca",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "Terrain-v2 material palette ID"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-42/ground_material.raw",
+          "name": "ground_material",
+          "order": "C",
+          "sha256": "7f9c36c326d15bd0e197e91f1d85ccdbbfe69bc13aa37af150b8eddcd6f16680",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "Terrain-v2 material palette ID"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-42/pixel_rgba.raw",
+          "name": "pixel_rgba",
+          "order": "C",
+          "sha256": "3f39cd3c0dac99f0117b02122a17f154b0cc7cade0e06449ea263fc38a77823d",
+          "shape": [
+            16,
+            16,
+            4
+          ],
+          "unit": "top material RGBA8"
+        },
+        {
+          "coordinate_set": "atlas_scalar",
+          "dtype": "<f8",
+          "file": "seed-42/atlas__vertical_scale.raw",
+          "name": "atlas__vertical_scale",
+          "order": "C",
+          "sha256": "2c768ba14006c2c82939ad89822cb28a99ef727f3bf7e08bf152d586cd8f6d52",
+          "shape": [],
+          "unit": "blocks per geology-km"
+        }
+      ],
+      "identity_sha256": "76000b9e10cc429bb44c8cc71572bae9686780b2b4c02b4ad5c7167e9b87cf19",
+      "seed": 42,
+      "world_npz_sha256": "6567458eefb3b11f856ad2e3c1d5f9ab8ab0c2e39e0bc837c34cf8e36daeb545"
+    },
+    {
+      "config": {
+        "climate_iterations": 80,
+        "coastal_elaboration": true,
+        "currents": true,
+        "epochs": 12,
+        "erosion_steps": 3,
+        "initial_climate_iterations": 24,
+        "seed": 777,
+        "size": 256,
+        "wind_sign": 1
+      },
+      "config_sha256": "c856a80fb358f58ef98abc151cd48706a7dc41aaa3a85827524870f84b01ee24",
+      "fields": [
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__geology_elevation.raw",
+          "name": "stage__geology_elevation",
+          "order": "C",
+          "sha256": "33877996f73c93a52e290e00151931d48b340c890f6cec4890f2eb08c1a2da65",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__geology_uplift.raw",
+          "name": "stage__geology_uplift",
+          "order": "C",
+          "sha256": "9a685b59b2f551c420e84570558419b30d9a59c455ca368934ee487fe2056817",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__geology_subduction.raw",
+          "name": "stage__geology_subduction",
+          "order": "C",
+          "sha256": "412625ef557cf547cf1d830f48de3fc44ff16765b68717e6a526c390f5948cd3",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__geology_divergence.raw",
+          "name": "stage__geology_divergence",
+          "order": "C",
+          "sha256": "ffec2f7d0d4e8a6ea0f3da1be96dab9ab9e0572a26c92335961142a89e8ed9e0",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__geology_continental.raw",
+          "name": "stage__geology_continental",
+          "order": "C",
+          "sha256": "dd0a0ebe5ba33e3cc5669c673df5cd3549bb8f8902eccdcad6b871e716ef4924",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "continentality fraction"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__coastal_elevation.raw",
+          "name": "stage__coastal_elevation",
+          "order": "C",
+          "sha256": "5073cc360fce3b30b223fff51438561f82a3cbcde2b5232cfbf506fe15169ad7",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__initial_drainage_elevation.raw",
+          "name": "stage__initial_drainage_elevation",
+          "order": "C",
+          "sha256": "5073cc360fce3b30b223fff51438561f82a3cbcde2b5232cfbf506fe15169ad7",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__initial_drainage_filled.raw",
+          "name": "stage__initial_drainage_filled",
+          "order": "C",
+          "sha256": "297899a55d7e85451c619c9bd006147a0c69f0f44d0ba58ea18dc6fcf4c86b49",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__initial_drainage_water_level.raw",
+          "name": "stage__initial_drainage_water_level",
+          "order": "C",
+          "sha256": "cda9bb3825c8d4df4777411513c439ce9017788ed9990538b300fe1bb36e7f19",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__initial_drainage_flow_accumulation.raw",
+          "name": "stage__initial_drainage_flow_accumulation",
+          "order": "C",
+          "sha256": "c730d280feed1203847e0d108f1a76539cb5bdc51b303b40d8f76e9d1fc25fd9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__provisional_climate_temperature.raw",
+          "name": "stage__provisional_climate_temperature",
+          "order": "C",
+          "sha256": "7d09dac74c60d1379d2d7ba0b62407e616d741163bdcb4a9a0e040ffc928ad5d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__provisional_climate_precipitation.raw",
+          "name": "stage__provisional_climate_precipitation",
+          "order": "C",
+          "sha256": "b87a13aaaa5aecbd1f6d2ede8ee64b8b7a416cf5a58279ce288151e156e7f8db",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__provisional_climate_moisture.raw",
+          "name": "stage__provisional_climate_moisture",
+          "order": "C",
+          "sha256": "fea783d9a82bec641a0826fee41ce8cf681b5d115d3fed8dad298539a239f66c",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__terrain_erosion_elevation.raw",
+          "name": "stage__terrain_erosion_elevation",
+          "order": "C",
+          "sha256": "c52e3a1dac44d03f53cb5ff3a93f6722b9b70e09884ebfb6c2bb56bc1093bed0",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__terrain_erosion_filled.raw",
+          "name": "stage__terrain_erosion_filled",
+          "order": "C",
+          "sha256": "cedc680c9ff05e0330598c931d7b82856ed8c36ac1e570b410f463a7f4e74ba7",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__terrain_erosion_water_level.raw",
+          "name": "stage__terrain_erosion_water_level",
+          "order": "C",
+          "sha256": "f96afc7f47e6b9d87ede8d9364f4eab7d1d38307b8473321eaf9f1af0f0f41ab",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__terrain_erosion_flow_accumulation.raw",
+          "name": "stage__terrain_erosion_flow_accumulation",
+          "order": "C",
+          "sha256": "55796aa7c946c596bf580d217d9c3a24a3a0f3b011ef90e8029819f63dc7bab4",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__final_climate_temperature.raw",
+          "name": "stage__final_climate_temperature",
+          "order": "C",
+          "sha256": "2d57141ee5b43734712808b79f4fd8bd093f2ebcb0733571d5bffe57f5023c43",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__final_climate_precipitation.raw",
+          "name": "stage__final_climate_precipitation",
+          "order": "C",
+          "sha256": "97325eb7a81e049596a982b6e72590211e8591f0befc7afe16a817fe3b0a35b9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/stage__final_climate_moisture.raw",
+          "name": "stage__final_climate_moisture",
+          "order": "C",
+          "sha256": "7744d4d95c838d42e85cd6146086425851fb897c7baf593680c6b07fa2989bf9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__elevation.raw",
+          "name": "atlas__elevation",
+          "order": "C",
+          "sha256": "c52e3a1dac44d03f53cb5ff3a93f6722b9b70e09884ebfb6c2bb56bc1093bed0",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__filled.raw",
+          "name": "atlas__filled",
+          "order": "C",
+          "sha256": "cedc680c9ff05e0330598c931d7b82856ed8c36ac1e570b410f463a7f4e74ba7",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__water_level.raw",
+          "name": "atlas__water_level",
+          "order": "C",
+          "sha256": "f96afc7f47e6b9d87ede8d9364f4eab7d1d38307b8473321eaf9f1af0f0f41ab",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__flow_accumulation.raw",
+          "name": "atlas__flow_accumulation",
+          "order": "C",
+          "sha256": "87658899d9c6a0daea1520d5d8131f1c7b923608ed4924fa4c1d2acaebc6e31a",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__temperature.raw",
+          "name": "atlas__temperature",
+          "order": "C",
+          "sha256": "2d57141ee5b43734712808b79f4fd8bd093f2ebcb0733571d5bffe57f5023c43",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__precipitation.raw",
+          "name": "atlas__precipitation",
+          "order": "C",
+          "sha256": "97325eb7a81e049596a982b6e72590211e8591f0befc7afe16a817fe3b0a35b9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__moisture.raw",
+          "name": "atlas__moisture",
+          "order": "C",
+          "sha256": "7744d4d95c838d42e85cd6146086425851fb897c7baf593680c6b07fa2989bf9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__wind_u.raw",
+          "name": "atlas__wind_u",
+          "order": "C",
+          "sha256": "dbd56728fbb400db9aa97e8c10bc3925b8b88e7837d0c5ecc30ee137998c5b6d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__wind_v.raw",
+          "name": "atlas__wind_v",
+          "order": "C",
+          "sha256": "f5948388eb503188625015d5205a5c187db8a149171fb5aeb0b2c832f51d9be8",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__current_u.raw",
+          "name": "atlas__current_u",
+          "order": "C",
+          "sha256": "079df4bad8dc20928c6a19c1da34b1796ad05ffa824f2b543008f7ac73b8c3be",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__current_v.raw",
+          "name": "atlas__current_v",
+          "order": "C",
+          "sha256": "c49c3118d977e2c57aafd023ca7d7f44d1035f82f2a8ff9332607c723f1995ff",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__uplift.raw",
+          "name": "atlas__uplift",
+          "order": "C",
+          "sha256": "9a685b59b2f551c420e84570558419b30d9a59c455ca368934ee487fe2056817",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__island_arc_uplift.raw",
+          "name": "atlas__island_arc_uplift",
+          "order": "C",
+          "sha256": "c5c5c5e2d11adef40b9cdce357805cca94ea584019cacc9febd3b5486fb876a1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__hotspot.raw",
+          "name": "atlas__hotspot",
+          "order": "C",
+          "sha256": "262b1146f8f964d9ad991a835786bed744b3c32a943e54efbbe2d1ff78908798",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__subduction.raw",
+          "name": "atlas__subduction",
+          "order": "C",
+          "sha256": "412625ef557cf547cf1d830f48de3fc44ff16765b68717e6a526c390f5948cd3",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__divergence.raw",
+          "name": "atlas__divergence",
+          "order": "C",
+          "sha256": "ffec2f7d0d4e8a6ea0f3da1be96dab9ab9e0572a26c92335961142a89e8ed9e0",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__continental.raw",
+          "name": "atlas__continental",
+          "order": "C",
+          "sha256": "dd0a0ebe5ba33e3cc5669c673df5cd3549bb8f8902eccdcad6b871e716ef4924",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "continentality fraction"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__tectonic_elevation.raw",
+          "name": "atlas__tectonic_elevation",
+          "order": "C",
+          "sha256": "33877996f73c93a52e290e00151931d48b340c890f6cec4890f2eb08c1a2da65",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__plate_vx.raw",
+          "name": "atlas__plate_vx",
+          "order": "C",
+          "sha256": "dc0cbf404c1eb6e1b7d4cbea435cef0cef7ab021c62c9f4939b5c2e76719a050",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "world units per tectonic epoch"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-777/atlas__plate_vy.raw",
+          "name": "atlas__plate_vy",
+          "order": "C",
+          "sha256": "5f7bd11d6e242b2e247b784e6658c070d5e5e4a542268444e4261ac083676250",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "world units per tectonic epoch"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-777/stage__initial_drainage_downstream.raw",
+          "name": "stage__initial_drainage_downstream",
+          "order": "C",
+          "sha256": "b248c8eee3f2e205e435fd9b2ce373aea5167676b786557966840a08ade82efa",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-777/stage__terrain_erosion_downstream.raw",
+          "name": "stage__terrain_erosion_downstream",
+          "order": "C",
+          "sha256": "e0346d1a43c7aac23cc4ced5b0ae30fdc7a2ea04e2234111c9fa855049b4fd53",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-777/atlas__downstream.raw",
+          "name": "atlas__downstream",
+          "order": "C",
+          "sha256": "e0346d1a43c7aac23cc4ced5b0ae30fdc7a2ea04e2234111c9fa855049b4fd53",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-777/atlas__lake_id.raw",
+          "name": "atlas__lake_id",
+          "order": "C",
+          "sha256": "3476f1a27a5fe2ac14020b23b13d062a7f513c96b8f5462366595755292961c9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "1-based periodic lake component ID; 0 means no lake"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-777/atlas__outlet_id.raw",
+          "name": "atlas__outlet_id",
+          "order": "C",
+          "sha256": "adfb5abf1c56a96b6edc4237ccfe6c8860135ad67561a25398138c2ba354a9aa",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] terminal root cell index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i2",
+          "file": "seed-777/stage__geology_plate_id.raw",
+          "name": "stage__geology_plate_id",
+          "order": "C",
+          "sha256": "66f497dac4fe64d6283a7eaeb384d9eb491009d3ed51400fa2167a8174c47746",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "plate index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i2",
+          "file": "seed-777/atlas__plate_id.raw",
+          "name": "atlas__plate_id",
+          "order": "C",
+          "sha256": "66f497dac4fe64d6283a7eaeb384d9eb491009d3ed51400fa2167a8174c47746",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "plate index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/stage__initial_drainage_ocean_mask.raw",
+          "name": "stage__initial_drainage_ocean_mask",
+          "order": "C",
+          "sha256": "0a9e84fb88881d5fa35d22cfd96d5cc9f0efe102c416672155449bab3ae494fb",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/stage__initial_drainage_lake_mask.raw",
+          "name": "stage__initial_drainage_lake_mask",
+          "order": "C",
+          "sha256": "83e5453e3e77b83a5e182475bc61bf30fb7c9befb9277c5ad20d2184427ef88e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/stage__initial_drainage_river_mask.raw",
+          "name": "stage__initial_drainage_river_mask",
+          "order": "C",
+          "sha256": "ceb39162667ecd1f0727ca8b1548d7ca5028876389d3d55900cce44e796aedb0",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/stage__terrain_erosion_ocean_mask.raw",
+          "name": "stage__terrain_erosion_ocean_mask",
+          "order": "C",
+          "sha256": "0a9e84fb88881d5fa35d22cfd96d5cc9f0efe102c416672155449bab3ae494fb",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/stage__terrain_erosion_lake_mask.raw",
+          "name": "stage__terrain_erosion_lake_mask",
+          "order": "C",
+          "sha256": "d5d634885309eee9965854d1492f1153651dd97977289808c707c097b3b47eb9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/stage__terrain_erosion_river_mask.raw",
+          "name": "stage__terrain_erosion_river_mask",
+          "order": "C",
+          "sha256": "c1837351320b68f8285319b74ab9a4d094d86b0e90e27886e6a99410e1ab07ed",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/atlas__ocean_mask.raw",
+          "name": "atlas__ocean_mask",
+          "order": "C",
+          "sha256": "0a9e84fb88881d5fa35d22cfd96d5cc9f0efe102c416672155449bab3ae494fb",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/atlas__lake_mask.raw",
+          "name": "atlas__lake_mask",
+          "order": "C",
+          "sha256": "d5d634885309eee9965854d1492f1153651dd97977289808c707c097b3b47eb9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/atlas__river_mask.raw",
+          "name": "atlas__river_mask",
+          "order": "C",
+          "sha256": "c1837351320b68f8285319b74ab9a4d094d86b0e90e27886e6a99410e1ab07ed",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/atlas__fjord_candidate_mask.raw",
+          "name": "atlas__fjord_candidate_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/atlas__harbour_candidate_mask.raw",
+          "name": "atlas__harbour_candidate_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/atlas__snow_mask.raw",
+          "name": "atlas__snow_mask",
+          "order": "C",
+          "sha256": "20ec2271a3a3ac70f9bb93afc18169b8fdd7c2574d2505a615df020eb0ae85f8",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-777/atlas__climate_zone.raw",
+          "name": "atlas__climate_zone",
+          "order": "C",
+          "sha256": "6c40c0889b24688d81bc5a6287c522766eff7faae66e60c2ad77b71e950c32f5",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "climate-zone code: 0 water, 1 warm arid, 2 warm humid, 3 temperate, 4 cold, 5 snow"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "<i4",
+          "file": "seed-777/height.raw",
+          "name": "height",
+          "order": "C",
+          "sha256": "1729bcd6b00d0020a1144dd7e0c5b91018f04f7aabf1c1a52bfcaa39428b7b34",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "highest solid block Z"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-777/top_material.raw",
+          "name": "top_material",
+          "order": "C",
+          "sha256": "5a547dda2fa569d55c0e10c00d2eb58ac63f4564f79fc6a057482722b1e9af71",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "Terrain-v2 material palette ID"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-777/ground_material.raw",
+          "name": "ground_material",
+          "order": "C",
+          "sha256": "330309b6cb8e198af6878cce235b36b33ba68b2a59cb6e6d83d1b5295501bf16",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "Terrain-v2 material palette ID"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-777/pixel_rgba.raw",
+          "name": "pixel_rgba",
+          "order": "C",
+          "sha256": "6342545af947d135f24c8df09ca341a172a4f6b563650e2601684a9051b50db6",
+          "shape": [
+            16,
+            16,
+            4
+          ],
+          "unit": "top material RGBA8"
+        },
+        {
+          "coordinate_set": "atlas_scalar",
+          "dtype": "<f8",
+          "file": "seed-777/atlas__vertical_scale.raw",
+          "name": "atlas__vertical_scale",
+          "order": "C",
+          "sha256": "d0c93b28d5833f12b4e2bd273c2a04c0b0b68e2751f244e9984a08c01f6a8f1d",
+          "shape": [],
+          "unit": "blocks per geology-km"
+        }
+      ],
+      "identity_sha256": "602699a72c74d1ce6fa98f513fd0f109198192e560a78f995f038565b7b50c37",
+      "seed": 777,
+      "world_npz_sha256": "c7c78100ad72f1037401fe2fcbdd2b22ecca4c8ecbb48a86977a64ebc5f6262f"
+    },
+    {
+      "config": {
+        "climate_iterations": 80,
+        "coastal_elaboration": true,
+        "currents": true,
+        "epochs": 12,
+        "erosion_steps": 3,
+        "initial_climate_iterations": 24,
+        "seed": 2004,
+        "size": 256,
+        "wind_sign": 1
+      },
+      "config_sha256": "d871b286507dada0cd884db06314eb1b844a5b541e819dafe625f7d099f19e37",
+      "fields": [
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__geology_elevation.raw",
+          "name": "stage__geology_elevation",
+          "order": "C",
+          "sha256": "c1cecb81fedf6e12a0c35c27b2a0bf8234c846a53e0e412637524373680ac86b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__geology_uplift.raw",
+          "name": "stage__geology_uplift",
+          "order": "C",
+          "sha256": "aa15fe44d297f00cc19a28cd9578aa1a569c52afa4e21799896b27e94a715529",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__geology_subduction.raw",
+          "name": "stage__geology_subduction",
+          "order": "C",
+          "sha256": "f3cceda47a30e7b5b423713163fc0ee6d7e3c41a2b4181c9be9c12d3f48f3546",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__geology_divergence.raw",
+          "name": "stage__geology_divergence",
+          "order": "C",
+          "sha256": "2fada57acd0d590f35afa0d81908a2ac78ba385108e2358c01059ff702c63381",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__geology_continental.raw",
+          "name": "stage__geology_continental",
+          "order": "C",
+          "sha256": "762a81b83e8d0a22ac1e79ca503ca45396c06cc824868f40cebad11b7a37a270",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "continentality fraction"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__coastal_elevation.raw",
+          "name": "stage__coastal_elevation",
+          "order": "C",
+          "sha256": "14e236b5ba590225523310d174a060a2bcb1cc63eff9d3abe4127f43509301ce",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__initial_drainage_elevation.raw",
+          "name": "stage__initial_drainage_elevation",
+          "order": "C",
+          "sha256": "14e236b5ba590225523310d174a060a2bcb1cc63eff9d3abe4127f43509301ce",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__initial_drainage_filled.raw",
+          "name": "stage__initial_drainage_filled",
+          "order": "C",
+          "sha256": "df22470310bcfafeda53ca029d5e0e2e2a7c651443ca112809d7e8c879e3d7a7",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__initial_drainage_water_level.raw",
+          "name": "stage__initial_drainage_water_level",
+          "order": "C",
+          "sha256": "c16cc7a9be3961c226cfd6cdb4aaed272c8a16eb837d03d9d2812f6c2716daba",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__initial_drainage_flow_accumulation.raw",
+          "name": "stage__initial_drainage_flow_accumulation",
+          "order": "C",
+          "sha256": "49454a18fd97324e449ce537903cdd2b7767df6595e79a84a1c5f94145556149",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__provisional_climate_temperature.raw",
+          "name": "stage__provisional_climate_temperature",
+          "order": "C",
+          "sha256": "8e76e99186305c7629689d8fa59f88dbb38c398860296f6ddf7d7eca8a7214f7",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__provisional_climate_precipitation.raw",
+          "name": "stage__provisional_climate_precipitation",
+          "order": "C",
+          "sha256": "3100262d8f37848b5a1e916b8d1b4fa17550691b25ddcbd78ebee92342dad63d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__provisional_climate_moisture.raw",
+          "name": "stage__provisional_climate_moisture",
+          "order": "C",
+          "sha256": "772072248029c7254d19ce9652bd098f12702d3b6653d20c70a56b3fe0e267f3",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__terrain_erosion_elevation.raw",
+          "name": "stage__terrain_erosion_elevation",
+          "order": "C",
+          "sha256": "9c7b2a35340b4a5c6fcb460ec285eb0c41ce5673bf4edcf5ecefe5f1f7b7286e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__terrain_erosion_filled.raw",
+          "name": "stage__terrain_erosion_filled",
+          "order": "C",
+          "sha256": "68cce1ec735ab2f8c7e7617c0a312d021e4771f61bcca2f04c5b78591ff04c3b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__terrain_erosion_water_level.raw",
+          "name": "stage__terrain_erosion_water_level",
+          "order": "C",
+          "sha256": "a91df3ec2b7533bdf7b972e01d270ad162b6253b340fb81c175722b8954ca854",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__terrain_erosion_flow_accumulation.raw",
+          "name": "stage__terrain_erosion_flow_accumulation",
+          "order": "C",
+          "sha256": "6cb2e89080dddfd1aa3d384141253279200fac7e49343de41d9b5cd65c53b229",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__final_climate_temperature.raw",
+          "name": "stage__final_climate_temperature",
+          "order": "C",
+          "sha256": "bbfb984ec032b610fa6ef85a2adf1a1a9ccc55c54c8181f36c44057ce3e1df44",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__final_climate_precipitation.raw",
+          "name": "stage__final_climate_precipitation",
+          "order": "C",
+          "sha256": "28ec7f5874ad611355ba5c53557d5b236dd8655a52d632d47e7306bb393a50c3",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/stage__final_climate_moisture.raw",
+          "name": "stage__final_climate_moisture",
+          "order": "C",
+          "sha256": "82a085ae89e624c95e8ed321a9dc82fd5224adc6040d2b6c413a69e1e934702a",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__elevation.raw",
+          "name": "atlas__elevation",
+          "order": "C",
+          "sha256": "9c7b2a35340b4a5c6fcb460ec285eb0c41ce5673bf4edcf5ecefe5f1f7b7286e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__filled.raw",
+          "name": "atlas__filled",
+          "order": "C",
+          "sha256": "68cce1ec735ab2f8c7e7617c0a312d021e4771f61bcca2f04c5b78591ff04c3b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__water_level.raw",
+          "name": "atlas__water_level",
+          "order": "C",
+          "sha256": "a91df3ec2b7533bdf7b972e01d270ad162b6253b340fb81c175722b8954ca854",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__flow_accumulation.raw",
+          "name": "atlas__flow_accumulation",
+          "order": "C",
+          "sha256": "0fe08f630ef0d30f1bdcafd02d617249e8e635be4562795476551ca9b7ca5908",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__temperature.raw",
+          "name": "atlas__temperature",
+          "order": "C",
+          "sha256": "bbfb984ec032b610fa6ef85a2adf1a1a9ccc55c54c8181f36c44057ce3e1df44",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__precipitation.raw",
+          "name": "atlas__precipitation",
+          "order": "C",
+          "sha256": "28ec7f5874ad611355ba5c53557d5b236dd8655a52d632d47e7306bb393a50c3",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__moisture.raw",
+          "name": "atlas__moisture",
+          "order": "C",
+          "sha256": "82a085ae89e624c95e8ed321a9dc82fd5224adc6040d2b6c413a69e1e934702a",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__wind_u.raw",
+          "name": "atlas__wind_u",
+          "order": "C",
+          "sha256": "83f6554f478d13483b90c3bc7ead77a5f92f27552e8903c6eafe2539697ed9e4",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__wind_v.raw",
+          "name": "atlas__wind_v",
+          "order": "C",
+          "sha256": "e0c64e85b1fbec549a2321dda25fb3ecb350fd4001e1a440d76478990f4c693c",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__current_u.raw",
+          "name": "atlas__current_u",
+          "order": "C",
+          "sha256": "8c156bca66dcf4045b2c1be4ea9318f1474dec889dd1ae90051007bd6d9da695",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__current_v.raw",
+          "name": "atlas__current_v",
+          "order": "C",
+          "sha256": "59efa4642e4a3c4b9f4b6c7905cb0fce8c416c4402d0bccf99dc5b67c5be3563",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__uplift.raw",
+          "name": "atlas__uplift",
+          "order": "C",
+          "sha256": "aa15fe44d297f00cc19a28cd9578aa1a569c52afa4e21799896b27e94a715529",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__island_arc_uplift.raw",
+          "name": "atlas__island_arc_uplift",
+          "order": "C",
+          "sha256": "f17c30d14707ba1a483261a3391f27877ecf3b9a40f24c7a6eb272ae4ed0f8c6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__hotspot.raw",
+          "name": "atlas__hotspot",
+          "order": "C",
+          "sha256": "5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__subduction.raw",
+          "name": "atlas__subduction",
+          "order": "C",
+          "sha256": "f3cceda47a30e7b5b423713163fc0ee6d7e3c41a2b4181c9be9c12d3f48f3546",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__divergence.raw",
+          "name": "atlas__divergence",
+          "order": "C",
+          "sha256": "2fada57acd0d590f35afa0d81908a2ac78ba385108e2358c01059ff702c63381",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__continental.raw",
+          "name": "atlas__continental",
+          "order": "C",
+          "sha256": "762a81b83e8d0a22ac1e79ca503ca45396c06cc824868f40cebad11b7a37a270",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "continentality fraction"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__tectonic_elevation.raw",
+          "name": "atlas__tectonic_elevation",
+          "order": "C",
+          "sha256": "c1cecb81fedf6e12a0c35c27b2a0bf8234c846a53e0e412637524373680ac86b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__plate_vx.raw",
+          "name": "atlas__plate_vx",
+          "order": "C",
+          "sha256": "1ecec7ae2b519dab4608bef6186ba7561d4918a3879cf4f1c97e8bceb27746a3",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "world units per tectonic epoch"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-2004/atlas__plate_vy.raw",
+          "name": "atlas__plate_vy",
+          "order": "C",
+          "sha256": "f15fd6a4be74200bdacf721b27ed4b0a9877d5917814b1a085cd3d666fd2bf5f",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "world units per tectonic epoch"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-2004/stage__initial_drainage_downstream.raw",
+          "name": "stage__initial_drainage_downstream",
+          "order": "C",
+          "sha256": "8c6b6b3e912ff78356bed2a63ec219b68aef09be3dc24ddf906b56a3ba941c22",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-2004/stage__terrain_erosion_downstream.raw",
+          "name": "stage__terrain_erosion_downstream",
+          "order": "C",
+          "sha256": "269611c69cf99710a850633eaa2b514acf60c713629c6618613a2b95f0c3fc44",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-2004/atlas__downstream.raw",
+          "name": "atlas__downstream",
+          "order": "C",
+          "sha256": "269611c69cf99710a850633eaa2b514acf60c713629c6618613a2b95f0c3fc44",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-2004/atlas__lake_id.raw",
+          "name": "atlas__lake_id",
+          "order": "C",
+          "sha256": "d579c7443368fbbb422da6122b2a00fb79819b14769f6dde0d9521373e8e41c8",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "1-based periodic lake component ID; 0 means no lake"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-2004/atlas__outlet_id.raw",
+          "name": "atlas__outlet_id",
+          "order": "C",
+          "sha256": "1ac1cba27bec57dbbb07f2f5e7c4c8bbccadfdf867b954cca3954ef3ff35e8c5",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] terminal root cell index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i2",
+          "file": "seed-2004/stage__geology_plate_id.raw",
+          "name": "stage__geology_plate_id",
+          "order": "C",
+          "sha256": "cb1cd7d6fb84b0920a61a22850cd4a68f8c7f63f210886932c5b2ea9a9bd06c5",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "plate index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i2",
+          "file": "seed-2004/atlas__plate_id.raw",
+          "name": "atlas__plate_id",
+          "order": "C",
+          "sha256": "cb1cd7d6fb84b0920a61a22850cd4a68f8c7f63f210886932c5b2ea9a9bd06c5",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "plate index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/stage__initial_drainage_ocean_mask.raw",
+          "name": "stage__initial_drainage_ocean_mask",
+          "order": "C",
+          "sha256": "3a43f0431c48f84f5207705c7f6e6eee25e31986147748e6a473ad5bf1ed5ffc",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/stage__initial_drainage_lake_mask.raw",
+          "name": "stage__initial_drainage_lake_mask",
+          "order": "C",
+          "sha256": "91415502d73c7e83737c2c655e4a5743494dd8c1315bfa385289df626d315314",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/stage__initial_drainage_river_mask.raw",
+          "name": "stage__initial_drainage_river_mask",
+          "order": "C",
+          "sha256": "02ddcb99b1009f44ca794e0f8f9377a1fd0531c909e3d293ac1ec5510f7b9372",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/stage__terrain_erosion_ocean_mask.raw",
+          "name": "stage__terrain_erosion_ocean_mask",
+          "order": "C",
+          "sha256": "3a43f0431c48f84f5207705c7f6e6eee25e31986147748e6a473ad5bf1ed5ffc",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/stage__terrain_erosion_lake_mask.raw",
+          "name": "stage__terrain_erosion_lake_mask",
+          "order": "C",
+          "sha256": "b55f59575ef0438b5cb35bf86c2448d3b667e3cbe1f96e7c393b8e6e5488a460",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/stage__terrain_erosion_river_mask.raw",
+          "name": "stage__terrain_erosion_river_mask",
+          "order": "C",
+          "sha256": "e857baa27086227463234060b4ee4932fe992626e9e37d301569aab936b736ce",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/atlas__ocean_mask.raw",
+          "name": "atlas__ocean_mask",
+          "order": "C",
+          "sha256": "3a43f0431c48f84f5207705c7f6e6eee25e31986147748e6a473ad5bf1ed5ffc",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/atlas__lake_mask.raw",
+          "name": "atlas__lake_mask",
+          "order": "C",
+          "sha256": "b55f59575ef0438b5cb35bf86c2448d3b667e3cbe1f96e7c393b8e6e5488a460",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/atlas__river_mask.raw",
+          "name": "atlas__river_mask",
+          "order": "C",
+          "sha256": "e857baa27086227463234060b4ee4932fe992626e9e37d301569aab936b736ce",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/atlas__fjord_candidate_mask.raw",
+          "name": "atlas__fjord_candidate_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/atlas__harbour_candidate_mask.raw",
+          "name": "atlas__harbour_candidate_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/atlas__snow_mask.raw",
+          "name": "atlas__snow_mask",
+          "order": "C",
+          "sha256": "7e4f9a9e6d4c55f9363df6cd3fa817db041ef10873593a102de123a631c5a4b9",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-2004/atlas__climate_zone.raw",
+          "name": "atlas__climate_zone",
+          "order": "C",
+          "sha256": "86fae9817361b0585683d0d0491e5d418b0e7101b33b456c922b8876e7c52717",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "climate-zone code: 0 water, 1 warm arid, 2 warm humid, 3 temperate, 4 cold, 5 snow"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "<i4",
+          "file": "seed-2004/height.raw",
+          "name": "height",
+          "order": "C",
+          "sha256": "9a7fe7e70f032843c54144fb6e99ee16de2e0a36ff45828349593ffdbe93472e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "highest solid block Z"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-2004/top_material.raw",
+          "name": "top_material",
+          "order": "C",
+          "sha256": "310d237ab7c978cd215e2a61a6bf57f361b3e9a8ddd92284abe19bcdb6d58782",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "Terrain-v2 material palette ID"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-2004/ground_material.raw",
+          "name": "ground_material",
+          "order": "C",
+          "sha256": "724b3011fdca8c8e0567f1ae7a60006f7ca1e8fde146be5199c67be6bbe99a23",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "Terrain-v2 material palette ID"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-2004/pixel_rgba.raw",
+          "name": "pixel_rgba",
+          "order": "C",
+          "sha256": "d5337e0fcf672f38cc1f5d9fb66e97c41c2ef36d935a84f1d00f91099224bfc3",
+          "shape": [
+            16,
+            16,
+            4
+          ],
+          "unit": "top material RGBA8"
+        },
+        {
+          "coordinate_set": "atlas_scalar",
+          "dtype": "<f8",
+          "file": "seed-2004/atlas__vertical_scale.raw",
+          "name": "atlas__vertical_scale",
+          "order": "C",
+          "sha256": "e1f61d845bbb2150569320cf5e117001db45a09e912f4856dd03874aeb83548a",
+          "shape": [],
+          "unit": "blocks per geology-km"
+        }
+      ],
+      "identity_sha256": "cf284ce2799d38035565d9abc58b3e2d07a7c05ea51c06b0711d198b9bc3d6b4",
+      "seed": 2004,
+      "world_npz_sha256": "232ebc48c0e3bbd77b411e143560b687be8a8dd3ea720ea6f0b8819c29f89b7c"
+    },
+    {
+      "config": {
+        "climate_iterations": 80,
+        "coastal_elaboration": true,
+        "currents": true,
+        "epochs": 12,
+        "erosion_steps": 3,
+        "initial_climate_iterations": 24,
+        "seed": 8800555,
+        "size": 256,
+        "wind_sign": 1
+      },
+      "config_sha256": "8ffae19a204fb70401b55d4b7c90e64478ff3f6f6403ea3609b169aee44dd099",
+      "fields": [
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__geology_elevation.raw",
+          "name": "stage__geology_elevation",
+          "order": "C",
+          "sha256": "00d25ecee531e2e6955892b9ef9a4a6d31e6728c156bc264f5ebd2042ded92bf",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__geology_uplift.raw",
+          "name": "stage__geology_uplift",
+          "order": "C",
+          "sha256": "1bbb8eb2fced54207a9f89810887154edc0cc4d4666de168498ebdca4c71680a",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__geology_subduction.raw",
+          "name": "stage__geology_subduction",
+          "order": "C",
+          "sha256": "e797ac98c5d357689b1c6e0247d0b619fd98f7ca91c1196dc50afefe266ce4e6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__geology_divergence.raw",
+          "name": "stage__geology_divergence",
+          "order": "C",
+          "sha256": "9554213cb0ac98940fd80f6e9e59e1ce989724d4bc14808df715cc93e6760dfe",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__geology_continental.raw",
+          "name": "stage__geology_continental",
+          "order": "C",
+          "sha256": "6aba2ef31ca8e7290933521e60d5721540343624db159d8f36df40d6b404a4cb",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "continentality fraction"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__coastal_elevation.raw",
+          "name": "stage__coastal_elevation",
+          "order": "C",
+          "sha256": "51b31252206e2d3b254cddbccfbeeda322cbcb429f105f6bd8c12baca638d3ff",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__initial_drainage_elevation.raw",
+          "name": "stage__initial_drainage_elevation",
+          "order": "C",
+          "sha256": "51b31252206e2d3b254cddbccfbeeda322cbcb429f105f6bd8c12baca638d3ff",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__initial_drainage_filled.raw",
+          "name": "stage__initial_drainage_filled",
+          "order": "C",
+          "sha256": "c73fa12fd4b865def590d412503c41fcce4502f7ac90a3017a5695f557a7489c",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__initial_drainage_water_level.raw",
+          "name": "stage__initial_drainage_water_level",
+          "order": "C",
+          "sha256": "b4a30093a1cd6976c1e18b7afada63046adb5d0221aec095270ee495a9431869",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__initial_drainage_flow_accumulation.raw",
+          "name": "stage__initial_drainage_flow_accumulation",
+          "order": "C",
+          "sha256": "2f67c38718ea999b0ccac4932b9e2ef975d5b13ba8921ed2db1a14d8b1a9d1ab",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__provisional_climate_temperature.raw",
+          "name": "stage__provisional_climate_temperature",
+          "order": "C",
+          "sha256": "53dd890c496eabefb3a39ed589f94e8450d149e3b19ae342b2cb28de90eb2cfb",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__provisional_climate_precipitation.raw",
+          "name": "stage__provisional_climate_precipitation",
+          "order": "C",
+          "sha256": "2be23fae53ca94a33e1b04c7e9850279fc875f3c53bf4f0f6709b50c2070e73c",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__provisional_climate_moisture.raw",
+          "name": "stage__provisional_climate_moisture",
+          "order": "C",
+          "sha256": "cd6f6f6e78195b36676d43e62b54c1d30c9a048f1680ae9655c30c9605f596db",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__terrain_erosion_elevation.raw",
+          "name": "stage__terrain_erosion_elevation",
+          "order": "C",
+          "sha256": "e31e0d2662e9070f2767353b134acdb1962275245f1beef4f25fab2a45244668",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__terrain_erosion_filled.raw",
+          "name": "stage__terrain_erosion_filled",
+          "order": "C",
+          "sha256": "e31e0d2662e9070f2767353b134acdb1962275245f1beef4f25fab2a45244668",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__terrain_erosion_water_level.raw",
+          "name": "stage__terrain_erosion_water_level",
+          "order": "C",
+          "sha256": "b4567337bc399cc9afa0ad313cfef6333ae4c8720e07b65be23123d61ccd8c9e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__terrain_erosion_flow_accumulation.raw",
+          "name": "stage__terrain_erosion_flow_accumulation",
+          "order": "C",
+          "sha256": "2a3bf9070713a0be03ed6a87c26c5da1f5e3ffec8883f5efa51ccd72d19f94f0",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__final_climate_temperature.raw",
+          "name": "stage__final_climate_temperature",
+          "order": "C",
+          "sha256": "0f3c73f7d0beb95ebf2bde4af33b3b9bd3035c5d49286b4535c79fcc9a9f52a0",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__final_climate_precipitation.raw",
+          "name": "stage__final_climate_precipitation",
+          "order": "C",
+          "sha256": "534dc5e9003018f20c3adf90789f5b4794ff54ad774d2d4b70716730ae257ec4",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/stage__final_climate_moisture.raw",
+          "name": "stage__final_climate_moisture",
+          "order": "C",
+          "sha256": "9a9c76c0f4ae40cbbd0903ad35b019649af33878a395e2828ab23e17f6d4a17d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__elevation.raw",
+          "name": "atlas__elevation",
+          "order": "C",
+          "sha256": "e31e0d2662e9070f2767353b134acdb1962275245f1beef4f25fab2a45244668",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__filled.raw",
+          "name": "atlas__filled",
+          "order": "C",
+          "sha256": "e31e0d2662e9070f2767353b134acdb1962275245f1beef4f25fab2a45244668",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__water_level.raw",
+          "name": "atlas__water_level",
+          "order": "C",
+          "sha256": "b4567337bc399cc9afa0ad313cfef6333ae4c8720e07b65be23123d61ccd8c9e",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__flow_accumulation.raw",
+          "name": "atlas__flow_accumulation",
+          "order": "C",
+          "sha256": "264b96fe1c52d50c69995ed1fb3676a14c5b3140391ef5638d7ecb7e06c6e972",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "accumulated normalized runoff flux"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__temperature.raw",
+          "name": "atlas__temperature",
+          "order": "C",
+          "sha256": "0f3c73f7d0beb95ebf2bde4af33b3b9bd3035c5d49286b4535c79fcc9a9f52a0",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "degrees Celsius"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__precipitation.raw",
+          "name": "atlas__precipitation",
+          "order": "C",
+          "sha256": "534dc5e9003018f20c3adf90789f5b4794ff54ad774d2d4b70716730ae257ec4",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "integrated normalized precipitation flux per model run; not mm/year"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__moisture.raw",
+          "name": "atlas__moisture",
+          "order": "C",
+          "sha256": "9a9c76c0f4ae40cbbd0903ad35b019649af33878a395e2828ab23e17f6d4a17d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "normalized atmospheric moisture state"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__wind_u.raw",
+          "name": "atlas__wind_u",
+          "order": "C",
+          "sha256": "769629e80c963e801d3e447c52e33defc7c7589b0b641d50fb28f211656b1d92",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__wind_v.raw",
+          "name": "atlas__wind_v",
+          "order": "C",
+          "sha256": "c37af160eeeb7732ab2de03bb493b3c9e5b30bf0c17a0c4b38baf9373667241b",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__current_u.raw",
+          "name": "atlas__current_u",
+          "order": "C",
+          "sha256": "06c7ad0e1a8910abd972c51445067aec7828f5bca3fbafd4f1c183b81a8b8639",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__current_v.raw",
+          "name": "atlas__current_v",
+          "order": "C",
+          "sha256": "de7a0429585e856ed122c6170a447bdfd2e61db5c5d37f82a0b108376a3b6b62",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "atlas cells per model iteration"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__uplift.raw",
+          "name": "atlas__uplift",
+          "order": "C",
+          "sha256": "1bbb8eb2fced54207a9f89810887154edc0cc4d4666de168498ebdca4c71680a",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__island_arc_uplift.raw",
+          "name": "atlas__island_arc_uplift",
+          "order": "C",
+          "sha256": "c1ee5c17a3eb458bec2376ec72b24be1c9343b23965459c46240ca16a62e6aa1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__hotspot.raw",
+          "name": "atlas__hotspot",
+          "order": "C",
+          "sha256": "b8cd296eff489cf898b41f00437b777b6d4b688627ac9fe7e330b3e2193a0714",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__subduction.raw",
+          "name": "atlas__subduction",
+          "order": "C",
+          "sha256": "e797ac98c5d357689b1c6e0247d0b619fd98f7ca91c1196dc50afefe266ce4e6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__divergence.raw",
+          "name": "atlas__divergence",
+          "order": "C",
+          "sha256": "9554213cb0ac98940fd80f6e9e59e1ce989724d4bc14808df715cc93e6760dfe",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__continental.raw",
+          "name": "atlas__continental",
+          "order": "C",
+          "sha256": "6aba2ef31ca8e7290933521e60d5721540343624db159d8f36df40d6b404a4cb",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "continentality fraction"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__tectonic_elevation.raw",
+          "name": "atlas__tectonic_elevation",
+          "order": "C",
+          "sha256": "00d25ecee531e2e6955892b9ef9a4a6d31e6728c156bc264f5ebd2042ded92bf",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "geological kilometres"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__plate_vx.raw",
+          "name": "atlas__plate_vx",
+          "order": "C",
+          "sha256": "0f8ca85c810f35ab9a4591765cdd31919e923978b5c5b978156daf4541859320",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "world units per tectonic epoch"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<f4",
+          "file": "seed-8800555/atlas__plate_vy.raw",
+          "name": "atlas__plate_vy",
+          "order": "C",
+          "sha256": "1467ef4d628cf702853c11b23df0ea4b5b80b2ef3851d6c4710d56c042317e32",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "world units per tectonic epoch"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-8800555/stage__initial_drainage_downstream.raw",
+          "name": "stage__initial_drainage_downstream",
+          "order": "C",
+          "sha256": "799b860984aac8706aa328e73653cab7318738407b126c55d0f3c94dfe0cb5cd",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-8800555/stage__terrain_erosion_downstream.raw",
+          "name": "stage__terrain_erosion_downstream",
+          "order": "C",
+          "sha256": "5703a3c3f0f4a4a818f0ed51c9c991d1b10be88a9a353fd51ed9921ed995874a",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-8800555/atlas__downstream.raw",
+          "name": "atlas__downstream",
+          "order": "C",
+          "sha256": "5703a3c3f0f4a4a818f0ed51c9c991d1b10be88a9a353fd51ed9921ed995874a",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] receiver index; -1 means no downstream receiver"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-8800555/atlas__lake_id.raw",
+          "name": "atlas__lake_id",
+          "order": "C",
+          "sha256": "5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "1-based periodic lake component ID; 0 means no lake"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i4",
+          "file": "seed-8800555/atlas__outlet_id.raw",
+          "name": "atlas__outlet_id",
+          "order": "C",
+          "sha256": "32c45106363a9bf6cf0197781a41e7d93cd891606c1136c34743193d36665dd2",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "flattened C-order [y,x] terminal root cell index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i2",
+          "file": "seed-8800555/stage__geology_plate_id.raw",
+          "name": "stage__geology_plate_id",
+          "order": "C",
+          "sha256": "cb03470fd2aabac4c131bb43d5870b2b62dcb7636993b1da8460732412374148",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "plate index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "<i2",
+          "file": "seed-8800555/atlas__plate_id.raw",
+          "name": "atlas__plate_id",
+          "order": "C",
+          "sha256": "cb03470fd2aabac4c131bb43d5870b2b62dcb7636993b1da8460732412374148",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "plate index"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/stage__initial_drainage_ocean_mask.raw",
+          "name": "stage__initial_drainage_ocean_mask",
+          "order": "C",
+          "sha256": "f9a102fa9ea687a126e5dff13e9c66b4687d2d3f74aa5fb382b2d02de16a0ba6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/stage__initial_drainage_lake_mask.raw",
+          "name": "stage__initial_drainage_lake_mask",
+          "order": "C",
+          "sha256": "0e8948b0e7651698299487ba6f136fa6916c3dab76e60f8c102f8da48a557b8d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/stage__initial_drainage_river_mask.raw",
+          "name": "stage__initial_drainage_river_mask",
+          "order": "C",
+          "sha256": "c526c4bf6fb58c6c2c8dfe6f4a1f2c3925ef9f6e494099d1a3bd937e163c3795",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/stage__terrain_erosion_ocean_mask.raw",
+          "name": "stage__terrain_erosion_ocean_mask",
+          "order": "C",
+          "sha256": "bb2119e404bac8acde0c476698cede43957252ee9940985aa86def3b318c73e4",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/stage__terrain_erosion_lake_mask.raw",
+          "name": "stage__terrain_erosion_lake_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/stage__terrain_erosion_river_mask.raw",
+          "name": "stage__terrain_erosion_river_mask",
+          "order": "C",
+          "sha256": "2a16562f1ff4dd95370785dd5de0f12fd72b8c8e87149fb5603641fd9611b5d6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/atlas__ocean_mask.raw",
+          "name": "atlas__ocean_mask",
+          "order": "C",
+          "sha256": "bb2119e404bac8acde0c476698cede43957252ee9940985aa86def3b318c73e4",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/atlas__lake_mask.raw",
+          "name": "atlas__lake_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/atlas__river_mask.raw",
+          "name": "atlas__river_mask",
+          "order": "C",
+          "sha256": "2a16562f1ff4dd95370785dd5de0f12fd72b8c8e87149fb5603641fd9611b5d6",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/atlas__fjord_candidate_mask.raw",
+          "name": "atlas__fjord_candidate_mask",
+          "order": "C",
+          "sha256": "0e8948b0e7651698299487ba6f136fa6916c3dab76e60f8c102f8da48a557b8d",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/atlas__harbour_candidate_mask.raw",
+          "name": "atlas__harbour_candidate_mask",
+          "order": "C",
+          "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/atlas__snow_mask.raw",
+          "name": "atlas__snow_mask",
+          "order": "C",
+          "sha256": "c4dd5a784c06ffc3b37963f66f14edccb71bd2b60c76821cb6443f4a7d453ac8",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "boolean as 0 or 1"
+        },
+        {
+          "coordinate_set": "atlas_grid_yx_stride16",
+          "dtype": "|u1",
+          "file": "seed-8800555/atlas__climate_zone.raw",
+          "name": "atlas__climate_zone",
+          "order": "C",
+          "sha256": "57008103a335edcb25d2828eb6f9bcd0fb32f9f1e20780c636359d33119fd4f7",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "climate-zone code: 0 water, 1 warm arid, 2 warm humid, 3 temperate, 4 cold, 5 snow"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "<i4",
+          "file": "seed-8800555/height.raw",
+          "name": "height",
+          "order": "C",
+          "sha256": "97939d76a0514b15fda373575dcb1e3e386ecdd3ee7444c063580f0f48d17672",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "highest solid block Z"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-8800555/top_material.raw",
+          "name": "top_material",
+          "order": "C",
+          "sha256": "f82123ca192e808a6c69921b0b0dd7e580def6067ea97642f7909cc1a64e53fe",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "Terrain-v2 material palette ID"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-8800555/ground_material.raw",
+          "name": "ground_material",
+          "order": "C",
+          "sha256": "724e4248369907944bbb3a920f8ad819266788228ac8c8bff28a4484e9b2080f",
+          "shape": [
+            16,
+            16
+          ],
+          "unit": "Terrain-v2 material palette ID"
+        },
+        {
+          "coordinate_set": "surface_blocks_yx_inset128_stride4096",
+          "dtype": "|u1",
+          "file": "seed-8800555/pixel_rgba.raw",
+          "name": "pixel_rgba",
+          "order": "C",
+          "sha256": "fd0a65518009876af91ade1bd3fb09f594d72167d0e94d343b7c9e348474f85b",
+          "shape": [
+            16,
+            16,
+            4
+          ],
+          "unit": "top material RGBA8"
+        },
+        {
+          "coordinate_set": "atlas_scalar",
+          "dtype": "<f8",
+          "file": "seed-8800555/atlas__vertical_scale.raw",
+          "name": "atlas__vertical_scale",
+          "order": "C",
+          "sha256": "231489b52b9ba0195b0bf28071cd1218e34d9bb27bcddc2ef5a9b55a4d4bc95e",
+          "shape": [],
+          "unit": "blocks per geology-km"
+        }
+      ],
+      "identity_sha256": "13e104566bfa02ed8cc6bcfb0e73e9995e8cda0ece58097aff0e669cb51ff4df",
+      "seed": 8800555,
+      "world_npz_sha256": "b4ed773f6f49f39f188d2b8ef0fa82e528b27d0280b1766c3eace8acc0de6fdf"
+    }
+  ],
+  "terrain_version": "Terrain-v2",
+  "world": {
+    "atlas_resolution": 256,
+    "block_sea_level": 384,
+    "depth": 1024,
+    "max_height": 1020,
+    "sea_level_km": 0.0,
+    "size": 65536
+  }
+}

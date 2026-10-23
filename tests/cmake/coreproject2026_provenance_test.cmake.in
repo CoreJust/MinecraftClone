@@ -12,6 +12,11 @@ function(expect_rejected label revision dirty exact expected)
         "add_library(CoreProject2026::CoreLang INTERFACE IMPORTED)\n"
         "set(CoreProject2026_FOUND TRUE)\n"
     )
+    file(WRITE "${package_root}/CoreProject2026ConfigVersion.cmake"
+        "set(PACKAGE_VERSION \"0.1.5\")\n"
+        "set(PACKAGE_VERSION_COMPATIBLE TRUE)\n"
+        "set(PACKAGE_VERSION_EXACT TRUE)\n"
+    )
     execute_process(
         COMMAND "@MC_CMAKE_COMMAND@"
             -S "@MC_PROJECT_SOURCE_DIR@"

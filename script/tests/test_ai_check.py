@@ -47,7 +47,15 @@ class AiCheckTests(unittest.TestCase):
             root = Path(directory)
             project = root / "src/shared/include/shared/ProjectInfo.hpp"
             project.parent.mkdir(parents=True)
-            content = (SCRIPT.parent.parent / "src/shared/include/shared/ProjectInfo.hpp").read_text()
+            content = '''constexpr std::string_view MAJOR_VERSION_NAME{ "EarlyDev" };
+constexpr std::string_view MINOR_VERSION_NAME{ "Initiation" };
+constexpr core::Version PROJECT_VERSION{
+    .epoch = 0,
+    .major = 1,
+    .minor = 0,
+    .patch = 7,
+};
+'''
             project.write_text(content)
             (root / "vcpkg.json").write_text('{"version-string":"0.1.0"}')
             self.assertIsNone(check.require_s7_candidate(root))
@@ -73,6 +81,13 @@ class AiCheckTests(unittest.TestCase):
             "script/ai_tasks.py": "raise SystemExit(0)\n",
             "script/ai_plan.py": "raise SystemExit(0)\n",
             "script/ai_release_reports.py": "raise SystemExit(0)\n",
+            "script/ai_python_tests.py": (SCRIPT.parent / "ai_python_tests.py").read_text(encoding="utf-8"),
+            "script/validation_inventory.json": (
+                '{"required_python_test_groups":{"python-gameplay-gate":'
+                '"script/tests/test_verify_gameplay_gate.py"},'
+                '"python_test_groups":[{"id":"python-gameplay-gate",'
+                '"source":"script/tests/test_verify_gameplay_gate.py","size":"medium"}]}\n'
+            ),
             "publish.py": (
                 "import os\n"
                 "if os.environ.get('AI_CHECK_SOURCE_FAILURE'):\n"
@@ -84,6 +99,11 @@ class AiCheckTests(unittest.TestCase):
                 "    raise SystemExit(1)\n"
             ),
             "script/tests/test_smoke.py": "import unittest\nclass Smoke(unittest.TestCase):\n    def test_ok(self): self.assertTrue(True)\n",
+            "script/tests/test_verify_gameplay_gate.py": (
+                "import unittest\n"
+                "class GameplayGate(unittest.TestCase):\n"
+                "    def test_medium_fixture(self): self.assertTrue(True)\n"
+            ),
             "src/shared/include/shared/ProjectInfo.hpp": (
                 'constexpr std::string_view MAJOR_VERSION_NAME{ "Test" };\n'
                 'constexpr std::string_view MINOR_VERSION_NAME{ "Run" };\n'
@@ -178,9 +198,78 @@ class AiCheckTests(unittest.TestCase):
     def test_fast_runs_each_required_phase(self):
         result = self.run_check("--fast")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for phase in ("docs", "backlog", "current-plan", "release-reports", "python-tests", "diff-working", "diff-cached"):
+        for phase in ("docs", "backlog", "current-plan", "release-reports", "python-tests-fast", "diff-working", "diff-cached"):
             self.assertIn(f"PASS {phase}", result.stdout)
             self.assertTrue((self.root / "build/ai-checks" / f"{phase}.log").is_file())
+
+    def staged_snapshot_source(self, *, parent=None):
+        (self.root / "candidate.txt").write_text("staged candidate\n", encoding="utf-8")
+        self.git("add", "candidate.txt")
+        tree = self.git("write-tree").stdout.strip()
+        head = parent or self.git("rev-parse", "HEAD").stdout.strip()
+        return self.git("commit-tree", tree, "-p", head, "-m", "qualification candidate").stdout.strip()
+
+    def test_candidate_snapshot_source_accepts_exact_staged_child(self):
+        checker = load_module()
+        source = self.staged_snapshot_source()
+        for branch in ("ai-dev", "codex/ai-MC-AI-0482-staged"):
+            with self.subTest(branch=branch):
+                self.git("branch", "-M", branch)
+                self.assertEqual(checker.snapshot_source_for_check(
+                    self.root, source, candidate=True, strict=False), source)
+
+    def test_candidate_snapshot_source_rejects_wrong_staged_tree(self):
+        checker = load_module()
+        self.git("branch", "-M", "ai-dev")
+        source = self.staged_snapshot_source()
+        (self.root / "candidate.txt").write_text("different staged tree\n", encoding="utf-8")
+        self.git("add", "candidate.txt")
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            checker.snapshot_source_for_check(self.root, source, candidate=True, strict=False)
+
+    def test_candidate_snapshot_source_rejects_wrong_parent(self):
+        checker = load_module()
+        self.git("branch", "-M", "ai-dev")
+        tree = self.git("write-tree").stdout.strip()
+        unrelated = self.git("commit-tree", tree, "-m", "unrelated root").stdout.strip()
+        source = self.staged_snapshot_source(parent=unrelated)
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            checker.snapshot_source_for_check(self.root, source, candidate=True, strict=False)
+
+    def test_candidate_snapshot_source_rejects_multiple_parents(self):
+        checker = load_module()
+        self.git("branch", "-M", "ai-dev")
+        self.staged_snapshot_source()
+        tree = self.git("write-tree").stdout.strip()
+        head = self.git("rev-parse", "HEAD").stdout.strip()
+        unrelated = self.git("commit-tree", tree, "-m", "unrelated root").stdout.strip()
+        source = self.git("commit-tree", tree, "-p", head, "-p", unrelated,
+                          "-m", "merge candidate").stdout.strip()
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            checker.snapshot_source_for_check(self.root, source, candidate=True, strict=False)
+
+    def test_candidate_snapshot_source_rejects_unstaged_delta(self):
+        checker = load_module()
+        self.git("branch", "-M", "ai-dev")
+        source = self.staged_snapshot_source()
+        (self.root / "candidate.txt").write_text("unstaged delta\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            checker.snapshot_source_for_check(self.root, source, candidate=True, strict=False)
+
+    def test_candidate_snapshot_source_rejects_untracked_delta(self):
+        checker = load_module()
+        self.git("branch", "-M", "ai-dev")
+        source = self.staged_snapshot_source()
+        (self.root / "untracked.txt").write_text("untracked delta\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            checker.snapshot_source_for_check(self.root, source, candidate=True, strict=False)
+
+    def test_candidate_staged_snapshot_source_rejects_unrelated_branch(self):
+        checker = load_module()
+        self.git("branch", "-M", "feature/unrelated")
+        source = self.staged_snapshot_source()
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            checker.snapshot_source_for_check(self.root, source, candidate=True, strict=False)
 
     def test_candidate_snapshot_source_must_match_source_head_or_pending_merge(self):
         checker = load_module()
@@ -331,7 +420,7 @@ class AiCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("FAIL docs: exit 7", result.stdout)
         self.assertIn("PASS backlog", result.stdout)
-        self.assertIn("PASS python-tests", result.stdout)
+        self.assertIn("PASS python-tests-fast", result.stdout)
 
     def test_python_tests_use_verbose_diagnostics_and_platform_budget(self):
         checker = load_module()
@@ -347,9 +436,9 @@ class AiCheckTests(unittest.TestCase):
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
-        python_tests = next(item for item in calls if item[0] == "python-tests")
-        self.assertEqual(python_tests[1][-1], "-v")
-        self.assertEqual(python_tests[2], 300)
+        python_tests = next(item for item in calls if item[0] == "python-tests-fast")
+        self.assertEqual(python_tests[1][-1], "script/ai_python_tests.py")
+        self.assertEqual(python_tests[2], 420)
 
     def test_python_tests_use_extended_windows_budget(self):
         checker = load_module()
@@ -365,7 +454,7 @@ class AiCheckTests(unittest.TestCase):
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
-        python_tests = next(item for item in calls if item[0] == "python-tests")
+        python_tests = next(item for item in calls if item[0] == "python-tests-fast")
         self.assertEqual(python_tests[2], 420)
 
     def test_fast_rejects_partially_staged_governed_file(self):
@@ -421,6 +510,124 @@ class AiCheckTests(unittest.TestCase):
         self.assertIn("traceback-end", output.getvalue())
         self.assertIn("after 2.50s", output.getvalue())
         self.assertEqual(output.getvalue().count("diagnostic line"), 1_500)
+
+    def test_owner_accepted_gameplay_exception_is_never_reported_as_pass(self):
+        ai_check = load_module()
+        candidate = "c" * 40
+        payload = {
+            "schema_version": ai_check.S1_OWNER_EXCEPTION_SCHEMA,
+            "status": "accepted_exception",
+            "owner_request_path": ai_check.S1_OWNER_REQUEST_PATH,
+            "owner_request_sha256": ai_check.S1_OWNER_REQUEST_SHA256,
+            "source_input_sha256": ai_check.S1_OWNER_SOURCE_INPUT_SHA256,
+            "capture_source_input_sha256": ai_check.S1_OWNER_SOURCE_INPUT_SHA256,
+            "source_reuse_certificate": None,
+            "candidate": {"head": candidate, "tree": "d" * 40},
+            "capture": {
+                "aggregate_sha256": ai_check.S1_OWNER_AGGREGATE_SHA256,
+                "raw_report_sha256": ai_check.S1_OWNER_RAW_REPORT_SHA256,
+                "executable_sha256": ai_check.S1_OWNER_MAC_EXECUTABLE_SHA256,
+                "source_candidate": ai_check.S1_OWNER_CAPTURE_CANDIDATE,
+            },
+            "proof_dispositions": {
+                "macos": {"performance": "failed", "terrain-coverage": "unqualified"},
+                "windows": {"performance": "unqualified", "terrain-coverage": "unqualified"},
+            },
+            "known_failure": ai_check.S1_OWNER_KNOWN_FAILURE,
+            "owner_tested_windows_executable_sha256": ai_check.S1_OWNER_WINDOWS_EXECUTABLE_SHA256,
+        }
+        output = json.dumps(payload)
+        result = ai_check.PhaseResult(
+            "full-radius-gameplay",
+            ["python", "script/ci/verify_gameplay_gate.py", "--s1-owner-accepted",
+             "--candidate-commit", candidate],
+            0,
+            output,
+        )
+        self.assertIsNotNone(ai_check.accepted_exception_payload(result))
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            ai_check.print_result(result)
+        self.assertIn("ACCEPTED_EXCEPTION full-radius-gameplay", printed.getvalue())
+        self.assertNotIn("PASS full-radius-gameplay", printed.getvalue())
+
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        ai_check.write_receipt(log_dir, result.name, result.command, {}, {}, result)
+        receipt = json.loads((log_dir / "full-radius-gameplay.receipt.json").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["status"], "ACCEPTED_EXCEPTION")
+        self.assertEqual(receipt["owner_request_path"], ai_check.S1_OWNER_REQUEST_PATH)
+        self.assertEqual(receipt["owner_request_sha256"], ai_check.S1_OWNER_REQUEST_SHA256)
+        self.assertEqual(receipt["source_input_sha256"], ai_check.S1_OWNER_SOURCE_INPUT_SHA256)
+        self.assertEqual(receipt["capture_source_input_sha256"], ai_check.S1_OWNER_SOURCE_INPUT_SHA256)
+        self.assertIsNone(receipt["source_reuse_certificate"])
+        (log_dir / "full-radius-gameplay.log").write_text(output, encoding="utf-8")
+        self.assertIsNone(ai_check.read_matching_receipt(
+            self.root, log_dir, result.name, result.command, {}, {}
+        ))
+
+        normalized_payload = dict(payload)
+        normalized_payload["source_input_sha256"] = ai_check.S1_OWNER_SOURCE_REUSE_CURRENT_SHA256
+        normalized_payload["source_reuse_certificate"] = ai_check.S1_OWNER_SOURCE_REUSE_CERTIFICATE
+        normalized_result = ai_check.PhaseResult(
+            "full-radius-gameplay", result.command, 0, json.dumps(normalized_payload)
+        )
+        self.assertIsNotNone(ai_check.accepted_exception_payload(normalized_result))
+        legacy_payload = dict(payload)
+        legacy_payload["source_input_sha256"] = ai_check.S1_OWNER_SOURCE_REUSE_V3_CURRENT_SHA256
+        legacy_payload["source_reuse_certificate"] = ai_check.S1_OWNER_SOURCE_REUSE_V3_CERTIFICATE
+        legacy_result = ai_check.PhaseResult(
+            "full-radius-gameplay", result.command, 0, json.dumps(legacy_payload)
+        )
+        self.assertIsNotNone(ai_check.accepted_exception_payload(legacy_result))
+        legacy_payload["source_reuse_certificate"] = {
+            **ai_check.S1_OWNER_SOURCE_REUSE_V3_CERTIFICATE, "normalized_files": []
+        }
+        legacy_changed = ai_check.PhaseResult(
+            "full-radius-gameplay", result.command, 0, json.dumps(legacy_payload)
+        )
+        self.assertIsNone(ai_check.accepted_exception_payload(legacy_changed))
+        normalized_payload["source_reuse_certificate"] = {
+            **ai_check.S1_OWNER_SOURCE_REUSE_CERTIFICATE,
+            "normalized_files": [],
+        }
+        changed_result = ai_check.PhaseResult(
+            "full-radius-gameplay", result.command, 0, json.dumps(normalized_payload)
+        )
+        self.assertIsNone(ai_check.accepted_exception_payload(changed_result))
+
+    def test_malformed_zero_exit_gameplay_exception_is_a_failure(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        script = self.root / "malformed-gameplay-output.py"
+        malformed = json.dumps({
+            "schema_version": "mc.s1-owner-accepted-gameplay-exception.v1",
+            "status": "accepted_exception",
+        })
+        script.write_text(f"print({malformed!r})\n", encoding="utf-8")
+        command = [
+            sys.executable, str(script), "script/ci/verify_gameplay_gate.py",
+            "--s1-owner-accepted", "--candidate-commit", "c" * 40,
+        ]
+        with (
+            mock.patch.object(checker, "phase_environment", return_value={}),
+            mock.patch.object(checker, "relevant_inputs", return_value={}),
+        ):
+            result = checker.run_phase(
+                self.root, log_dir, "full-radius-gameplay", command, 5
+            )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("accepted gameplay exception", result.output)
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            checker.print_result(result)
+        self.assertIn("FAIL full-radius-gameplay", printed.getvalue())
+        self.assertNotIn("PASS full-radius-gameplay", printed.getvalue())
+
+    def test_python_test_environment_removes_snapshot_source_selector(self):
+        checker = load_module()
+        with mock.patch.dict(os.environ, {"AI_SNAPSHOT_SOURCE_COMMIT": "a" * 40}):
+            environment = checker.python_test_environment(self.root)
+        self.assertNotIn("AI_SNAPSHOT_SOURCE_COMMIT", environment)
 
     def test_python_test_environment_rejects_failed_or_malformed_git_discovery(self):
         checker = load_module()
@@ -496,7 +703,7 @@ class AiCheckTests(unittest.TestCase):
             }
             result = self.run_check("--fast", environment=environment)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertIn("PASS python-tests", result.stdout)
+            self.assertIn("PASS python-tests-fast", result.stdout)
             self.assertIn("FAIL diff-working", result.stdout)
             self.assertRegex(marker.read_text(encoding="utf-8").strip(), r"^[0-9a-f]{40}$")
             after = {
@@ -922,9 +1129,9 @@ class AiCheckTests(unittest.TestCase):
         result = self.run_check("--fast")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("CHECK SCOPE metadata-only", result.stdout)
-        self.assertIn("SKIP python-tests", result.stdout)
+        self.assertIn("SKIP python-tests-fast", result.stdout)
         summary = json.loads((self.root / "build/ai-checks/summary.json").read_text(encoding="utf-8"))
-        self.assertIn("python-tests", summary["skipped_phases"])
+        self.assertIn("python-tests-fast", summary["skipped_phases"])
 
     def test_matching_fast_receipts_are_reused_and_summarized(self):
         first = self.run_check("--fast")
@@ -936,7 +1143,7 @@ class AiCheckTests(unittest.TestCase):
         self.assertIn("docs", summary["reused_phases"])
         self.assertTrue(summary["durations_seconds"]["docs"] >= 0)
 
-    def test_matching_fast_receipt_reuses_the_full_python_suite(self):
+    def test_matching_fast_receipt_reuses_the_fast_python_suite(self):
         marker = self.root / "build/ai-checks/python-command-count"
         test_file = self.root / "script/tests/test_receipt_marker.py"
         test_file.write_text(
@@ -960,9 +1167,9 @@ class AiCheckTests(unittest.TestCase):
         second = self.run_check("--fast", environment=environment)
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
         self.assertEqual(marker.read_text(encoding="utf-8"), "1")
-        self.assertIn("REUSED PASS python-tests", second.stdout)
+        self.assertIn("REUSED PASS python-tests-fast", second.stdout)
         summary = json.loads((self.root / "build/ai-checks/summary.json").read_text(encoding="utf-8"))
-        self.assertIn("python-tests", summary["reused_phases"])
+        self.assertIn("python-tests-fast", summary["reused_phases"])
 
     def test_ignored_discovered_test_changes_force_python_suite_execution(self):
         ignore_file = self.root / ".gitignore"
@@ -993,7 +1200,7 @@ class AiCheckTests(unittest.TestCase):
         second = self.run_check("--fast")
         self.assertEqual(second.returncode, 1, second.stdout + second.stderr)
         self.assertEqual(marker.read_text(encoding="utf-8"), "2")
-        self.assertNotIn("REUSED PASS python-tests", second.stdout)
+        self.assertNotIn("REUSED PASS python-tests-fast", second.stdout)
 
     def test_content_equivalent_index_and_head_identity_does_not_invalidate_receipt(self):
         source = self.root / "script/ai_docs.py"
@@ -1007,34 +1214,34 @@ class AiCheckTests(unittest.TestCase):
         self.git("reset", "HEAD", "--", "script/ai_docs.py")
         second = self.run_check("--fast")
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertIn("REUSED PASS python-tests", second.stdout)
+        self.assertIn("REUSED PASS python-tests-fast", second.stdout)
 
         self.git("add", "script/ai_docs.py")
         self.git("commit", "--no-gpg-sign", "-m", "equivalent content")
         third = self.run_check("--fast")
         self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
-        self.assertIn("REUSED PASS python-tests", third.stdout)
+        self.assertIn("REUSED PASS python-tests-fast", third.stdout)
 
     def test_receipt_evidence_and_missing_receipt_force_execution(self):
         first = self.run_check("--fast")
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
-        log = self.root / "build/ai-checks/python-tests.log"
+        log = self.root / "build/ai-checks/python-tests-fast.log"
         log.write_text(log.read_text(encoding="utf-8") + "tampered\n", encoding="utf-8")
         second = self.run_check("--fast")
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertIn("PASS python-tests", second.stdout)
-        self.assertNotIn("REUSED PASS python-tests", second.stdout)
+        self.assertIn("PASS python-tests-fast", second.stdout)
+        self.assertNotIn("REUSED PASS python-tests-fast", second.stdout)
 
-        receipt = self.root / "build/ai-checks/python-tests.receipt.json"
+        receipt = self.root / "build/ai-checks/python-tests-fast.receipt.json"
         receipt.unlink()
         third = self.run_check("--fast")
         self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
-        self.assertNotIn("REUSED PASS python-tests", third.stdout)
+        self.assertNotIn("REUSED PASS python-tests-fast", third.stdout)
 
         receipt.write_text("{malformed", encoding="utf-8")
         fourth = self.run_check("--fast")
         self.assertEqual(fourth.returncode, 0, fourth.stdout + fourth.stderr)
-        self.assertNotIn("REUSED PASS python-tests", fourth.stdout)
+        self.assertNotIn("REUSED PASS python-tests-fast", fourth.stdout)
 
     def test_receipt_command_mismatch_forces_execution(self):
         checker = load_module()
@@ -1372,9 +1579,9 @@ class AiCheckTests(unittest.TestCase):
 
         second = self.run_check("--fast")
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertIn("SKIP python-tests", second.stdout)
+        self.assertIn("SKIP python-tests-fast", second.stdout)
         summary = json.loads((self.root / "build/ai-checks/summary.json").read_text(encoding="utf-8"))
-        self.assertIn("python-tests", summary["skipped_phases"])
+        self.assertIn("python-tests-fast", summary["skipped_phases"])
 
     def test_matching_receipt_keeps_hook_command_to_one_execution(self):
         marker = self.root / "build/ai-checks/docs-command-count"
@@ -1661,7 +1868,7 @@ class AiCheckTests(unittest.TestCase):
             self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
         self.assertIn("full-cpp", output.getvalue())
         self.assertIn("source-checks", calls)
-        self.assertNotIn("python-tests", calls)
+        self.assertNotIn("python-tests-fast", calls)
         self.assertNotIn("build", calls)
         self.assertNotIn("ctest", calls)
 
@@ -1677,7 +1884,7 @@ class AiCheckTests(unittest.TestCase):
         with mock.patch.object(checker, "changed_paths", return_value=changed), mock.patch.object(checker, "untracked_paths", return_value=set()), mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
         self.assertIn("full-python", output.getvalue())
-        self.assertIn("python-tests", calls)
+        self.assertIn("python-tests-fast", calls)
         self.assertIn("source-checks", calls)
 
     def test_mixed_native_and_tooling_changes_propagate_source_policy_failure(self):
@@ -1700,8 +1907,8 @@ class AiCheckTests(unittest.TestCase):
         result = self.run_check("--fast", environment=environment)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("FAIL source-checks", result.stdout)
-        self.assertNotIn("PASS python-tests", result.stdout)
-        self.assertIn("SKIP python-tests", result.stdout)
+        self.assertNotIn("PASS python-tests-fast", result.stdout)
+        self.assertIn("SKIP python-tests-fast", result.stdout)
 
     def test_fast_cpp_source_checks_allow_ordinary_publisher_failures(self):
         (self.root / "CMakePresets.json").write_text("{}\n", encoding="utf-8")
@@ -1744,16 +1951,19 @@ class AiCheckTests(unittest.TestCase):
 
         ctest = next(call for call in calls if call[0] == "ctest")
         self.assertEqual(ctest[1][-2:], ["--timeout", "240"])
-        self.assertEqual(ctest[2], checker.BUILD_PHASE_TIMEOUT)
-        self.assertTrue(all(timeout <= 600 for _, _, timeout in calls))
+        self.assertEqual(ctest[2], checker.CTEST_PHASE_TIMEOUT)
+        self.assertTrue(all(timeout <= checker.MAX_PHASE_TIMEOUT for name, _, timeout in calls if name != "ctest"))
 
-    def test_all_configured_automated_stages_fit_ten_minutes(self):
+    def test_measured_python_and_ctest_durations_fit_aggregate_budget(self):
         checker = load_module()
         self.assertEqual(checker.MAX_PHASE_TIMEOUT, 600)
-        self.assertEqual(checker.TOTAL_TIMEOUT, 1500)
+        self.assertEqual(checker.PYTHON_TEST_TIMEOUT, 420)
+        self.assertEqual(checker.WINDOWS_PYTHON_TEST_TIMEOUT, 420)
+        self.assertEqual(checker.CTEST_PHASE_TIMEOUT, 1800)
+        self.assertEqual(checker.TOTAL_TIMEOUT, 3900)
         self.assertEqual(checker.BUILD_PHASE_TIMEOUT, 600)
-        self.assertLessEqual(checker.PYTHON_TEST_TIMEOUT, checker.MAX_PHASE_TIMEOUT)
-        self.assertLessEqual(checker.WINDOWS_PYTHON_TEST_TIMEOUT, checker.MAX_PHASE_TIMEOUT)
+        self.assertEqual(checker.phase_timeout_cap("ctest"), 1800)
+        self.assertEqual(checker.phase_timeout_cap("renderer-smoke"), 600)
         self.assertEqual(int(checker.BUILD_PHASE_COMMANDS["ctest"][-1]), 240)
         registry = json.loads((REPOSITORY / "script/ai_checks.json").read_text(encoding="utf-8"))
         self.assertTrue(registry)
@@ -1944,7 +2154,7 @@ class AiCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("CHECK SCOPE targeted-python:script/tests/test_check_options.py", result.stdout)
         self.assertIn(
-            "PASS python-tests: " + " ".join([sys.executable, "-m", "unittest", "script/tests/test_check_options.py", "-v"]),
+            "PASS python-tests-fast: " + " ".join([sys.executable, "script/ai_python_tests.py", "--targets", "script/tests/test_check_options.py"]),
             result.stdout,
         )
 
@@ -1968,8 +2178,43 @@ class AiCheckTests(unittest.TestCase):
 
         result = self.run_check("--fast")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("FAIL python-tests", result.stdout)
+        self.assertIn("FAIL python-tests-fast", result.stdout)
         self.assertIn("script/tests/test_check_options.py", result.stdout)
+
+    def current_normal_result(self):
+        ai_check = load_module()
+        payload = json.loads(json.dumps(ai_check.S1_CURRENT_NORMAL_EXCEPTION_PAYLOAD))
+        payload["candidate"] = {"head": "a" * 40, "tree": "b" * 40}
+        command = ["python3", "script/ci/verify_gameplay_gate.py", "--candidate-commit", "a" * 40,
+                   "--s1-owner-accepted"]
+        return payload, command, ai_check
+
+    def test_current_normal_exception_is_never_a_pass(self):
+        payload, command, ai_check = self.current_normal_result()
+        result = ai_check.PhaseResult("full-radius-gameplay", command, 0, json.dumps(payload))
+        self.assertIsNotNone(ai_check.accepted_exception_payload(result))
+        self.assertEqual(ai_check.gameplay_output_status(result), "accepted_exception")
+        self.assertIsNone(payload["source_reuse_certificate"])
+        self.assertEqual(payload["capture_source_input_sha256"], payload["source_input_sha256"])
+
+    def test_current_normal_exception_cannot_be_relabelled_pass(self):
+        payload, command, ai_check = self.current_normal_result()
+        payload["status"] = "passed"
+        result = ai_check.PhaseResult("full-radius-gameplay", command, 0, json.dumps(payload))
+        self.assertIsNone(ai_check.accepted_exception_payload(result))
+        self.assertEqual(ai_check.gameplay_output_status(result), "invalid")
+
+    def test_current_normal_exception_rejects_historical_capture_source(self):
+        payload, command, ai_check = self.current_normal_result()
+        payload["capture_source_input_sha256"] = ai_check.S1_OWNER_SOURCE_INPUT_SHA256
+        result = ai_check.PhaseResult("full-radius-gameplay", command, 0, json.dumps(payload))
+        self.assertIsNone(ai_check.accepted_exception_payload(result))
+
+    def test_current_normal_exception_rejects_substituted_metrics(self):
+        payload, command, ai_check = self.current_normal_result()
+        payload["known_failure"]["s1"]["initial_deadline_missed"] = True
+        result = ai_check.PhaseResult("full-radius-gameplay", command, 0, json.dumps(payload))
+        self.assertIsNone(ai_check.accepted_exception_payload(result))
 
 
 if __name__ == "__main__":

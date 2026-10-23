@@ -2,31 +2,19 @@
 
 A C++23 Minecraft-style game for learning networking, Vulkan graphics, and simulation architecture.
 
-Version EarlyDev 0.1.0 Initiation.
+Version EarlyDev 0.1.1 BasicBlocks.
 
-## Gameplay
+## Play Snapshot 1
 
-![Snapshot 7 third-person flight beside the central spike, its first ring and surrounding terrain](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-7-central-spike.png>)
+On Windows, double-click the standalone **MinecraftClone S1** executable. It starts a local server and opens the game automatically. No separate server or console is needed. Wait for the centered start prompt, then press a key or mouse button.
 
-![Snapshot 7 player in the trench near the first spike](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-7-trench-first-spike.png>)
+S1 introduces generated continents, climate and surface materials, a world-generation map, textured terrain with distant detail levels, and CoreLang 0.1.5 integration. Full-detail terrain targets a 40-chunk (640-block) range around the player.
 
-![Snapshot 7 player climbing a mountain](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-7-mountain-climb.png>)
+![Snapshot 1 grassy block terrain near the canonical spawn](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.1-1-terrain.png>)
 
-![Snapshot 7 first-person view at horizontal X/Z coordinates 0,0](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-7-first-person-origin.png>)
+This current S1 production-renderer capture uses a 24-chunk diagnostic view. [Capture context and snapshot history](<docs/version_history/EarlyDev 0.1/EarlyDev 0.1.1 BasicBlocks.md>) distinguish it from ordinary playtest evidence. Earlier snapshots remain in their own history pages.
 
-Snapshot 7 adds authoritative entity permissions, movement and collision, a proportioned 16-color player body, and three camera views. Terrain residency follows player position independently of camera direction, with projection-derived mesh detail. These labeled 2560x1440 macOS integration-candidate captures show the four requested scenes. The version history records their capture context; these images do not establish final package/runtime acceptance.
-
-![Snapshot 6 textured wave ridge with semantic HUD](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-6-wave-ridge.png>)
-
-![Snapshot 6 streamed terrain horizon after camera rotation](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-6-streamed-horizon.png>)
-
-Snapshot 6 establishes the large-world foundation: CoreLang-authored fading-wave terrain, bounded asynchronous generation and network streaming, a 45-chunk circular residency radius, textured detailed meshes, fog, wrapped horizontal travel, and accelerated flight profiles through 500x. These are actual 2560x1440 macOS gameplay captures from the accepted release candidate.
-
-![Snapshot 4 close third-person gameplay with the debug HUD](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-4-third-person-hud.png>)
-
-![Snapshot 4 oblique view of the floating platform and local player](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-4-oblique-platform.png>)
-
-The [version history](<docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md>) records screenshot context and exact release evidence separately.
+The owner accepted S1 for release with known performance, streaming and LOD defects. Frame pacing, continuous full-detail coverage, LOD seams and material transitions, focus recovery, and outstanding platform qualification are explicit [S2 targets](docs/ai/decisions/earlydev_0_1_1_s2_delivery_targets.md). The [S2 plan](docs/ai/decisions/earlydev_0_1_1_s2.md) also records the parallel design work.
 
 ## Development lines
 
@@ -49,7 +37,7 @@ ctest --preset debug --output-on-failure --no-tests=error
 python3 script/ai_check.py
 ```
 
-From the repository root, run `./build/debug/mc_main --server` (optional `--port PORT`), then `./build/debug/mc_main` for the graphical player client. Use `--player-client` for the explicit graphical mode or `--bot-client` for a headless bot; either client accepts `--address IP:PORT` and defaults to `127.0.0.1:20040`. On Windows use `mc_main.exe`. See [build details](docs/BUILD.md) for SDK setup, configuration options, release-path limitations, and validation.
+From the repository root, run `./build/debug/mc_main` for local singleplayer. Use `--server` to host a dedicated server (optional `--port PORT`), or `--player-client --address IP:PORT` to join one. Use `--bot-client` for a headless client. On Windows use `mc_main.exe`. See [build details](docs/BUILD.md) for SDK setup, configuration options, release-path limitations, and validation.
 
 ## Structure
 
@@ -84,8 +72,3 @@ The Vulkan SDK supplies the loader and shader compiler; macOS uses MoltenVK. Use
 Learn by building a performant, extensible multiplayer game: world generation and updates, network authority under latency, graphics, and progressively richer entities/content. Keep module responsibilities clear as complexity grows. Vulkan 1.4, modding, and replaceable modules are goals rather than statements of current support.
 
 [Code conventions](docs/CODE_CONVENTIONS.md) · [Version/branch convention](docs/VERSION_CONVENTION.md) · [Version history](<docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md>)
-
-
-![S5 stone world gameplay](docs/version_history/EarlyDev%200.1/assets/s5-stone-world.png)
-
-S5 visible runtime overview: a seed-42 air-and-stone flight scene rendered with the original mottled 16-pixel stone texture. The frame comes from the controlled runtime camera during local acceptance.

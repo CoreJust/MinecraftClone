@@ -1,4 +1,7 @@
 #version 450 core
+#extension GL_GOOGLE_include_directive : require
+#include "world_curvature.glsl"
+layout(location = 3) in vec3 in_camera_offset;
 
 // Tamsyn 1.11 8x16 bitmap data, Copyright 2010 Scott Fial.
 // The separate attribution and license are in TAMSYN_LICENSE.txt.
@@ -141,4 +144,8 @@ void main() {
         float((in_packed_color >> 24u) & 0xffu)
     ) / 255.0;
     out_color = color;
+    if (in_camera_offset.z > 0.5) {
+        if (length(in_camera_offset.xy) >= in_camera_offset.z) { discard; }
+        out_color.rgb = mix(out_color.rgb, vec3(0.62, 0.75, 0.90), worldVisibilityFog(in_camera_offset.xy, in_camera_offset.z));
+    }
 }

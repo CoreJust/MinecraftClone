@@ -1,11 +1,13 @@
+#include <shared/corelang/ExecutionTypes.hpp>
 #include <shared/policy/Policy.hpp>
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstdint>
 #include <expected>
-#include <initializer_list>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -62,7 +64,7 @@ static constexpr shared::PolicyCapabilityQuery policyQuery(
     return {subject_id, capability_key_id};
 }
 
-static constexpr std::string_view POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyGroup("explicit", 5u8, "")
@@ -76,7 +78,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view SECOND_POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view SECOND_POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyRule("slow", "minecraft:speed", 1i64, 1u8)
@@ -84,7 +86,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view NEGATIVE_POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view NEGATIVE_POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyRule("slow", "minecraft:speed", -9i64, 0u8)
@@ -92,7 +94,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view EXPIRED_SUBJECT_POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view EXPIRED_SUBJECT_POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyGroup("temporary", 5u8, "")
@@ -103,7 +105,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view CONTROL_FLOW_POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view CONTROL_FLOW_POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     let mut count = 0u64
@@ -116,7 +118,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view RECURSIVE_POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view RECURSIVE_POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 fn recurse(value: u64) -> () {
     if value > 0u64 { recurse(value - 1u64) } else { () }
@@ -128,7 +130,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view HELPER_POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view HELPER_POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 fn configure() -> () {
     policyRule("movement", "minecraft:speed", 200i64, 0u8)
@@ -139,14 +141,14 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view RESERVED_GROUP_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view RESERVED_GROUP_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyGroup("players", 5u8, "")
 }
 )core";
 
-static constexpr std::string_view PERMISSION_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view PERMISSION_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyGroup("zombie-kind", 4u8, "zombie")
@@ -171,7 +173,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view BUILT_IN_ENTITY_KIND_POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view BUILT_IN_ENTITY_KIND_POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyRule("zombies-grounded", "minecraft:flight", 0i64, 0u8)
@@ -179,7 +181,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view BUILT_IN_MOBS_POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view BUILT_IN_MOBS_POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyRule("mobs-fly", "minecraft:flight", 1i64, 0u8)
@@ -187,7 +189,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view TIED_SOFT_POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view TIED_SOFT_POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyGroup("deny-members", 5u8, "")
@@ -201,7 +203,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view TIED_SOFT_POLICY_DENY_LAST_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view TIED_SOFT_POLICY_DENY_LAST_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyGroup("deny-members", 5u8, "")
@@ -215,7 +217,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view TIED_HARD_POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view TIED_HARD_POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyGroup("deny-members", 5u8, "")
@@ -229,7 +231,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view TIED_HARD_POLICY_ALLOW_FIRST_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view TIED_HARD_POLICY_ALLOW_FIRST_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyGroup("allow-members", 5u8, "")
@@ -243,7 +245,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view SOFT_INDIVIDUAL_ALLOW_POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view SOFT_INDIVIDUAL_ALLOW_POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyRule("players-denied", "minecraft:flight", 0i64, 0u8)
@@ -253,7 +255,7 @@ pub fn policy() {
 }
 )core";
 
-static constexpr std::string_view SELECTOR_RANGE_POLICY_SOURCE = R"core(@version("0.1.3.1")
+static constexpr std::string_view SELECTOR_RANGE_POLICY_SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policySelector("nearby-zombies", "zombie", 9u64, 12u64, 2u64)
@@ -271,7 +273,7 @@ public:
 shared::PolicyCompileOptions interpretedOptions()
 {
     return {
-        .jit_mode = shared::PolicyJitMode::Disabled,
+        .backend = shared::PolicyExecutionBackend::Interpreter,
         .require_interpreter_parity = true,
     };
 }
@@ -319,51 +321,101 @@ TEST(CoreLangPolicyTest, CompilesTypedDeclarationsDeterministicallyWithInterpret
     EXPECT_FALSE(first->plan.presets()[0].rules[1].hard);
     ASSERT_EQ(first->plan.assignments().size(), 1U);
     EXPECT_TRUE(first->interpreter_parity);
-    EXPECT_FALSE(first->jit_prepared);
-    EXPECT_EQ(first->jit_mode, shared::PolicyJitMode::Disabled);
+    EXPECT_EQ(first->backend_receipt.actual_backend, shared::corelang::Backend::Interpreter);
+    EXPECT_EQ(first->backend_receipt.source_sha256, second->backend_receipt.source_sha256);
+    EXPECT_EQ(first->backend_receipt.bytecode_sha256, second->backend_receipt.bytecode_sha256);
+    EXPECT_FALSE(first->backend_receipt.compiler_version.empty());
+    EXPECT_FALSE(first->backend_receipt.target.empty());
 }
 
-TEST(CoreLangPolicyTest, PreservesInterpreterParityWhenJitIsPreferred)
+TEST(CoreLangPolicyTest, JitBackendExecutesPolicyHostCallsWithInterpreterParity)
 {
     shared::PolicyHost const host;
     auto const interpreted = host.compile("policy.core", POLICY_SOURCE, interpretedOptions());
-    auto const preferred = host.compile("policy.core", POLICY_SOURCE, {
-        .jit_mode = shared::PolicyJitMode::Preferred,
+    auto const jitted = host.compile("policy.core", POLICY_SOURCE, {
+        .backend = shared::PolicyExecutionBackend::Jit,
         .require_interpreter_parity = true,
     });
 
     ASSERT_TRUE(interpreted.has_value()) << interpreted.error().message;
-    ASSERT_TRUE(preferred.has_value()) << preferred.error().message;
-    EXPECT_EQ(preferred->plan, interpreted->plan);
-    EXPECT_EQ(preferred->jit_mode, shared::PolicyJitMode::Preferred);
-    EXPECT_TRUE(preferred->interpreter_parity);
-}
-
-TEST(CoreLangPolicyTest, RequiredJitNeverSilentlyFallsBackToTheInterpreter)
-{
-    shared::PolicyHost const host;
-    auto const interpreted = host.compile("policy.core", POLICY_SOURCE, interpretedOptions());
-    ASSERT_TRUE(interpreted.has_value()) << interpreted.error().message;
-
-    auto const required = host.compile("policy.core", POLICY_SOURCE, {
-        .jit_mode = shared::PolicyJitMode::Required,
-        .require_interpreter_parity = true,
-    });
-#if (defined(_WIN32) && (defined(_M_X64) || defined(__x86_64__))) \
-    || (defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64))) \
-    || (defined(__ANDROID__) && (defined(__aarch64__) || defined(_M_ARM64)))
-    ASSERT_TRUE(required.has_value()) << required.error().message;
-#endif
-    if (!required) {
-        EXPECT_EQ(required.error().code, shared::PolicyDiagnosticCode::JitPreparationFailure);
+    if (!jitted) {
+        EXPECT_EQ(jitted.error().code, shared::PolicyDiagnosticCode::JitPreparationFailure);
         EXPECT_EQ(host.snapshot(), nullptr);
         return;
     }
+    EXPECT_EQ(jitted->plan, interpreted->plan);
+    EXPECT_EQ(jitted->backend_receipt.requested_backend, shared::corelang::Backend::Jit);
+    EXPECT_EQ(jitted->backend_receipt.actual_backend, shared::corelang::Backend::Jit);
+    EXPECT_TRUE(jitted->interpreter_parity);
+}
 
-    EXPECT_EQ(required->plan, interpreted->plan);
-    EXPECT_EQ(required->jit_mode, shared::PolicyJitMode::Required);
-    EXPECT_TRUE(required->jit_prepared);
-    EXPECT_TRUE(required->interpreter_parity);
+TEST(CoreLangPolicyTest, AotBackendExecutesPolicyHostCallsAndReportsItsImage)
+{
+    shared::PolicyHost const host;
+    auto const interpreted = host.compile("policy.core", POLICY_SOURCE, interpretedOptions());
+    ASSERT_TRUE(interpreted.has_value()) << interpreted.error().message;
+
+    auto const aot = host.compile("policy.core", POLICY_SOURCE, {
+        .backend = shared::PolicyExecutionBackend::Aot,
+        .require_interpreter_parity = true,
+    });
+
+    if (!aot) {
+        EXPECT_EQ(aot.error().code, shared::PolicyDiagnosticCode::AotPreparationFailure);
+        EXPECT_EQ(host.snapshot(), nullptr);
+        return;
+    }
+    EXPECT_EQ(aot->plan, interpreted->plan);
+    EXPECT_EQ(aot->backend_receipt.requested_backend, shared::corelang::Backend::Aot);
+    EXPECT_EQ(aot->backend_receipt.actual_backend, shared::corelang::Backend::Aot);
+    ASSERT_TRUE(aot->backend_receipt.native_image_sha256.has_value());
+    EXPECT_NE(*aot->backend_receipt.native_image_sha256, (std::array<uint8_t, 32U>{}));
+    EXPECT_TRUE(aot->interpreter_parity);
+}
+
+TEST(CoreLangPolicyTest, DefaultBackendReportsInterpreterExecution)
+{
+    shared::PolicyHost const host;
+    auto const compiled = host.compile("policy.core", POLICY_SOURCE);
+
+    ASSERT_TRUE(compiled.has_value()) << compiled.error().message;
+    EXPECT_EQ(compiled->backend_receipt.requested_backend, shared::corelang::Backend::Interpreter);
+    EXPECT_EQ(compiled->backend_receipt.actual_backend, shared::corelang::Backend::Interpreter);
+    EXPECT_FALSE(compiled->backend_receipt.native_image_sha256.has_value());
+    EXPECT_NE(compiled->backend_receipt.source_sha256, (std::array<uint8_t, 32U>{}));
+    EXPECT_NE(compiled->backend_receipt.bytecode_sha256, (std::array<uint8_t, 32U>{}));
+}
+
+TEST(CoreLangPolicyTest, RejectsBytecodeThatExceedsItsExplicitSizeLimit)
+{
+    shared::PolicyLimits limits = shared::defaultPolicyLimits();
+    limits.max_bytecode_bytes = 1U;
+    shared::PolicyHost const host{limits};
+
+    auto const compiled = host.compile("policy.core", POLICY_SOURCE, interpretedOptions());
+
+    ASSERT_FALSE(compiled.has_value());
+    EXPECT_EQ(compiled.error().code, shared::PolicyDiagnosticCode::BytecodeLimitExceeded);
+    EXPECT_EQ(host.snapshot(), nullptr);
+}
+
+TEST(CoreLangPolicyTest, RejectsNativeImageThatExceedsItsExplicitSizeLimit)
+{
+    shared::PolicyLimits limits = shared::defaultPolicyLimits();
+    limits.max_native_image_bytes = 1U;
+    shared::PolicyHost const host{limits};
+
+    auto const compiled = host.compile("policy.core", POLICY_SOURCE, {
+        .backend = shared::PolicyExecutionBackend::Aot,
+        .require_interpreter_parity = false,
+    });
+
+    if (!compiled && compiled.error().code == shared::PolicyDiagnosticCode::AotPreparationFailure) {
+        return;
+    }
+    ASSERT_FALSE(compiled.has_value());
+    EXPECT_EQ(compiled.error().code, shared::PolicyDiagnosticCode::NativeImageLimitExceeded);
+    EXPECT_EQ(host.snapshot(), nullptr);
 }
 
 TEST(CoreLangPolicyTest, DecodesNegativePermissionValuesWithoutOverflow)
@@ -563,7 +615,7 @@ TEST(CoreLangPolicyTest, SelectorRangeMatchesInclusiveIdsOnlyWithinItsEntityKind
 TEST(CoreLangPolicyTest, SelectorRejectsReversedIdRanges)
 {
     shared::PolicyHost const host;
-    std::string const source{R"core(@version("0.1.3.1")
+    std::string const source{R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policySelector("invalid", "zombie", 10u64, 9u64, 2u64)
@@ -623,7 +675,7 @@ TEST(CoreLangPolicyTest, BuiltInMobsGroupTargetsOnlyMobSubjects)
 TEST(CoreLangPolicyTest, CustomGroupCannotUseIndividualEntityTargetNamespace)
 {
     shared::PolicyHost const host;
-    std::string const source{R"core(@version("0.1.3.1")
+    std::string const source{R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyGroup("entity:42", 5u8, "")
@@ -641,7 +693,7 @@ TEST(CoreLangPolicyTest, WorldSubjectNamespaceIsReservedWithoutDefiningWorldPerm
     shared::PolicyHost const host;
     for (std::string_view const group_name : {"world", "world:overworld"}) {
         std::string const source{
-            "@version(\"0.1.3.1\")\n@use minecraft\npub fn policy() {\n"
+            "@version(0.1.5)\n@use minecraft\npub fn policy() {\n"
             "    policyGroup(\"" + std::string{group_name} + "\", 5u8, \"\")\n}\n"
         };
         auto const compiled = host.compile("reserved-world-group.core", source, interpretedOptions());
@@ -651,7 +703,7 @@ TEST(CoreLangPolicyTest, WorldSubjectNamespaceIsReservedWithoutDefiningWorldPerm
     }
     for (std::string_view const target : {"world", "world:overworld"}) {
         std::string const source{
-            "@version(\"0.1.3.1\")\n@use minecraft\npub fn policy() {\n"
+            "@version(0.1.5)\n@use minecraft\npub fn policy() {\n"
             "    policyRule(\"base\", \"minecraft:flight\", 0i64, 0u8)\n"
             "    policyAssign(\"" + std::string{target} + "\", \"base\", 0u8)\n}\n"
         };
@@ -665,7 +717,7 @@ TEST(CoreLangPolicyTest, WorldSubjectNamespaceIsReservedWithoutDefiningWorldPerm
 TEST(CoreLangPolicyTest, CustomGroupCannotRedefineBuiltInEntityKindTarget)
 {
     shared::PolicyHost const host;
-    std::string const source{R"core(@version("0.1.3.1")
+    std::string const source{R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyGroup("kind:zombie", 4u8, "zombie")
@@ -683,7 +735,7 @@ TEST(CoreLangPolicyTest, CustomGroupsCannotAliasFixedBroadGroups)
     shared::PolicyHost const host;
     for (uint8_t kind = 0U; kind < 4U; ++kind) {
         std::string source{
-            "@version(\"0.1.3.1\")\n@use minecraft\npub fn policy() {\n"
+            "@version(0.1.5)\n@use minecraft\npub fn policy() {\n"
             "    policyGroup(\"custom-broad\", "
         };
         source += std::to_string(kind);
@@ -857,6 +909,7 @@ TEST(CoreLangPolicyTest, PublishesCompleteCandidatesAtomicallyWithGenerations)
     auto second = host.compile("second.core", SECOND_POLICY_SOURCE, interpretedOptions());
     ASSERT_TRUE(first.has_value()) << first.error().message;
     ASSERT_TRUE(second.has_value()) << second.error().message;
+    auto const first_receipt = first->backend_receipt;
 
     std::vector<shared::PolicySubject> const subjects{
         {.id = 42U, .entity_class = shared::PolicyEntityClass::Player, .kind = "player"},
@@ -875,6 +928,9 @@ TEST(CoreLangPolicyTest, PublishesCompleteCandidatesAtomicallyWithGenerations)
     EXPECT_EQ(*first_generation, 1U);
     EXPECT_EQ(first_snapshot->generation(), 1U);
     EXPECT_EQ(first_snapshot->plan().sourceId(), "first.core");
+    EXPECT_EQ(first_snapshot->backendReceipt().actual_backend, shared::corelang::Backend::Interpreter);
+    EXPECT_EQ(first_snapshot->backendReceipt().source_sha256, first_receipt.source_sha256);
+    EXPECT_EQ(first_snapshot->backendReceipt().bytecode_sha256, first_receipt.bytecode_sha256);
 
     auto const second_generation = host.publish(std::move(*second), std::move(*second_capabilities));
     ASSERT_TRUE(second_generation.has_value()) << second_generation.error().message;

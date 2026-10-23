@@ -15,10 +15,16 @@ restriction direction. Soft rules resolve by target specificity; equal-
 specificity ties choose the more restrictive value for that capability key.
 Hard rules combine to the strongest constraint and only tighten the result. The compiler bounds source
 bytes, VM instructions, statements, groups, members, selectors, presets, rules,
-assignments, subjects, and capabilities. Its instruction budget covers module
-initialization, policy entry, reachable helpers, and interpreter parity.
-Reachable recursive calls or control-flow cycles, indirect calls, and static
-initialization are rejected.
+assignments, subjects, and capabilities. Its static instruction bound covers
+module initialization, policy entry, reachable helpers, and requested
+interpreter-parity runs. Finite `for` loops are accepted only with matching,
+nonnegative fixed-width integer literal endpoints and an immutable named index;
+index writes, aliases, captures, and address escapes are rejected. Dynamic
+loops, source imports, indirect calls, recursion, and bytecode static-init
+instructions are rejected. This is a preflight bound, not runtime instruction
+fuel. Cancellation is polled during bounded analysis and compilation, around
+backend phases, and at host-call boundaries; a running runtime or native call
+does not receive instruction-by-instruction cancellation.
 
 `PolicyHost` compiles and materializes outside physics ticks. Materialization
 checks the subject and key catalogs, resolves selectors, and creates immutable

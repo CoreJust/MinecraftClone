@@ -7,6 +7,7 @@
 #include <core/lang/Compiler.hpp>
 #include <core/lang/CoreLang.hpp>
 #include <core/lang/Diagnostic.hpp>
+#include <core/lang/Optimize.hpp>
 #include <core/lang/Registry.hpp>
 #include <core/lang/Runtime.hpp>
 #include <core/lang/Value.hpp>
@@ -140,6 +141,7 @@ core003::CustomManifest customManifest(
     manifest.arguments = std::move(arguments);
     manifest.result = std::move(result);
     manifest.borrow = std::move(borrow);
+    manifest.clobber_regions = {0U};
     manifest.digest = core003::customManifestDigest(manifest);
     return manifest;
 }
@@ -454,7 +456,7 @@ std::expected<ScriptedWorld, ScriptedWorldError> ScriptedWorld::load(
             .message = registered.error(),
         });
     }
-    auto const program = runtime.load(compiled->bytes);
+    auto const program = runtime.loadCompiled(*compiled);
     if (!program) {
         return std::unexpected(ScriptedWorldError{
             .code = ScriptedWorldErrorCode::RuntimeFailed,

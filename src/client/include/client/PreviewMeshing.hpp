@@ -100,6 +100,7 @@ struct PreviewMeshSeamUpdate final {
 struct PreviewMeshSeamNeighbor final {
     shared::HeightTileSurfaceMesh const* mesh = nullptr;
     PreviewMeshSeamBridgeSet* bridges = nullptr;
+    shared::SurfaceTile const* surface = nullptr;
 };
 
 struct PreviewMeshSeamNeighborUpdates final {
@@ -110,6 +111,7 @@ struct PreviewMeshSeamNeighborUpdates final {
 struct PreviewMeshSeamNeighborSnapshot final {
     shared::HeightTileSurfaceMesh const* mesh = nullptr;
     PreviewMeshSeamBridgeSet const* bridges = nullptr;
+    shared::SurfaceTile const* surface = nullptr;
 };
 
 struct PreviewMeshSeamPublicationPlan final {
@@ -129,14 +131,18 @@ struct PreviewMeshSeamPublicationBatch final {
     size_t const first_edge,
     PreviewMeshSeamBridgeSet& first_bridges,
     shared::HeightTileSurfaceMesh const& second,
-    PreviewMeshSeamBridgeSet& second_bridges
+    PreviewMeshSeamBridgeSet& second_bridges,
+    shared::SurfaceTile const* const first_surface = nullptr,
+    shared::SurfaceTile const* const second_surface = nullptr
 )
 {
     size_t const second_edge = PreviewMeshSeamBridgeSet::OPPOSITE_EDGES.at(first_edge);
     shared::HeightTileSurfaceSeamBridge const bridge = shared::heightTileSurfaceSeamBridge(
         first,
         second,
-        PreviewMeshSeamBridgeSet::EDGES.at(first_edge)
+        PreviewMeshSeamBridgeSet::EDGES.at(first_edge),
+        first_surface,
+        second_surface
     );
     return {
         .first_changed = first_bridges.replace(first_edge, bridge.first),
@@ -147,7 +153,8 @@ struct PreviewMeshSeamPublicationBatch final {
 [[nodiscard]] inline PreviewMeshSeamNeighborUpdates updatePreviewMeshSeamBridgesForVisibleNeighbors(
     shared::HeightTileSurfaceMesh const& base_mesh,
     PreviewMeshSeamBridgeSet& base_bridges,
-    std::array<PreviewMeshSeamNeighbor, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> const& neighbors
+    std::array<PreviewMeshSeamNeighbor, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> const& neighbors,
+    shared::SurfaceTile const* const base_surface = nullptr
 )
 {
     PreviewMeshSeamNeighborUpdates updates;
@@ -162,7 +169,9 @@ struct PreviewMeshSeamPublicationBatch final {
             edge,
             base_bridges,
             *neighbor.mesh,
-            *neighbor.bridges
+            *neighbor.bridges,
+            base_surface,
+            neighbor.surface
         );
         updates.changed[edge] = update.second_changed;
         updates.count += update.second_changed ? 1U : 0U;
@@ -174,7 +183,8 @@ struct PreviewMeshSeamPublicationBatch final {
 inline PreviewMeshSeamPublicationPlan planPreviewMeshSeamPublication(
     shared::HeightTileSurfaceMesh const& center_mesh,
     PreviewMeshSeamBridgeSet const& center_bridges,
-    std::array<PreviewMeshSeamNeighborSnapshot, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> const& neighbors
+    std::array<PreviewMeshSeamNeighborSnapshot, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> const& neighbors,
+    shared::SurfaceTile const* const center_surface = nullptr
 )
 {
     PreviewMeshSeamPublicationPlan plan{
@@ -196,7 +206,9 @@ inline PreviewMeshSeamPublicationPlan planPreviewMeshSeamPublication(
             edge,
             plan.center_bridges,
             *neighbor.mesh,
-            plan.neighbor_bridges[edge]
+            plan.neighbor_bridges[edge],
+            center_surface,
+            neighbor.surface
         );
         plan.changed_neighbors[edge] = update.second_changed;
     }
@@ -260,10 +272,12 @@ struct PreviewMeshSource final {
     [[nodiscard]] bool matchesGeometry(
         HeightTileHandle const& current_tile,
         std::array<HeightTileHandle, 4> const& current_neighbors,
-        std::array<shared::HeightTileSurfaceDetail, 4> const& current_neighbor_details
+        std::array<shared::HeightTileSurfaceDetail, 4> const& current_neighbor_details,
+        shared::HeightTileSurfaceDetail const current_detail = shared::HeightTileSurfaceDetail::Fine
     ) const noexcept
     {
         return tile == current_tile && neighbors == current_neighbors
+            && detail == current_detail
             && neighbor_details == current_neighbor_details;
     }
 };
@@ -287,6 +301,7 @@ struct PreviewMeshSource final {
     return mesher.build({
         .coordinate = {.x = source.tile->key().x, .y = source.tile->key().y},
         .heights = source.tile->heights(),
+        .surface = source.tile->surface(),
     }, neighbors, source.detail);
 }
 

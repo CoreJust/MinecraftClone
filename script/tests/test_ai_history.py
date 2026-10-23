@@ -9,7 +9,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
@@ -21,7 +23,7 @@ import ai_tasks
 def task(task_id: str, level: str, parent: str = "", **overrides: object) -> dict[str, object]:
     result: dict[str, object] = {
         "id": task_id,
-        "title": task_id,
+        "title": "EarlyDev 0.1.0:1 — Test snapshot" if level == "snapshot" else task_id,
         "kind": "chore",
         "status": "ready",
         "priority": "P1",
@@ -79,6 +81,41 @@ class AiHistoryTest(unittest.TestCase):
     def commit(self, message: str) -> str:
         self.git_run("git", "commit", "--allow-empty", "-q", "-m", message)
         return self.git_run("git", "rev-parse", "HEAD")
+
+    def promotion_subject(self, source: str) -> str:
+        timestamp = int(self.git_run("git", "show", "-s", "--format=%ct", source))
+        date = datetime.fromtimestamp(timestamp, timezone.utc).astimezone(
+            ZoneInfo("Europe/Belgrade")
+        )
+        return f"EarlyDev 0.1.0:1({date:%y.%m.%d})"
+
+    def create_tagged_promotion(self, subject: str | None = None) -> tuple[str, str, str]:
+        tasks = self.hierarchy()
+        self.git_run("git", "checkout", "-q", "-b", "snapshot-source")
+        history_baseline = self.commit("snapshot history baseline")
+        snapshot = tasks[2]
+        snapshot.update({
+            "status": "active",
+            "owner": "Codex",
+            "baseline_commit": history_baseline,
+            "evidence": "Local snapshot gates passed.",
+            "product_changes": ["Published snapshot result."],
+            "code_changes": ["Published snapshot gate."],
+            "resolution_changes": "Finalized for local promotion.",
+            "finalized": True,
+        })
+        self.write_task_metadata(tasks)
+        source = self.commit("snapshot source\n\nTask-ID: MC-AI-0101")
+        self.git_run("git", "checkout", "-q", "-b", "ai-main", self.baseline)
+        self.commit("current ai-main promotion base")
+        self.git_run(
+            "git", "merge", "--no-ff", "-q", source,
+            "-m", f"{subject or self.promotion_subject(source)}\n\nTask-ID: MC-AI-0101",
+        )
+        promoted = self.git_run("git", "rev-parse", "HEAD")
+        tag = "ai/Test/0.1.0/1_26.09.09"
+        self.git_run("git", "tag", "-a", tag, promoted, "-m", "AI snapshot MC-AI-0101")
+        return history_baseline, source, promoted
 
     def write_task_metadata(self, tasks: list[dict[str, object]]) -> None:
         docs = self.repo / "docs/ai"
@@ -149,23 +186,52 @@ class AiHistoryTest(unittest.TestCase):
         self.assertEqual(output.getvalue().splitlines(), ["MC-AI-0001", "MC-AI-0002"])
 
     def test_tagged_promotion_accepts_distinct_history_and_promotion_bases(self) -> None:
-        self.git_run("git", "checkout", "-q", "-b", "snapshot-source")
-        history_baseline = self.commit("snapshot history baseline")
-        source = self.commit("snapshot source\n\nTask-ID: MC-AI-0101")
-        self.git_run("git", "checkout", "-q", "-b", "ai-main", self.baseline)
-        self.commit("current ai-main promotion base")
-        self.git_run(
-            "git", "merge", "--no-ff", "-q", source,
-            "-m", "promote snapshot\n\nTask-ID: MC-AI-0101",
-        )
-        promoted = self.git_run("git", "rev-parse", "HEAD")
-        self.git_run(
-            "git", "tag", "-a", "ai/Test/0.1.0/1_26.09.09", promoted,
-            "-m", "published snapshot",
-        )
+        history_baseline, source, _promoted = self.create_tagged_promotion()
 
-        self.assertTrue(ai_history.has_tagged_promotion(self.repo, history_baseline, source))
+        self.assertTrue(
+            ai_history.has_tagged_promotion(
+                self.repo, history_baseline, source, "MC-AI-0101"
+            )
+        )
         self.assertFalse(ai_history.has_tagged_promotion(self.repo, history_baseline, self.baseline))
+
+    def test_tagged_generic_title_is_accepted_only_for_an_explicit_legacy_commit(self) -> None:
+        history_baseline, source, promoted = self.create_tagged_promotion(
+            "Promote MC-AI-0101 to ai-main"
+        )
+        self.assertFalse(
+            ai_history.has_tagged_promotion(
+                self.repo, history_baseline, source, "MC-AI-0101"
+            )
+        )
+        tag_ref = "refs/tags/ai/Test/0.1.0/1_26.09.09"
+        with mock.patch.dict(
+            ai_history.LEGACY_TAGGED_PROMOTIONS,
+            {promoted: (tag_ref, "Promote MC-AI-0101 to ai-main")},
+        ):
+            self.assertTrue(
+                ai_history.has_tagged_promotion(
+                    self.repo, history_baseline, source, "MC-AI-0101"
+                )
+            )
+
+    def test_tagged_promotion_accepts_reviewed_workflow_commit_before_ledger(self) -> None:
+        history_baseline, source, _promoted = self.create_tagged_promotion()
+        self.git_run("git", "checkout", "-q", "-b", "ai-dev", source)
+        workflow_script = self.repo / "script" / "ai_check.py"
+        workflow_script.write_text("# reviewed workflow repair\n", encoding="utf-8")
+        self.git_run("git", "add", "script/ai_check.py")
+        repair = self.commit("workflow repair\n\nTask-ID: MC-AI-0003")
+
+        self.assertTrue(ai_history.has_tagged_promotion(self.repo, history_baseline, repair))
+
+        self.git_run("git", "checkout", "-q", "-b", "unpublished-source-change")
+        game_source = self.repo / "src" / "game.cpp"
+        game_source.parent.mkdir(parents=True, exist_ok=True)
+        game_source.write_text("unpublished gameplay\n", encoding="utf-8")
+        self.git_run("git", "add", "src/game.cpp")
+        gameplay = self.commit("unpublished gameplay\n\nTask-ID: MC-AI-0004")
+        self.assertFalse(ai_history.has_tagged_promotion(self.repo, history_baseline, gameplay))
 
     def test_snapshot_three_publication_exception_is_exactly_scoped(self) -> None:
         standard = ai_history.PUBLICATION_LEDGER_MUTABLE_FIELDS
@@ -189,6 +255,21 @@ class AiHistoryTest(unittest.TestCase):
             standard,
         )
 
+    def test_published_snapshot_current_comparison_allows_mutable_evidence_only(self) -> None:
+        published = task(
+            "MC-AI-0101", "snapshot", status="done", evidence="Published evidence.",
+            resolved_at="2026-09-09", finalized=True,
+        )
+        current = dict(published, evidence="Owner-corrected evidence; failure remains recorded.")
+
+        self.assertTrue(
+            ai_history.published_snapshot_matches_current("0" * 40, published, current)
+        )
+        current["title"] = "Changed immutable snapshot title"
+        self.assertFalse(
+            ai_history.published_snapshot_matches_current("0" * 40, published, current)
+        )
+
     def test_s6_publication_ledger_preserves_open_runtime_state_only_for_exact_commit(self) -> None:
         s6_ledger = "3fa4861abafa7eb20163b89f6957bf915c10ed63"
         active_published_snapshot = task(
@@ -210,6 +291,7 @@ class AiHistoryTest(unittest.TestCase):
         previous.update({
             "status": "active",
             "owner": "Codex",
+            "blocker": "Awaiting publication readback.",
             "product_changes": ["Snapshot result"],
             "code_changes": ["Snapshot gate"],
             "evidence": "Local snapshot gates passed.",
@@ -221,17 +303,18 @@ class AiHistoryTest(unittest.TestCase):
         self.git_run("git", "checkout", "-q", "-b", "ai-main", self.baseline)
         self.git_run(
             "git", "merge", "--no-ff", "-q", source,
-            "-m", "promote snapshot\n\nTask-ID: MC-AI-0101",
+            "-m", f"{self.promotion_subject(source)}\n\nTask-ID: MC-AI-0101",
         )
         promoted = self.git_run("git", "rev-parse", "HEAD")
         self.git_run(
             "git", "tag", "-a", "ai/Test/0.1.0/1_26.09.09", promoted,
-            "-m", "published snapshot",
+            "-m", "AI snapshot MC-AI-0101",
         )
         self.git_run("git", "checkout", "-q", "-b", "ai-dev", source)
         previous.update({
             "status": "done",
             "owner": "",
+            "blocker": "User-authorized runtime acceptance remains pending.",
             "context": "Condensed published context.",
             "plan": ["Condensed published plan."],
             "product_changes": ["Condensed product result."],
@@ -263,10 +346,52 @@ class AiHistoryTest(unittest.TestCase):
             {ledger: {"context", "plan", "product_changes", "code_changes"}},
             clear=True,
         ):
-            self.assertEqual(
-                ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0102", "HEAD"),
-                ["MC-AI-0003"],
-            )
+            with self.assertRaisesRegex(ai_history.HistoryError, "changes immutable"):
+                ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0102", "HEAD")
+        with mock.patch.dict(
+            ai_history.LEGACY_PUBLICATION_LEDGER_FIELD_EXCEPTIONS,
+            {ledger: {"blocker", "context", "plan", "product_changes", "code_changes"}},
+            clear=True,
+        ):
+            try:
+                collected = ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0102", "HEAD")
+            except ai_history.HistoryError as error:
+                self.fail(f"exact legacy blocker exception was rejected: {error}")
+            self.assertEqual(collected, ["MC-AI-0003"])
+
+    def test_collect_first_snapshot_of_new_minor_accepts_previous_minor_ledger(self) -> None:
+        _history_baseline, source, promoted = self.create_tagged_promotion()
+        self.git_run("git", "checkout", "-q", "-b", "ai-dev", source)
+        tasks = json.loads(self.git_run("git", "show", f"{source}:docs/ai/backlog.json"))
+        previous = next(item for item in tasks if item["id"] == "MC-AI-0101")
+        previous.update({
+            "status": "done",
+            "owner": "",
+            "evidence": "Published snapshot artifacts verified.",
+            "resolved_at": "2026-09-09",
+            "resolution_changes": "Recorded the published snapshot.",
+        })
+        self.write_task_metadata(tasks)
+        self.commit("publication ledger\n\nTask-ID: MC-AI-0101")
+
+        tasks.extend([
+            task("MC-AI-0105", "minor", "MC-AI-0104"),
+            task(
+                "MC-AI-0102", "snapshot", "MC-AI-0105", status="active",
+                baseline_commit=promoted, owner="Codex", finalized=True,
+            ),
+            task(
+                "MC-AI-0003", "basic", "MC-AI-0102", status="done",
+                evidence="passed", resolved_at="2026-09-09",
+                resolution_changes="finished", finalized=True,
+            ),
+        ])
+        self.commit("first task in the next minor\n\nTask-ID: MC-AI-0003")
+
+        self.assertEqual(
+            ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0102", "HEAD"),
+            ["MC-AI-0003"],
+        )
 
     def test_collect_next_snapshot_excludes_post_publication_aggregate_ledger(self) -> None:
         tasks = self.hierarchy()
@@ -290,7 +415,7 @@ class AiHistoryTest(unittest.TestCase):
         self.git_run("git", "checkout", "-q", "-b", "ai-main", promotion_base)
         self.git_run(
             "git", "merge", "--no-ff", "-q", source,
-            "-m", "promote snapshot\n\nTask-ID: MC-AI-0101",
+            "-m", f"{self.promotion_subject(source)}\n\nTask-ID: MC-AI-0101",
         )
         promoted = self.git_run("git", "rev-parse", "HEAD")
         self.git_run("git", "checkout", "-q", "-b", "ai-dev", source)
@@ -328,7 +453,7 @@ class AiHistoryTest(unittest.TestCase):
             ai_history.finalize(self.repo, tasks, "MC-AI-0102", "HEAD")
         self.git_run(
             "git", "tag", "-a", "ai/Test/0.1.0/1_26.09.09", promoted,
-            "-m", "published snapshot",
+            "-m", "AI snapshot MC-AI-0101",
         )
         self.git_run("git", "checkout", "-q", "-b", "missing-ledger", source)
         self.commit("next task without ledger\n\nTask-ID: MC-AI-0003")

@@ -40,7 +40,8 @@ _PACKAGE = importlib.util.module_from_spec(_PACKAGE_SPEC)
 sys.modules[_PACKAGE_SPEC.name] = _PACKAGE
 _PACKAGE_SPEC.loader.exec_module(_PACKAGE)
 SCHEMA = "mc.gameplay-proof.v2"
-WORKLOAD = "speed-200-full-radius-recovery-v1"
+WORKLOAD = "turning-x30-movement-v3"
+COVERAGE_WORKLOAD = "speed-200-full-radius-recovery-v1"
 SOURCE_INPUTS = ("src/**", "assets/**", "cmake/**", "scenarios/**", "CMakeLists.txt", "CMakePresets.json",
                  "dependencies.lock.json", "tests/**", "vcpkg.json", "vcpkg-configuration*.json")
 REQUIRED_SOURCE_INPUTS = (
@@ -50,15 +51,142 @@ REQUIRED_SOURCE_INPUTS = (
     "scenarios/world/canonical_world.core",
     "scenarios/world/height_tile.core",
 )
-PHASES = ("initial-full-radius-warmup", "baseline-stationary", "speed-200-movement",
+PHASES = ("initial-full-radius-warmup", "baseline-stationary", "full-radius-movement",
           "full-radius-recovery-warmup", "recovered-stationary")
+S1_FILL_PHASE = "s1-fill-ramp"
+S1_MOVEMENT_PHASE = "s1-x30-movement"
+S1_PERFORMANCE_CONTRACT = "mc.s1-lod-performance.v2"
+S1_OWNER_EXCEPTION_SCHEMA = "mc.s1-owner-accepted-gameplay-exception.v1"
+S1_OWNER_REQUEST_PATH = "~/.codex/task-evidence/mc-s1-20261023/owner-release-acceptance/request.md"
+S1_OWNER_REQUEST_SHA256 = "b55134d42a04a746ca862d4b12ba847cb8e0e73ac88ae1ca787b13daf6ebe403"
+S1_OWNER_SOURCE_INPUT_SHA256 = "83da03165eea8b14d48398b8ca314b0ddcb3d74fa6b446b998f819a2538c3e9d"
+S1_OWNER_SOURCE_REUSE_SCHEMA = "mc.s1-source-reuse-certificate.v3"
+S1_OWNER_ACCEPTED_SOURCE_ROOT = Path.home() / ".codex/task-evidence/mc-s1-20261022/architecture-audit-01/aggregate-review-01/delta-cache-recorder-01/candidate"
+S1_OWNER_SOURCE_REUSE_CURRENT_SHA256 = 'fd08d7464b1ec7c80d4a494e8e9e471baafcd7f8e85a1220923d453945b93aa1'
+S1_OWNER_SOURCE_REUSE_FILE_HASHES = {
+    "src/shared/corelang/Execution.cpp": {
+        "accepted_sha256": "37074292464f75c2ca6d96747202f3a3bada734541817a558218fd115fdefd99",
+        "current_sha256": "eda9f4ef465be27b97a0cacc6f59f2b9775517a960acfd0e16f4e9800cf6aaaf",
+    },
+    "tests/acceptance/column_map_replay_tests.cpp": {
+        "accepted_sha256": "dadb3a9daf5563839e3128bb25884da3b5f071c991826ac6c2307f4023fffb4c",
+        "current_sha256": "36b3f02c9ce3ff7fd57d43b6cd4f78f962e2fd1077ab08a2368a89601f9c78c0",
+    },
+}
+S1_OWNER_SOURCE_REUSE_VERSION_FILES = {
+    "CMakeLists.txt": {
+        "accepted_sha256": "317bb3826155f357af28ac04b254662fefb14dbe5282c7bed354743e77c8a596",
+        "current_sha256": "6e285b7a9f39c9b65af1fbb7442484f888d6a1eef352f7930d9767844c381297",
+    },
+    "vcpkg.json": {
+        "accepted_sha256": "c4199f22a2a4d7fbb128e1b861b381b091eeeb7336c5909d4ae16335b1563724",
+        "current_sha256": "00b4e1010a1f5e8a7ea196a69c295eee5240849c22312b1b09855f1d0780c945",
+    },
+    "src/shared/include/shared/ProjectInfo.hpp": {
+        "accepted_sha256": "5e5be64a6f6b8574da372911b28194ab468ce88c29ece5491a564167dceacfb1",
+        "current_sha256": "46eec31959f1b7828cfa62cfeadf3689bcd0c49030fa81e99c70b73e36031cb8",
+    },
+}
+S1_OWNER_SOURCE_REUSE_VERSION_REPLACEMENTS = {
+    "CMakeLists.txt": [(b"VERSION 0.1.0\n", b"VERSION 0.1.1\n")],
+    "vcpkg.json": [(b'"version-string": "0.1.0"', b'"version-string": "0.1.1"')],
+    "src/shared/include/shared/ProjectInfo.hpp": [
+        (b'MINOR_VERSION_NAME{ "Initiation" }', b'MINOR_VERSION_NAME{ "BasicBlocks" }'),
+        (b'.minor = 0,', b'.minor = 1,'),
+        (b'.patch = 7,', b'.patch = 1,'),
+    ],
+}
+S1_OWNER_SOURCE_REUSE_TEST_FIXTURE_HASHES = {
+    "tests/acceptance/adverse_network_tests.cpp": {
+        "accepted_sha256": "c4bafd8890b2eac5051789e0534b83ec1578be6fc76e220769abf840a1b53a2f",
+        "current_sha256": "4b96d636d353fb9c85e5b2817ee27dc861fde123ceee2af550da19ff8c9b448c",
+    },
+    "tests/client/player_client_focus_tests.cpp": {
+        "accepted_sha256": "807e6e4cf308ad154e30ea139514ace679ac517d53867134f98861f8b7263aca",
+        "current_sha256": "98202508eb4a28708e76302afc644a2dfc78327065ae87ff840f72399eb40d85",
+    },
+    "tests/client/renderer_smoke_tests.cpp": {
+        "accepted_sha256": "5b23541ce5b08c565b448fd59b303513c67d06a923988fea8ff74fd360daf540",
+        "current_sha256": "2311f8044975f27a2fb516496ca527cb82185fb11683f47ca6d9d0bb7e729dc7",
+    },
+    "tests/core/game_server_preview_tests.cpp": {
+        "accepted_sha256": "f8dc18c19d19e23ff5cf2a4279cd6aa86756e911ce0eaa02bcf0a8168e214a90",
+        "current_sha256": "96d578b3d79e52893ba561ee4c1e3090efb8671f2f0faffe72dedca1dd25c1ab",
+    },
+}
+S1_OWNER_SOURCE_INPUT_COUNT = 908
+S1_OWNER_SOURCE_REUSE_UNCHANGED_INPUT_COUNT = 899
+S1_OWNER_SOURCE_REUSE_APPLICATION_INPUT_COUNT = 233
+S1_OWNER_SOURCE_REUSE_APPLICATION_UNCHANGED_INPUT_COUNT = 229
+S1_OWNER_SOURCE_REUSE_TEST_INPUT_COUNT = 675
+S1_OWNER_SOURCE_REUSE_TEST_UNCHANGED_INPUT_COUNT = 670
+S1_OWNER_SOURCE_REUSE_APPLICATION_SHA256 = "dcc33a5b3f062aed0e67ae02d0e83d37f040ab00ed44209897a427bfda4d9bee"
+S1_OWNER_SOURCE_REUSE_CURRENT_MAIN_PATH = Path.home() / ".codex/task-evidence/mc-s1-20261021/evidence-boundaries/build/mc_main"
+S1_OWNER_SOURCE_REUSE_FREEZE_RECEIPT_PATH = Path.home() / ".codex/task-evidence/mc-s1-20261023/release-freeze-01/deferred-lod/FINAL-FREEZE-RECEIPT.json"
+S1_OWNER_SOURCE_REUSE_BUILD_LOG_PATH = Path.home() / ".codex/task-evidence/mc-s1-20261023/release-freeze-01/deferred-lod/accepted-build.log"
+S1_OWNER_SOURCE_REUSE_CURRENT_MAIN_PATH_LABEL = "~/.codex/task-evidence/mc-s1-20261021/evidence-boundaries/build/mc_main"
+S1_OWNER_SOURCE_REUSE_FREEZE_RECEIPT_PATH_LABEL = "~/.codex/task-evidence/mc-s1-20261023/release-freeze-01/deferred-lod/FINAL-FREEZE-RECEIPT.json"
+S1_OWNER_SOURCE_REUSE_BUILD_LOG_PATH_LABEL = "~/.codex/task-evidence/mc-s1-20261023/release-freeze-01/deferred-lod/accepted-build.log"
+S1_OWNER_SOURCE_REUSE_CURRENT_MAIN_SHA256 = "0aacbd2ff732cc328e29b38509161a54c99b60706fcab0b98cf40495bc26fba7"
+S1_OWNER_SOURCE_REUSE_FREEZE_RECEIPT_SHA256 = "78ca7ea1d3d3f01917e754165dc89791465ea947fd939238f1d54cd9790bfa0a"
+S1_OWNER_SOURCE_REUSE_BUILD_LOG_SHA256 = "4ca42cfd59f341f93887df2b71d23f04558960d738e8f88f025e759eb0a282b7"
+S1_OWNER_VERSION_IDENTITY_BUILD_RECEIPT_PATH = Path.home() / ".codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/version-identity-build.json"
+S1_OWNER_VERSION_IDENTITY_BUILD_LOG_PATH = Path.home() / ".codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/build.log"
+S1_OWNER_VERSION_IDENTITY_APP_PATH = Path.home() / ".codex/task-evidence/mc-s1-20261023/release-reconciliation-01/metadata-work/build/s1-version-identity-release/mc_main"
+S1_OWNER_VERSION_IDENTITY_SYMBOLS_PATH = Path.home() / ".codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/current-global-symbols.txt"
+S1_OWNER_ACCEPTED_SYMBOLS_PATH = Path.home() / ".codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/accepted-global-symbols.txt"
+S1_OWNER_VERSION_IDENTITY_PROBE_PATH = Path.home() / ".codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/version_identity_probe"
+S1_OWNER_VERSION_IDENTITY_PROBE_RUN_LOG_PATH = Path.home() / ".codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/version_identity_probe_run.log"
+S1_OWNER_VERSION_IDENTITY_BUILD_RECEIPT_SHA256 = "bc0d803ae6e68914bc214f319c8e0951b4e26d5e23d222510f8e37e004eb3abf"
+S1_OWNER_VERSION_IDENTITY_BUILD_LOG_SHA256 = "6b21f90d2cfa6ee18a5cf72039392f0bff4ab970b1a7aaa8526a6bbb7bbb0dee"
+S1_OWNER_VERSION_IDENTITY_APP_SHA256 = "6a5b2f3174eb5715add8de61e061684f0a00ff1616f9285f350c140f569252bc"
+S1_OWNER_VERSION_IDENTITY_SYMBOLS_SHA256 = "df6cdfac05d588cc32b8d41dfb98b6070e4b6a0b4c0b3d43e3fc4d6d9ac7ea6d"
+S1_OWNER_VERSION_IDENTITY_PROBE_SHA256 = "1cd10ba5acd4f97121293c957fced4ecc5065847628388adeb8fc706139d81b3"
+S1_OWNER_VERSION_IDENTITY_PROBE_RUN_LOG_SHA256 = "a65036a25541cf4ee59be2d12f521972f4aa5c701822b3ffdb5f34f86b50c16d"
+S1_OWNER_VERSION_IDENTITY_BUILD_RECEIPT_PATH_LABEL = "~/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/version-identity-build.json"
+S1_OWNER_VERSION_IDENTITY_BUILD_LOG_PATH_LABEL = "~/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/build.log"
+S1_OWNER_VERSION_IDENTITY_APP_PATH_LABEL = "~/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/metadata-work/build/s1-version-identity-release/mc_main"
+S1_OWNER_VERSION_IDENTITY_SYMBOLS_PATH_LABEL = "~/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/current-global-symbols.txt"
+S1_OWNER_ACCEPTED_SYMBOLS_PATH_LABEL = "~/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/accepted-global-symbols.txt"
+S1_OWNER_VERSION_IDENTITY_PROBE_PATH_LABEL = "~/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/version_identity_probe"
+S1_OWNER_VERSION_IDENTITY_PROBE_RUN_LOG_PATH_LABEL = "~/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/version_identity_probe_run.log"
+S1_OWNER_AGGREGATE_SHA256 = "abcda853c0a6af2b87526723280055ab1040c38f6c3ac265c3c538e54cdbfd06"
+S1_OWNER_RAW_REPORT_SHA256 = "94140622009202bad4ee05b98952fec86d41aecd9f8cb8a732073ab0f5fd102d"
+S1_OWNER_MAC_EXECUTABLE_SHA256 = "0aacbd2ff732cc328e29b38509161a54c99b60706fcab0b98cf40495bc26fba7"
+S1_OWNER_CAPTURE_CANDIDATE = {
+    "head": "bf5047ac52f397179e8467998f6fe67604a6e5f5",
+    "tree": "6c2f5e415748a4d3803207c74b3e09cbe911a300",
+}
+S1_OWNER_WINDOWS_EXECUTABLE_SHA256 = "cba2572c3cd47b9da82a2ad2ab1f958231ea20b57b9a6ddad17107013d89402b"
 ACTUAL_PRESENTATION_CONTRACT = "mc.actual-presentation-timing.v1"
 ACTUAL_PRESENTATION_PROVIDER = "VK_GOOGLE_display_timing"
 ACTUAL_PRESENTATION_CLOCK_DOMAIN = "vulkan-display-timing-monotonic-nanoseconds-unspecified-origin"
 TARGET_HZ = {"macos": 120, "windows": 120}
-PROOFS = {"terrain-coverage": 256, "performance": 128}
+FRESH_FRAME_TARGET_HZ = {"macos": 120, "windows": 300}
+PROOFS = {"terrain-coverage": 256, "performance": 256}
 PERFORMANCE_SAMPLE_MS = 30_000
 PERFORMANCE_SAMPLE_OVERRUN_MS = 1_000
+FRAME_BUDGET_SCOPE = "fence-confirmed-render-frame-completion-observations"
+FRAME_COMPLETION_SOURCE = "per-slot-submitted-frame-fence-success-observed-on-reuse"
+FRAME_BUDGET_TARGET_NS = {"macos": 8_333_333, "windows": 3_333_333}
+FRAME_BUDGET_REQUIRED_PERMILLE = 990
+PLAYABLE_SPHERE_RADIUS_BLOCKS = 320
+S1_FULL_VOLUME_FIELDS = {"coverage_scope", "required_authoritative_columns",
+                         "resident_authoritative_columns", "vertical_chunk_count", "authoritative_columns_center"}
+
+ACTUAL_TERRAIN_RADIUS_BLOCKS = 640
+VISUAL_LOD_RADIUS_BLOCKS = 320
+PLAYABLE_SPHERE_CONTRACT = "mc.authoritative-materialized-playable-sphere.v1"
+PLAYABLE_SPHERE_SAMPLE_SCOPE = "per-movement-loop-and-every-authoritative-position-update"
+MOVEMENT_TRAJECTORY_CONTRACT = "mc.x30-authoritative-trajectory.v1"
+MOVEMENT_TRAJECTORY_SAMPLE_SCOPE = "per-movement-loop-and-every-in-window-movement-input-ack"
+MOVEMENT_SUBCELLS_PER_TICK = 5_600
+SUBCELLS_PER_CELL = 10_000
+FLIGHT_HORIZONTAL_EXTENT = 65_536 * SUBCELLS_PER_CELL
+FLIGHT_MAX_Z = 1_023
+FLIGHT_SPEEDUP_PROFILES = frozenset((2, 3, 5, 8, 15, 30, 80, 200, 500))
+# Mirrors shared::TICK in src/shared/include/shared/world/World.hpp.
+SERVER_TICK_NS = 100_000_000
 S7_CADENCE_EXCEPTION = "EarlyDev0.1.0-snapshot7"
 S7_CADENCE_APPROVAL = "docs/ai/S7-CADENCE-EXCEPTION-2026-10-18.json"
 S7_CADENCE_APPROVAL_SHA256 = "27be307193623673eb73fcf82f657fe474ef31fb03726f03db3f739bdce98d4e"
@@ -72,6 +200,25 @@ DESKTOP_HELPERS = {
 }
 DESKTOP_TERMINAL_STATES = ("succeeded", "failed", "timed_out", "cancelled")
 DESKTOP_REQUEST_FIELDS = {"schema", "job_id", "task_id", "executable", "executable_sha256", "arguments", "timeout_seconds"}
+
+
+@functools.lru_cache(maxsize=1)
+def qualification_settings_manifest() -> dict[str, Any]:
+    source = (SCRIPT_ROOT.parent / "src/acceptance/include/acceptance/GameBenchmark.hpp").read_text(encoding="utf-8")
+    literal = r'"(?:\\.|[^"\\])*"'
+    match = re.search(r'GAME_BENCHMARK_S1_QUALIFICATION_MANIFEST\s*=\s*('
+                      + r'(?:' + literal + r'\s*)+);', source, re.S)
+    if match is None:
+        raise GameplayError("source qualification settings manifest is absent or not a literal initializer")
+    try:
+        encoded = "".join(json.loads(piece) for piece in re.findall(literal, match.group(1), re.S))
+        manifest = json.loads(encoded)
+    except json.JSONDecodeError:
+        raise GameplayError("source qualification settings manifest literal is malformed") from None
+    require(manifest.get("contract") == "mc.s1-qualification-settings.v1"
+            and set(manifest.get("platforms", {})) == {"macos", "windows"},
+            "source qualification settings manifest is malformed")
+    return manifest
 
 
 class GameplayError(ValueError):
@@ -536,6 +683,367 @@ def source_digest(root: Path) -> str:
     return _MATRIX._input_files_sha256(root, SOURCE_INPUTS)
 
 
+def s1_owner_source_reuse_build_evidence() -> dict[str, Any]:
+    """Bind app-source reuse to the accepted rebuilt Mac binary and its receipt."""
+    paths = {
+        "application_executable": (
+            S1_OWNER_SOURCE_REUSE_CURRENT_MAIN_PATH,
+            S1_OWNER_SOURCE_REUSE_CURRENT_MAIN_SHA256,
+            S1_OWNER_SOURCE_REUSE_CURRENT_MAIN_PATH_LABEL,
+        ),
+        "freeze_receipt": (
+            S1_OWNER_SOURCE_REUSE_FREEZE_RECEIPT_PATH,
+            S1_OWNER_SOURCE_REUSE_FREEZE_RECEIPT_SHA256,
+            S1_OWNER_SOURCE_REUSE_FREEZE_RECEIPT_PATH_LABEL,
+        ),
+        "build_log": (
+            S1_OWNER_SOURCE_REUSE_BUILD_LOG_PATH,
+            S1_OWNER_SOURCE_REUSE_BUILD_LOG_SHA256,
+            S1_OWNER_SOURCE_REUSE_BUILD_LOG_PATH_LABEL,
+        ),
+    }
+    identities = {}
+    for name, (path, expected_sha256, path_label) in paths.items():
+        require(path.is_file(), f"S1 source-reuse {name} is unavailable")
+        actual_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+        require(actual_sha256 == expected_sha256,
+                f"S1 source-reuse {name} does not match the accepted rebuild receipt")
+        identities[name] = {
+            "path": path_label,
+            "sha256": actual_sha256,
+        }
+
+    freeze = read_json(S1_OWNER_SOURCE_REUSE_FREEZE_RECEIPT_PATH)
+    require(isinstance(freeze, dict)
+            and freeze.get("build_exit") == 0
+            and freeze.get("source_scope_drift") == []
+            and freeze.get("bit_identical_to_accepted_mac") is True
+            and freeze.get("mc_main_sha256") == S1_OWNER_SOURCE_REUSE_CURRENT_MAIN_SHA256,
+            "S1 source-reuse rebuild receipt is incomplete or mismatched")
+    return identities
+
+
+def s1_owner_source_reuse_version_identity_build_evidence() -> dict[str, Any]:
+    """Bind the version-only Mac rebuild without replacing the owner-tested app."""
+    pinned_files = {
+        "application_executable": (S1_OWNER_VERSION_IDENTITY_APP_PATH, S1_OWNER_VERSION_IDENTITY_APP_SHA256,
+                                    S1_OWNER_VERSION_IDENTITY_APP_PATH_LABEL),
+        "build_log": (S1_OWNER_VERSION_IDENTITY_BUILD_LOG_PATH, S1_OWNER_VERSION_IDENTITY_BUILD_LOG_SHA256,
+                      S1_OWNER_VERSION_IDENTITY_BUILD_LOG_PATH_LABEL),
+        "receipt": (S1_OWNER_VERSION_IDENTITY_BUILD_RECEIPT_PATH,
+                    S1_OWNER_VERSION_IDENTITY_BUILD_RECEIPT_SHA256,
+                    S1_OWNER_VERSION_IDENTITY_BUILD_RECEIPT_PATH_LABEL),
+        "accepted_symbol_list": (S1_OWNER_ACCEPTED_SYMBOLS_PATH,
+                                  S1_OWNER_VERSION_IDENTITY_SYMBOLS_SHA256,
+                                  S1_OWNER_ACCEPTED_SYMBOLS_PATH_LABEL),
+        "current_symbol_list": (S1_OWNER_VERSION_IDENTITY_SYMBOLS_PATH,
+                                 S1_OWNER_VERSION_IDENTITY_SYMBOLS_SHA256,
+                                 S1_OWNER_VERSION_IDENTITY_SYMBOLS_PATH_LABEL),
+        "version_probe": (S1_OWNER_VERSION_IDENTITY_PROBE_PATH,
+                          S1_OWNER_VERSION_IDENTITY_PROBE_SHA256,
+                          S1_OWNER_VERSION_IDENTITY_PROBE_PATH_LABEL),
+        "version_probe_run_log": (S1_OWNER_VERSION_IDENTITY_PROBE_RUN_LOG_PATH,
+                                  S1_OWNER_VERSION_IDENTITY_PROBE_RUN_LOG_SHA256,
+                                  S1_OWNER_VERSION_IDENTITY_PROBE_RUN_LOG_PATH_LABEL),
+    }
+    identities = {}
+    for name, (path, expected_sha256, path_label) in pinned_files.items():
+        require(path.is_file(), f"S1 version-identity {name} is unavailable")
+        actual_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+        require(actual_sha256 == expected_sha256,
+                f"S1 version-identity {name} differs from the pinned local rebuild evidence")
+        identities[name] = {"path": path_label, "sha256": actual_sha256}
+
+    receipt = read_json(S1_OWNER_VERSION_IDENTITY_BUILD_RECEIPT_PATH)
+    expected_source_root = S1_OWNER_VERSION_IDENTITY_APP_PATH.parents[2]
+    require(isinstance(receipt, dict)
+            and receipt.get("schema") == "mc.s1-version-identity-build.v1"
+            and receipt.get("build_exit") == 0
+            and Path(str(receipt.get("source_root", ""))) == expected_source_root
+            and receipt.get("source_input_sha256") == S1_OWNER_SOURCE_REUSE_V3_CURRENT_SHA256
+            and receipt.get("accepted_capture_source_input_sha256") == S1_OWNER_SOURCE_INPUT_SHA256
+            and receipt.get("application_behavior_input_sha256_after_exact_identity_normalization")
+                == S1_OWNER_SOURCE_REUSE_APPLICATION_SHA256
+            and receipt.get("build_configuration", {}).get("configuration") == "Release"
+            and receipt.get("build_configuration", {}).get("target") == "mc_main"
+            and receipt.get("build_configuration", {}).get("arm64_triplet") == "arm64-osx"
+            and receipt.get("build_configuration", {}).get("sanitizers") is False
+            and receipt.get("build_configuration", {}).get("high_assertions") is False,
+            "S1 version-identity build receipt does not bind the accepted source, exact version candidate, and Mac Release configuration")
+    require(receipt.get("accepted_application", {}).get("sha256") == S1_OWNER_SOURCE_REUSE_CURRENT_MAIN_SHA256
+            and receipt.get("version_identity_application", {}).get("sha256")
+                == S1_OWNER_VERSION_IDENTITY_APP_SHA256
+            and receipt.get("version_identity_application", {}).get("path")
+                == str(S1_OWNER_VERSION_IDENTITY_APP_PATH)
+            and receipt.get("version_identity_application", {}).get("global_symbol_set_identical") is True
+            and receipt.get("accepted_application", {}).get("global_symbol_sha256")
+                == receipt.get("version_identity_application", {}).get("global_symbol_sha256")
+            and receipt.get("version_identity_application", {}).get("symbol_list_sha256")
+                == S1_OWNER_VERSION_IDENTITY_SYMBOLS_SHA256
+            and receipt.get("accepted_application", {}).get("symbol_list_sha256")
+                == S1_OWNER_VERSION_IDENTITY_SYMBOLS_SHA256
+            and receipt.get("version_identity_application", {}).get("symbol_count") == 3407,
+            "S1 version-identity build changed the accepted symbol surface or application identity")
+    build_log = S1_OWNER_VERSION_IDENTITY_BUILD_LOG_PATH.read_text(encoding="utf-8", errors="replace")
+    require("[100/100] Linking CXX executable mc_main" in build_log,
+            "S1 version-identity build log does not show a complete mc_main link")
+    accepted_symbols = S1_OWNER_ACCEPTED_SYMBOLS_PATH.read_bytes()
+    current_symbols = S1_OWNER_VERSION_IDENTITY_SYMBOLS_PATH.read_bytes()
+    require(accepted_symbols == current_symbols,
+            "S1 version-identity rebuild exported a different global symbol set")
+    probe = receipt.get("version_identity_probe", {})
+    require(probe.get("compile_exit") == 0
+            and probe.get("run_exit") == 0
+            and probe.get("formatted_output") == "0.1.1:1 BasicBlocks"
+            and probe.get("executable_sha256") == S1_OWNER_VERSION_IDENTITY_PROBE_SHA256
+            and probe.get("run_log_sha256") == S1_OWNER_VERSION_IDENTITY_PROBE_RUN_LOG_SHA256
+            and S1_OWNER_VERSION_IDENTITY_PROBE_RUN_LOG_PATH.read_text(encoding="utf-8").strip()
+                == "0.1.1:1 BasicBlocks",
+            "S1 version-identity formatter probe did not produce the exact candidate label")
+    return {
+        "schema": receipt["schema"],
+        "source_input_sha256": receipt["source_input_sha256"],
+        "behavior_input_sha256_after_exact_identity_normalization":
+            receipt["application_behavior_input_sha256_after_exact_identity_normalization"],
+        "owner_tested_application_sha256": S1_OWNER_SOURCE_REUSE_CURRENT_MAIN_SHA256,
+        "version_identity_application": identities["application_executable"],
+        "build_log": identities["build_log"],
+        "receipt": identities["receipt"],
+        "global_symbols": {
+            "count": 3407,
+            "sha256": receipt["version_identity_application"]["global_symbol_sha256"],
+            "identical_to_owner_tested_application": True,
+        },
+        "formatted_version_probe": {
+            "output": "0.1.1:1 BasicBlocks",
+            "executable": identities["version_probe"],
+            "run_log": identities["version_probe_run_log"],
+        },
+    }
+
+
+S1_OWNER_SOURCE_REUSE_V3_CURRENT_SHA256 = '75b2a0951e88e1ebc38a6776aaf191071ab1445a41d6c500c2cf438e12d1d641'
+def s1_owner_source_reuse_certificate_v3(root: Path, current_source_sha256: str) -> dict[str, Any]:
+    """Bind retained gameplay to unchanged app inputs and exact approved deltas."""
+    accepted_root = S1_OWNER_ACCEPTED_SOURCE_ROOT
+    require(accepted_root.is_dir(), "approved S1 source candidate is unavailable for reuse verification")
+    current_inputs = _MATRIX._input_file_paths(root, SOURCE_INPUTS)
+    accepted_inputs = _MATRIX._input_file_paths(accepted_root, SOURCE_INPUTS)
+    require(len(current_inputs) == S1_OWNER_SOURCE_INPUT_COUNT
+            and len(accepted_inputs) == S1_OWNER_SOURCE_INPUT_COUNT
+            and set(current_inputs) == set(accepted_inputs),
+            "S1 source-reuse inventory differs from the approved 908-input candidate")
+    require(source_digest(accepted_root) == S1_OWNER_SOURCE_INPUT_SHA256,
+            "approved S1 source candidate no longer matches the retained Mac capture")
+    require(current_source_sha256 == S1_OWNER_SOURCE_REUSE_V3_CURRENT_SHA256,
+            "current S1 source inputs do not match the exact owner-reviewed candidate")
+
+    normalized_files = []
+    test_fixture_files = []
+    version_only_files = []
+    accepted_application = hashlib.sha256()
+    equivalent_application = hashlib.sha256()
+    raw_current_application = hashlib.sha256()
+    application_paths = {relative for relative in current_inputs if not relative.startswith("tests/")}
+    test_paths = set(current_inputs) - application_paths
+    require(len(application_paths) == S1_OWNER_SOURCE_REUSE_APPLICATION_INPUT_COUNT
+            and len(test_paths) == S1_OWNER_SOURCE_REUSE_TEST_INPUT_COUNT,
+            "S1 source-reuse app/test input partition changed")
+
+    def update_digest(digest: Any, relative: str, contents: bytes) -> None:
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(len(contents).to_bytes(8, byteorder="big"))
+        digest.update(contents)
+
+    for relative in sorted(current_inputs):
+        current_bytes = current_inputs[relative].read_bytes()
+        accepted_bytes = accepted_inputs[relative].read_bytes()
+        if relative in S1_OWNER_SOURCE_REUSE_FILE_HASHES:
+            expected = S1_OWNER_SOURCE_REUSE_FILE_HASHES[relative]
+            require(hashlib.sha256(accepted_bytes).hexdigest() == expected["accepted_sha256"]
+                    and hashlib.sha256(current_bytes).hexdigest() == expected["current_sha256"]
+                    and accepted_bytes.endswith(b"\n\n")
+                    and current_bytes == accepted_bytes.rstrip(b"\n") + b"\n",
+                    f"S1 source-reuse file is not the authorized EOF-only normalization: {relative}")
+            trailing_lines = len(accepted_bytes) - len(accepted_bytes.rstrip(b"\n"))
+            normalized_files.append({
+                "path": relative,
+                "input_class": "test" if relative.startswith("tests/") else "application",
+                "accepted_sha256": expected["accepted_sha256"],
+                "current_sha256": expected["current_sha256"],
+                "accepted_trailing_lf_count": trailing_lines,
+                "current_trailing_lf_count": 1,
+            })
+            equivalence_bytes = accepted_bytes
+        elif relative in S1_OWNER_SOURCE_REUSE_VERSION_FILES:
+            expected = S1_OWNER_SOURCE_REUSE_VERSION_FILES[relative]
+            require(relative in application_paths
+                    and hashlib.sha256(accepted_bytes).hexdigest() == expected["accepted_sha256"]
+                    and hashlib.sha256(current_bytes).hexdigest() == expected["current_sha256"],
+                    f"S1 version identity input differs from its pinned candidate: {relative}")
+            transformed = accepted_bytes
+            literal_changes = []
+            for before, after in S1_OWNER_SOURCE_REUSE_VERSION_REPLACEMENTS[relative]:
+                require(transformed.count(before) == 1,
+                        f"S1 version identity transform is not unique: {relative}")
+                transformed = transformed.replace(before, after, 1)
+                literal_changes.append({"from": before.decode("utf-8"), "to": after.decode("utf-8")})
+            require(current_bytes == transformed,
+                    f"S1 version identity file contains a non-version change: {relative}")
+            version_only_files.append({
+                "path": relative,
+                "input_class": "application",
+                "accepted_sha256": expected["accepted_sha256"],
+                "current_sha256": expected["current_sha256"],
+                "literal_changes": literal_changes,
+            })
+            # Version identity affects display/build metadata only. For the
+            # retained gameplay comparison, substitute the exact accepted bytes.
+            equivalence_bytes = accepted_bytes
+        elif relative in S1_OWNER_SOURCE_REUSE_TEST_FIXTURE_HASHES:
+            expected = S1_OWNER_SOURCE_REUSE_TEST_FIXTURE_HASHES[relative]
+            require(relative.startswith("tests/")
+                    and hashlib.sha256(accepted_bytes).hexdigest() == expected["accepted_sha256"]
+                    and hashlib.sha256(current_bytes).hexdigest() == expected["current_sha256"]
+                    and current_bytes != accepted_bytes,
+                    f"S1 source-reuse test fixture differs from its exact owner-reviewed update: {relative}")
+            test_fixture_files.append({
+                "path": relative,
+                "accepted_sha256": expected["accepted_sha256"],
+                "current_sha256": expected["current_sha256"],
+            })
+            equivalence_bytes = current_bytes
+        else:
+            require(current_bytes == accepted_bytes,
+                    f"S1 source-reuse certificate rejects changed input: {relative}")
+            equivalence_bytes = current_bytes
+        if relative in application_paths:
+            update_digest(accepted_application, relative, accepted_bytes)
+            update_digest(equivalent_application, relative, equivalence_bytes)
+            update_digest(raw_current_application, relative, current_bytes)
+
+    require([entry["path"] for entry in normalized_files]
+            == sorted(S1_OWNER_SOURCE_REUSE_FILE_HASHES),
+            "S1 source-reuse certificate is missing an authorized EOF-only normalization")
+    require([entry["path"] for entry in test_fixture_files]
+            == sorted(S1_OWNER_SOURCE_REUSE_TEST_FIXTURE_HASHES),
+            "S1 source-reuse certificate is missing an exact test-fixture update")
+    require([entry["path"] for entry in version_only_files]
+            == sorted(S1_OWNER_SOURCE_REUSE_VERSION_FILES),
+            "S1 source-reuse certificate is missing an exact version identity input")
+    require(len(current_inputs) - len(normalized_files) - len(test_fixture_files) - len(version_only_files)
+            == S1_OWNER_SOURCE_REUSE_UNCHANGED_INPUT_COUNT,
+            "S1 source-reuse certificate does not preserve the exact unchanged-input count")
+    require(len(application_paths) - sum(
+                entry["input_class"] == "application" for entry in normalized_files
+            ) - len(version_only_files) == S1_OWNER_SOURCE_REUSE_APPLICATION_UNCHANGED_INPUT_COUNT
+            and len(test_paths) - sum(
+                entry["input_class"] == "test" for entry in normalized_files
+            ) - len(test_fixture_files) == S1_OWNER_SOURCE_REUSE_TEST_UNCHANGED_INPUT_COUNT,
+            "S1 source-reuse application/test unchanged-input counts changed")
+    accepted_application_sha256 = accepted_application.hexdigest()
+    equivalent_application_sha256 = equivalent_application.hexdigest()
+    require(accepted_application_sha256 == equivalent_application_sha256
+            == S1_OWNER_SOURCE_REUSE_APPLICATION_SHA256,
+            "S1 application behavior inputs differ after exact approved normalizations")
+    return {
+        "schema": S1_OWNER_SOURCE_REUSE_SCHEMA,
+        "capture_source_input_sha256": S1_OWNER_SOURCE_INPUT_SHA256,
+        "current_source_input_sha256": current_source_sha256,
+        "source_input_count": len(current_inputs),
+        "unchanged_input_count": len(current_inputs) - len(normalized_files) - len(test_fixture_files) - len(version_only_files),
+        "application_input_count": len(application_paths),
+        "application_unchanged_input_count": S1_OWNER_SOURCE_REUSE_APPLICATION_UNCHANGED_INPUT_COUNT,
+        "application_source_input_sha256": equivalent_application_sha256,
+        "application_current_raw_input_sha256": raw_current_application.hexdigest(),
+        "application_behavior_equivalence": "all application inputs are byte-identical to the accepted candidate after the two exact EOF normalizations and three pinned version-identity literal transforms",
+        "test_input_count": len(test_paths),
+        "test_unchanged_input_count": S1_OWNER_SOURCE_REUSE_TEST_UNCHANGED_INPUT_COUNT,
+        "normalized_files": normalized_files,
+        "test_fixture_files": test_fixture_files,
+        "version_only_files": version_only_files,
+        "rebuilt_application": s1_owner_source_reuse_build_evidence(),
+        "version_identity_rebuild": s1_owner_source_reuse_version_identity_build_evidence(),
+    }
+
+
+
+S1_OWNER_SOURCE_REUSE_CERTIFICATE_V4 = {'acceptance_boundary': 'Fresh Release build and headless CLI scenario evidence only; no full gameplay, '
+                        'rendering, performance or new owner acceptance. Independent platform, analysis and '
+                        'release gates remain required.',
+ 'application_behavior_equivalence': 'not claimed; semantic preservation requires exact-delta review and '
+                                     'current correctness evidence',
+ 'capture_source_input_sha256': '83da03165eea8b14d48398b8ca314b0ddcb3d74fa6b446b998f819a2538c3e9d',
+ 'changed_input_count': 141,
+ 'current_source_input_sha256': 'fd08d7464b1ec7c80d4a494e8e9e471baafcd7f8e85a1220923d453945b93aa1',
+ 'headless_runtime': {'path': '/Users/core-just/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/fresh-runtime-v4-01/headless-runtime-final-receipt.json',
+                      'sha256': '5c0c0dd73dd3002bf5f685da9c52d033768b632268b05db6c68cafd81a16dea2',
+                      'size': 1550},
+ 'manifest': {'path': '/Users/core-just/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/fresh-runtime-v4-01/source-provenance.v4.json',
+              'sha256': 'a5665d3ba9e38aca35f815312b05bff800f203195ea6986e9dedb779237b0125',
+              'size': 281090},
+ 'new_binary_owner_acceptance': False,
+ 'provenance_mode': 'review-supported-analysis-delta',
+ 'release_rebuild': {'path': '/Users/core-just/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/fresh-runtime-v4-01/release-rebuild-final-receipt.json',
+                     'sha256': '91de8a838122f27975160b43b08188cefbc6021a09bddebb44afa3e142dcfb8f',
+                     'size': 1561},
+ 'runtime_evidence_scope': 'historical-owner-accepted-capture',
+ 'schema': 'mc.s1-analysis-source-provenance.v4',
+ 'semantic_review': {'path': '/Users/core-just/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/review-artifacts/analysis-source-review-v8.json',
+                     'sha256': '55946f17b05153a3b6edf3c04dbb4caefaf8695f354b9d95c5fe6a049e5819c7',
+                     'size': 5893},
+ 'source_input_count': 908}
+
+def s1_owner_source_reuse_certificate(root: Path, current_source_sha256: str) -> dict[str, Any]:
+    """Bind historical accepted capture to an exactly reviewed, rebuilt analysis delta."""
+    certificate = S1_OWNER_SOURCE_REUSE_CERTIFICATE_V4
+    if current_source_sha256 != certificate["current_source_input_sha256"]:
+        return s1_owner_source_reuse_certificate_v3(root, current_source_sha256)
+    require(current_source_sha256 == certificate["current_source_input_sha256"],
+            "current S1 source differs from the exact reviewed analysis candidate")
+    manifest_path = checked_file(certificate["manifest"], root)
+    manifest = read_json(manifest_path)
+    require(manifest.get("schema") == "mc.s1-analysis-source-provenance.v4"
+            and manifest.get("qualification_status") == "review-supported-source-reuse",
+            "S1 analysis source provenance is not qualified")
+    current = _MATRIX._input_file_paths(root, SOURCE_INPUTS)
+    accepted = _MATRIX._input_file_paths(S1_OWNER_ACCEPTED_SOURCE_ROOT, SOURCE_INPUTS)
+    require(source_digest(S1_OWNER_ACCEPTED_SOURCE_ROOT) == S1_OWNER_SOURCE_INPUT_SHA256,
+            "historical capture source inputs changed")
+    rows = []
+    for relative in sorted(set(current) | set(accepted)):
+        rows.append({"path": relative,
+                     "accepted_sha256": (hashlib.sha256(accepted[relative].read_bytes()).hexdigest()
+                                         if relative in accepted else None),
+                     "current_sha256": (hashlib.sha256(current[relative].read_bytes()).hexdigest()
+                                        if relative in current else None)})
+    require(rows == manifest.get("inputs") and len(current) == certificate["source_input_count"]
+            and [row for row in rows if row["accepted_sha256"] != row["current_sha256"]]
+            == manifest.get("changed_inputs"),
+            "S1 reviewed delta input inventory changed")
+    checked_file(certificate["semantic_review"], root)
+    rebuild = read_json(checked_file(certificate["release_rebuild"], root))
+    require(rebuild.get("status") == "passed"
+            and rebuild.get("source_input_sha256") == current_source_sha256
+            and rebuild.get("runtime_executed") is False and rebuild.get("new_binary_owner_acceptance") is False,
+            "current S1 Release rebuild provenance changed")
+    executable = checked_file(rebuild["executable"], root)
+    require(build_identity(executable.parent.parent / "source", executable.parent, executable) == rebuild.get("build"),
+            "current S1 Release rebuild inputs changed")
+    runtime = read_json(checked_file(certificate["headless_runtime"], root))
+    require(runtime.get("schema") == "mc.s1-analysis-headless-runtime.v1"
+            and runtime.get("passed") is True and runtime.get("returncode") == 0
+            and runtime.get("source_input_sha256") == current_source_sha256
+            and runtime.get("executable") == rebuild.get("executable"),
+            "current S1 headless scenario provenance changed")
+    raw = read_json(checked_file(runtime["raw_report"], root))
+    require(raw.get("schema_version") == "mc.runtime-evidence.v1"
+            and raw.get("mode") == "scenario" and raw.get("passed") is True,
+            "current S1 headless scenario schema changed")
+    return certificate
+
+
 def timing_summary(samples: list[int]) -> dict[str, int]:
     ordered = sorted(samples)
     count = len(ordered)
@@ -802,8 +1310,1147 @@ def verify_barrier(barrier: dict[str, Any], phase: str, elapsed: int, radius: in
                 and band["nonresident"] == 0 and band["stale_or_missing_mesh"] == 0, f"{phase}: radial coverage mismatch")
 
 
+def verify_fresh_frame_budget(value: Any, frames: list[dict[str, Any]], completions: Any,
+                              completion_source: Any, required_for_benchmark_pass: bool,
+                              platform: str, *, movement_phase: str = PHASES[2],
+                              expected_start_ns: int | None = None) -> bool:
+    fields = {"measurement_scope", "target_frame_duration_ns", "required_in_budget_time_permille",
+              "measurement_window_start_offset_ns", "measurement_window_end_offset_ns",
+              "required_window_duration_ns", "measured_time_ns", "in_budget_time_ns", "sample_count",
+              "fence_confirmed_frame_count", "measurement_window_complete", "passed",
+              "required_for_benchmark_pass"}
+    require(
+        isinstance(value, dict) and set(value) == fields,
+        "fresh-frame interval budget schema is absent or malformed",
+    )
+    require(value["measurement_scope"] == FRAME_BUDGET_SCOPE and completion_source == FRAME_COMPLETION_SOURCE,
+            "frame budget is not based on per-slot submitted-frame fence completion observations")
+    require(isinstance(completions, list), "raw fence-confirmed frame completion evidence is absent")
+    target_ns = integer(value["target_frame_duration_ns"], "target_frame_duration_ns", 1)
+    required_permille = integer(value["required_in_budget_time_permille"], "required_in_budget_time_permille")
+    require(target_ns == FRAME_BUDGET_TARGET_NS[platform]
+            and required_permille == FRAME_BUDGET_REQUIRED_PERMILLE,
+            f"fresh-frame interval budget does not use the required {FRESH_FRAME_TARGET_HZ[platform]}Hz and 99% thresholds")
+    start_ns = integer(value["measurement_window_start_offset_ns"], "measurement_window_start_offset_ns")
+    end_ns = integer(value["measurement_window_end_offset_ns"], "measurement_window_end_offset_ns")
+    required_duration_ns = integer(value["required_window_duration_ns"], "required_window_duration_ns", 1)
+    require(required_duration_ns == PERFORMANCE_SAMPLE_MS * 1_000_000,
+            "fresh-frame interval budget requires the fixed 30-second movement window")
+    require(end_ns == start_ns + required_duration_ns,
+            "fresh-frame measurement window must remain exactly 30 seconds")
+    measured_ns = required_duration_ns
+    movement_frames = [frame for frame in frames if frame["phase"] == movement_phase]
+    require(movement_frames, "fresh-frame interval budget lacks movement samples")
+    if expected_start_ns is None:
+        baseline_frames = [frame for frame in frames if frame["phase"] == PHASES[1]]
+        require(baseline_frames, "fresh-frame interval budget lacks a movement boundary")
+        expected_start_ns = (integer(baseline_frames[-1]["started_offset_ns"], "baseline frame start")
+                             + integer(baseline_frames[-1]["loop_duration_ns"], "baseline frame duration", 1))
+        require(expected_start_ns <= start_ns <= expected_start_ns + SERVER_TICK_NS,
+                "fresh-frame measurement window does not begin within one input tick of the movement boundary")
+    else:
+        require(start_ns == expected_start_ns,
+                "fresh-frame measurement window disagrees with the S1 first-send boundary")
+    required_end_ns = start_ns + required_duration_ns
+    completion_tail_end_ns = required_end_ns + SERVER_TICK_NS
+    complete_flag = value["measurement_window_complete"]
+    require(type(complete_flag) is bool, "fresh-frame measurement completeness must be boolean")
+
+    submitted_by_sequence: dict[int, dict[str, Any]] = {}
+    previous_ordinal = 0
+    previous_sequence = 0
+    present_ids_by_generation: dict[int, set[int]] = {}
+    for frame in movement_frames:
+        if not frame["presentation_succeeded"]:
+            continue
+        submitted_offset = integer(frame.get("submitted_frame_offset_ns"), "movement submitted-frame offset")
+        phase = frame.get("submitted_frame_phase")
+        if submitted_offset < start_ns or submitted_offset >= required_end_ns:
+            continue
+        generation = integer(frame.get("swapchain_generation"), "fresh-frame swapchain generation")
+        frame_slot = integer(frame.get("submitted_frame_slot"), "fresh-frame slot")
+        sequence_id = integer(frame.get("submitted_frame_sequence_id"), "fresh-frame sequence ID", 1)
+        ordinal = integer(frame["loop_ordinal"], "fresh-frame loop ordinal", 1)
+        present_id_value = frame.get("application_present_id")
+        present_id = (
+            None
+            if present_id_value is None
+            else integer(present_id_value, "fresh-frame application present ID", 1)
+        )
+        require(frame_slot < 3 and phase == movement_phase
+                and submitted_offset == integer(frame["started_offset_ns"], "movement frame start")
+                    + integer(frame["loop_duration_ns"], "movement frame duration", 1),
+                "raw movement submission identity or timestamp is malformed")
+        require(ordinal > previous_ordinal and sequence_id > previous_sequence
+                and sequence_id not in submitted_by_sequence,
+                "fresh-frame submission IDs are duplicated or out of order")
+        if present_id is not None:
+            generation_ids = present_ids_by_generation.setdefault(generation, set())
+            require(present_id not in generation_ids, "fresh-frame application present IDs are duplicated")
+            generation_ids.add(present_id)
+        submitted_by_sequence[sequence_id] = frame
+        previous_ordinal = ordinal
+        previous_sequence = sequence_id
+
+    matched: list[tuple[int, int, int]] = []
+    seen_completion_ids: set[int] = set()
+    previous_completion_ns = start_ns
+    previous_completion_sequence = 0
+    for completion in completions:
+        require(isinstance(completion, dict) and set(completion) == {
+            "sequence_id", "swapchain_generation", "frame_slot", "submitted_offset_ns",
+            "completion_observed_offset_ns", "application_present_id", "submission_phase"},
+            "raw fence-confirmed frame completion is malformed")
+        if completion.get("submission_phase") != movement_phase:
+            continue
+        submitted_offset = integer(completion.get("submitted_offset_ns"), "fence submitted offset")
+        if submitted_offset < start_ns or submitted_offset >= required_end_ns:
+            continue
+        sequence_id = integer(completion.get("sequence_id"), "fence sequence ID", 1)
+        generation = integer(completion.get("swapchain_generation"), "fence swapchain generation")
+        frame_slot = integer(completion.get("frame_slot"), "fence frame slot")
+        observed_offset = integer(completion.get("completion_observed_offset_ns"), "fence observation offset")
+        present_id_value = completion.get("application_present_id")
+        present_id = None if present_id_value is None else integer(present_id_value, "fence application present ID", 1)
+        source = submitted_by_sequence.get(sequence_id)
+        require(source is not None and sequence_id not in seen_completion_ids and frame_slot < 3
+                and observed_offset >= submitted_offset and observed_offset <= completion_tail_end_ns
+                and observed_offset >= previous_completion_ns
+                and sequence_id > previous_completion_sequence,
+                "fence-confirmed frame completion is missing, duplicated, out of order, or beyond the bounded drain tail")
+        require(integer(source["swapchain_generation"], "submission swapchain generation") == generation
+                and integer(source["submitted_frame_slot"], "submission frame slot") == frame_slot
+                and integer(source["submitted_frame_offset_ns"], "submission offset") == submitted_offset
+                and source.get("application_present_id") == present_id
+                and source.get("submitted_frame_phase") == completion.get("submission_phase"),
+                "fence-confirmed frame completion does not match its submission identity")
+        matched.append((sequence_id, observed_offset, submitted_offset))
+        seen_completion_ids.add(sequence_id)
+        previous_completion_ns = min(observed_offset, required_end_ns)
+        previous_completion_sequence = sequence_id
+
+    complete = (complete_flag and end_ns >= required_end_ns
+                and len(matched) == len(submitted_by_sequence) and bool(matched))
+    require(end_ns == required_end_ns,
+            "fresh-frame measurement window must not include the fence-completion drain tail")
+    if required_for_benchmark_pass:
+        require(complete, "performance proof lacks the complete 30-second fence-confirmed frame window")
+
+    intervals: list[int] = []
+    previous_completion_ns = start_ns
+    for _, observed_offset, _ in matched:
+        clipped_observed = min(observed_offset, required_end_ns)
+        # Retired fences observed in one poll share a timestamp; each remains a
+        # sample, while its zero interval contributes no in-budget time.
+        intervals.append(clipped_observed - previous_completion_ns)
+        previous_completion_ns = clipped_observed
+    if end_ns > previous_completion_ns:
+        intervals.append(end_ns - previous_completion_ns)
+    in_budget_ns = sum(interval for interval in intervals if interval <= target_ns)
+    over_budget_ns = measured_ns - in_budget_ns
+    allowed_over_budget_ns = measured_ns * (1_000 - required_permille) // 1_000
+    passed = complete and over_budget_ns <= allowed_over_budget_ns
+    expected = {"measurement_scope": FRAME_BUDGET_SCOPE,
+                "target_frame_duration_ns": target_ns,
+                "required_in_budget_time_permille": required_permille,
+                "measurement_window_start_offset_ns": start_ns,
+                "measurement_window_end_offset_ns": end_ns,
+                "required_window_duration_ns": required_duration_ns,
+                "measured_time_ns": measured_ns,
+                "in_budget_time_ns": in_budget_ns,
+                "sample_count": len(intervals),
+                "fence_confirmed_frame_count": len(matched),
+                "measurement_window_complete": complete,
+                "passed": passed,
+                "required_for_benchmark_pass": required_for_benchmark_pass}
+    require(value == expected, "raw fresh-frame interval budget mismatch")
+    return passed
+
+
+def verify_s1_visual_lod_sample(value: Any, context: str, sphere: dict[str, Any] | None = None) -> None:
+    fields = {"contract", "radius_blocks", "scene_active", "leaf_count", "actual_column_count",
+              "terrain_identity", "session_join_epoch", "coverage_epoch", "submitted_frame_count",
+              "scene_center", "actual_radius_blocks", "required_actual_columns",
+              "presented_current_actual_columns", "coverage_center", "sources_current"}
+    require(isinstance(value, dict) and set(value) == fields,
+            f"{context}: visual LOD scene sample is absent or malformed")
+    require(integer(value["radius_blocks"], f"{context} visual LOD radius") == VISUAL_LOD_RADIUS_BLOCKS,
+            f"{context}: visual LOD sample does not cover the configured 320-block radius")
+    require(type(value["scene_active"]) is bool,
+            f"{context}: visual LOD scene-active state must be boolean")
+    leaf_count = integer(value["leaf_count"], f"{context} visual LOD leaf count")
+    integer(value["actual_column_count"], f"{context} visual LOD actual-column count")
+    require(value["scene_active"] is True and leaf_count >= value["actual_column_count"] >= 81 * 81,
+            f"{context}: visual LOD scene must be active and nonempty")
+    require(value["contract"] == "mc.presented-terrain-coverage.v1"
+            and integer(value["actual_radius_blocks"], f"{context} actual radius") == ACTUAL_TERRAIN_RADIUS_BLOCKS
+            and integer(value["required_actual_columns"], f"{context} required actual columns") == 81 * 81
+            and integer(value["presented_current_actual_columns"], f"{context} presented actual columns") == 81 * 81
+            and value["actual_column_count"] >= 81 * 81
+            and value["sources_current"] is True,
+            f"{context}: presented visual scene has incomplete or stale actual terrain coverage")
+    integer(value["session_join_epoch"], f"{context} scene session", 1)
+    integer(value["coverage_epoch"], f"{context} scene coverage epoch", 1)
+    integer(value["submitted_frame_count"], f"{context} scene submission count", 1)
+    identity = value["terrain_identity"]
+    require(isinstance(identity, dict) and set(identity) == {
+        "terrain_version", "revision", "seed", "configuration_identity"}
+        and isinstance(identity["configuration_identity"], str) and bool(identity["configuration_identity"]),
+        f"{context}: presented scene terrain identity is absent or malformed")
+    for field in ("terrain_version", "revision", "seed"):
+        integer(identity[field], f"{context} scene {field}")
+    center = tile_center(value["scene_center"], f"{context} scene center")
+    require(all(0 <= coordinate < 65_536 for coordinate in center.values()),
+            f"{context}: presented scene center is outside the world")
+    if sphere is not None:
+        require(value["coverage_center"] == sphere["world_loading_center"]
+                and value["coverage_epoch"] <= sphere["active_coverage_epoch"],
+                f"{context}: presented scene coverage is sampled for another center or future epoch")
+
+
+def verify_s1_full_volume_sample(value: dict[str, Any], context: str, *, require_ready: bool = True) -> None:
+    required = integer(value.get("required_authoritative_columns"), f"{context} required authoritative columns", 1)
+    resident = integer(value.get("resident_authoritative_columns"), f"{context} resident authoritative columns")
+    vertical = integer(value.get("vertical_chunk_count"), f"{context} vertical chunk count", 1)
+    require(value.get("coverage_scope") == "horizontal_full_volume"
+            and required == 81 * 81 and vertical == 64 and resident <= required
+            and value["required_chunks"] == required * vertical
+            and value["ready_chunks"] == resident * vertical,
+            f"{context}: horizontal full-volume authoritative column evidence is inconsistent")
+    integer(value["active_coverage_epoch"], f"{context} profile coverage epoch", 1)
+    if require_ready:
+        require(resident == required and value["ready"] is True,
+                f"{context}: horizontal full-volume authoritative-column deficit")
+        active, current = value["authoritative_columns_center"], value["world_loading_center"]
+        require(isinstance(active, dict) and isinstance(current, dict)
+                and all(type(active.get(axis)) is int and type(current.get(axis)) is int
+                        and (active[axis] // 16) % 4096 == (current[axis] // 16) % 4096 for axis in ("x", "y")),
+                f"{context}: full-volume profile coverage does not identify the current horizontal center")
+
+
+def verify_movement_playable_sphere(
+    full: dict[str, Any], frames: list[dict[str, Any]], budget: dict[str, Any], sample_scope: str,
+    *, movement_phase: str = PHASES[2], boundary_phase: str = PHASES[1],
+    require_boundary: bool = True, require_source_contract: bool = True,
+    expected_radius_blocks: int = PLAYABLE_SPHERE_RADIUS_BLOCKS,
+) -> None:
+    is_s1_trajectory = full.get("contract") == S1_PERFORMANCE_CONTRACT
+    if require_source_contract:
+        require(full.get("movement_playable_sphere_contract") == PLAYABLE_SPHERE_CONTRACT
+                and full.get("movement_playable_sphere_sample_scope") == sample_scope,
+                "movement playable-sphere source contract is absent or unsupported")
+
+    def position(raw: Any, context: str, label: str) -> tuple[int, int, int, int, int, int]:
+        position_fields = {"x", "y", "z", "x_subcell", "y_subcell", "z_subcell"}
+        require(isinstance(raw, dict) and set(raw) == position_fields,
+                f"{context}: {label} is absent or malformed")
+        cells = ("x", "y", "z")
+        signed_cells = []
+        for key in cells:
+            coordinate = raw[key]
+            require(type(coordinate) is int and -(1 << 31) <= coordinate < (1 << 31),
+                    f"{context} {label} {key} must be a signed 32-bit world cell")
+            signed_cells.append(coordinate)
+        subcells = []
+        for key in ("x_subcell", "y_subcell", "z_subcell"):
+            subcell = integer(raw[key], f"{context} {label} {key}")
+            require(subcell < 10_000, f"{context} {label} {key} is outside its world cell")
+            subcells.append(subcell)
+        return tuple(signed_cells + subcells)
+
+    def validate_sphere(value: Any, context: str, authoritative_position: Any = None) -> None:
+        fields = {"radius_blocks", "active_coverage_epoch", "active_coverage_center",
+                  "world_loading_center", "ready_chunks", "required_chunks", "ready"}
+        if is_s1_trajectory:
+            fields |= S1_FULL_VOLUME_FIELDS
+        require(isinstance(value, dict) and set(value) == fields,
+                f"{context}: movement playable-sphere sample is absent or malformed")
+        require(integer(value["radius_blocks"], f"{context} radius") == expected_radius_blocks,
+                f"{context}: movement actual-terrain radius is not {expected_radius_blocks} blocks")
+        integer(value["active_coverage_epoch"], f"{context} active coverage epoch", 1)
+        required = integer(value["required_chunks"], f"{context} required chunks", 1)
+        ready = integer(value["ready_chunks"], f"{context} ready chunks")
+        require(type(value["ready"]) is bool and value["ready"] is True and ready == required,
+                f"{context}: movement playable-sphere has a materialized-chunk deficit")
+
+        if is_s1_trajectory:
+            verify_s1_full_volume_sample(value, context)
+        position(value["active_coverage_center"], context, "active coverage center")
+        loading_center = position(value["world_loading_center"], context, "WorldLoading center")
+        if authoritative_position is not None:
+            require(position(authoritative_position, context, "authoritative player position") == loading_center,
+                    f"{context}: sphere center does not match the authoritative player update")
+
+    baseline_frames = [frame for frame in frames if frame.get("phase") == boundary_phase]
+    start_ns = integer(budget.get("measurement_window_start_offset_ns"), "movement sphere window start")
+    duration_ns = integer(budget.get("required_window_duration_ns"), "movement sphere window duration", 1)
+    end_ns = start_ns + duration_ns
+    movement_frames = [frame for frame in frames if frame.get("phase") == movement_phase
+                       and integer(frame.get("started_offset_ns"), "movement sphere frame start") < end_ns]
+    require(movement_frames, "movement playable-sphere proof lacks loop samples")
+    if require_boundary:
+        require(baseline_frames, "movement playable-sphere proof lacks boundary samples")
+        last_baseline = baseline_frames[-1]
+        baseline_end = integer(last_baseline["started_offset_ns"], "movement boundary frame start") \
+            + integer(last_baseline["loop_duration_ns"], "movement boundary frame duration", 1)
+        require(baseline_end <= start_ns <= baseline_end + SERVER_TICK_NS,
+                "movement playable-sphere proof lacks a sampled state within one input tick of the movement boundary")
+        validate_sphere(last_baseline.get("playable_sphere"), "movement boundary")
+        previous_ordinal = integer(last_baseline.get("loop_ordinal"), "movement boundary loop ordinal", 1)
+    else:
+        first_movement = movement_frames[0]
+        first_start = integer(first_movement["started_offset_ns"], "first movement loop start")
+        first_end = first_start + integer(first_movement["loop_duration_ns"], "first movement loop duration", 1)
+        require(first_start <= start_ns < first_end,
+                "movement playable-sphere proof does not sample the first-send boundary")
+        previous_ordinal = integer(first_movement.get("loop_ordinal"), "first movement loop ordinal", 1) - 1
+
+    last_movement_end = start_ns
+    movement_centers: list[tuple[int, int, int, int, int, int]] = []
+    for frame in movement_frames:
+        ordinal = integer(frame.get("loop_ordinal"), "movement sphere loop ordinal", 1)
+        require(ordinal == previous_ordinal + 1, "movement playable-sphere loop samples have a missing interval")
+        previous_ordinal = ordinal
+        frame_start = integer(frame["started_offset_ns"], "movement sphere frame start")
+        frame_end = frame_start + integer(frame["loop_duration_ns"], "movement sphere frame duration", 1)
+        require(frame_start < end_ns and frame_start <= last_movement_end,
+                "movement playable-sphere loop evidence has a missing interval")
+        validate_sphere(frame.get("playable_sphere"), f"movement loop {ordinal}")
+        if is_s1_trajectory:
+            verify_s1_visual_lod_sample(frame.get("visual_lod"), f"movement loop {ordinal}", frame["playable_sphere"])
+        movement_centers.append(position(frame["playable_sphere"]["world_loading_center"],
+                                         f"movement loop {ordinal}", "WorldLoading center"))
+        last_movement_end = frame_end
+    require(last_movement_end >= end_ns,
+            "movement playable-sphere samples do not cover the complete window tail")
+    require(len(set(movement_centers)) > 1,
+            "movement playable-sphere samples do not show ordinary player movement")
+
+    updates = full.get("movement_authoritative_sphere_updates")
+    require(isinstance(updates, list), "movement playable-sphere authoritative updates are absent")
+    declared_count = integer(full.get("movement_authoritative_update_count"),
+                             "movement authoritative sphere update count", 1)
+    require(len(updates) == declared_count,
+            "movement playable-sphere authoritative update count does not match its raw samples")
+    previous_update_ordinal = 0
+    previous_update_offset = start_ns - 1
+    authoritative_centers: list[tuple[int, int, int, int, int, int]] = []
+    for update in updates:
+        require(isinstance(update, dict) and {
+            "update_ordinal", "offset_ns", "authoritative_position", "playable_sphere",
+            "state_revision", "acknowledged_input_sequence", "movement_capabilities",
+            "vertical_velocity_subcells",
+        } <= set(update),
+            "movement playable-sphere authoritative update is malformed")
+        ordinal = integer(update["update_ordinal"], "movement authoritative update ordinal", 1)
+        offset = integer(update["offset_ns"], "movement authoritative update offset")
+        require((previous_update_ordinal == 0 or ordinal > previous_update_ordinal)
+                and start_ns <= offset < end_ns + SERVER_TICK_NS
+                and offset > previous_update_offset,
+                "movement playable-sphere authoritative update sequence is out of order or outside the window")
+        validate_sphere(update["playable_sphere"], f"authoritative update {ordinal}",
+                        update["authoritative_position"])
+        if is_s1_trajectory:
+            verify_s1_visual_lod_sample(update.get("visual_lod"), f"authoritative update {ordinal}", update["playable_sphere"])
+        authoritative_centers.append(position(update["authoritative_position"],
+                                              f"authoritative update {ordinal}",
+                                              "authoritative player position"))
+        previous_update_ordinal = ordinal
+        previous_update_offset = offset
+    require(len(set(authoritative_centers)) > 1,
+            "movement playable-sphere authoritative updates do not show ordinary player movement")
+    require(full.get("movement_playable_sphere_complete") is True,
+            "movement playable-sphere evidence is not marked complete")
+
+
+def verify_x30_authoritative_trajectory(
+    game: dict[str, Any], full: dict[str, Any], frames: list[dict[str, Any]], budget: dict[str, Any],
+    *, movement_phase: str = PHASES[2],
+) -> None:
+    require(game.get("movement_trajectory_contract") == MOVEMENT_TRAJECTORY_CONTRACT,
+            "x30 authoritative movement trajectory contract is absent or unsupported")
+    start = integer(budget.get("measurement_window_start_offset_ns"), "trajectory window start")
+    duration = integer(budget.get("required_window_duration_ns"), "trajectory window duration", 1)
+    require(duration == PERFORMANCE_SAMPLE_MS * 1_000_000,
+            "x30 authoritative movement trajectory requires the fixed 30-second window")
+    require(duration % SERVER_TICK_NS == 0,
+            "x30 authoritative movement window is not an integral number of server ticks")
+    expected_steps = duration // SERVER_TICK_NS
+    end = start + duration
+
+    position_fields = {"x", "y", "z", "x_subcell", "y_subcell", "z_subcell"}
+
+    def world_position(value: Any, context: str) -> tuple[int, int, int]:
+        require(isinstance(value, dict) and set(value) == position_fields,
+                f"{context}: authoritative trajectory position is malformed")
+        cells = []
+        for axis in ("x", "y", "z"):
+            coordinate = value[axis]
+            require(type(coordinate) is int and -(1 << 31) <= coordinate < (1 << 31),
+                    f"{context}: {axis} cell must be signed 32-bit")
+            cells.append(coordinate)
+        subcells = []
+        for axis in ("x_subcell", "y_subcell", "z_subcell"):
+            subcell = integer(value[axis], f"{context} {axis}")
+            require(subcell < SUBCELLS_PER_CELL, f"{context}: {axis} is outside its world cell")
+            subcells.append(subcell)
+        return tuple(cell * SUBCELLS_PER_CELL + subcell for cell, subcell in zip(cells, subcells))
+
+    def signed_component(value: Any, field: str) -> int:
+        require(type(value) is int and -127 <= value <= 127, f"{field} must be a signed int8 movement component")
+        return value
+
+    def direction_profile_valid(direction: dict[str, Any]) -> bool:
+        return (type(direction.get("accelerated")) is bool
+                and integer(direction.get("speedup"), "trajectory boundary speed profile")
+                    in FLIGHT_SPEEDUP_PROFILES)
+
+    anchor = full.get("movement_trajectory_anchor")
+    is_s1_trajectory = full.get("contract") == S1_PERFORMANCE_CONTRACT
+    expected_anchor_fields = {
+        "update_ordinal", "offset_ns", "state_revision", "acknowledged_input_sequence",
+        "authoritative_position", "movement_capabilities", "vertical_velocity_subcells", "playable_sphere",
+    }
+    if is_s1_trajectory:
+        expected_anchor_fields.add("visual_lod")
+    require(isinstance(anchor, dict) and set(anchor) == expected_anchor_fields,
+            "x30 authoritative movement trajectory anchor is absent or malformed")
+    previous_ordinal = integer(anchor["update_ordinal"], "trajectory anchor update ordinal", 1)
+    previous_offset = anchor["offset_ns"]
+    require(type(previous_offset) is int and -(1 << 63) <= previous_offset < (1 << 63),
+            "trajectory anchor offset must be signed int64")
+    require(start - SERVER_TICK_NS <= previous_offset < start,
+            "x30 authoritative movement trajectory anchor is missing the state at the fixed window boundary")
+    previous_revision = integer(anchor["state_revision"], "trajectory anchor state revision")
+    previous_ack = integer(anchor["acknowledged_input_sequence"], "trajectory anchor acknowledgement")
+    require(previous_ack < (1 << 32) and previous_revision < (1 << 32),
+            "x30 authoritative movement trajectory anchor exceeds uint32")
+    previous_position = world_position(anchor["authoritative_position"], "trajectory anchor")
+    anchor_height = previous_position[2]
+    require(0 <= anchor_height < (FLIGHT_MAX_Z + 1) * SUBCELLS_PER_CELL,
+            "x30 trajectory anchor is outside the production Flight height bounds")
+    require(integer(anchor["movement_capabilities"], "trajectory anchor capabilities") == 3
+            and integer(anchor["vertical_velocity_subcells"], "trajectory anchor vertical velocity") == 0,
+            "x30 trajectory anchor does not have unobstructed Flight capabilities")
+    anchor_sphere = anchor["playable_sphere"]
+    sphere_fields = {"radius_blocks", "active_coverage_epoch", "active_coverage_center",
+                     "world_loading_center", "ready_chunks", "required_chunks", "ready"}
+    if is_s1_trajectory:
+        sphere_fields |= S1_FULL_VOLUME_FIELDS
+    require(isinstance(anchor_sphere, dict) and set(anchor_sphere) == sphere_fields,
+            "x30 trajectory anchor lacks a complete playable-sphere sample")
+    anchor_ready = integer(anchor_sphere["ready_chunks"], "trajectory anchor ready chunks")
+    anchor_required = integer(anchor_sphere["required_chunks"], "trajectory anchor required chunks", 1)
+    integer(anchor_sphere["active_coverage_epoch"], "trajectory anchor coverage epoch", 1)
+    world_position(anchor_sphere["active_coverage_center"], "trajectory anchor active coverage center")
+    expected_sphere_radius = ACTUAL_TERRAIN_RADIUS_BLOCKS if is_s1_trajectory else PLAYABLE_SPHERE_RADIUS_BLOCKS
+    require(integer(anchor_sphere["radius_blocks"], "trajectory anchor sphere radius")
+            == expected_sphere_radius and type(anchor_sphere["ready"]) is bool
+            and anchor_sphere["ready"] is True and anchor_ready == anchor_required
+            and world_position(anchor_sphere["world_loading_center"], "trajectory anchor sphere")
+            == previous_position,
+            "x30 trajectory anchor lacks a complete sphere at its authoritative position")
+    if is_s1_trajectory:
+        verify_s1_full_volume_sample(anchor_sphere, "trajectory anchor")
+        verify_s1_visual_lod_sample(anchor.get("visual_lod"), "trajectory anchor", anchor_sphere)
+    boundary_updates: list[dict[str, Any]] = []
+    if is_s1_trajectory:
+        anchor_sample_offset = integer(
+            full.get("movement_trajectory_anchor_sphere_sample_offset_ns"),
+            "trajectory anchor sphere sample offset",
+        )
+        require(previous_offset <= anchor_sample_offset <= start + SERVER_TICK_NS,
+                "x30 trajectory anchor sphere was not refreshed at its exact boundary state")
+        require(full.get("movement_boundary_authoritative_updates_complete") is True,
+                "x30 trajectory boundary authority capture is incomplete")
+        value = full.get("movement_boundary_authoritative_updates")
+        require(isinstance(value, list), "x30 trajectory boundary authority updates are absent")
+        boundary_updates = value
+
+    all_raw_inputs = game.get("raw_gameplay_inputs")
+    require(isinstance(all_raw_inputs, list) and all_raw_inputs,
+            "x30 authoritative movement trajectory has no raw sent-input evidence")
+    raw_inputs: list[dict[str, Any]] = []
+    input_by_sequence: dict[int, dict[str, Any]] = {}
+    all_input_by_sequence: dict[int, dict[str, Any]] = {}
+    previous_input_ordinal = 0
+    previous_input_offset = -1
+    previous_input_sequence = 0
+    previous_route_sequence = 0
+    for raw_input in all_raw_inputs:
+        require(isinstance(raw_input, dict) and set(raw_input) == {
+            "input_ordinal", "sequence", "sent_offset_ns", "scheduled_offset_ns",
+            "movement_intent", "camera_look", "direction",
+        }, "x30 authoritative movement sent-input record is malformed")
+        input_ordinal = integer(raw_input["input_ordinal"], "trajectory input ordinal", 1)
+        sequence = integer(raw_input["sequence"], "trajectory input sequence", 1)
+        sent_offset = integer(raw_input["sent_offset_ns"], "trajectory input send offset")
+        scheduled_offset = raw_input["scheduled_offset_ns"]
+        require(type(scheduled_offset) is int and -(1 << 63) <= scheduled_offset < (1 << 63),
+                "trajectory scheduled input offset must be signed int64")
+        require(input_ordinal == previous_input_ordinal + 1 and sent_offset >= previous_input_offset
+                and scheduled_offset <= sent_offset < scheduled_offset + SERVER_TICK_NS
+                and previous_input_sequence < sequence < (1 << 32),
+                "x30 authoritative movement sent-input sequence is incomplete or duplicated")
+        intent = raw_input["movement_intent"]
+        require(isinstance(intent, dict) and set(intent) == {"strafe", "forward", "vertical"},
+                "x30 authoritative movement keyboard intent is malformed")
+        for axis, component in intent.items():
+            require(type(component) is int and -1 <= component <= 1,
+                    f"trajectory keyboard {axis} intent must be -1, 0, or 1")
+        camera = raw_input["camera_look"]
+        require(isinstance(camera, dict) and set(camera) == {"yaw_degrees", "pitch_degrees"}
+                and type(camera["yaw_degrees"]) in (float, int)
+                and type(camera["pitch_degrees"]) in (float, int)
+                and math.isfinite(camera["yaw_degrees"]) and math.isfinite(camera["pitch_degrees"])
+                and -89.0 <= camera["pitch_degrees"] <= 89.0,
+                "x30 authoritative movement camera look is missing or outside the production camera range")
+        direction = raw_input["direction"]
+        direction_fields = {"x", "y", "z", "view_x", "view_y", "accelerated", "speedup",
+                            "cycle_movement_capabilities"}
+        require(isinstance(direction, dict) and set(direction) == direction_fields,
+                "x30 authoritative movement direction is malformed")
+        for axis in ("x", "y", "z", "view_x", "view_y"):
+            signed_component(direction[axis], f"trajectory direction {axis}")
+        require(type(direction["accelerated"]) is bool
+                and type(direction["cycle_movement_capabilities"]) is bool,
+                "x30 authoritative movement flags must be booleans")
+        integer(direction["speedup"], "trajectory speed profile")
+        require(direction["speedup"] < (1 << 16), "trajectory speed profile exceeds uint16")
+        previous_input_ordinal, previous_input_offset, previous_input_sequence = input_ordinal, sent_offset, sequence
+        all_input_by_sequence[sequence] = raw_input
+        if start <= sent_offset < end:
+            require(previous_route_sequence == 0 or sequence == previous_route_sequence + 1,
+                    "x30 authoritative movement sent-input sequence is incomplete or duplicated")
+            input_by_sequence[sequence] = raw_input
+            raw_inputs.append(raw_input)
+            previous_route_sequence = sequence
+
+    require(len(raw_inputs) in (expected_steps, expected_steps + 1),
+            f"x30 authoritative movement requires {expected_steps} scheduled movement steps")
+    require(raw_inputs[0]["sent_offset_ns"] == start,
+            "x30 authoritative movement window does not start at its first successful send")
+    scheduled_offsets = [raw_input["scheduled_offset_ns"] for raw_input in raw_inputs]
+    require(start - SERVER_TICK_NS <= scheduled_offsets[0] <= start
+            and end - 2 * SERVER_TICK_NS <= scheduled_offsets[-1] < end
+            and all(current == previous + SERVER_TICK_NS
+                    for previous, current in zip(scheduled_offsets, scheduled_offsets[1:])),
+            "x30 authoritative movement has a missing or non-contiguous scheduled client tick")
+
+    updates = full.get("movement_authoritative_sphere_updates")
+    declared_count = integer(full.get("movement_authoritative_update_count"),
+                             "trajectory authoritative update count", 1)
+    require(isinstance(updates, list) and len(updates) == declared_count,
+            "x30 authoritative movement trajectory update count is incomplete")
+    require(len(updates) == len(raw_inputs),
+            f"x30 authoritative movement requires {expected_steps} scheduled movement steps")
+    acknowledged_inputs: list[dict[str, Any]] = []
+    acknowledged_sequences: set[int] = set()
+    previous_update_offset = start - 1
+    boundary_sequences: set[int] = set()
+    for update in boundary_updates:
+        expected_boundary_fields = {
+            "update_ordinal", "offset_ns", "state_revision", "acknowledged_input_sequence",
+            "authoritative_position", "movement_capabilities", "vertical_velocity_subcells",
+            "playable_sphere",
+        }
+        if is_s1_trajectory:
+            expected_boundary_fields.add("visual_lod")
+        require(isinstance(update, dict) and set(update) == expected_boundary_fields,
+                "x30 trajectory boundary authority update is malformed")
+        ordinal = integer(update["update_ordinal"], "trajectory boundary update ordinal", 1)
+        offset = integer(update["offset_ns"], "trajectory boundary update offset")
+        revision = integer(update["state_revision"], "trajectory boundary state revision")
+        acknowledged = integer(update["acknowledged_input_sequence"], "trajectory boundary acknowledged input")
+        capabilities = integer(update["movement_capabilities"], "trajectory boundary movement capabilities")
+        vertical_velocity = update["vertical_velocity_subcells"]
+        require(type(vertical_velocity) is int and -(1 << 31) <= vertical_velocity < (1 << 31),
+                "trajectory boundary vertical velocity must be signed int32")
+        require(ordinal > previous_ordinal and offset >= start and revision > previous_revision
+                and acknowledged > previous_ack and revision < (1 << 32) and acknowledged < (1 << 32),
+                "x30 trajectory boundary authority updates are missing, stale, or out of order")
+        require(capabilities == 3 and vertical_velocity == 0,
+                "x30 trajectory boundary update lost unobstructed Flight capabilities")
+        raw_input = all_input_by_sequence.get(acknowledged)
+        require(raw_input is not None and raw_input["sent_offset_ns"] < start
+                and raw_input["sent_offset_ns"] <= offset <= raw_input["sent_offset_ns"] + SERVER_TICK_NS,
+                "x30 trajectory boundary update is not linked to a delayed pre-window sent input")
+        require(acknowledged not in boundary_sequences
+                and acknowledged < raw_inputs[0]["sequence"],
+                "x30 trajectory boundary acknowledgement is duplicated or interleaved with measured movement")
+        require(direction_profile_valid(raw_input["direction"]),
+                "x30 trajectory boundary input has an unsupported movement profile")
+        direction = raw_input["direction"]
+        intent = raw_input["movement_intent"]
+        require(direction["cycle_movement_capabilities"] is False
+                and ((intent["strafe"] != 0 or intent["forward"] != 0 or intent["vertical"] != 0)
+                     == (direction["x"] != 0 or direction["y"] != 0 or direction["z"] != 0)),
+                "x30 trajectory boundary input does not preserve its sent movement intent")
+        current_position = world_position(update["authoritative_position"], f"trajectory boundary update {ordinal}")
+        squared_length = direction["x"] ** 2 + direction["y"] ** 2 + direction["z"] ** 2
+        direction_length = math.isqrt(squared_length)
+        if direction_length * direction_length < squared_length:
+            direction_length += 1
+        divisor = max(127, direction_length)
+        speed_factor = direction["speedup"] if direction["accelerated"] else 1
+        delta = tuple((MOVEMENT_SUBCELLS_PER_TICK * abs(component) // divisor * speed_factor)
+                      * (-1 if component < 0 else 1)
+                      for component in (direction["x"], direction["y"], direction["z"]))
+        delta_x = (current_position[0] - previous_position[0]) % FLIGHT_HORIZONTAL_EXTENT
+        if delta_x > FLIGHT_HORIZONTAL_EXTENT // 2:
+            delta_x -= FLIGHT_HORIZONTAL_EXTENT
+        delta_y = (current_position[1] - previous_position[1]) % FLIGHT_HORIZONTAL_EXTENT
+        if delta_y > FLIGHT_HORIZONTAL_EXTENT // 2:
+            delta_y -= FLIGHT_HORIZONTAL_EXTENT
+        actual_delta = (delta_x, delta_y, current_position[2] - previous_position[2])
+        require(0 <= current_position[2] < (FLIGHT_MAX_Z + 1) * SUBCELLS_PER_CELL
+                and actual_delta == delta,
+                "x30 trajectory boundary position does not match the production movement step")
+        sphere = update["playable_sphere"]
+        require(isinstance(sphere, dict) and set(sphere) == sphere_fields
+                and integer(sphere["radius_blocks"], "trajectory boundary sphere radius")
+                    == expected_sphere_radius
+                and type(sphere["ready"]) is bool and sphere["ready"] is True
+                and integer(sphere["ready_chunks"], "trajectory boundary ready chunks")
+                    == integer(sphere["required_chunks"], "trajectory boundary required chunks", 1)
+                and world_position(sphere["world_loading_center"], "trajectory boundary sphere center")
+                    == current_position,
+                "x30 trajectory boundary update lacks a complete sphere at its authoritative position")
+        integer(sphere["active_coverage_epoch"], "trajectory boundary coverage epoch", 1)
+        world_position(sphere["active_coverage_center"], "trajectory boundary active coverage center")
+        if is_s1_trajectory:
+            verify_s1_full_volume_sample(sphere, f"trajectory boundary update {ordinal}")
+            verify_s1_visual_lod_sample(update.get("visual_lod"), f"trajectory boundary update {ordinal}", sphere)
+        boundary_sequences.add(acknowledged)
+        previous_position, previous_revision, previous_ack = current_position, revision, acknowledged
+        previous_ordinal, previous_update_offset = ordinal, offset
+
+    if boundary_updates:
+        first_route_ack_offset = integer(updates[0].get("offset_ns"), "first route acknowledgement offset")
+        require(previous_update_offset < first_route_ack_offset,
+                "x30 trajectory boundary acknowledgement is interleaved with measured movement")
+    for update in updates:
+        ordinal = integer(update.get("update_ordinal"), "trajectory authority update ordinal", 1)
+        offset = integer(update.get("offset_ns"), "trajectory authority update offset")
+        revision = integer(update.get("state_revision"), "trajectory authority state revision")
+        acknowledged = integer(update.get("acknowledged_input_sequence"), "trajectory acknowledged input")
+        capabilities = integer(update.get("movement_capabilities"), "trajectory movement capabilities")
+        vertical_velocity = update.get("vertical_velocity_subcells")
+        require(type(vertical_velocity) is int and -(1 << 31) <= vertical_velocity < (1 << 31),
+                "trajectory vertical velocity must be signed int32")
+        require(ordinal > previous_ordinal and offset > previous_update_offset
+                and start <= offset < end + SERVER_TICK_NS
+                and revision > previous_revision and acknowledged > previous_ack
+                and revision < (1 << 32) and acknowledged < (1 << 32),
+                "x30 authoritative movement trajectory has a missing, stale, or out-of-window update")
+        require(capabilities == 3 and vertical_velocity == 0,
+                "x30 authoritative movement update lost unobstructed Flight capabilities")
+        raw_input = input_by_sequence.get(acknowledged)
+        require(raw_input is not None and raw_input["sent_offset_ns"] <= offset,
+                "x30 authoritative movement update is not linked to a sent input within the measurement window")
+        require(offset <= raw_input["sent_offset_ns"] + SERVER_TICK_NS,
+                "x30 authoritative movement acknowledgement arrived more than one server tick after its sent input")
+        acknowledged_sequences.add(acknowledged)
+        intent = raw_input["movement_intent"]
+        require(intent["strafe"] != 0 or intent["forward"] != 0 or intent["vertical"] != 0,
+                "x30 authoritative movement contains a stationary keyboard input")
+        direction = raw_input["direction"]
+        require(direction["accelerated"] is True and direction["speedup"] == 30
+                and direction["cycle_movement_capabilities"] is False
+                and direction["z"] == intent["vertical"] * 127,
+                "x30 authoritative movement ack did not consume an uncoupled speed-30 direction")
+
+        yaw = math.fmod(float(raw_input["camera_look"]["yaw_degrees"]), 360.0)
+        if yaw < 0.0:
+            yaw += 360.0
+        radians = yaw * 0.01745329251994329576923690768489
+        sine, cosine = math.sin(radians), math.cos(radians)
+        strafe, forward = intent["strafe"], intent["forward"]
+        world_x = strafe * cosine + forward * sine
+        world_y = -strafe * sine + forward * cosine
+        length = math.hypot(world_x, world_y)
+        expected_xy = ((int(world_x / length * 127.0), int(world_y / length * 127.0))
+                       if length > 0.0 else (0, 0))
+        pitch_radians = float(raw_input["camera_look"]["pitch_degrees"]) * 0.01745329251994329576923690768489
+        expected_view = (int(math.sin(radians) * math.cos(pitch_radians) * 127.0),
+                         int(math.cos(radians) * math.cos(pitch_radians) * 127.0))
+        require(all(abs(actual - expected) <= 1 for actual, expected in zip(
+            (direction["x"], direction["y"]), expected_xy))
+            and all(abs(actual - expected) <= 1 for actual, expected in zip(
+                (direction["view_x"], direction["view_y"]), expected_view)),
+            "x30 authoritative movement direction disagrees with the recorded camera-relative keyboard input")
+        direction_magnitude = math.sqrt(direction["x"] ** 2 + direction["y"] ** 2 + direction["z"] ** 2)
+        require(direction_magnitude >= 125.0
+                and (length == 0.0 or math.hypot(direction["x"], direction["y"]) >= 125.0),
+                "x30 authoritative movement direction is not full-scale keyboard input")
+
+        squared_length = direction["x"] ** 2 + direction["y"] ** 2 + direction["z"] ** 2
+        direction_length = math.isqrt(squared_length)
+        if direction_length * direction_length < squared_length:
+            direction_length += 1
+        divisor = max(127, direction_length)
+        delta = tuple((MOVEMENT_SUBCELLS_PER_TICK * abs(component) // divisor * 30)
+                      * (-1 if component < 0 else 1)
+                      for component in (direction["x"], direction["y"], direction["z"]))
+        current_position = world_position(update.get("authoritative_position"), f"trajectory update {ordinal}")
+        delta_x = (current_position[0] - previous_position[0]) % FLIGHT_HORIZONTAL_EXTENT
+        if delta_x > FLIGHT_HORIZONTAL_EXTENT // 2:
+            delta_x -= FLIGHT_HORIZONTAL_EXTENT
+        delta_y = (current_position[1] - previous_position[1]) % FLIGHT_HORIZONTAL_EXTENT
+        if delta_y > FLIGHT_HORIZONTAL_EXTENT // 2:
+            delta_y -= FLIGHT_HORIZONTAL_EXTENT
+        actual_delta = (delta_x, delta_y, current_position[2] - previous_position[2])
+        require(0 <= current_position[2] < (FLIGHT_MAX_Z + 1) * SUBCELLS_PER_CELL,
+                "x30 authoritative movement position is outside the production Flight height bounds")
+        require(actual_delta == delta,
+                "x30 authoritative movement position does not match the production full-scale speed-30 step")
+        acknowledged_inputs.append(raw_input)
+        previous_position, previous_revision, previous_ack = current_position, revision, acknowledged
+        previous_ordinal, previous_update_offset = ordinal, offset
+
+    window_input_sequences = {
+        sequence for sequence, raw_input in input_by_sequence.items()
+        if start <= raw_input["sent_offset_ns"] < end
+    }
+    require(window_input_sequences == acknowledged_sequences,
+            "x30 authoritative movement has a missing or unacknowledged scheduled client tick")
+
+    z_positions = [anchor_height]
+    z_positions.extend(world_position(update["authoritative_position"], "trajectory update height")[2]
+                       for update in updates)
+    saw_ascent = False
+    saw_descent_after_ascent = False
+    for previous_height, current_height in zip(z_positions, z_positions[1:]):
+        saw_ascent = saw_ascent or current_height > previous_height
+        saw_descent_after_ascent = saw_descent_after_ascent or (saw_ascent and current_height < previous_height)
+    require(any(entry["movement_intent"]["vertical"] > 0 for entry in acknowledged_inputs)
+            and any(entry["movement_intent"]["vertical"] < 0 for entry in acknowledged_inputs)
+            and saw_ascent and saw_descent_after_ascent,
+            "x30 authoritative movement does not prove an ascent followed by a descent")
+
+    require(len({(entry["movement_intent"]["strafe"], entry["movement_intent"]["forward"])
+                 for entry in acknowledged_inputs}) >= 2,
+            "x30 authoritative movement does not vary its acknowledged keyboard direction")
+    require(len({float(entry["camera_look"]["yaw_degrees"]) for entry in acknowledged_inputs}) >= 2
+            and len({float(entry["camera_look"]["pitch_degrees"]) for entry in acknowledged_inputs}) >= 2,
+            "x30 authoritative movement does not vary its acknowledged camera yaw and pitch")
+
+    observed_camera = []
+    rendered_positions = []
+    authority_positions = []
+    # A client may predict one input tick while presentation interpolates the
+    # preceding tick. The camera must still follow that same wrapped player.
+    maximum_attachment_lag = 2.0 * MOVEMENT_SUBCELLS_PER_TICK * 30 / SUBCELLS_PER_CELL
+    body_center_offset = 0.3125
+    eye_height = 1.625
+    def wrapped_delta(current: float, previous: float) -> float:
+        delta = math.fmod(current - previous, 65_536.0)
+        if delta > 32_768.0:
+            delta -= 65_536.0
+        elif delta < -32_768.0:
+            delta += 65_536.0
+        return delta
+
+    for frame in frames:
+        if frame.get("phase") != movement_phase:
+            continue
+        if frame.get("presentation_succeeded") is not True:
+            continue
+        frame_start = integer(frame.get("started_offset_ns"), "trajectory camera frame start")
+        frame_end = frame_start + integer(frame.get("loop_duration_ns"), "trajectory camera frame duration", 1)
+        if frame_start < end and frame_end > start:
+            camera = frame.get("diagnostic_camera")
+            require(isinstance(camera, list) and len(camera) == 7
+                    and all(type(value) in (float, int) and math.isfinite(value) for value in camera),
+                    "x30 authoritative movement lacks rendered camera pose samples")
+            sphere = frame.get("playable_sphere")
+            require(isinstance(sphere, dict), "rendered camera lacks its current authoritative player")
+            authority = world_position(sphere.get("world_loading_center"), "rendered camera authority")
+            body = (float(camera[0]) - body_center_offset,
+                    float(camera[1]) - body_center_offset, float(camera[2]) - eye_height)
+            require(-6.0 <= body[0] <= 65_542.0 and -6.0 <= body[1] <= 65_542.0,
+                    "rendered camera is outside the canonical wrapped world")
+            expected = tuple(component / SUBCELLS_PER_CELL for component in authority)
+            error = (wrapped_delta(body[0], expected[0]), wrapped_delta(body[1], expected[1]),
+                     body[2] - expected[2])
+            require(math.sqrt(sum(component * component for component in error))
+                    <= maximum_attachment_lag + 1e-6,
+                    "rendered camera translation does not follow the authoritative x30 player")
+            if movement_phase == S1_MOVEMENT_PHASE:
+                presented = frame.get("presented_player")
+                require(isinstance(presented, dict) and set(presented) == {
+                    "body", "submitted_frame_count", "sampled_offset_ns"},
+                    "rendered camera has no submitted local-player presentation receipt")
+                presented_body = presented["body"]
+                require(isinstance(presented_body, list) and len(presented_body) == 3
+                        and all(type(value) in (float, int) and math.isfinite(value) for value in presented_body),
+                        "rendered camera local-player presentation is malformed")
+                sample_offset = integer(presented["sampled_offset_ns"], "rendered camera sample offset")
+                require(frame_start <= sample_offset <= frame_end
+                        and integer(presented["submitted_frame_count"], "rendered camera submission", 1)
+                            == frame["visual_lod"]["submitted_frame_count"],
+                        "rendered camera local-player receipt is not bound to the sampled submission")
+                body_error = (wrapped_delta(body[0], presented_body[0]),
+                              wrapped_delta(body[1], presented_body[1]), body[2] - presented_body[2])
+                require(math.sqrt(sum(component * component for component in body_error)) <= 1e-4,
+                        "rendered camera is detached from the submitted local-player body/eye")
+            rendered_positions.append(body)
+            authority_positions.append(expected)
+            observed_camera.append((float(camera[3]), float(camera[4])))
+    require(len(observed_camera) > 1 and len({yaw for yaw, _ in observed_camera}) > 1
+            and len({pitch for _, pitch in observed_camera}) > 1,
+            "x30 authoritative movement lacks a varying rendered camera yaw and pitch trajectory")
+    def travel(positions: list[tuple[float, float, float]]) -> float:
+        return sum(math.sqrt(wrapped_delta(current[0], previous[0]) ** 2
+                             + wrapped_delta(current[1], previous[1]) ** 2
+                             + (current[2] - previous[2]) ** 2)
+                   for previous, current in zip(positions, positions[1:]))
+    rendered_travel, authoritative_travel = travel(rendered_positions), travel(authority_positions)
+    require(authoritative_travel > 0.0 and rendered_travel > 0.0
+            and rendered_travel >= authoritative_travel * 0.9,
+            "rendered camera translation is stationary or slower than the authoritative x30 trajectory")
+
+
+def verify_s1_performance_report(report: dict[str, Any], platform: str, *, proof: str | None,
+                                cadence_exception: dict[str, Any] | None) -> dict[str, Any]:
+    require(proof in (None, "performance") and cadence_exception is None,
+            "S1 performance does not accept legacy proof selectors or cadence exceptions")
+    require(report.get("schema_version") == "mc.runtime-evidence.v1"
+            and report.get("mode") == "benchmark-game" and report.get("passed") is True
+            and report.get("failure") == "", "runtime workload did not pass")
+    timing = report.get("timing")
+    require(isinstance(timing, dict), "runtime timing evidence is absent")
+    elapsed_ms = integer(timing.get("elapsed_ms"), "elapsed_ms", 1)
+    require(elapsed_ms <= integer(timing.get("deadline_ms"), "deadline_ms", 1), "runtime timeout")
+
+    game = report.get("game_benchmark")
+    require(isinstance(game, dict) and game.get("qualification_proof") == "performance",
+            "missing or mismatched gameplay proof selector")
+    require(game.get("workload") == WORKLOAD and game.get("build_mode") == "release",
+            "requires the S1 ordinary-turning Release workload")
+    require(game.get("diagnostic_overrides_present") is False,
+            "diagnostic gameplay report is not qualification proof")
+    require(isinstance(game.get("present_mode"), str) and bool(game["present_mode"]),
+            "negotiated present mode was not recorded")
+    framebuffer = game.get("framebuffer")
+    manifest = qualification_settings_manifest()
+    require(game.get("qualification_settings_manifest") == manifest,
+            "S1 qualification settings manifest is missing or differs from the source contract")
+    session_epoch = integer(game.get("session_join_epoch"), "S1 current session epoch", 1)
+    terrain_identity = game.get("terrain_identity")
+    require(terrain_identity == manifest["terrain_identity"],
+            "S1 current terrain identity differs from the frozen canonical generation settings")
+    require(framebuffer == manifest["platforms"][platform]["framebuffer"],
+            "normal gameplay framebuffer differs from the frozen qualification settings")
+    require(game["present_mode"] == manifest["platforms"][platform]["present_mode"],
+            "negotiated present mode differs from the frozen qualification settings")
+    for key in ("server_events_processed", "inputs_sent", "authoritative_player_updates"):
+        integer(game.get(key), key, 1)
+
+    s1 = game.get("s1_terrain_performance")
+    require(isinstance(s1, dict), "S1 terrain-performance evidence is absent or malformed")
+    require("movement_trajectory_anchor" in s1,
+            "x30 authoritative movement trajectory anchor is absent")
+    required_fields = {
+        "contract", "timing_origin", "initial_radius_blocks", "actual_radius_blocks",
+        "visual_lod_radius_blocks",
+        "ready_prompt_frame_offset_ns", "playable_sphere_first_ready_offset_ns",
+        "initial_deadline_missed", "playable_deadline_missed",
+        "movement_started_after_current_sphere_ready", "movement_input_during_fill",
+        "movement_start_offset_ns", "movement_end_offset_ns",
+        "movement_authoritative_update_count", "movement_trajectory_anchor",
+        "movement_trajectory_anchor_sphere_sample_offset_ns",
+        "movement_boundary_authoritative_updates_complete", "movement_boundary_authoritative_updates",
+        "movement_authoritative_sphere_updates", "movement_playable_sphere_complete",
+        "movement_visual_lod_samples_complete", "complete",
+    }
+    require(required_fields <= set(s1),
+            "S1 terrain-performance evidence is absent or malformed")
+    require(s1["contract"] == S1_PERFORMANCE_CONTRACT
+            and s1["timing_origin"] == "world-request-accepted"
+            and integer(s1["initial_radius_blocks"], "S1 initial radius") == 48
+            and integer(s1["actual_radius_blocks"], "S1 actual terrain radius")
+                == ACTUAL_TERRAIN_RADIUS_BLOCKS
+            and integer(s1["visual_lod_radius_blocks"], "S1 visual LOD radius")
+                == VISUAL_LOD_RADIUS_BLOCKS,
+            "S1 LOD-performance contract or radii are unsupported")
+
+    start_action = game.get("controlled_start")
+    start_fields = {
+        "contract", "input_source", "production_path", "synthetic_input_override_invoked",
+        "eligible_prompt_rendered_offset_ns", "synthetic_input_requested_offset_ns",
+        "key_accepted_offset_ns", "server_start_acknowledged_offset_ns", "input_ordinal",
+        "offset_origin", "complete",
+    }
+    require(isinstance(start_action, dict) and set(start_action) == start_fields
+            and start_action.get("contract") == "mc.controlled-world-start.v1"
+            and start_action.get("input_source") == "synthetic-controlled-start-key"
+            and start_action.get("production_path")
+                == "GameClientBenchmarkHooks.start_input_override->GameClient.acceptLoadingStartInput"
+            and start_action.get("synthetic_input_override_invoked") is True
+            and start_action.get("offset_origin") == "GameBenchmark.request_accepted_at"
+            and start_action.get("complete") is True,
+            "S1 prompt-to-production-start evidence is absent or incomplete")
+    prompt_offset = integer(s1["ready_prompt_frame_offset_ns"], "S1 ready prompt offset")
+    prompt_action_offset = integer(start_action["eligible_prompt_rendered_offset_ns"],
+                                   "controlled start prompt offset")
+    request_offset = integer(start_action["synthetic_input_requested_offset_ns"],
+                              "controlled start input request offset")
+    key_offset = integer(start_action["key_accepted_offset_ns"], "controlled start key accepted offset")
+    start_ack_offset = integer(start_action["server_start_acknowledged_offset_ns"],
+                               "controlled start acknowledgement offset")
+    integer(start_action["input_ordinal"], "controlled start input ordinal", 1)
+    require(prompt_offset == prompt_action_offset and prompt_offset <= 4_000_000_000
+            and prompt_offset <= request_offset <= key_offset <= start_ack_offset,
+            "S1 Ready prompt missed 4 seconds or the real start action was not ordered after it")
+
+    first_ready_offset = integer(s1["playable_sphere_first_ready_offset_ns"],
+                                 "S1 actual-terrain first-ready offset")
+    sphere_deadline_ns = 20_000_000_000 if platform == "macos" else 15_000_000_000
+    # Prompt rendering and actual terrain readiness have independent T0 deadlines.
+    require(first_ready_offset <= sphere_deadline_ns,
+            f"S1 actual 640-block terrain sphere missed the {sphere_deadline_ns // 1_000_000_000}-second deadline")
+    require(type(s1["initial_deadline_missed"]) is bool and s1["initial_deadline_missed"] is False
+            and type(s1["playable_deadline_missed"]) is bool and s1["playable_deadline_missed"] is False
+            and s1["movement_started_after_current_sphere_ready"] is True
+            and type(s1["movement_input_during_fill"]) is bool
+            and s1["movement_playable_sphere_complete"] is True
+            and s1["movement_visual_lod_samples_complete"] is True
+            and s1["complete"] is True,
+            "S1 loading deadline, movement start, or complete-sphere evidence failed")
+
+    start_t0 = integer(s1["movement_start_offset_ns"], "S1 movement start offset")
+    end_t0 = integer(s1["movement_end_offset_ns"], "S1 movement end offset")
+    movement_eligible_offset = max(start_ack_offset, first_ready_offset)
+    require(movement_eligible_offset <= start_t0
+            and start_t0 - movement_eligible_offset <= SERVER_TICK_NS
+            and end_t0 == start_t0 + PERFORMANCE_SAMPLE_MS * 1_000_000,
+            "S1 measured movement did not start at the first post-Ready input or last exactly 30 seconds")
+    first_loop_start = start_t0 - start_ack_offset
+    require(first_loop_start >= 0,
+            "S1 measured movement begins before the accepted start acknowledgement")
+
+    raw_inputs = game.get("raw_gameplay_inputs")
+    require(isinstance(raw_inputs, list) and raw_inputs,
+            "S1 performance lacks successful gameplay input evidence")
+    require(game["inputs_sent"] == len(raw_inputs),
+            "S1 successful gameplay input count does not match raw sent-input evidence")
+    fill_inputs = []
+    post_ready_inputs = []
+    sent_offsets_t0 = []
+    for raw_input in raw_inputs:
+        require(isinstance(raw_input, dict) and type(raw_input.get("sent_offset_ns")) is int
+                and raw_input["sent_offset_ns"] >= 0,
+                "S1 gameplay input has a missing or invalid send timestamp")
+        sent_t0 = start_ack_offset + raw_input["sent_offset_ns"]
+        sent_offsets_t0.append(sent_t0)
+        if start_ack_offset <= sent_t0 < first_ready_offset:
+            fill_inputs.append(raw_input)
+        if sent_t0 >= first_ready_offset:
+            post_ready_inputs.append(sent_t0)
+    require(s1["movement_input_during_fill"] is bool(fill_inputs),
+            "S1 fill-ramp input flag disagrees with successful sent-input evidence")
+    if first_ready_offset - start_ack_offset > SERVER_TICK_NS:
+        require(fill_inputs and min(start_ack_offset + raw_input["sent_offset_ns"]
+                                     for raw_input in fill_inputs)
+                <= start_ack_offset + SERVER_TICK_NS,
+                "S1 ordinary route omitted its first x30 movement input during the initial fill interval")
+    for raw_input in fill_inputs:
+        intent = raw_input.get("movement_intent")
+        direction = raw_input.get("direction")
+        require(isinstance(intent, dict) and any(intent.get(axis) != 0 for axis in ("strafe", "forward", "vertical"))
+                and isinstance(direction, dict) and type(direction.get("accelerated")) is bool
+                and integer(direction.get("speedup"), "S1 fill-ramp speedup") in FLIGHT_SPEEDUP_PROFILES
+                and direction.get("cycle_movement_capabilities") is False,
+                "S1 fill-ramp evidence is not a successful movement input with a valid speed profile")
+    require(post_ready_inputs and min(post_ready_inputs) == start_t0,
+            "S1 movement start is not the first successful x30 input after current actual terrain became Ready")
+    require(all(sent_t0 < end_t0 + SERVER_TICK_NS for sent_t0 in sent_offsets_t0),
+            "S1 successful gameplay input extends beyond the bounded post-window ACK tail")
+
+    frames = game.get("raw_frames")
+    require(isinstance(frames, list) and frames, "S1 raw frame evidence is absent")
+    phases: list[str] = []
+    previous_ordinal = 0
+    previous_end = 0
+    movement_frames = []
+    for frame in frames:
+        require(isinstance(frame, dict), "S1 raw frame is malformed")
+        phase = frame.get("phase")
+        require(phase in (S1_FILL_PHASE, S1_MOVEMENT_PHASE), "S1 raw frame has an unsupported phase")
+        if not phases or phases[-1] != phase:
+            phases.append(phase)
+        ordinal = integer(frame.get("loop_ordinal"), "S1 frame loop ordinal", 1)
+        frame_start = integer(frame.get("started_offset_ns"), "S1 frame start")
+        frame_end = frame_start + integer(frame.get("loop_duration_ns"), "S1 frame duration", 1)
+        require(ordinal == previous_ordinal + 1 and frame_start >= previous_end
+                and type(frame.get("presentation_succeeded")) is bool,
+                "S1 raw frame timeline is unordered or missing a loop")
+        if phase == S1_MOVEMENT_PHASE:
+            settings = frame.get("qualification_settings")
+            require(isinstance(settings, dict) and settings == {
+                "framebuffer": manifest["platforms"][platform]["framebuffer"],
+                "debug_hud_enabled": manifest["debug_hud_enabled"],
+                "terrain_model": manifest["terrain_model"],
+                "render_distance": manifest["render_distance"],
+                "camera_perspective": manifest["camera_perspective"],
+                "world_mode": manifest["world_mode"],
+            }, "per-frame qualification settings changed or were not observed")
+            camera = frame.get("diagnostic_camera")
+            require(isinstance(camera, list) and len(camera) == 7
+                    and camera[6] == manifest["fov_degrees"],
+                    "rendered projection FOV differs from the frozen qualification settings")
+            require(not phases or phases == [S1_FILL_PHASE, S1_MOVEMENT_PHASE]
+                    or phases == [S1_MOVEMENT_PHASE],
+                    "S1 movement frames precede or interrupt the fill-ramp phase")
+            movement_frames.append(frame)
+        else:
+            require(not movement_frames, "S1 fill-ramp phase resumed during measured movement")
+        previous_ordinal, previous_end = ordinal, frame_end
+    require(movement_frames and phases in ([S1_MOVEMENT_PHASE], [S1_FILL_PHASE, S1_MOVEMENT_PHASE])
+            and frames[0]["started_offset_ns"] == 0,
+            "S1 raw timeline lacks its first-loop origin or measured movement phase")
+
+    def fill_world_position(value: Any, context: str) -> tuple[int, int, int, int, int, int]:
+        position_fields = {"x", "y", "z", "x_subcell", "y_subcell", "z_subcell"}
+        require(isinstance(value, dict) and set(value) == position_fields,
+                f"{context}: WorldLoading center is absent or malformed")
+        cells = []
+        for axis in ("x", "y", "z"):
+            coordinate = value[axis]
+            require(type(coordinate) is int and -(1 << 31) <= coordinate < (1 << 31),
+                    f"{context}: WorldLoading center {axis} must be signed int32")
+            cells.append(coordinate)
+        subcells = []
+        for axis in ("x_subcell", "y_subcell", "z_subcell"):
+            subcell = integer(value[axis], f"{context} WorldLoading center {axis}")
+            require(subcell < SUBCELLS_PER_CELL,
+                    f"{context}: WorldLoading center {axis} subcell is outside its world cell")
+            subcells.append(subcell)
+        return tuple(cells + subcells)
+
+    if fill_inputs:
+        fill_positions = []
+        for frame in frames:
+            if frame["phase"] != S1_FILL_PHASE:
+                continue
+            frame_end_t0 = start_ack_offset + integer(frame["started_offset_ns"], "S1 fill frame start") \
+                + integer(frame["loop_duration_ns"], "S1 fill frame duration", 1)
+            if frame_end_t0 >= first_ready_offset:
+                continue
+            sphere = frame.get("playable_sphere")
+            sphere_fields = {"radius_blocks", "active_coverage_epoch", "active_coverage_center",
+                             "world_loading_center", "ready_chunks", "required_chunks", "ready"}
+            sphere_fields |= S1_FULL_VOLUME_FIELDS
+            require(isinstance(sphere, dict) and set(sphere) == sphere_fields,
+                    "S1 fill-ramp frame lacks its pre-Ready playable-sphere sample")
+            require(integer(sphere["radius_blocks"], "S1 fill playable-sphere radius")
+                    == ACTUAL_TERRAIN_RADIUS_BLOCKS,
+                    "S1 fill-ramp sample does not describe the current 640-block actual terrain sphere")
+            integer(sphere["active_coverage_epoch"], "S1 fill active coverage epoch", 1)
+            # The active coverage center describes streaming coverage and can lag the player.
+            fill_world_position(sphere["active_coverage_center"], "S1 fill active coverage")
+            fill_positions.append(fill_world_position(sphere["world_loading_center"], "S1 fill movement"))
+            integer(sphere["ready_chunks"], "S1 fill ready chunks")
+            integer(sphere["required_chunks"], "S1 fill required chunks", 1)
+            verify_s1_full_volume_sample(sphere, "S1 fill", require_ready=False)
+            require(type(sphere["ready"]) is bool,
+                    "S1 fill-ramp readiness state must be boolean")
+            require(sphere["ready"] is False and sphere["ready_chunks"] < sphere["required_chunks"],
+                    "S1 pre-Ready fill sample contradicts the first-ready timestamp")
+        require(len(fill_positions) >= 2 and len(set(fill_positions)) > 1,
+                "S1 fill-ramp sends lack authoritative player displacement before 320 Ready")
+
+    for frame in movement_frames:
+        frame_start = integer(frame["started_offset_ns"], "S1 movement frame start")
+        frame_end = frame_start + integer(frame["loop_duration_ns"], "S1 movement frame duration", 1)
+        require(frame_start < first_loop_start + PERFORMANCE_SAMPLE_MS * 1_000_000
+                and frame_end > first_loop_start,
+                "S1 movement frame lies outside the measured interval")
+
+    budget = game.get("frame_budget")
+    expected_budget_start = first_loop_start
+    budget_passed = verify_fresh_frame_budget(
+        budget, frames, game.get("raw_fence_confirmed_frames"), game.get("frame_completion_source"),
+        True, platform, movement_phase=S1_MOVEMENT_PHASE, expected_start_ns=expected_budget_start,
+    )
+    frame_timeline_end = max(
+        integer(frame["started_offset_ns"], "S1 frame start")
+        + integer(frame["loop_duration_ns"], "S1 frame duration", 1)
+        for frame in frames
+    )
+    budget_start = integer(budget.get("measurement_window_start_offset_ns"), "S1 frame-budget start")
+    budget_end = budget_start + PERFORMANCE_SAMPLE_MS * 1_000_000
+    movement_fence_tail = max((
+        integer(completion.get("completion_observed_offset_ns"), "S1 fence observation offset")
+        for completion in game["raw_fence_confirmed_frames"]
+        if isinstance(completion, dict)
+        and completion.get("submission_phase") == S1_MOVEMENT_PHASE
+        and type(completion.get("submitted_offset_ns")) is int
+        and budget_start <= completion["submitted_offset_ns"] < budget_end
+    ), default=budget_end)
+    require(start_ack_offset + max(frame_timeline_end, movement_fence_tail)
+            <= elapsed_ms * 1_000_000 + 1_000_000,
+            "S1 raw frame and bounded fence-drain evidence extends beyond the runtime report")
+
+    verify_movement_playable_sphere(
+        s1, frames, budget, MOVEMENT_TRAJECTORY_SAMPLE_SCOPE,
+        movement_phase=S1_MOVEMENT_PHASE, require_boundary=False, require_source_contract=False,
+        expected_radius_blocks=ACTUAL_TERRAIN_RADIUS_BLOCKS,
+    )
+    require(game.get("movement_trajectory_contract") == MOVEMENT_TRAJECTORY_CONTRACT,
+            "S1 x30 authoritative movement trajectory contract is absent or unsupported")
+    verify_x30_authoritative_trajectory(game, s1, frames, budget, movement_phase=S1_MOVEMENT_PHASE)
+
+    visual_samples = [frame.get("visual_lod") for frame in movement_frames]
+    visual_samples.append(s1["movement_trajectory_anchor"]["visual_lod"])
+    visual_samples.extend(update["visual_lod"] for update in s1["movement_authoritative_sphere_updates"])
+    visual_samples.extend(update["visual_lod"] for update in s1["movement_boundary_authoritative_updates"])
+    require(all(visual["terrain_identity"] == terrain_identity
+                and visual["session_join_epoch"] == session_epoch for visual in visual_samples),
+            "presented visual scene belongs to another terrain identity or session")
+    submission_offset = None
+    for frame in movement_frames:
+        if not frame["presentation_succeeded"]:
+            continue
+        require(frame.get("diagnostic_frame_recorded") is True,
+                "successful movement frame has no recorded render work")
+        offset = frame["visual_lod"]["submitted_frame_count"] - integer(
+            frame.get("submitted_frame_sequence_id"), "movement frame sequence", 1)
+        require(offset >= 0 and (submission_offset is None or submission_offset == offset),
+                "presented visual scene receipt is not bound to the sampled frame submission")
+        submission_offset = offset
+
+    ticks = [integer(value, "server tick", 1) for value in game.get("raw_server_tick_durations_ns", [])]
+    require(ticks and game.get("server_tick_timings_ns") == timing_summary(ticks),
+            "S1 raw server timing summary mismatch")
+    raw_unsuccessful = sum(not frame["presentation_succeeded"] for frame in frames)
+    integer(game.get("failed_present_requests"), "failed_present_requests")
+    integer(game.get("successful_present_requests"), "successful_present_requests")
+    require(game["failed_present_requests"] == raw_unsuccessful
+            and game["successful_present_requests"] == len(frames) - raw_unsuccessful,
+            "S1 raw attempt totals mismatch")
+    require(budget_passed, f"S1 fresh-frame budget exceeds 1% of the {FRESH_FRAME_TARGET_HZ[platform]}Hz movement window")
+
+    return {
+        "status": "passed", "accepted_exception": None, "proof": "performance", "render_distance": 256,
+        "coverage": "passed", "request_cadence_status": "not-required", "request_cadence_required": False,
+        "request_cadence_reasons": [], "request_cadence_proxy": {},
+        "total_unsuccessful_attempts": game["failed_present_requests"],
+        "raw_unsuccessful_attempts": raw_unsuccessful, "presentation_timing_required": False,
+        "presentation_timing_status": "not-required", "presentation_timing_metrics": {"status": "not-required"},
+        "physical_display_cadence": "unavailable",
+    }
+
+
 def verify_report(report: dict[str, Any], platform: str, proof: str | None = None,
                   *, cadence_exception: dict[str, Any] | None = None) -> dict[str, Any]:
+    if isinstance(report, dict):
+        candidate_game = report.get("game_benchmark")
+        if isinstance(candidate_game, dict) and candidate_game.get("qualification_proof") == "performance":
+            return verify_s1_performance_report(
+                report, platform, proof=proof, cadence_exception=cadence_exception,
+            )
     require(report["schema_version"] == "mc.runtime-evidence.v1" and report["mode"] == "benchmark-game"
             and report["passed"] is True and report["failure"] == "", "runtime workload did not pass")
     timing = report["timing"]
@@ -817,9 +2464,11 @@ def verify_report(report: dict[str, Any], platform: str, proof: str | None = Non
     cadence_required = actual_proof == "performance"
     request_cadence_required = cadence_required and platform == "windows"
     presentation_timing_required = cadence_required and platform == "macos"
-    frame_budget_required = request_cadence_required
+    frame_budget_required = cadence_required
     require(game.get("diagnostic_overrides_present") is False, "diagnostic gameplay report is not qualification proof")
-    require(game["workload"] == WORKLOAD and game["build_mode"] == "release", "requires Release full-radius workload")
+    expected_workload = WORKLOAD if actual_proof == "performance" else COVERAGE_WORKLOAD
+    require(game["workload"] == expected_workload and game["build_mode"] == "release",
+            "requires the proof-specific Release full-radius workload")
     require(game["displayed_cadence_hz"] is None, "physical display cadence is unavailable in this contract")
     require(game["present_mode"] == ("immediate" if platform == "windows" else "fifo"), "incorrect negotiated present mode")
     for key in ("server_events_processed", "inputs_sent", "authoritative_player_updates"):
@@ -1041,15 +2690,24 @@ def verify_report(report: dict[str, Any], platform: str, proof: str | None = Non
                         "interval_scope": "half-open [previous_successful_completion, current_successful_completion)"}
     ticks = [integer(value, "server tick", 1) for value in game["raw_server_tick_durations_ns"]]
     require(ticks and game["server_tick_timings_ns"] == timing_summary(ticks), "raw server timing summary mismatch")
-    measured = [frame["loop_duration_ns"] for frame in frames if frame["phase"] in (PHASES[1], PHASES[2], PHASES[4])]
-    measured_ns, in_budget_ns = sum(measured), sum(value for value in measured if value <= 8333334)
-    budget_passed = measured_ns > 0 and measured_ns - in_budget_ns <= measured_ns * 2 // 1000
-    require(game.get("frame_budget") == {"target_frame_duration_ns": 8333334,
-            "required_in_budget_time_permille": 998, "measured_time_ns": measured_ns,
-            "in_budget_time_ns": in_budget_ns, "sample_count": len(measured), "passed": budget_passed,
-            "required_for_benchmark_pass": frame_budget_required}, "raw game-loop frame budget mismatch")
+    frame_budget = game.get("frame_budget")
+    budget_passed = verify_fresh_frame_budget(
+        frame_budget, frames, game.get("raw_fence_confirmed_frames"),
+        game.get("frame_completion_source"), frame_budget_required, platform
+    )
+    if actual_proof == "performance":
+        require(game.get("movement_trajectory_contract") == MOVEMENT_TRAJECTORY_CONTRACT,
+                "x30 authoritative movement trajectory contract is absent or unsupported")
+        movement_sample_scope = (
+            MOVEMENT_TRAJECTORY_SAMPLE_SCOPE
+            if game.get("movement_trajectory_contract") == MOVEMENT_TRAJECTORY_CONTRACT
+            else PLAYABLE_SPHERE_SAMPLE_SCOPE
+        )
+        verify_movement_playable_sphere(full, frames, frame_budget, movement_sample_scope)
+        verify_x30_authoritative_trajectory(game, full, frames, frame_budget)
     require(not request_cadence_required or not cadence_failures, "; ".join(cadence_failures))
-    require(not frame_budget_required or budget_passed, "120Hz game-loop time budget exceeds 0.2%")
+    require(not frame_budget_required or budget_passed,
+            f"{FRESH_FRAME_TARGET_HZ[platform]}Hz fresh-frame interval budget exceeds 1% of the moving window")
     accepted = cadence_exception if presentation_metrics["status"] == "failed" else None
     return {"status": "accepted_exception" if accepted else "passed", "accepted_exception": accepted,
             "proof": actual_proof, "render_distance": radius, "coverage": "passed", "request_cadence_status": "failed" if cadence_failures else "passed",
@@ -1113,8 +2771,9 @@ def verify_receipt(root: Path, receipt: Path, *, s7_windows_secondary: bool = Fa
         results.setdefault(row["platform"], {})[row["proof"]] = verify_report(
             raw, row["platform"], row["proof"],
             cadence_exception=approval if row["platform"] == "macos" and row["proof"] == "performance" else None)
-        require(raw["game_benchmark"]["full_radius_terrain"]["warmup_timeout_ms"] == row["warmup_seconds"] * 1000,
-                "capture command warmup disagrees with raw report")
+        if row["proof"] == "terrain-coverage":
+            require(raw["game_benchmark"]["full_radius_terrain"]["warmup_timeout_ms"] == row["warmup_seconds"] * 1000,
+                    "capture command warmup disagrees with raw report")
     if s7_windows_secondary:
         results["windows"] = {
             "status": "deferred",
@@ -1123,11 +2782,394 @@ def verify_receipt(root: Path, receipt: Path, *, s7_windows_secondary: bool = Fa
     return results
 
 
+def verify_s1_owner_accepted_report_failure(report: Any) -> dict[str, Any]:
+    """Validate the single owner-accepted S1 gameplay failure without relabeling it as a pass."""
+    expected = {
+        "report_failure": "game benchmark did not complete the scripted full-game workload",
+        "in_budget_time_ns": 14_018_509_225,
+        "measured_time_ns": 30_000_000_000,
+        "required_in_budget_permille": 990,
+        "target_frame_duration_ns": 8_333_333,
+        "movement_playable_sphere_complete": False,
+        "movement_visual_lod_samples_complete": False,
+        "ready_prompt_frame_offset_ns": 3_434_526_750,
+        "playable_sphere_first_ready_offset_ns": 14_323_644_834,
+        "initial_deadline_missed": False,
+        "playable_deadline_missed": False,
+    }
+    game = report.get("game_benchmark") if isinstance(report, dict) else None
+    timing = report.get("timing") if isinstance(report, dict) else None
+    s1 = game.get("s1_terrain_performance") if isinstance(game, dict) else None
+    budget = game.get("frame_budget") if isinstance(game, dict) else None
+    require(
+        isinstance(report, dict)
+        and report.get("schema_version") == "mc.runtime-evidence.v1"
+        and report.get("mode") == "benchmark-game"
+        and report.get("passed") is False
+        and report.get("failure") == expected["report_failure"]
+        and isinstance(timing, dict)
+        and timing.get("elapsed_ms") == 45_705
+        and timing.get("deadline_ms") == 60_000
+        and isinstance(game, dict)
+        and game.get("workload") == WORKLOAD
+        and game.get("build_mode") == "release"
+        and game.get("qualification_proof") == "performance"
+        and isinstance(s1, dict)
+        and s1.get("contract") == S1_PERFORMANCE_CONTRACT
+        and s1.get("initial_radius_blocks") == 48
+        and s1.get("actual_radius_blocks") == 640
+        and s1.get("visual_lod_radius_blocks") == 320
+        and s1.get("ready_prompt_frame_offset_ns") == expected["ready_prompt_frame_offset_ns"]
+        and s1.get("playable_sphere_first_ready_offset_ns")
+            == expected["playable_sphere_first_ready_offset_ns"]
+        and s1.get("initial_deadline_missed") is expected["initial_deadline_missed"]
+        and s1.get("playable_deadline_missed") is expected["playable_deadline_missed"]
+        and s1.get("movement_playable_sphere_complete")
+            is expected["movement_playable_sphere_complete"]
+        and s1.get("movement_visual_lod_samples_complete")
+            is expected["movement_visual_lod_samples_complete"]
+        and isinstance(budget, dict)
+        and budget.get("target_frame_duration_ns") == expected["target_frame_duration_ns"]
+        and budget.get("required_in_budget_time_permille")
+            == expected["required_in_budget_permille"]
+        and budget.get("measured_time_ns") == expected["measured_time_ns"]
+        and budget.get("in_budget_time_ns") == expected["in_budget_time_ns"]
+        and budget.get("passed") is False,
+        "owner-accepted failure metrics differ from the retained Mac capture",
+    )
+    return expected
+
+
+S1_CURRENT_NORMAL = {'aggregate_sha256': '2a437863daa4bcb334384d0d23fa4dca65a5e2230f608930983d7d51df091ac7',
+ 'executable_sha256': 'd8035bd0a014033f68d58a7d82f51bda81b51a1a5f280ecdb0db0ef83601f6ab',
+ 'facts': {'counters': {'accepted_tick': 0,
+                        'authoritative_tick_ms': 100,
+                        'camera_relative_inputs': 0,
+                        'clients_accepted': 1,
+                        'clients_requested': 1,
+                        'expectations_passed': 0,
+                        'inputs_sent': 431,
+                        'last_effective_tick': 0,
+                        'server_events_processed': 9836,
+                        'ticks': 300},
+           'failed_present_requests': 4,
+           'frame_budget': {'fence_confirmed_frame_count': 3467,
+                            'in_budget_time_ns': 12406228240,
+                            'measured_time_ns': 30000000000,
+                            'measurement_scope': 'fence-confirmed-render-frame-completion-observations',
+                            'measurement_window_complete': True,
+                            'measurement_window_end_offset_ns': 42096340375,
+                            'measurement_window_start_offset_ns': 12096340375,
+                            'passed': False,
+                            'required_for_benchmark_pass': True,
+                            'required_in_budget_time_permille': 990,
+                            'required_window_duration_ns': 30000000000,
+                            'sample_count': 3467,
+                            'target_frame_duration_ns': 8333333},
+           'raw_fence_confirmed_frame_count': 5004,
+           'raw_frame_count': 4984,
+           'raw_input_count': 431,
+           's1': {'actual_radius_blocks': 640,
+                  'contract': 'mc.s1-lod-performance.v2',
+                  'initial_deadline_missed': False,
+                  'initial_radius_blocks': 48,
+                  'movement_authoritative_update_count': 301,
+                  'movement_input_during_fill': True,
+                  'movement_playable_sphere_complete': False,
+                  'movement_started_after_current_sphere_ready': True,
+                  'movement_visual_lod_samples_complete': False,
+                  'playable_deadline_missed': False,
+                  'playable_sphere_first_ready_offset_ns': 14246828125,
+                  'ready_prompt_frame_offset_ns': 2303056750,
+                  'visual_lod_radius_blocks': 320},
+           'successful_present_requests': 718,
+           'timing': {'deadline_ms': 60000, 'elapsed_ms': 45525}},
+ 'failure': 'game benchmark did not complete the scripted full-game workload',
+ 'raw_report_sha256': '0019d1c2c8d66e70be325dffeb022f56b5abfd95db7a0bd7332d0f52cf5b6c9b',
+ 'schema': 'mc.s1-owner-accepted-current-normal.v2',
+ 'semantic_review': {'path': '/Users/core-just/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/review-artifacts/source13-analysis-source-review-consolidated-v3.json',
+                     'sha256': '5b50a1855bf846fb9337557a9c65535179e9ed5d7fa98ce2d92dadf732be3e82',
+                     'size': 18685},
+ 'source_candidate': {'head': '168bbf38b367f9621f49286ccca85a8a42095289',
+                      'tree': '0fbf093c94770683961ca4a0653fd98f7c5690f7'},
+ 'source_input_sha256': '0dc600d5809fc661c3b73d86fe05dca951b661fe58ef7fc8c1f358651c3a3471'}
+
+def verify_s1_current_normal_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Validate the pinned fresh normal capture without converting its failures into a pass."""
+    require(report.get("schema_version") == "mc.runtime-evidence.v1"
+            and report.get("mode") == "benchmark-game" and report.get("passed") is False
+            and report.get("failure") == S1_CURRENT_NORMAL["failure"], "current normal capture failure changed")
+    game = report.get("game_benchmark")
+    require(isinstance(game, dict), "current normal gameplay evidence is absent")
+    terrain = game.get("s1_terrain_performance")
+    budget = game.get("frame_budget")
+    require(isinstance(terrain, dict) and isinstance(budget, dict), "current normal terrain/timing evidence absent")
+    require(game.get("workload") == WORKLOAD and game.get("qualification_proof") == "performance"
+            and game.get("build_mode") == "release" and game.get("diagnostic_overrides_present") is False
+            and game.get("qualification_settings_manifest") == qualification_settings_manifest()
+            and game.get("framebuffer") == {"width": 2560, "height": 1440}
+            and game.get("present_mode") == "fifo", "current normal renderer/settings changed")
+    require(terrain.get("contract") == S1_PERFORMANCE_CONTRACT
+            and terrain.get("initial_radius_blocks") == 48 and terrain.get("actual_radius_blocks") == 640
+            and terrain.get("visual_lod_radius_blocks") == 320, "current normal terrain radii changed")
+    require(terrain.get("initial_deadline_missed") is False
+            and 0 < terrain.get("ready_prompt_frame_offset_ns", 0) <= 4_000_000_000
+            and terrain.get("playable_deadline_missed") is False,
+            "current startup deadline failure is not waived")
+    timing, counters = report.get("timing"), report.get("counters")
+    require(isinstance(timing, dict) and 0 < timing.get("elapsed_ms", 0) <= timing.get("deadline_ms", 0),
+            "current normal runtime deadline failed")
+    require(isinstance(counters, dict) and counters.get("clients_requested") == counters.get("clients_accepted") == 1
+            and counters.get("inputs_sent", 0) > 0 and terrain.get("movement_authoritative_update_count", 0) > 0,
+            "current normal connection/input/movement evidence absent")
+    updates = terrain.get("movement_authoritative_sphere_updates")
+    require(isinstance(updates, list) and len(updates) == terrain.get("movement_authoritative_update_count")
+            and len(updates) >= 2, "current authoritative movement trajectory is absent or malformed")
+    position_keys = ("x", "y", "z", "x_subcell", "y_subcell", "z_subcell")
+    positions = set()
+    for update in updates:
+        require(isinstance(update, dict) and isinstance(update.get("authoritative_position"), dict),
+                "current authoritative movement position is malformed")
+        position = update["authoritative_position"]
+        require(all(type(position.get(key)) is int for key in position_keys),
+                "current authoritative movement position is malformed")
+        positions.add(tuple(position[key] for key in position_keys))
+    require(len(positions) >= 2, "current authoritative movement trajectory is stationary")
+    require(game.get("successful_present_requests", 0) > 0 and len(game.get("raw_frames", [])) > 0
+            and len(game.get("raw_fence_confirmed_frames", [])) > 0 and len(game.get("raw_gameplay_inputs", [])) > 0
+            and game.get("frame_completion_source") == FRAME_COMPLETION_SOURCE,
+            "current normal rendered/fence-completed gameplay evidence absent")
+    require(budget.get("measurement_window_complete") is True
+            and budget.get("measured_time_ns") == budget.get("required_window_duration_ns") == 30_000_000_000,
+            "current normal 30-second measurement window incomplete")
+    require(budget.get("passed") is False and terrain.get("movement_playable_sphere_complete") is False
+            and terrain.get("movement_visual_lod_samples_complete") is False,
+            "current failure classes differ from accepted performance/LOD classes")
+    facts = {"timing": timing, "counters": counters, "frame_budget": budget,
+             "s1": {key: terrain.get(key) for key in S1_CURRENT_NORMAL["facts"]["s1"]},
+             "raw_frame_count": len(game["raw_frames"]),
+             "raw_fence_confirmed_frame_count": len(game["raw_fence_confirmed_frames"]),
+             "raw_input_count": len(game["raw_gameplay_inputs"]),
+             "successful_present_requests": game["successful_present_requests"],
+             "failed_present_requests": game["failed_present_requests"]}
+    require(facts == S1_CURRENT_NORMAL["facts"], "current capture metrics differ from the pinned fresh evidence")
+    return facts
+
+
+def verify_s1_current_normal_receipt(root: Path, receipt: Path, *, candidate_commit: str) -> dict[str, Any]:
+    source = source_digest(root)
+    require(source == S1_CURRENT_NORMAL["source_input_sha256"], "current source differs from fresh normal capture")
+    require(file_identity(receipt)["sha256"] == S1_CURRENT_NORMAL["aggregate_sha256"],
+            "current normal capture aggregate changed")
+    aggregate = read_json(receipt)
+    require(aggregate.get("schema_version") == SCHEMA and len(aggregate.get("rows", [])) == 1,
+            "current normal evidence must contain exactly one Mac performance row")
+    row = aggregate["rows"][0]
+    require(row.get("platform") == "macos" and row.get("proof") == "performance"
+            and row.get("proof_origin") == "local" and row.get("source_candidate") == S1_CURRENT_NORMAL["source_candidate"]
+            and row.get("source_input_sha256") == source and row.get("exit_code") == 1
+            and row.get("timed_out") is False and row.get("capture_error") == "" and row.get("environment") == {},
+            "current normal capture identity/state changed")
+    build = row.get("build", {})
+    require(build.get("configuration") == "Release" and build.get("source_input_sha256") == source
+            and build.get("executable_sha256") == S1_CURRENT_NORMAL["executable_sha256"],
+            "current normal Release build identity changed")
+    executable = checked_file(row["executable"], receipt.parent)
+    report = checked_file(row["report"], receipt.parent)
+    require(file_identity(executable)["sha256"] == S1_CURRENT_NORMAL["executable_sha256"]
+            and file_identity(report)["sha256"] == S1_CURRENT_NORMAL["raw_report_sha256"],
+            "current normal executable/report identity changed")
+    require(row.get("warmup_seconds") == 180 and row["command"][1:] == benchmark_arguments(
+                "macos", 180, row["command"][-1], "performance"), "current normal workload command changed")
+    verify_macos_runtime(row, receipt.parent)
+    review = read_json(checked_file(S1_CURRENT_NORMAL["semantic_review"], root))
+    require(review.get("verdict") == "APPROVED"
+            and review.get("candidate", {}).get("head_commit") == row["source_candidate"]["head"]
+            and review.get("candidate", {}).get("head_tree") == row["source_candidate"]["tree"],
+            "current normal semantic review changed")
+    facts = verify_s1_current_normal_report(read_json(report))
+    return {"schema_version": S1_CURRENT_NORMAL["schema"], "status": "accepted_exception",
+            "owner_request_path": S1_OWNER_REQUEST_PATH, "owner_request_sha256": S1_OWNER_REQUEST_SHA256,
+            "source_input_sha256": source, "capture_source_input_sha256": source,
+            "source_reuse_certificate": None, "candidate": _MATRIX.commit_identity(root, candidate_commit),
+            "capture": {"aggregate_sha256": S1_CURRENT_NORMAL["aggregate_sha256"],
+                        "raw_report_sha256": S1_CURRENT_NORMAL["raw_report_sha256"],
+                        "executable_sha256": S1_CURRENT_NORMAL["executable_sha256"],
+                        "source_candidate": row["source_candidate"]},
+            "proof_dispositions": {"macos": {"performance": "failed", "terrain-coverage": "unqualified"},
+                                   "windows": {"performance": "unqualified", "terrain-coverage": "unqualified"}},
+            "known_failure": {"report_failure": S1_CURRENT_NORMAL["failure"], **facts},
+            "owner_tested_windows_executable_sha256": S1_OWNER_WINDOWS_EXECUTABLE_SHA256,
+            "current_normal_runtime": {"semantic_review": S1_CURRENT_NORMAL["semantic_review"],
+                "scope": "fresh current-source normal Mac rendering/input/movement evidence; performance and LOD failed; no new owner playtest or Windows qualification"}}
+
+
+def verify_s1_owner_accepted_receipt(
+    root: Path,
+    receipt: Path,
+    *,
+    candidate_commit: str,
+) -> dict[str, Any]:
+    """Accept only the exact owner-approved S1 Mac failure and report other proofs unqualified."""
+    if file_identity(receipt)["sha256"] == S1_CURRENT_NORMAL["aggregate_sha256"]:
+        return verify_s1_current_normal_receipt(root, receipt, candidate_commit=candidate_commit)
+    source = source_digest(root)
+    source_reuse_certificate = None
+    capture_source = source
+    if source != S1_OWNER_SOURCE_INPUT_SHA256:
+        source_reuse_certificate = s1_owner_source_reuse_certificate(root, source)
+        capture_source = S1_OWNER_SOURCE_INPUT_SHA256
+    candidate = _MATRIX.commit_identity(root, candidate_commit)
+    receipt_identity = file_identity(receipt)
+    require(receipt_identity["sha256"] == S1_OWNER_AGGREGATE_SHA256,
+            "owner-accepted aggregate receipt differs from the retained Mac record")
+    aggregate = read_json(receipt)
+    require(isinstance(aggregate, dict) and aggregate.get("schema_version") == SCHEMA
+            and isinstance(aggregate.get("rows"), list) and len(aggregate["rows"]) == 1,
+            "owner-accepted S1 evidence must contain only the retained single Mac performance row")
+    row = aggregate["rows"][0]
+    require(isinstance(row, dict)
+            and row.get("platform") == "macos"
+            and row.get("proof") == "performance"
+            and row.get("proof_origin") == "local"
+            and row.get("source_candidate") == S1_OWNER_CAPTURE_CANDIDATE
+            and row.get("source_input_sha256") == capture_source
+            and row.get("exit_code") == 1
+            and row.get("timed_out") is False
+            and row.get("capture_error") == ""
+            and row.get("environment") == {},
+            "owner-accepted Mac row identity or failed-capture state changed")
+    _MATRIX._validate_candidate(row.get("source_candidate"), "owner-accepted capture candidate")
+    build = row.get("build")
+    require(isinstance(build, dict)
+            and build.get("configuration") == "Release"
+            and build.get("source_input_sha256") == capture_source
+            and build.get("executable_sha256") == S1_OWNER_MAC_EXECUTABLE_SHA256,
+            "owner-accepted Mac Release build identity changed")
+    for key in ("configuration_sha256", "dependency_sha256"):
+        require(isinstance(build.get(key), str)
+                and re.fullmatch(r"[0-9a-f]{64}", build[key]) is not None,
+                f"owner-accepted Mac build is missing {key}")
+
+    executable = row.get("executable")
+    report = row.get("report")
+    require(isinstance(executable, dict)
+            and isinstance(executable.get("path"), str)
+            and Path(executable["path"]).is_absolute()
+            and executable.get("sha256") == S1_OWNER_MAC_EXECUTABLE_SHA256
+            and Path(executable["path"]).name == "mc_main"
+            and isinstance(report, dict)
+            and isinstance(report.get("path"), str)
+            and Path(report["path"]).is_absolute()
+            and report.get("sha256") == S1_OWNER_RAW_REPORT_SHA256,
+            "owner-accepted Mac executable or raw report identity changed")
+    executable_path = checked_file(executable, receipt.parent)
+    report_path = checked_file(report, receipt.parent)
+    require(build["executable_sha256"] == file_identity(executable_path)["sha256"],
+            "owner-accepted Mac executable bytes disagree with the Release build")
+    require(row.get("warmup_seconds") == 180
+            and isinstance(row.get("command"), list)
+            and row["command"][1:] == benchmark_arguments(
+                "macos", row["warmup_seconds"], row["command"][-1], "performance"
+            )
+            and Path(row["command"][-1]).resolve() == report_path,
+            "owner-accepted Mac capture command is not the retained production workload")
+    verify_macos_runtime(row, receipt.parent)
+    known_failure = verify_s1_owner_accepted_report_failure(read_json(report_path))
+    return {
+        "schema_version": S1_OWNER_EXCEPTION_SCHEMA,
+        "status": "accepted_exception",
+        "owner_request_path": S1_OWNER_REQUEST_PATH,
+        "owner_request_sha256": S1_OWNER_REQUEST_SHA256,
+        "source_input_sha256": source,
+        "capture_source_input_sha256": capture_source,
+        "source_reuse_certificate": source_reuse_certificate,
+        "candidate": candidate,
+        "capture": {
+            "aggregate_sha256": receipt_identity["sha256"],
+            "raw_report_sha256": report["sha256"],
+            "executable_sha256": executable["sha256"],
+            "source_candidate": row["source_candidate"],
+        },
+        "proof_dispositions": {
+            "macos": {
+                "performance": "failed",
+                "terrain-coverage": "unqualified",
+            },
+            "windows": {
+                "performance": "unqualified",
+                "terrain-coverage": "unqualified",
+            },
+        },
+        "known_failure": known_failure,
+        "owner_tested_windows_executable_sha256": S1_OWNER_WINDOWS_EXECUTABLE_SHA256,
+    }
+
+
 def benchmark_arguments(platform: str, warmup: int, report: str, proof: str = "performance") -> list[str]:
     require(type(warmup) is int and 1 <= warmup <= 1800, "invalid warmup bound")
     require(proof in PROOFS, "invalid gameplay proof selector")
-    return ["--benchmark-game", "--workload", "speed-200-full-radius", "--gameplay-proof", proof, "--render-distance", str(PROOFS[proof]),
-            "--full-radius-warmup-seconds", str(warmup), *( ["--present-immediate"] if platform == "windows" else []), "--evidence", report]
+    workload = "ordinary-turning" if proof == "performance" else "speed-200-full-radius"
+    return [
+        "--benchmark-game",
+        "--workload",
+        workload,
+        "--gameplay-proof",
+        proof,
+        "--render-distance",
+        str(PROOFS[proof]),
+        *( ["--full-radius-warmup-seconds", str(warmup)] if proof == "terrain-coverage" else []),
+        *( ["--present-immediate"] if platform == "windows" else []),
+        "--evidence",
+        report,
+    ]
+
+
+def direct_prefix_dependency_identity(root: Path, cache: dict[str, str], prefixes: list[str]) -> dict[str, Any]:
+    resolved = [Path(prefix).resolve() for prefix in prefixes]
+    require(all(Path(prefix).is_absolute() and path.is_dir() for prefix, path in zip(prefixes, resolved)),
+            "direct dependency prefix is missing or is not an absolute directory")
+    # CMake records the packages actually selected, even without a vcpkg toolchain.
+    # Every selected dependency directory must be covered by the hashed prefixes.
+    for name, value in cache.items():
+        if not name.endswith("_DIR") or name.startswith(("CMAKE_", "MinecraftClone2026_")):
+            continue
+        directory = Path(value)
+        require(directory.is_absolute() and directory.is_dir()
+                and any(directory.resolve().is_relative_to(prefix) for prefix in resolved),
+                f"selected dependency directory {name} is not covered by a CMake prefix")
+    lock = read_json(root / "dependencies.lock.json")["dependencies"]
+    packages = {}
+    for package in ("CoreCpp", "CoreProject2026"):
+        directory = cache.get(f"{package}_DIR", "")
+        config = Path(directory) / f"{package}Config.cmake"
+        require(bool(directory) and config.is_file(), f"{package} package provenance is missing")
+        content = config.read_text(encoding="utf-8")
+
+        def setting(name: str) -> str:
+            matches = re.findall(r'^\s*set\(' + re.escape(name) + r'\s+"([^"\r\n]*)"\s*\)\s*$',
+                                 content, re.M)
+            require(len(matches) == 1, f"{package} package provenance lacks an unambiguous {name}")
+            return matches[0]
+
+        revision = setting(f"{package}_REVISION")
+        require(re.fullmatch(r"[0-9a-f]{40}", revision) is not None
+                and revision == lock[package]["revision"]
+                and setting(f"{package}_DIRTY") in ("FALSE", "OFF", "0")
+                and setting(f"{package}_REVISION_EXACT") in ("TRUE", "ON", "1"),
+                f"{package} package provenance is not the locked clean exact revision")
+        if package == "CoreProject2026":
+            require(setting("CoreProject2026_REQUIRED_CORECPP_REVISION") == lock["CoreCpp"]["revision"],
+                    "CoreProject2026 package requires another CoreCpp revision")
+        packages[package] = {"directory": directory, "config": file_identity(config),
+                             "revision": revision, "dirty": False, "exact": True}
+    identities = []
+    for prefix, path in zip(prefixes, resolved):
+        files = _MATRIX._input_file_paths(path, ("include/**", "lib/**", "bin/**", "share/**/*.cmake"))
+        require(bool(files), f"direct dependency prefix has no consumed package files: {prefix}")
+        identities.append({"path": prefix, "consumed_files_sha256": _MATRIX._paths_sha256(files),
+                           "consumed_file_count": len(files)})
+    return {"CMAKE_PREFIX_PATH": identities, "package_provenance": packages}
 
 
 def build_identity(root: Path, build_root: Path, executable: Path) -> dict[str, Any]:
@@ -1146,6 +3188,19 @@ def build_identity(root: Path, build_root: Path, executable: Path) -> dict[str, 
             "Release build is stale; build it before capturing gameplay evidence")
     private_prefixes = cache.get("CMAKE_PREFIX_PATH", "").split(";")
     require(private_prefixes and all(private_prefixes), "Release CMake prefix path is missing or contains an empty entry")
+    vcpkg_keys = ("Z_VCPKG_ROOT_DIR", "VCPKG_INSTALLED_DIR")
+    if not any(name in cache for name in vcpkg_keys):
+        dependencies = direct_prefix_dependency_identity(root, cache, private_prefixes)
+    else:
+        require(all(cache.get(name) for name in vcpkg_keys), "vcpkg dependency configuration is incomplete")
+        dependencies = vcpkg_dependency_identity(root, cache, private_prefixes)
+    return {"configuration": "Release", "source_input_sha256": source_digest(root),
+            "executable_sha256": file_identity(executable)["sha256"],
+            "configuration_sha256": _MATRIX._input_files_sha256(build_root, ("CMakeCache.txt", "build.ninja", "CMakeFiles/rules.ninja", "compile_commands.json", "shaders/**")),
+            "dependency_sha256": hashlib.sha256(_MATRIX._canonical_json(dependencies)).hexdigest()}
+
+
+def vcpkg_dependency_identity(root: Path, cache: dict[str, str], private_prefixes: list[str]) -> dict[str, Any]:
     environment = {"VCPKG_ROOT": cache["Z_VCPKG_ROOT_DIR"], "VCPKG_INSTALLED_DIR": cache["VCPKG_INSTALLED_DIR"]}
     dependency_row = {"id": "macos_ubsan"}
     shared_dependencies = None
@@ -1163,10 +3218,7 @@ def build_identity(root: Path, build_root: Path, executable: Path) -> dict[str, 
         prefix_identities.append(prefix_identity)
     dependencies = shared_dependencies or {}
     dependencies["CMAKE_PREFIX_PATH"] = prefix_identities
-    return {"configuration": "Release", "source_input_sha256": source_digest(root),
-            "executable_sha256": file_identity(executable)["sha256"],
-            "configuration_sha256": _MATRIX._input_files_sha256(build_root, ("CMakeCache.txt", "build.ninja", "CMakeFiles/rules.ninja", "compile_commands.json", "shaders/**")),
-            "dependency_sha256": hashlib.sha256(_MATRIX._canonical_json(dependencies)).hexdigest()}
+    return dependencies
 
 
 def cancel_desktop_job(job_id: str, task_id: str, digest: str, timeout: int,
@@ -1542,6 +3594,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--proof", choices=tuple(PROOFS), help="one explicitly selected capture proof")
     parser.add_argument("--s7-cadence-exception", choices=(S7_CADENCE_EXCEPTION,),
                         help="explicitly accept only the documented S7 Mac cadence threshold exception, never a performance PASS")
+    parser.add_argument(
+        "--s1-owner-accepted",
+        action="store_true",
+        help="allow only the pinned S1 owner-accepted one-row exception; otherwise require all four normal proofs",
+    )
     parser.add_argument("--executable", type=Path)
     parser.add_argument("--desktop-package", type=Path, help="Windows only: approved native runtime package for the installed desktop helper")
     parser.add_argument("--desktop-package-manifest", type=Path, help="exact relative/size/SHA256 inventory of the approved package")
@@ -1563,6 +3620,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         require(not (args.s7_windows_secondary and args.record), "S7 Windows-secondary applies only to aggregate verification")
         require(not args.s7_cadence_exception or not args.record,
                 "S7 cadence exception applies only to aggregate verification, not capture")
+        require(not args.s1_owner_accepted or args.candidate_commit is not None,
+                "S1 owner acceptance requires an immutable source candidate commit")
+        require(not args.s1_owner_accepted or not (args.record or args.merge
+                or args.s7_windows_secondary or args.s7_cadence_exception),
+                "S1 owner acceptance applies only to the S1 aggregate receipt")
         desktop_options = (args.desktop_package, args.desktop_package_manifest, args.desktop_task_id)
         require(not any(desktop_options) or args.record == "windows" and all(desktop_options),
                 "desktop options require --record windows, --desktop-package, --desktop-package-manifest and --desktop-task-id")
@@ -1580,25 +3642,45 @@ def main(argv: Sequence[str] | None = None) -> int:
                    args.macos_package.absolute() if args.macos_package else None,
                    args.macos_package_manifest.absolute() if args.macos_package_manifest else None)
         else:
-            results = (
-                merge_receipts(
-                    root,
-                    [target.resolve(strict=True) for target in args.merge],
-                    args.receipt.absolute(),
-                    s7_windows_secondary=args.s7_windows_secondary,
-                    s7_cadence_exception=args.s7_cadence_exception,
+            if args.s1_owner_accepted:
+                receipt_path = args.receipt.resolve(strict=True)
+                aggregate = read_json(receipt_path)
+                rows = aggregate.get("rows") if isinstance(aggregate, dict) else None
+                if isinstance(rows, list) and len(rows) == 1:
+                    result = verify_s1_owner_accepted_receipt(
+                        root,
+                        receipt_path,
+                        candidate_commit=args.candidate_commit,
+                    )
+                    print(json.dumps(result, sort_keys=True))
+                else:
+                    results = verify_receipt(root, receipt_path)
+                    accepted = any(proof.get("status") == "accepted_exception"
+                                   for platform in results.values()
+                                   for proof in platform.values()
+                                   if isinstance(proof, dict))
+                    print(json.dumps({"status": "accepted_exception" if accepted else "passed",
+                                      "platforms": results}, sort_keys=True))
+            else:
+                results = (
+                    merge_receipts(
+                        root,
+                        [target.resolve(strict=True) for target in args.merge],
+                        args.receipt.absolute(),
+                        s7_windows_secondary=args.s7_windows_secondary,
+                        s7_cadence_exception=args.s7_cadence_exception,
+                    )
+                    if args.merge else verify_receipt(
+                        root,
+                        args.receipt.resolve(strict=True),
+                        s7_windows_secondary=args.s7_windows_secondary,
+                        s7_cadence_exception=args.s7_cadence_exception,
+                    )
                 )
-                if args.merge else verify_receipt(
-                    root,
-                    args.receipt.resolve(strict=True),
-                    s7_windows_secondary=args.s7_windows_secondary,
-                    s7_cadence_exception=args.s7_cadence_exception,
-                )
-            )
-            accepted = any(proof.get("status") == "accepted_exception"
-                           for platform in results.values() for proof in platform.values() if isinstance(proof, dict))
-            print(json.dumps({"status": "accepted_exception" if accepted else "passed",
-                              "platforms": results}, sort_keys=True))
+                accepted = any(proof.get("status") == "accepted_exception"
+                               for platform in results.values() for proof in platform.values() if isinstance(proof, dict))
+                print(json.dumps({"status": "accepted_exception" if accepted else "passed",
+                                  "platforms": results}, sort_keys=True))
         return 0
     except (OSError, ValueError, KeyError, TypeError, IndexError, subprocess.SubprocessError, _MATRIX.MatrixError) as error:
         print(f"FAIL gameplay gate: {error}", file=sys.stderr)

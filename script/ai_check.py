@@ -21,14 +21,152 @@ from typing import Sequence
 
 LOG_DIR = Path("build/ai-checks")
 RECEIPT_SCHEMA_VERSION = 2
+S1_OWNER_EXCEPTION_SCHEMA = "mc.s1-owner-accepted-gameplay-exception.v1"
+S1_OWNER_REQUEST_PATH = "~/.codex/task-evidence/mc-s1-20261023/owner-release-acceptance/request.md"
+S1_OWNER_REQUEST_SHA256 = "b55134d42a04a746ca862d4b12ba847cb8e0e73ac88ae1ca787b13daf6ebe403"
+S1_OWNER_SOURCE_INPUT_SHA256 = "83da03165eea8b14d48398b8ca314b0ddcb3d74fa6b446b998f819a2538c3e9d"
+S1_OWNER_SOURCE_REUSE_CURRENT_SHA256 = 'fd08d7464b1ec7c80d4a494e8e9e471baafcd7f8e85a1220923d453945b93aa1'
+S1_OWNER_SOURCE_REUSE_V3_CURRENT_SHA256 = '75b2a0951e88e1ebc38a6776aaf191071ab1445a41d6c500c2cf438e12d1d641'
+S1_OWNER_SOURCE_REUSE_V3_CERTIFICATE = {'application_behavior_equivalence': 'all application inputs are byte-identical to the accepted candidate '
+                                     'after the two exact EOF normalizations and three pinned '
+                                     'version-identity literal transforms',
+ 'application_current_raw_input_sha256': 'c5ead3b8ff782614e4b4ffbada4eb1471d214aa367f112092796b9fd27773b39',
+ 'application_input_count': 233,
+ 'application_source_input_sha256': 'dcc33a5b3f062aed0e67ae02d0e83d37f040ab00ed44209897a427bfda4d9bee',
+ 'application_unchanged_input_count': 229,
+ 'capture_source_input_sha256': '83da03165eea8b14d48398b8ca314b0ddcb3d74fa6b446b998f819a2538c3e9d',
+ 'current_source_input_sha256': '75b2a0951e88e1ebc38a6776aaf191071ab1445a41d6c500c2cf438e12d1d641',
+ 'normalized_files': [{'accepted_sha256': '37074292464f75c2ca6d96747202f3a3bada734541817a558218fd115fdefd99',
+                       'accepted_trailing_lf_count': 3,
+                       'current_sha256': 'eda9f4ef465be27b97a0cacc6f59f2b9775517a960acfd0e16f4e9800cf6aaaf',
+                       'current_trailing_lf_count': 1,
+                       'input_class': 'application',
+                       'path': 'src/shared/corelang/Execution.cpp'},
+                      {'accepted_sha256': 'dadb3a9daf5563839e3128bb25884da3b5f071c991826ac6c2307f4023fffb4c',
+                       'accepted_trailing_lf_count': 2,
+                       'current_sha256': '36b3f02c9ce3ff7fd57d43b6cd4f78f962e2fd1077ab08a2368a89601f9c78c0',
+                       'current_trailing_lf_count': 1,
+                       'input_class': 'test',
+                       'path': 'tests/acceptance/column_map_replay_tests.cpp'}],
+ 'rebuilt_application': {'application_executable': {'path': '~/.codex/task-evidence/mc-s1-20261021/evidence-boundaries/build/mc_main',
+                                                    'sha256': '0aacbd2ff732cc328e29b38509161a54c99b60706fcab0b98cf40495bc26fba7'},
+                         'build_log': {'path': '~/.codex/task-evidence/mc-s1-20261023/release-freeze-01/deferred-lod/accepted-build.log',
+                                       'sha256': '4ca42cfd59f341f93887df2b71d23f04558960d738e8f88f025e759eb0a282b7'},
+                         'freeze_receipt': {'path': '~/.codex/task-evidence/mc-s1-20261023/release-freeze-01/deferred-lod/FINAL-FREEZE-RECEIPT.json',
+                                            'sha256': '78ca7ea1d3d3f01917e754165dc89791465ea947fd939238f1d54cd9790bfa0a'}},
+ 'schema': 'mc.s1-source-reuse-certificate.v3',
+ 'source_input_count': 908,
+ 'test_fixture_files': [{'accepted_sha256': 'c4bafd8890b2eac5051789e0534b83ec1578be6fc76e220769abf840a1b53a2f',
+                         'current_sha256': '4b96d636d353fb9c85e5b2817ee27dc861fde123ceee2af550da19ff8c9b448c',
+                         'path': 'tests/acceptance/adverse_network_tests.cpp'},
+                        {'accepted_sha256': '807e6e4cf308ad154e30ea139514ace679ac517d53867134f98861f8b7263aca',
+                         'current_sha256': '98202508eb4a28708e76302afc644a2dfc78327065ae87ff840f72399eb40d85',
+                         'path': 'tests/client/player_client_focus_tests.cpp'},
+                        {'accepted_sha256': '5b23541ce5b08c565b448fd59b303513c67d06a923988fea8ff74fd360daf540',
+                         'current_sha256': '2311f8044975f27a2fb516496ca527cb82185fb11683f47ca6d9d0bb7e729dc7',
+                         'path': 'tests/client/renderer_smoke_tests.cpp'},
+                        {'accepted_sha256': 'f8dc18c19d19e23ff5cf2a4279cd6aa86756e911ce0eaa02bcf0a8168e214a90',
+                         'current_sha256': '96d578b3d79e52893ba561ee4c1e3090efb8671f2f0faffe72dedca1dd25c1ab',
+                         'path': 'tests/core/game_server_preview_tests.cpp'}],
+ 'test_input_count': 675,
+ 'test_unchanged_input_count': 670,
+ 'unchanged_input_count': 899,
+ 'version_identity_rebuild': {'behavior_input_sha256_after_exact_identity_normalization': 'dcc33a5b3f062aed0e67ae02d0e83d37f040ab00ed44209897a427bfda4d9bee',
+                              'build_log': {'path': '~/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/build.log',
+                                            'sha256': '6b21f90d2cfa6ee18a5cf72039392f0bff4ab970b1a7aaa8526a6bbb7bbb0dee'},
+                              'formatted_version_probe': {'executable': {'path': '~/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/version_identity_probe',
+                                                                         'sha256': '1cd10ba5acd4f97121293c957fced4ecc5065847628388adeb8fc706139d81b3'},
+                                                          'output': '0.1.1:1 BasicBlocks',
+                                                          'run_log': {'path': '~/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/version_identity_probe_run.log',
+                                                                      'sha256': 'a65036a25541cf4ee59be2d12f521972f4aa5c701822b3ffdb5f34f86b50c16d'}},
+                              'global_symbols': {'count': 3407,
+                                                 'identical_to_owner_tested_application': True,
+                                                 'sha256': 'df6cdfac05d588cc32b8d41dfb98b6070e4b6a0b4c0b3d43e3fc4d6d9ac7ea6d'},
+                              'owner_tested_application_sha256': '0aacbd2ff732cc328e29b38509161a54c99b60706fcab0b98cf40495bc26fba7',
+                              'receipt': {'path': '~/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/version-identity-build-01/version-identity-build.json',
+                                          'sha256': 'bc0d803ae6e68914bc214f319c8e0951b4e26d5e23d222510f8e37e004eb3abf'},
+                              'schema': 'mc.s1-version-identity-build.v1',
+                              'source_input_sha256': '75b2a0951e88e1ebc38a6776aaf191071ab1445a41d6c500c2cf438e12d1d641',
+                              'version_identity_application': {'path': '~/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/metadata-work/build/s1-version-identity-release/mc_main',
+                                                               'sha256': '6a5b2f3174eb5715add8de61e061684f0a00ff1616f9285f350c140f569252bc'}},
+ 'version_only_files': [{'accepted_sha256': '317bb3826155f357af28ac04b254662fefb14dbe5282c7bed354743e77c8a596',
+                         'current_sha256': '6e285b7a9f39c9b65af1fbb7442484f888d6a1eef352f7930d9767844c381297',
+                         'input_class': 'application',
+                         'literal_changes': [{'from': 'VERSION 0.1.0\n', 'to': 'VERSION 0.1.1\n'}],
+                         'path': 'CMakeLists.txt'},
+                        {'accepted_sha256': '5e5be64a6f6b8574da372911b28194ab468ce88c29ece5491a564167dceacfb1',
+                         'current_sha256': '46eec31959f1b7828cfa62cfeadf3689bcd0c49030fa81e99c70b73e36031cb8',
+                         'input_class': 'application',
+                         'literal_changes': [{'from': 'MINOR_VERSION_NAME{ "Initiation" }',
+                                              'to': 'MINOR_VERSION_NAME{ "BasicBlocks" }'},
+                                             {'from': '.minor = 0,', 'to': '.minor = 1,'},
+                                             {'from': '.patch = 7,', 'to': '.patch = 1,'}],
+                         'path': 'src/shared/include/shared/ProjectInfo.hpp'},
+                        {'accepted_sha256': 'c4199f22a2a4d7fbb128e1b861b381b091eeeb7336c5909d4ae16335b1563724',
+                         'current_sha256': '00b4e1010a1f5e8a7ea196a69c295eee5240849c22312b1b09855f1d0780c945',
+                         'input_class': 'application',
+                         'literal_changes': [{'from': '"version-string": "0.1.0"',
+                                              'to': '"version-string": "0.1.1"'}],
+                         'path': 'vcpkg.json'}]}
+S1_OWNER_SOURCE_REUSE_CERTIFICATE = {'acceptance_boundary': 'Fresh Release build and headless CLI scenario evidence only; no full gameplay, '
+                        'rendering, performance or new owner acceptance. Independent platform, analysis and '
+                        'release gates remain required.',
+ 'application_behavior_equivalence': 'not claimed; semantic preservation requires exact-delta review and '
+                                     'current correctness evidence',
+ 'capture_source_input_sha256': '83da03165eea8b14d48398b8ca314b0ddcb3d74fa6b446b998f819a2538c3e9d',
+ 'changed_input_count': 141,
+ 'current_source_input_sha256': 'fd08d7464b1ec7c80d4a494e8e9e471baafcd7f8e85a1220923d453945b93aa1',
+ 'headless_runtime': {'path': '/Users/core-just/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/fresh-runtime-v4-01/headless-runtime-final-receipt.json',
+                      'sha256': '5c0c0dd73dd3002bf5f685da9c52d033768b632268b05db6c68cafd81a16dea2',
+                      'size': 1550},
+ 'manifest': {'path': '/Users/core-just/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/fresh-runtime-v4-01/source-provenance.v4.json',
+              'sha256': 'a5665d3ba9e38aca35f815312b05bff800f203195ea6986e9dedb779237b0125',
+              'size': 281090},
+ 'new_binary_owner_acceptance': False,
+ 'provenance_mode': 'review-supported-analysis-delta',
+ 'release_rebuild': {'path': '/Users/core-just/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/fresh-runtime-v4-01/release-rebuild-final-receipt.json',
+                     'sha256': '91de8a838122f27975160b43b08188cefbc6021a09bddebb44afa3e142dcfb8f',
+                     'size': 1561},
+ 'runtime_evidence_scope': 'historical-owner-accepted-capture',
+ 'schema': 'mc.s1-analysis-source-provenance.v4',
+ 'semantic_review': {'path': '/Users/core-just/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/review-artifacts/analysis-source-review-v8.json',
+                     'sha256': '55946f17b05153a3b6edf3c04dbb4caefaf8695f354b9d95c5fe6a049e5819c7',
+                     'size': 5893},
+ 'source_input_count': 908}
+S1_OWNER_AGGREGATE_SHA256 = "abcda853c0a6af2b87526723280055ab1040c38f6c3ac265c3c538e54cdbfd06"
+S1_OWNER_RAW_REPORT_SHA256 = "94140622009202bad4ee05b98952fec86d41aecd9f8cb8a732073ab0f5fd102d"
+S1_OWNER_MAC_EXECUTABLE_SHA256 = "0aacbd2ff732cc328e29b38509161a54c99b60706fcab0b98cf40495bc26fba7"
+S1_OWNER_WINDOWS_EXECUTABLE_SHA256 = "cba2572c3cd47b9da82a2ad2ab1f958231ea20b57b9a6ddad17107013d89402b"
+S1_OWNER_CAPTURE_CANDIDATE = {
+    "head": "bf5047ac52f397179e8467998f6fe67604a6e5f5",
+    "tree": "6c2f5e415748a4d3803207c74b3e09cbe911a300",
+}
+S1_OWNER_PROOF_DISPOSITIONS = {
+    "macos": {"performance": "failed", "terrain-coverage": "unqualified"},
+    "windows": {"performance": "unqualified", "terrain-coverage": "unqualified"},
+}
+S1_OWNER_KNOWN_FAILURE = {
+    "report_failure": "game benchmark did not complete the scripted full-game workload",
+    "in_budget_time_ns": 14_018_509_225,
+    "measured_time_ns": 30_000_000_000,
+    "required_in_budget_permille": 990,
+    "target_frame_duration_ns": 8_333_333,
+    "movement_playable_sphere_complete": False,
+    "movement_visual_lod_samples_complete": False,
+    "ready_prompt_frame_offset_ns": 3_434_526_750,
+    "playable_sphere_first_ready_offset_ns": 14_323_644_834,
+    "initial_deadline_missed": False,
+    "playable_deadline_missed": False,
+}
 SHARED_PYTHON_SOURCES = {
     "ai_check.py", "ai_commit.py", "ai_docs.py", "ai_history.py", "ai_plan.py",
     "ai_publish.py", "ai_run.py", "ai_setup.py", "ai_tasks.py", "ai_windows_job.py",
 }
-PYTHON_TEST_TIMEOUT = 300
+PYTHON_TEST_TIMEOUT = 420
 WINDOWS_PYTHON_TEST_TIMEOUT = 420
 MAX_PHASE_TIMEOUT = 600
-TOTAL_TIMEOUT = 1500
+CTEST_PHASE_TIMEOUT = 1800
+TOTAL_TIMEOUT = 3900
 BUILD_PHASE_TIMEOUT = 600
 TERMINATION_GRACE_SECONDS = 10
 GOVERNED_PREFIXES = ("src/", "tests/", "docs/", "script/", ".githooks/", ".github/", ".codex/", ".agents/", "cmake/")
@@ -86,6 +224,10 @@ class PhaseResult:
 
 def python_test_timeout() -> int:
     return WINDOWS_PYTHON_TEST_TIMEOUT if platform.system() == "Windows" else PYTHON_TEST_TIMEOUT
+
+
+def phase_timeout_cap(name: str) -> int:
+    return CTEST_PHASE_TIMEOUT if name == "ctest" else MAX_PHASE_TIMEOUT
 
 
 def command_output(root: Path, command: Sequence[str]) -> str:
@@ -146,6 +288,7 @@ def snapshot_source_for_check(
     *,
     candidate: bool,
     strict: bool,
+    snapshot_task_id: str | None = None,
 ) -> str | None:
     if explicit_source is not None:
         source = require_snapshot_source_commit(root, explicit_source)
@@ -156,8 +299,34 @@ def snapshot_source_for_check(
             supported_source_branch = branch == "ai-dev" or (
                 branch.startswith("codex/ai-") and len(branch) > len("codex/ai-")
             )
-            if supported_source_branch and pending_source is None and head == source:
-                return source
+            if supported_source_branch and pending_source is None:
+                if head == source:
+                    return source
+                if (
+                    git_output(root, "show", "-s", "--format=%P", source) == head
+                    and git_output(root, "rev-parse", f"{source}^{{tree}}")
+                        == git_output(root, "write-tree")
+                    and not git_output(root, "diff", "--name-only", "--")
+                    and not git_output(root, "ls-files", "--others", "--exclude-standard")
+                ):
+                    return source
+                if branch == "ai-dev" and snapshot_task_id:
+                    resolver = root / "script" / "ai_publish.py"
+                    completed = subprocess.run(
+                        [
+                            sys.executable, str(resolver), "--root", str(root),
+                            "resolve-tagged-source", "--expected-head", head,
+                            "--task-id", snapshot_task_id,
+                        ],
+                        cwd=root, text=True, capture_output=True, check=False,
+                    )
+                    if completed.returncode:
+                        raise ValueError(
+                            completed.stderr.strip()
+                            or "cannot validate the tagged snapshot source"
+                        )
+                    if completed.stdout.strip() == source:
+                        return source
             if branch == "ai-main" and pending_source == source:
                 return source
             raise ValueError(
@@ -251,9 +420,10 @@ def phase_relevant_paths(root: Path, name: str) -> list[str]:
         if (root / "CMakeUserPresets.json").is_file():
             relevant.add("CMakeUserPresets.json")
         return sorted(relevant)
-    if name == "python-tests":
+    if name in {"python-tests", "python-tests-fast"}:
         # The suite is a repository-policy harness: tests may inspect any
         # tracked or discovered repository content, including release docs.
+        # Keep a separate receipt namespace for the inventory-filtered fast run.
         tests_root = root / "script/tests"
         if tests_root.is_dir():
             paths.extend(
@@ -508,7 +678,7 @@ def relevant_inputs(root: Path, name: str) -> dict[str, object]:
 
 
 def phase_environment(root: Path, name: str) -> dict[str, str]:
-    if name in {"python-tests", "build", "ctest", "extra-renderer-smoke"}:
+    if name in {"python-tests", "python-tests-fast", "build", "ctest", "extra-renderer-smoke"}:
         return python_test_environment(root)
     return os.environ.copy()
 
@@ -613,6 +783,191 @@ def evidence_fingerprint(output: str) -> str:
     return hashlib.sha256(output.encode("utf-8")).hexdigest()
 
 
+S1_CURRENT_NORMAL_EXCEPTION_PAYLOAD = {'capture': {'aggregate_sha256': '2a437863daa4bcb334384d0d23fa4dca65a5e2230f608930983d7d51df091ac7',
+             'executable_sha256': 'd8035bd0a014033f68d58a7d82f51bda81b51a1a5f280ecdb0db0ef83601f6ab',
+             'raw_report_sha256': '0019d1c2c8d66e70be325dffeb022f56b5abfd95db7a0bd7332d0f52cf5b6c9b',
+             'source_candidate': {'head': '168bbf38b367f9621f49286ccca85a8a42095289',
+                                  'tree': '0fbf093c94770683961ca4a0653fd98f7c5690f7'}},
+ 'capture_source_input_sha256': '0dc600d5809fc661c3b73d86fe05dca951b661fe58ef7fc8c1f358651c3a3471',
+ 'current_normal_runtime': {'scope': 'fresh current-source normal Mac rendering/input/movement evidence; '
+                                     'performance and LOD failed; no new owner playtest or Windows '
+                                     'qualification',
+                            'semantic_review': {'path': '/Users/core-just/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/review-artifacts/source13-analysis-source-review-consolidated-v3.json',
+                                                'sha256': '5b50a1855bf846fb9337557a9c65535179e9ed5d7fa98ce2d92dadf732be3e82',
+                                                'size': 18685}},
+ 'known_failure': {'counters': {'accepted_tick': 0,
+                                'authoritative_tick_ms': 100,
+                                'camera_relative_inputs': 0,
+                                'clients_accepted': 1,
+                                'clients_requested': 1,
+                                'expectations_passed': 0,
+                                'inputs_sent': 431,
+                                'last_effective_tick': 0,
+                                'server_events_processed': 9836,
+                                'ticks': 300},
+                   'failed_present_requests': 4,
+                   'frame_budget': {'fence_confirmed_frame_count': 3467,
+                                    'in_budget_time_ns': 12406228240,
+                                    'measured_time_ns': 30000000000,
+                                    'measurement_scope': 'fence-confirmed-render-frame-completion-observations',
+                                    'measurement_window_complete': True,
+                                    'measurement_window_end_offset_ns': 42096340375,
+                                    'measurement_window_start_offset_ns': 12096340375,
+                                    'passed': False,
+                                    'required_for_benchmark_pass': True,
+                                    'required_in_budget_time_permille': 990,
+                                    'required_window_duration_ns': 30000000000,
+                                    'sample_count': 3467,
+                                    'target_frame_duration_ns': 8333333},
+                   'raw_fence_confirmed_frame_count': 5004,
+                   'raw_frame_count': 4984,
+                   'raw_input_count': 431,
+                   'report_failure': 'game benchmark did not complete the scripted full-game workload',
+                   's1': {'actual_radius_blocks': 640,
+                          'contract': 'mc.s1-lod-performance.v2',
+                          'initial_deadline_missed': False,
+                          'initial_radius_blocks': 48,
+                          'movement_authoritative_update_count': 301,
+                          'movement_input_during_fill': True,
+                          'movement_playable_sphere_complete': False,
+                          'movement_started_after_current_sphere_ready': True,
+                          'movement_visual_lod_samples_complete': False,
+                          'playable_deadline_missed': False,
+                          'playable_sphere_first_ready_offset_ns': 14246828125,
+                          'ready_prompt_frame_offset_ns': 2303056750,
+                          'visual_lod_radius_blocks': 320},
+                   'successful_present_requests': 718,
+                   'timing': {'deadline_ms': 60000, 'elapsed_ms': 45525}},
+ 'owner_request_path': '~/.codex/task-evidence/mc-s1-20261023/owner-release-acceptance/request.md',
+ 'owner_request_sha256': 'b55134d42a04a746ca862d4b12ba847cb8e0e73ac88ae1ca787b13daf6ebe403',
+ 'owner_tested_windows_executable_sha256': 'cba2572c3cd47b9da82a2ad2ab1f958231ea20b57b9a6ddad17107013d89402b',
+ 'proof_dispositions': {'macos': {'performance': 'failed', 'terrain-coverage': 'unqualified'},
+                        'windows': {'performance': 'unqualified', 'terrain-coverage': 'unqualified'}},
+ 'schema_version': 'mc.s1-owner-accepted-current-normal.v2',
+ 'source_input_sha256': '0dc600d5809fc661c3b73d86fe05dca951b661fe58ef7fc8c1f358651c3a3471',
+ 'source_reuse_certificate': None,
+ 'status': 'accepted_exception'}
+
+def accepted_current_normal_payload(result: PhaseResult, payload: dict[str, object]) -> dict[str, object] | None:
+    candidate = payload.get("candidate")
+    try:
+        commit = result.command[result.command.index("--candidate-commit") + 1]
+    except (ValueError, IndexError):
+        return None
+    if (not isinstance(candidate, dict) or set(candidate) != {"head", "tree"}
+            or candidate.get("head") != commit
+            or any(not isinstance(candidate[key], str) or re.fullmatch(r"[0-9a-f]{40}", candidate[key]) is None
+                   for key in ("head", "tree"))
+            or {key: value for key, value in payload.items() if key != "candidate"}
+            != S1_CURRENT_NORMAL_EXCEPTION_PAYLOAD):
+        return None
+    return payload
+
+
+def accepted_exception_payload(result: PhaseResult) -> dict[str, object] | None:
+    if (
+        result.name != "full-radius-gameplay"
+        or result.returncode != 0
+        or result.timed_out
+        or "script/ci/verify_gameplay_gate.py" not in result.command
+        or "--s1-owner-accepted" not in result.command
+    ):
+        return None
+    try:
+        payload = json.loads(result.output)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if isinstance(payload, dict) and payload.get("schema_version") == "mc.s1-owner-accepted-current-normal.v2":
+        return accepted_current_normal_payload(result, payload)
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {
+            "schema_version", "status", "owner_request_path", "owner_request_sha256", "source_input_sha256",
+            "capture_source_input_sha256", "source_reuse_certificate", "candidate", "capture",
+            "proof_dispositions", "known_failure",
+            "owner_tested_windows_executable_sha256",
+        }
+        or payload.get("schema_version") != S1_OWNER_EXCEPTION_SCHEMA
+        or payload.get("status") != "accepted_exception"
+        or payload.get("owner_request_path") != S1_OWNER_REQUEST_PATH
+        or payload.get("owner_request_sha256") != S1_OWNER_REQUEST_SHA256
+        or payload.get("capture_source_input_sha256") != S1_OWNER_SOURCE_INPUT_SHA256
+        or (
+            payload.get("source_input_sha256") == S1_OWNER_SOURCE_INPUT_SHA256
+            and payload.get("source_reuse_certificate") is not None
+        )
+        or (
+            payload.get("source_input_sha256") == S1_OWNER_SOURCE_REUSE_CURRENT_SHA256
+            and payload.get("source_reuse_certificate") != S1_OWNER_SOURCE_REUSE_CERTIFICATE
+        )
+        or (
+            payload.get("source_input_sha256") == S1_OWNER_SOURCE_REUSE_V3_CURRENT_SHA256
+            and payload.get("source_reuse_certificate") != S1_OWNER_SOURCE_REUSE_V3_CERTIFICATE
+        )
+        or payload.get("source_input_sha256") not in {
+            S1_OWNER_SOURCE_INPUT_SHA256,
+            S1_OWNER_SOURCE_REUSE_V3_CURRENT_SHA256,
+            S1_OWNER_SOURCE_REUSE_CURRENT_SHA256,
+        }
+        or payload.get("proof_dispositions") != S1_OWNER_PROOF_DISPOSITIONS
+        or payload.get("known_failure") != S1_OWNER_KNOWN_FAILURE
+        or payload.get("owner_tested_windows_executable_sha256")
+            != S1_OWNER_WINDOWS_EXECUTABLE_SHA256
+    ):
+        return None
+    candidate = payload.get("candidate")
+    capture = payload.get("capture")
+    try:
+        candidate_commit = result.command[result.command.index("--candidate-commit") + 1]
+    except (ValueError, IndexError):
+        return None
+    if (
+        not isinstance(candidate, dict)
+        or set(candidate) != {"head", "tree"}
+        or candidate.get("head") != candidate_commit
+        or any(
+            not isinstance(candidate[key], str)
+            or re.fullmatch(r"[0-9a-f]{40}", candidate[key]) is None
+            for key in ("head", "tree")
+        )
+        or not isinstance(capture, dict)
+        or capture != {
+            "aggregate_sha256": S1_OWNER_AGGREGATE_SHA256,
+            "raw_report_sha256": S1_OWNER_RAW_REPORT_SHA256,
+            "executable_sha256": S1_OWNER_MAC_EXECUTABLE_SHA256,
+            "source_candidate": S1_OWNER_CAPTURE_CANDIDATE,
+        }
+    ):
+        return None
+    return payload
+
+
+def gameplay_output_status(result: PhaseResult) -> str:
+    if result.name != "full-radius-gameplay" or result.returncode != 0 or result.timed_out:
+        return "not-success"
+    if (
+        "script/ci/verify_gameplay_gate.py" not in result.command
+        or "--candidate-commit" not in result.command
+    ):
+        return "invalid"
+    try:
+        payload = json.loads(result.output)
+    except (json.JSONDecodeError, TypeError):
+        return "invalid"
+    if not isinstance(payload, dict):
+        return "invalid"
+    if payload.get("schema_version") in {
+        S1_OWNER_EXCEPTION_SCHEMA, "mc.s1-owner-accepted-current-normal.v2"
+    }:
+        return ("accepted_exception" if payload.get("status") == "accepted_exception"
+                and accepted_exception_payload(result) is not None else "invalid")
+    if payload.get("status") == "passed":
+        return "passed"
+    if payload.get("status") == "accepted_exception":
+        return "accepted_exception" if accepted_exception_payload(result) is not None else "invalid"
+    return "invalid"
+
+
 def write_receipt(
     log_dir: Path,
     name: str,
@@ -633,6 +988,30 @@ def write_receipt(
             "returncode": result.returncode,
             "timed_out": result.timed_out,
             "evidence_sha256": evidence_fingerprint(result.output),
+        }
+        receipt_path(log_dir, name).write_text(
+            json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        return
+    accepted_exception = accepted_exception_payload(result)
+    if accepted_exception is not None:
+        receipt = {
+            "schema_version": RECEIPT_SCHEMA_VERSION,
+            "phase": name,
+            "status": "ACCEPTED_EXCEPTION",
+            "command": list(command),
+            "environment_fingerprint": environment_fingerprint(environment),
+            "tool_identity": tool_identity(command),
+            "relevant_inputs": inputs,
+            "returncode": result.returncode,
+            "timed_out": result.timed_out,
+            "evidence_sha256": evidence_fingerprint(result.output),
+            "owner_request_sha256": accepted_exception["owner_request_sha256"],
+            "owner_request_path": accepted_exception["owner_request_path"],
+            "source_input_sha256": accepted_exception["source_input_sha256"],
+            "capture_source_input_sha256": accepted_exception["capture_source_input_sha256"],
+            "source_reuse_certificate": accepted_exception["source_reuse_certificate"],
+            "candidate": accepted_exception["candidate"],
         }
         receipt_path(log_dir, name).write_text(
             json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -732,6 +1111,7 @@ def python_test_environment(root: Path) -> dict[str, str]:
     # The selector belongs to the check caller. Letting it reach harness tests
     # makes their subprocesses depend on which task invoked the check.
     environment.pop("AI_TASK", None)
+    environment.pop("AI_SNAPSHOT_SOURCE_COMMIT", None)
     return environment
 
 
@@ -772,7 +1152,7 @@ def run_phase(
     reuse: bool = False,
 ) -> PhaseResult:
     started = time.monotonic()
-    timeout = min(timeout, MAX_PHASE_TIMEOUT)
+    timeout = min(timeout, phase_timeout_cap(name))
     try:
         environment = phase_environment(root, name)
         inputs = relevant_inputs(root, name)
@@ -930,6 +1310,10 @@ def run_phase(
     elif result.returncode == 0 and name == "ctest":
         result.returncode = 1
         result.output += "\nCTest completed without a complete pre-run native build identity."
+    if result.returncode == 0 and name == "full-radius-gameplay":
+        if gameplay_output_status(result) == "invalid":
+            result.returncode = 1
+            result.output += "\nGameplay gate emitted an invalid or unbound accepted gameplay exception."
     write_receipt(log_dir, name, command, environment, inputs, result)
     return result
 
@@ -944,6 +1328,20 @@ def print_result(result: PhaseResult) -> None:
         print(f"REUSED PASS {result.name}: {command} ({result.duration_seconds:.2f}s)")
         return
     if result.returncode == 0:
+        accepted_exception = accepted_exception_payload(result)
+        if accepted_exception is not None:
+            print(
+                f"ACCEPTED_EXCEPTION {result.name}: owner request "
+                f"{accepted_exception['owner_request_sha256']} accepts the retained capture source "
+                f"{accepted_exception['capture_source_input_sha256']} for current source "
+                f"{accepted_exception['source_input_sha256']} and candidate "
+                f"{accepted_exception['candidate']['head']}"
+            )
+            return
+        if result.name == "full-radius-gameplay" and gameplay_output_status(result) == "invalid":
+            print(f"FAIL {result.name}: gameplay gate emitted an invalid or unbound success result")
+            print(result.output.strip())
+            return
         print(f"PASS {result.name}: {command} ({result.duration_seconds:.2f}s)")
         return
     state = "TIMEOUT" if result.timed_out else "FAIL"
@@ -1026,6 +1424,9 @@ def write_summary(root: Path, scope: str, changed: Sequence[str], results: Seque
         "changed_paths": list(changed),
         "reused_phases": [result.name for result in results if result.reused],
         "executed_phases": [result.name for result in results if not result.reused and not result.skipped],
+        "accepted_exception_phases": [
+            result.name for result in results if accepted_exception_payload(result) is not None
+        ],
         "skipped_phases": [result.name for result in results if result.skipped],
         "timed_out_phases": [result.name for result in results if result.timed_out],
         "unrun_phases": [
@@ -1057,6 +1458,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--level", choices=("basic", "snapshot", "minor", "major"), default="basic")
     parser.add_argument("--require-index-match", action="store_true", help="reject partially staged governed files")
     parser.add_argument("--snapshot-source-commit", help="bind the snapshot date to an immutable AI source commit")
+    parser.add_argument("--snapshot-task-id", help=argparse.SUPPRESS)
     parser.add_argument("--root", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.fast and (args.candidate or args.strict or args.level != "basic"):
@@ -1074,6 +1476,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.snapshot_source_commit,
             candidate=args.candidate,
             strict=args.strict,
+            snapshot_task_id=args.snapshot_task_id,
         )
     except (OSError, RuntimeError, ValueError) as error:
         print(f"AI check date binding: {error}", file=sys.stderr)
@@ -1136,13 +1539,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.proof_only:
         pass
     elif args.fast and scope in {"metadata-only", "full-cpp"}:
-        results.append(PhaseResult("python-tests", (), 0, f"{scope} changes", skipped=True))
+        results.append(PhaseResult("python-tests-fast", (), 0, f"{scope} changes", skipped=True))
     elif args.fast and scope.startswith("targeted-python:"):
         targets = scope.split(":")[1:]
         phase_specs.append(
             (
-                "python-tests",
-                [sys.executable, "-m", "unittest", *targets, "-v"],
+                "python-tests-fast",
+                [sys.executable, "script/ai_python_tests.py", "--targets", *targets],
+                python_test_timeout(),
+                True,
+            )
+        )
+    elif args.fast:
+        phase_specs.append(
+            (
+                "python-tests-fast",
+                [sys.executable, "script/ai_python_tests.py"],
                 python_test_timeout(),
                 True,
             )
@@ -1163,7 +1575,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.fast and not args.proof_only:
         phase_specs.extend([
             ("build", BUILD_PHASE_COMMANDS["build"], 600, True),
-            ("ctest", BUILD_PHASE_COMMANDS["ctest"], BUILD_PHASE_TIMEOUT, True),
+            ("ctest", BUILD_PHASE_COMMANDS["ctest"], CTEST_PHASE_TIMEOUT, True),
         ])
     required_receipts: list[tuple[str, Sequence[str]]] = []
     if args.proof_only:
@@ -1295,7 +1707,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     PhaseResult(unrun_name, unrun_command, 125, reason, skipped=True)
                 )
             break
-        effective_timeout = min(timeout, MAX_PHASE_TIMEOUT, remaining)
+        phase_cap = phase_timeout_cap(name)
+        effective_timeout = min(timeout, phase_cap, remaining)
         result = run_phase(
             root,
             log_dir,
@@ -1304,7 +1717,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             effective_timeout,
             reuse=cacheable,
         )
-        if result.timed_out and effective_timeout < min(timeout, MAX_PHASE_TIMEOUT):
+        if result.timed_out and effective_timeout < min(timeout, phase_cap):
             result.output += (
                 f"\nAggregate ai_check deadline of {TOTAL_TIMEOUT}s reached during this phase; "
                 "the partial log and failure receipt were retained."

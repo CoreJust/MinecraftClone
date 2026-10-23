@@ -1,26 +1,30 @@
 #include <client/BotClient.hpp>
+#include <client/GameClient.hpp>
 #include <client/PlayerClient.hpp>
 #include <server/GameServer.hpp>
-
+#include <server/WorldPreparation.hpp>
+#include <shared/corelang/ExecutionTypes.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/scenario/Scenario.hpp>
 #include <shared/world/World.hpp>
-
+#include <generation/Generation.hpp>
 #include <core/common/AtAppExit.hpp>
 #include <core/common/CrashHandler.hpp>
 #include <core/IO/Log.hpp>
 #include <core/net/Address.hpp>
 #include <core/net/Net.hpp>
 
+#include <acceptance/ColumnMapReplay.hpp>
 #include <acceptance/EvidenceJson.hpp>
 #include <acceptance/GameBenchmark.hpp>
 #include <acceptance/RenderCapture.hpp>
 #include <acceptance/RendererBenchmark.hpp>
+#include <acceptance/ReplayInput.hpp>
 #include <acceptance/ScenarioRunner.hpp>
-
 #include <spdlog/common.h>
 
 #include <array>
+#include <atomic>
 #include <charconv>
 #include <chrono>
 #include <condition_variable>
@@ -38,6 +42,7 @@
 #include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -55,7 +60,9 @@ enum class RuntimeMode : uint8_t {
 };
 
 enum class LaunchMode : uint8_t {
+    LocalGame,
     GraphicalPlayer,
+    ColumnMapPlayer,
     GraphicalPlayerCapture,
     BotClient,
     Server,
@@ -63,7 +70,12 @@ enum class LaunchMode : uint8_t {
 
 struct LaunchCommand final {
     LaunchMode mode;
+    shared::corelang::Backend backend = shared::corelang::Backend::Interpreter;
     core::Address address = core::Address::localhost(20'040);
+    std::chrono::seconds replay_duration{0};
+    acceptance::GameBenchmarkWorkload replay_workload = acceptance::GameBenchmarkWorkload::DiagnosticStationary;
+    std::filesystem::path replay_evidence;
+    std::string address_text;
     std::filesystem::path image_path;
     client::PlayerClientCapturePreset capture_preset = client::PlayerClientCapturePreset::CentralSpike;
     std::optional<shared::PlayerPosition> spawn;
@@ -72,6 +84,7 @@ struct LaunchCommand final {
 
 struct RuntimeCommand final {
     RuntimeMode mode;
+    shared::corelang::Backend backend = shared::corelang::Backend::Interpreter;
     std::filesystem::path scenario_path;
     std::filesystem::path image_path;
     std::filesystem::path evidence_path;
@@ -98,6 +111,21 @@ std::expected<uint32_t, std::string> parseRenderDistance(std::string_view const 
         return std::unexpected("render distance must be an integer chunk radius from 1 to 256");
     }
     return radius;
+}
+
+[[nodiscard]]
+std::expected<shared::corelang::Backend, std::string> parseCoreLangBackend(std::string_view const value)
+{
+    if (value == "interpreter") {
+        return shared::corelang::Backend::Interpreter;
+    }
+    if (value == "jit") {
+        return shared::corelang::Backend::Jit;
+    }
+    if (value == "aot") {
+        return shared::corelang::Backend::Aot;
+    }
+    return std::unexpected("CoreLang backend must be interpreter, jit, or aot");
 }
 
 [[nodiscard]]
@@ -131,15 +159,19 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
 {
     if (argc == 1) {
         LaunchCommand command{};
-        command.mode = LaunchMode::GraphicalPlayer;
-        command.address = core::Address::localhost(20'040);
+        command.mode = LaunchMode::LocalGame;
+        command.address = core::Address::localhost(0U);
         return command;
     }
 
     LaunchMode mode;
     std::string_view const mode_argument{ argv[1] };
-    if (mode_argument == "--server") {
+    if (mode_argument == "--local-game") {
+        mode = LaunchMode::LocalGame;
+    } else if (mode_argument == "--server") {
         mode = LaunchMode::Server;
+    } else if (mode_argument == "--player-client-2d") {
+        mode = LaunchMode::ColumnMapPlayer;
     } else if (mode_argument == "--player-client") {
         mode = LaunchMode::GraphicalPlayer;
     } else if (mode_argument == "--player-client-capture") {
@@ -150,14 +182,24 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
         return std::unexpected("unknown launch option: " + std::string{ mode_argument });
     }
 
-    if (mode == LaunchMode::Server) {
+    if (mode == LaunchMode::Server || mode == LaunchMode::LocalGame) {
         LaunchCommand command{};
         command.mode = mode;
-        command.address = core::Address::localhost(20'040);
+        command.address = core::Address::localhost(mode == LaunchMode::LocalGame ? 0U : 20'040U);
+        bool backend_selected = false;
         bool port_selected = false;
         bool radius_selected = false;
         for (int index = 2; index < argc; ++index) {
             std::string_view const option{argv[index]};
+            if (option == "--corelang-backend" && !backend_selected && index + 1 < argc) {
+                auto const backend = parseCoreLangBackend(argv[++index]);
+                if (!backend) {
+                    return std::unexpected(backend.error());
+                }
+                command.backend = *backend;
+                backend_selected = true;
+                continue;
+            }
             if (option == "--port" && !port_selected && index + 1 < argc) {
                 auto const address = parseAddress("127.0.0.1:" + std::string{argv[++index]});
                 if (!address) {
@@ -178,7 +220,8 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
             }
             if (option != "--spawn" || command.spawn || index + 3 >= argc) {
                 return std::unexpected(
-                    "server launch syntax is '--server [--port PORT] [--spawn X Y Z] [--render-distance CHUNKS]'"
+                    "server launch syntax is '--server [--port PORT] [--spawn X Y Z] "
+                    "[--render-distance CHUNKS] [--corelang-backend interpreter|jit|aot]'"
                 );
             }
             std::array<int32_t, 3> coordinates{};
@@ -199,6 +242,39 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
             }
             command.spawn = { .x = coordinates[0], .y = coordinates[1], .z = coordinates[2] };
         }
+        return command;
+    }
+    if (mode == LaunchMode::ColumnMapPlayer) {
+        if (argc != 10 || std::string_view{argv[2]} != "--address"
+            || std::string_view{argv[4]} != "--replay" || std::string_view{argv[6]} != "--seconds"
+            || std::string_view{argv[8]} != "--evidence") {
+            return std::unexpected(
+                "2D launch syntax is '--player-client-2d --address IP:PORT --replay "
+                "stationary|ordinary-turning --seconds 1..120 --evidence DIR'"
+            );
+        }
+        auto const address = parseAddress(argv[3]);
+        if (!address) {
+            return std::unexpected(address.error());
+        }
+        LaunchCommand command{};
+        command.mode = mode;
+        command.address = *address;
+        command.address_text = argv[3];
+        std::string_view const replay{argv[5]};
+        if (replay == "ordinary-turning") {
+            command.replay_workload = acceptance::GameBenchmarkWorkload::OrdinaryTurningMovement;
+        } else if (replay != "stationary") {
+            return std::unexpected("2D replay must be stationary or ordinary-turning");
+        }
+        uint32_t seconds = 0U;
+        std::string_view const duration{argv[7]};
+        auto const [end, error] = std::from_chars(duration.data(), duration.data() + duration.size(), seconds);
+        if (error != std::errc{} || end != duration.data() + duration.size() || seconds < 1U || seconds > 120U) {
+            return std::unexpected("2D replay seconds must be an integer from 1 to 120");
+        }
+        command.replay_duration = std::chrono::seconds{seconds};
+        command.replay_evidence = argv[9];
         return command;
     }
     if (mode == LaunchMode::GraphicalPlayerCapture) {
@@ -242,6 +318,65 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
     command.mode = mode;
     command.address = *address;
     return command;
+}
+
+[[nodiscard]]
+std::shared_ptr<server::WorldPreparation> prepareServerTerrain(
+    shared::WorldConfiguration const& configuration,
+    server::WorldPreparation::TimePoint const accepted_at = server::WorldPreparation::Clock::now(),
+    shared::corelang::Backend const backend = shared::corelang::Backend::Interpreter
+)
+{
+    generation::GenerationConfiguration generation_configuration{};
+    generation_configuration.seed = configuration.seed;
+    return std::make_shared<server::WorldPreparation>(
+        generation_configuration, configuration.algorithm_version, accepted_at, backend
+    );
+}
+
+void runLocalGame(LaunchCommand const& command)
+{
+    auto const accepted_at = server::WorldPreparation::Clock::now();
+    auto player = std::make_unique<client::PlayerClient>(shared::WorldMode::Flight);
+    shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration();
+    auto preparation = prepareServerTerrain(configuration, accepted_at, command.backend);
+    std::vector<server::GameServer::SpawnPoint> spawn_points;
+    if (command.spawn) {
+        spawn_points.push_back({
+            .character = '@', .x = command.spawn->x, .y = command.spawn->y, .z = command.spawn->z,
+        });
+    }
+    auto server = std::make_unique<server::GameServer>(
+        command.address.port(), std::move(spawn_points), shared::WorldMode::Flight,
+        configuration, command.render_distance, nullptr, std::move(preparation),
+        server::GameServer::BindMode::Loopback
+    );
+    if (!server->isValid()) {
+        throw std::runtime_error("Cannot start the local game server");
+    }
+    core::Address const local_address = core::Address::localhost(server->port());
+    CORE_INFO("Local game server listening on 127.0.0.1:{}", server->port());
+    std::exception_ptr server_error;
+    std::atomic_bool server_failed{false};
+    std::jthread server_thread{[&](std::stop_token const& cancellation) {
+        std::atomic_bool stop_requested{false};
+        std::stop_callback stop_callback{cancellation, [&] { stop_requested.store(true); }};
+        try {
+            server->run(stop_requested);
+        } catch (...) {
+            server_error = std::current_exception();
+            server_failed.store(true);
+        }
+    }};
+    client::GameClientBenchmarkHooks hooks{};
+    hooks.should_stop = [&] { return server_failed.load(); };
+    player->run(local_address, '@', &hooks, accepted_at);
+    server_thread.request_stop();
+    server_thread.join();
+    CORE_INFO("Local game server stopped");
+    if (server_error) {
+        std::rethrow_exception(server_error);
+    }
 }
 
 class RuntimeDeadlineWatchdog final {
@@ -332,11 +467,12 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         }
         return command;
     }
-    if (argc >= 4 && argc <= 17 && std::string_view{ argv[1] } == "--benchmark-game"
+    if (argc >= 4 && argc <= 19 && std::string_view{ argv[1] } == "--benchmark-game"
         && std::string_view{ argv[argc - 2] } == "--evidence") {
         RuntimeCommand command{};
         command.mode = RuntimeMode::GameBenchmark;
         command.evidence_path = argv[argc - 1];
+        bool backend_selected = false;
         bool workload_selected = false;
         bool radius_selected = false;
         bool full_radius_timeout_selected = false;
@@ -347,6 +483,14 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
             std::string_view const argument{ argv[argument_index] };
             if (argument == "--present-immediate" && !command.require_immediate_present_mode) {
                 command.require_immediate_present_mode = true;
+            } else if (argument == "--corelang-backend" && !backend_selected
+                && argument_index + 1 < argc - 2) {
+                auto const backend = parseCoreLangBackend(argv[++argument_index]);
+                if (!backend) {
+                    return std::unexpected(backend.error());
+                }
+                command.backend = *backend;
+                backend_selected = true;
             } else if (argument == "--gameplay-proof" && command.qualification_proof.empty()
                 && argument_index + 1 < argc - 2) {
                 command.qualification_proof = argv[++argument_index];
@@ -364,6 +508,9 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
                 std::string_view const name{ argv[++argument_index] };
                 if (name == "ordinary") {
                     command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::OrdinaryMovement;
+                } else if (name == "ordinary-turning") {
+                    command.game_benchmark_workload =
+                        acceptance::GameBenchmarkWorkload::OrdinaryTurningMovement;
                 } else if (name == "speed-200") {
                     command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::Speed200Movement;
                 } else if (name == "wrapped-border") {
@@ -414,7 +561,7 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
             }
         }
         if (!command.qualification_proof.empty()) {
-            uint32_t const proof_radius = command.qualification_proof == "terrain-coverage" ? 256U : 128U;
+            uint32_t constexpr proof_radius = 256U;
             if (radius_selected && command.render_distance != proof_radius) {
                 return std::unexpected("gameplay proof conflicts with render distance");
             }
@@ -452,7 +599,8 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         "expected '--scenario <file> --evidence <file>', "
         "'--benchmark-render [--present-immediate] [--hud] --evidence <file>', "
         "'--benchmark-game [--present-immediate] "
-        "[--workload ordinary|speed-200|speed-200-full-radius|wrapped-border|permission-collision] "
+        "[--corelang-backend interpreter|jit|aot] "
+        "[--workload ordinary|ordinary-turning|speed-200|speed-200-full-radius|wrapped-border|permission-collision] "
         "[--gameplay-proof terrain-coverage|performance] "
         "[--render-distance CHUNKS] [--full-radius-warmup-seconds 1..1800] "
         "[--diagnostic-full-radius-capture] [--diagnostic-presentation-stages] "
@@ -653,6 +801,7 @@ int runGameBenchmarkCommand(RuntimeCommand const& command)
         .workload = command.game_benchmark_workload,
         .render_distance = command.render_distance,
         .qualification_proof = command.qualification_proof,
+        .backend = command.backend,
         .full_radius_warmup_timeout = command.full_radius_warmup_timeout,
         .diagnostic_full_radius_capture = command.diagnostic_full_radius_capture,
     };
@@ -750,7 +899,13 @@ int main(int argc, char** argv) {
             if (!command.has_value()) {
                 std::cerr << command.error() << '\n';
                 exit_code = 1;
+            } else if (command->mode == LaunchMode::LocalGame) {
+                runLocalGame(*command);
             } else if (command->mode == LaunchMode::Server) {
+                shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration();
+                auto world_preparation = prepareServerTerrain(
+                    configuration, server::WorldPreparation::Clock::now(), command->backend
+                );
                 std::vector<server::GameServer::SpawnPoint> spawn_points;
                 if (command->spawn.has_value()) {
                     spawn_points.push_back({
@@ -760,9 +915,21 @@ int main(int argc, char** argv) {
                 }
                 server::GameServer server{
                     command->address.port(), std::move(spawn_points), shared::WorldMode::Flight,
-                    shared::World::canonicalConfiguration(), command->render_distance,
+                    configuration, command->render_distance, nullptr, std::move(world_preparation),
                 };
                 server.run();
+            } else if (command->mode == LaunchMode::ColumnMapPlayer) {
+                auto const result = acceptance::runColumnMapReplay({
+                    .server_address = command->address,
+                    .server_address_text = command->address_text,
+                    .duration = command->replay_duration,
+                    .workload = command->replay_workload,
+                    .evidence_directory = command->replay_evidence,
+                });
+                if (!result) {
+                    std::cerr << result.error() << '\n';
+                    exit_code = 1;
+                }
             } else if (command->mode == LaunchMode::BotClient) {
                 client::BotClient client{ shared::WorldMode::Flight };
                 client.run(command->address, '#');

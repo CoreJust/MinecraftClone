@@ -101,6 +101,11 @@ def parse_report(output: bytes, expected_source: Path, cwd: Path) -> dict[str, A
         if not line or line == "---":
             continue
 
+        # Compiler diagnostics can precede a syntactically valid IWYU report.
+        # Keep them blocking rather than treating the following clean marker as proof.
+        if re.match(r"^.+:\d+:\d+: (?:warning|error|fatal error):", line):
+            raise GateError(f"IWYU compiler diagnostic at line {line_number}: {line}")
+
         match = ADD_REMOVE_HEADER.fullmatch(line)
         if match:
             path = _report_path(match.group(1), cwd)
