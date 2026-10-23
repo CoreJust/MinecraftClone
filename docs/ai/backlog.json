@@ -17105,7 +17105,7 @@
     "id": "MC-AI-0482",
     "title": "EarlyDev 0.1.1:1 — Terrain-v2 world generation and solid blocks",
     "kind": "feature",
-    "status": "active",
+    "status": "done",
     "priority": "P1",
     "route": "astra",
     "milestone": "ED-011-S1",
@@ -17113,7 +17113,7 @@
       "MC-AI-0038"
     ],
     "acceptance": "Deliver S1 using existing Terrain-v2 revision 6 and the L1/L2/L3 scaffold with integrated curvature; defer the terrain-model replacement being refined in another chat to S2. Preserve solid materials/layers and inherited fixes. Use CoreLang 0.1.5 JIT/AOT with exact provenance; an exact ai-dev revision is acceptable for this snapshot. Keep the current CoreProject 23f81441/CoreCpp 5c1bad pair unless a reproduced defect requires change. Preserve original-T0 loading/readiness deadlines, authoritative full-volume generation/preservation across 40 horizontal chunks (640 blocks), separate visual-LOD contracts, and the original 99% moving-time targets at >=120 FPS Mac and >=300 FPS Windows. The owner authorized ordinary S1 publication on 2026-10-23 with documented nonblocking performance/LOD limitations: retain each original numeric result as failed or unqualified, and do not call any metric passed. All independent correctness, build, test, provenance, release-review and publication gates remain required. For S1 only, the coordinator applies the owner's allowance to omit especially arduous snapshot checks: seven analysis rows remain required, while full TSan, MSan and both Windows rows are explicitly deferred with their actual failed or partial receipts retained. Only independently reviewed, pinned DispatchPing64 SDK noise and the heap-reference cppcheck false positive receive typed annotations; neither raw failed row is relabelled passed. Later snapshots and minor/major qualification retain all eleven strict rows.",
-    "evidence": "Source13 168bbf38b367f9621f49286ccca85a8a42095289 has source-input SHA-256 0dc600d5809fc661c3b73d86fe05dca951b661fe58ef7fc8c1f358651c3a3471. Fresh Mac Ready 2.303056750s/playable 14.246828125s deadlines passed; 431 inputs/301 distinct positions. Frame budget 41.354094% versus 99% failed; movement LOD and Windows metrics remain unqualified. Historical 46.728364%/49.28785% failures remain preserved. Canonical Debug: 1196 passed, 1 intentional skip, 0 failures, 1320.79s. Source15 Python: 1007 tests/12 skips/332.218s; reviewed binding deltas: 13+3 focused cases passed. Seven-row S1 aggregate is qualified_with_deferrals: UBSan 1197 clean; Linux LSan 556+1 expected skip; clang-tidy/IWYU/Clang static passed. ASan 1197 retains one 64B SDK leak and cppcheck 192 TUs one heap-reference warning as typed annotations, not raw passes. Windows EXE SHA-256 74a9918d1b406bd60cf27a92e98fd41902f7dc8a8ad4401aa111bbd18e85196e verified; no current GUI/Desktop claim. Four rows deferred: Windows/analyze five test-only findings; Windows ASan 1800s/452 of 1196 passed/744 uncompleted/no owned-memory finding; TSan/MSan omitted. Final aggregate/publication remain pending; original 36-hour and later two-hour misses remain recorded.",
+    "evidence": "Source13 168bbf38b367f9621f49286ccca85a8a42095289 has source-input SHA-256 0dc600d5809fc661c3b73d86fe05dca951b661fe58ef7fc8c1f358651c3a3471. Fresh Mac Ready 2.303056750s/playable 14.246828125s deadlines passed; 431 inputs/301 distinct positions. Frame budget 41.354094% versus 99% failed; movement LOD and Windows metrics remain unqualified. Historical 46.728364%/49.28785% failures remain preserved. Canonical Debug: 1196 passed, 1 intentional skip, 0 failures, 1320.79s. Final source Python: 1020 tests, 12 skips, 0 failures, 459.650s; native and analysis input identities verified. Seven-row S1 aggregate is qualified_with_deferrals: UBSan 1197 clean; Linux LSan 556+1 expected skip; clang-tidy/IWYU/Clang static passed. ASan 1197 retains one 64B SDK leak and cppcheck 192 TUs one heap-reference warning as typed annotations, not raw passes. Windows EXE SHA-256 74a9918d1b406bd60cf27a92e98fd41902f7dc8a8ad4401aa111bbd18e85196e verified; no current GUI/Desktop claim. Four rows deferred: Windows/analyze five test-only findings; Windows ASan 1800s/452 of 1196 passed/744 uncompleted/no owned-memory finding; TSan/MSan omitted. Published 2026-10-23T21:54:55Z: https://github.com/CoreJust/MinecraftClone/releases/tag/ai/EarlyDev/0.1.1/1_26.10.23 . Source 5a1c8a9a46a030531e23e07e5fd644262e9aed22; promotion 77655e5222a56d48ada99ff59e3dbd9c0f9cef6b; annotated tag 98a01d1215a61927fc5987f8416d000d6422dd5f. All four fresh asset downloads match SHA256SUMS. Original 36-hour and later two-hour misses remain recorded.",
     "blocker": "",
     "owner": "codex",
     "level": "snapshot",
@@ -17122,8 +17122,8 @@
     "context": "PLANNED IMPLEMENTATION. The owner finalized Terrain-v2 and expanded S1 on 19 October (MC-AI-0490). Terrain-v1 was baseline; prototype v3 is research provenance. S1 superseded the no-loading-map, old Mac thresholds, and Windows-untouched assumptions. Load timing starts at original T0, not key press. This began as planning; child tasks track implementation and evidence. On 21 October the owner deferred only the research terrain-model replacement to S2; R6/simpleLOD/curvature remain S1. Playtest 11 found detail/LOD flicker, coarse-only terrain at x15, keyboard translation locks while look worked, and walls/height jumps at LOD joins. The prior 40/72-block reading was an assistant unit error, not 640-block qualification. On 23 October the owner accepted ordinary S1 publication with nonblocking performance/LOD issues; the exact request is retained at task-evidence/mc-s1-20261023/owner-release-acceptance/request.md.",
     "complexity": "high",
     "created_at": "2026-10-19",
-    "resolved_at": "",
-    "resolution_changes": "Prepared S1 with fresh source13 Mac evidence and verified packages. Retained failed performance/LOD results, four explicit analysis deferrals and two pinned annotations with raw failures. Preserved accepted applications and the running Windows program. Archived five prepared test fixes for MC-AI-0522. Local finalization remains active; publication is pending.",
+    "resolved_at": "2026-10-23",
+    "resolution_changes": "Published BasicBlocks S1 after the reviewed source commit and ai-main promotion. Verified the annotated tag and all four downloaded release assets. Preserved failed performance/LOD results, four analysis deferrals, two exact annotations, accepted applications and the running Windows program. MC-AI-0522 retains the five prepared Windows test fixes and full future qualification.",
     "plan": [
       "Use the parallel three-major objective plan in earlydev_0_1_1_s1_iterations.md and the project_iteration_workflow.md policy for both projects. Plan 12h major objectives now; split into 4h minor objectives only when each major starts. Overlap product, defects, dependency and workflow work; Mac and Windows validate each runnable increment concurrently. No implementation starts in this planning chat.",
       "Use the finalized Terrain-v2 specification and additional loading/performance/CoreLang/testing/module/multiplayer contracts; create bounded executable tasks from earlydev_0_1_1_s1_implementation.md.",
@@ -18606,6 +18606,44 @@
     "baseline_commit": "",
     "commits": [],
     "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0523",
+    "title": "Record published BasicBlocks S1 ledger",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "AI-RELEASE-LEDGER",
+    "depends_on": [
+      "MC-AI-0482"
+    ],
+    "acceptance": "Record the actual S1 source, promotion, annotated tag, release URL and asset readback; mark MC-AI-0482 done with its real publication date. Preserve accepted limitations and future qualification work. Validate docs, backlog, plan and whitespace without changing gameplay or tooling code.",
+    "evidence": "GitHub prerelease published 2026-10-23T21:54:55Z. Remote ai-dev source 5a1c8a9a, ai-main promotion 77655e52 and annotated tag 98a01d12 verified. All four downloaded assets match local bytes and SHA256SUMS. Focused docs, backlog, plan and whitespace checks passed; no repeated product or full Python qualification.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "",
+    "motivation": "Close the verified publication ledger without changing the immutable S1 snapshot or repeating product qualification.",
+    "context": "The owner requested release delivery and one task per commit. A separate metadata-only chore reconciles the former aggregate-Task-ID ledger sentence; the published snapshot and its seven-row qualification remain immutable.",
+    "complexity": "low",
+    "created_at": "2026-10-23",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Recorded the verified S1 publication and closed MC-AI-0482 in a separate metadata ledger task. Reconciled the ledger sentence with one task per commit; product source, promotion, tag, assets and seven-row qualification are unchanged.",
+    "plan": [],
+    "product_changes": [
+      "No product behavior changed; the published BasicBlocks S1 snapshot remains immutable."
+    ],
+    "code_changes": [
+      "Record actual publication evidence and reconcile the metadata-ledger task policy."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",
