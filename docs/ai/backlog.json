@@ -18466,5 +18466,39 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0508",
+    "title": "Capture playtest screenshots without movement conflicts",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev-0.1.1-S1",
+    "depends_on": [],
+    "acceptance": "F2 copies the rendered game or loading screenshot directly to the clipboard without saving an image file where supported. Held capture keys do not repeat, failures are visible, and Command screenshot shortcuts do not trigger movement.",
+    "evidence": "The accepted S1 source path encodes the rendered RGBA frame to an in-memory PNG and sends it to the macOS clipboard; PlayerClient reports visible success and failure feedback. The focused test source covers PNG signature/chunk checksums, invalid input, a private-pasteboard byte and pixel round trip, one-shot F2/no-start behavior, repeated capture, and toast ordering. The S1 execution record at docs/ai/decisions/earlydev_0_1_1_s1_execution.json records key-edge/modifier handling, private pasteboard round trip, and no general clipboard overwrite; its Playtest 5 entry says the owner pasted the F2 image. Owner playtest 12 and 13 client logs contain repeated clipboard-success events. The retained Mac focus log is from an earlier PlayerClient source hash and ran only four focus tests, so it is not claimed as exact-current full clipboard-suite evidence. The owner accepted normal S1 release with known issues on 2026-10-23; this disposition does not convert missing or unqualified proof into a pass. Aggregate integration remains pending.",
+    "blocker": "",
+    "owner": "root",
+    "level": "basic",
+    "parent": "MC-AI-0482",
+    "motivation": "The owner cannot use Cmd+Shift+4 while pointer capture and movement bindings are active.",
+    "context": "Third Mac playtest feedback requests an in-game screenshot button. Follow-up explicitly prefers clipboard only without an image file; encode in memory and report clipboard success or failure. Preserve existing diagnostic file capture consumers.",
+    "complexity": "medium",
+    "created_at": "2026-10-20",
+    "resolved_at": "2026-10-23",
+    "resolution_changes": "Delivered one-shot in-memory clipboard screenshots with visible success/failure feedback and modifier/held-key handling. The owner accepted normal S1 release with known issues on 2026-10-23. Exact-current focused-suite coverage remains unqualified and is not represented as a pass; this task record does not claim aggregate integration completion.",
+    "plan": [
+      "Implement one-shot clipboard screenshot action and verify actual captured pixels, no image-file output, and modifier handling."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
