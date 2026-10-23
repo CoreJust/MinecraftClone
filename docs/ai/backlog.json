@@ -18432,5 +18432,39 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0507",
+    "title": "Build a Vulkan-free normal-game column-map consumer",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev-0.1.1-S1",
+    "depends_on": [],
+    "acceptance": "Standalone CPU column-map replay configures, compiles, links and runs against the normal server without Vulkan/graphics targets; ordinary game uses the same gameplay/transport and replay helpers.",
+    "evidence": "At accepted S1 source-input SHA-256 `83da03165eea8b14d48398b8ca314b0ddcb3d74fa6b446b998f819a2538c3e9d`, the recorded full Debug CTest log `/Users/core-just/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/ctest-full-LastTest.log` (SHA-256 `fb9982a16c44b82b79bd0240387f650a9627152471cd2745ebdf6a93b14f645f`) shows 19 passing tests across `ColumnMapReplay` (6), `ColumnMapPresentationTest` (8), `ColumnMapClientTest` (3), `ColumnMapClientIntegrationTest` (1), and `MinecraftClone.ColumnMapCpuConsumer` (1). The CPU consumer configured, built, and ran its validation-error contract. The overall CTest run also had two failures (`GameServerPreviewTest.PreviewMovementCannotOrphanQueuedAuthoritativeProfiles` and `AdverseNetworkTest.ProductionDelayedReadinessPreservesBothFreezePhasesAndRecovery`) and one skipped test; no full-suite pass is claimed. The passing headless consumer establishes the renderer-free build/CLI boundary only; live movement, full-640 coverage and runtime performance remain unqualified.",
+    "blocker": "",
+    "owner": "root",
+    "level": "basic",
+    "parent": "MC-AI-0482",
+    "motivation": "S1 requires enforceable module boundaries and a normal-game 2D consumer, not only an in-memory adapter class.",
+    "context": "Extract shared game core and pure replay inputs; preserve existing server-only graphics/audio exclusions and desktop/Android adapters.",
+    "complexity": "medium",
+    "created_at": "2026-10-19",
+    "resolved_at": "2026-10-23",
+    "resolution_changes": "Delivered the Vulkan-free normal-game column-map consumer over the shared gameplay/transport path in the owner-approved S1 source candidate; its recorded consumer and column-map tests pass. Aggregate integration remains pending. These headless checks do not substitute for moving gameplay qualification.",
+    "plan": [
+      "docs/ai/decisions/earlydev_0_1_1_s1_modules.md"
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
