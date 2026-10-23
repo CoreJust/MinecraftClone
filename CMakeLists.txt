@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(MinecraftClone2026
-    VERSION 0.1.0
+    VERSION 0.1.1
     DESCRIPTION "A clone of Minecraft created for self-study and fun reasons."
     LANGUAGES C CXX
 )
@@ -15,6 +15,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 ###  BUILD OPTIONS  ###
 option(BUILD_TESTING "Build tests" ON)
 option(MC_BUILD_CLIENT "Build Client rendering and platform adapters" ON)
+option(MC_BUILD_COLUMN_MAP "Build the CPU-only normal-game column-map client" ${MC_BUILD_CLIENT})
 option(MC_ANALYSIS_HOST "Permit server-only analysis builds on otherwise unsupported host platforms" OFF)
 option(MC_ENABLE_WARNINGS "Enable strict warnings" ON)
 option(MC_ENABLE_SANITIZERS "Enable sanitizers where supported" OFF)
@@ -63,8 +64,10 @@ if(VCPKG_INSTALLED_DIR AND VCPKG_TARGET_TRIPLET)
     list(PREPEND CMAKE_PREFIX_PATH "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
 endif()
 find_package(CoreCpp CONFIG REQUIRED COMPONENTS Core Runtime RuntimeNetwork RuntimeExecutors)
-if(MC_BUILD_CLIENT)
+if(MC_BUILD_CLIENT OR (MC_BUILD_COLUMN_MAP AND NOT ANDROID))
     find_package(CoreCpp CONFIG REQUIRED COMPONENTS RuntimeAudioOutput)
+endif()
+if(MC_BUILD_CLIENT)
     if(ANDROID)
         find_package(CoreCpp CONFIG REQUIRED COMPONENTS
             RuntimeGraphics
@@ -83,7 +86,7 @@ if(MC_BUILD_CLIENT)
     endif()
 endif()
 mc_check_corecpp_provenance()
-find_package(CoreProject2026 CONFIG REQUIRED COMPONENTS CoreLang)
+find_package(CoreProject2026 0.1.5 CONFIG REQUIRED COMPONENTS CoreLang)
 mc_check_coreproject2026_provenance()
 
 find_package(fmt CONFIG REQUIRED)
@@ -148,33 +151,26 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
 endif()
 
 if(NOT MC_BUILD_CLIENT)
-    foreach(forbidden_target IN ITEMS
+    set(MC_FORBIDDEN_CPU_TARGETS
         CoreCpp::RuntimeGraphics
         CoreCpp::RuntimeGraphicsVulkan
         CoreCpp::RuntimeGraphicsVulkanGlfw
         CoreCpp::RuntimeGraphicsVulkanAndroid
         CoreCpp::RuntimePlatformGlfw
-        CoreCpp::RuntimeAudio
-        CoreCpp::RuntimeAudioOutput
         Vulkan::Vulkan
     )
+    if(NOT MC_BUILD_COLUMN_MAP)
+        list(APPEND MC_FORBIDDEN_CPU_TARGETS CoreCpp::RuntimeAudio CoreCpp::RuntimeAudioOutput)
+    endif()
+    foreach(forbidden_target IN LISTS MC_FORBIDDEN_CPU_TARGETS)
         if(TARGET "${forbidden_target}")
-            message(FATAL_ERROR "Server-only configuration loaded optional target: ${forbidden_target}")
+            message(FATAL_ERROR "CPU-only configuration loaded optional target: ${forbidden_target}")
         endif()
     endforeach()
     get_target_property(server_only_links mc LINK_LIBRARIES)
-    foreach(forbidden_target IN ITEMS
-        CoreCpp::RuntimeGraphics
-        CoreCpp::RuntimeGraphicsVulkan
-        CoreCpp::RuntimeGraphicsVulkanGlfw
-        CoreCpp::RuntimeGraphicsVulkanAndroid
-        CoreCpp::RuntimePlatformGlfw
-        CoreCpp::RuntimeAudio
-        CoreCpp::RuntimeAudioOutput
-        Vulkan::Vulkan
-    )
+    foreach(forbidden_target IN LISTS MC_FORBIDDEN_CPU_TARGETS)
         if("${server_only_links}" MATCHES "${forbidden_target}")
-            message(FATAL_ERROR "Server-only target links optional dependency: ${forbidden_target}")
+            message(FATAL_ERROR "CPU-only target links optional dependency: ${forbidden_target}")
         endif()
     endforeach()
 endif()

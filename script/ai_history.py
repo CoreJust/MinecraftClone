@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import types
 from typing import Sequence
+from zoneinfo import ZoneInfo
 
 import ai_tasks
 
@@ -19,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BACKLOG = ROOT / "docs/ai/backlog.json"
 DEFAULT_MARKDOWN = ROOT / "docs/ai/BACKLOG.md"
 DEFAULT_OUTPUT = ROOT / "build/ai-tasks"
+PROJECT_TIME_ZONE = ZoneInfo("Europe/Belgrade")
 
 
 class HistoryError(RuntimeError):
@@ -53,9 +57,44 @@ ACTIVE_PUBLICATION_LEDGER_EXCEPTIONS = {
     "3fa4861abafa7eb20163b89f6957bf915c10ed63",
 }
 
+# Exact immutable targets of already-published generic-title promotions. New
+# generic-title commits are never treated as historical releases.
+LEGACY_TAGGED_PROMOTIONS = {
+    "c5100f5dc77a151a2644079575e25efd0f93a85d": (
+        "refs/tags/ai/EarlyDev/0.1.0/3_26.09.10",
+        "Promote MC-AI-0032 to ai-main",
+    ),
+    "8a44d0ffe0353840b17fa6832842719541350a5f": (
+        "refs/tags/ai/EarlyDev/0.1.0/5_26.09.13",
+        "Promote MC-AI-0036 to ai-main",
+    ),
+    "0514890690c10d80b7475fd0b76204e800948db3": (
+        "refs/tags/ai/EarlyDev/0.1.0/6_26.09.20",
+        "Promote MC-AI-0037 to ai-main",
+    ),
+    "b67263ec8aa65691dc0b0494d627256970c0eef6": (
+        "refs/tags/ai/EarlyDev/0.1.0/7_26.10.12",
+        "Promote MC-AI-0038 to ai-main",
+    ),
+    "cbfd4a640badbc4b803eac9e393326d62626ac9f": (
+        "refs/tags/ai/EarlyDev/0.1.0/7-r1_26.10.19",
+        "Promote MC-AI-0038 to ai-main",
+    ),
+}
+
 
 def publication_ledger_mutable_fields(sha: str) -> set[str]:
     return PUBLICATION_LEDGER_MUTABLE_FIELDS | LEGACY_PUBLICATION_LEDGER_FIELD_EXCEPTIONS.get(sha, set())
+
+
+def published_snapshot_matches_current(sha: str, published: dict[str, object], current: dict[str, object]) -> bool:
+    if published.keys() != current.keys():
+        return False
+    allowed_fields = publication_ledger_mutable_fields(sha)
+    if published.get("blocker") and not current.get("blocker"):
+        allowed_fields = allowed_fields | {"blocker"}
+    changed_fields = {key for key in published if published[key] != current[key]}
+    return changed_fields <= allowed_fields
 
 
 def has_published_ledger_state(sha: str, task: dict[str, object]) -> bool:
@@ -371,6 +410,36 @@ def tagged_source_matches_task(
     return task_baseline == baseline and task.get("status") == "active" and task.get("finalized") is True
 
 
+def expected_snapshot_promotion_subject(
+    repo: Path, source: str, task_id: str
+) -> str | None:
+    try:
+        tasks = json.loads(
+            git(repo, "show", f"{source}:docs/ai/backlog.json"),
+            object_pairs_hook=_unique_json_object,
+        )
+        ai_tasks.validate_backlog(tasks)
+        task = next((item for item in tasks if item["id"] == task_id), None)
+        if task is None or task_level(task) != "snapshot":
+            return None
+        title = task.get("title")
+        match = re.fullmatch(r"(?P<version>.+ \d+\.\d+\.\d+:[0-9]+) — .+", str(title))
+        if match is None:
+            return None
+        timestamp = int(git(repo, "show", "-s", "--format=%ct", source).strip())
+        date = datetime.fromtimestamp(timestamp, timezone.utc).astimezone(PROJECT_TIME_ZONE)
+    except (HistoryError, ai_tasks.BacklogError, OSError, OverflowError, ValueError):
+        return None
+    return f"{match.group('version')}({date:%y.%m.%d})"
+
+
+def is_legacy_tagged_promotion(tag_ref: str | None, promoted: str, subject: str) -> bool:
+    historical = LEGACY_TAGGED_PROMOTIONS.get(promoted)
+    return historical is not None and historical[1] == subject and (
+        tag_ref is None or historical[0] == tag_ref
+    )
+
+
 def has_tagged_promotion(
     repo: Path,
     baseline: str,
@@ -400,13 +469,19 @@ def has_tagged_promotion(
         tagged_source = parents[1]
         if expected_source is not None and tagged_source != expected_source:
             continue
-        if expected_task_id is not None and (
-            promoted_task_id != expected_task_id
-            or commit_task_id(repo, tagged_source) != expected_task_id
-            or tag_message != f"AI snapshot {expected_task_id}"
-            or git(repo, "show", "-s", "--format=%s", promoted).strip()
-            != f"Promote {expected_task_id} to ai-main"
-            or not tagged_source_matches_task(repo, baseline, tagged_source, expected_task_id)
+        if promoted_task_id is None or (
+            expected_task_id is not None and promoted_task_id != expected_task_id
+        ):
+            continue
+        subject = git(repo, "show", "-s", "--format=%s", promoted).strip()
+        if (
+            commit_task_id(repo, tagged_source) != promoted_task_id
+            or tag_message != f"AI snapshot {promoted_task_id}"
+            or not tagged_source_matches_task(repo, baseline, tagged_source, promoted_task_id)
+            or (
+                subject != expected_snapshot_promotion_subject(repo, tagged_source, promoted_task_id)
+                and not is_legacy_tagged_promotion(tag_ref, promoted, subject)
+            )
         ):
             continue
         if subprocess.run(
@@ -464,6 +539,9 @@ def require_valid_prior_snapshot_ledgers(
         validation_commits.append(promotion_parents[1])
     task_commits = trailer_commits(repo, tasks, exact_commits=validation_commits)
     commit_to_task = {sha: task_id for task_id, shas in task_commits.items() for sha in shas}
+    promotion_source_task_id = (
+        commit_to_task.get(promotion_parents[1]) if promotion_parents else None
+    )
     validated_ledgers: set[str] = set()
 
     for sha in range_shas:
@@ -471,7 +549,10 @@ def require_valid_prior_snapshot_ledgers(
         task = by_id[task_id]
         if task_level(task) == "basic" or task_id == snapshot_id:
             continue
-        if task_level(task) != "snapshot" or task_parent(task) != task_parent(current):
+        if task_level(task) != "snapshot" or (
+            task_parent(task) != task_parent(current)
+            and task_id != promotion_source_task_id
+        ):
             raise HistoryError(f"commit {sha} is not a prior snapshot publication ledger")
         parents = git(repo, "show", "-s", "--format=%P", sha).split()
         if len(parents) != 1:
@@ -542,7 +623,7 @@ def require_valid_prior_snapshot_ledgers(
             raise HistoryError(f"publication ledger {sha} must preserve finalized state")
         if not has_published_ledger_state(sha, published):
             raise HistoryError(f"publication ledger {sha} does not record a published snapshot")
-        if published != task:
+        if not published_snapshot_matches_current(sha, published, task):
             raise HistoryError(f"publication ledger {sha} does not match current {task_id} metadata")
         rendered_backlog = git(repo, "show", f"{sha}:docs/ai/BACKLOG.md")
         rendered_task = git(repo, "show", f"{sha}:docs/ai/tasks/{task_id}.md")
@@ -564,11 +645,7 @@ def require_valid_prior_snapshot_ledgers(
         raise HistoryError(f"snapshot baseline {baseline} is not an immutable promotion tree")
     previous_id = commit_to_task.get(promotion_parents[1])
     previous = by_id.get(previous_id or "")
-    if (
-        previous is None
-        or task_level(previous) != "snapshot"
-        or task_parent(previous) != task_parent(current)
-    ):
+    if previous is None or task_level(previous) != "snapshot":
         raise HistoryError(f"snapshot baseline {baseline} has no prior snapshot source")
     if previous_id not in validated_ledgers:
         raise HistoryError(f"snapshot {snapshot_id} requires {previous_id} publication ledger")

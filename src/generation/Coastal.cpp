@@ -1,5 +1,6 @@
 #include "Numerics.hpp"
 
+#include <generation/Generation.hpp>
 #include <generation/GenerationStages.hpp>
 
 #include <algorithm>
@@ -7,9 +8,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <span>
 #include <stdexcept>
+#include <stop_token>
 #include <vector>
 
 namespace generation::detail
@@ -73,11 +76,19 @@ FloatField makeDissectionField(
     uint64_t seed,
     uint32_t domain,
     uint32_t resolution,
-    std::stop_token cancellation
+    std::stop_token const& cancellation
 )
 {
-    FloatField broad = periodicFbm(seed + domain, resolution, 3U, 4U, cancellation);
-    FloatField fine = periodicFbm(seed + domain + 1U, resolution, 3U, 16U, cancellation);
+    FloatField broad = periodicFbm(
+        seed + domain,
+        FbmParameters{.resolution = resolution, .octaves = 3U, .start_frequency = 4U},
+        cancellation
+    );
+    FloatField fine = periodicFbm(
+        seed + domain + 1U,
+        FbmParameters{.resolution = resolution, .octaves = 3U, .start_frequency = 16U},
+        cancellation
+    );
     uint64_t const field_size = broad.size();
     FloatField values(field_size);
     for (uint64_t index = 0U; index < field_size; ++index) {
@@ -106,7 +117,7 @@ CoastalFields elaborateCoasts(
     GenerationConfiguration const& configuration,
     std::span<float const> elevation,
     std::span<float const> activity,
-    std::stop_token cancellation,
+    std::stop_token const& cancellation,
     ProgressCallback const& progress
 )
 {
@@ -135,7 +146,11 @@ CoastalFields elaborateCoasts(
         activity_values[index] = activity[index];
     }
     double const active_sigma = std::max(0.008 * resolution, 0.5);
-    DoubleField active = gaussianFilterWrap(activity_values, resolution, active_sigma, cancellation);
+    DoubleField active = gaussianFilterWrap(
+        activity_values,
+        GaussianFilterParameters{.resolution = resolution, .sigma = active_sigma},
+        cancellation
+    );
 
     CoastalFields result{
         .elevation = FloatField(field_size),
@@ -212,8 +227,7 @@ CoastalFields elaborateCoasts(
         result.elevation[index] = static_cast<float>(bilinearPeriodic(
             bed,
             resolution,
-            sample_x[index],
-            sample_y[index]
+            WorldPoint{.x = sample_x[index], .y = sample_y[index]}
         ));
     }
     reportProgress(progress, GenerationStage::CoastalElaboration, 1U, 1U);

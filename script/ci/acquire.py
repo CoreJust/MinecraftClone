@@ -195,8 +195,16 @@ def require_private_dependency_lock(lock_file: Path) -> dict[str, dict[str, str]
             raise CiError(f"{name} repository must be {expected['repository']}")
         if not isinstance(revision, str) or GIT_REVISION_RE.fullmatch(revision) is None:
             raise CiError(f"{name} revision must be a 40-character lowercase hexadecimal commit")
-        if not isinstance(fetch_ref, str) or not is_safe_private_dependency_ref(fetch_ref, "refs/tags/"):
-            raise CiError(f"{name} fetch_ref must be a safe full refs/tags/ name")
+        allowed_fetch_ref = isinstance(fetch_ref, str) and is_safe_private_dependency_ref(fetch_ref, "refs/tags/")
+        if name == "CoreProject2026" and isinstance(fetch_ref, str):
+            allowed_fetch_ref = allowed_fetch_ref or fetch_ref == "refs/heads/ai-dev"
+        if not isinstance(fetch_ref, str) or not allowed_fetch_ref:
+            allowed_description = (
+                "refs/tags/ or refs/heads/ai-dev"
+                if name == "CoreProject2026"
+                else "refs/tags/"
+            )
+            raise CiError(f"{name} fetch_ref must be a safe full {allowed_description} name")
         result[name] = {"repository": repository, "revision": revision, "fetch_ref": fetch_ref}
     return result
 
@@ -253,21 +261,29 @@ def verify_private_dependency_git_provenance(
     revision: str,
     fetch_ref: str,
 ) -> None:
-    """Require the fetched tag identity and fetched ai-main ancestry before checkout."""
-    if GIT_REVISION_RE.fullmatch(revision) is None or not is_safe_private_dependency_ref(fetch_ref, "refs/tags/"):
-        raise CiError(f"{name} provenance requires a full commit and safe refs/tags/ name")
+    """Require a fetched immutable locator and ancestry before checkout."""
+    is_development_branch = name == "CoreProject2026" and fetch_ref == "refs/heads/ai-dev"
+    is_tag = is_safe_private_dependency_ref(fetch_ref, "refs/tags/")
+    if GIT_REVISION_RE.fullmatch(revision) is None or not (is_tag or is_development_branch):
+        raise CiError(f"{name} provenance requires a full commit and approved retrieval ref")
     try:
-        tagged_revision = run(["git", "-C", str(source), "rev-parse", "--verify", f"{fetch_ref}^{{commit}}"])
-        if tagged_revision != revision:
-            raise CiError(f"{name} tag mismatch: {fetch_ref} resolves to {tagged_revision}, expected {revision}")
-        run(["git", "-C", str(source), "rev-parse", "--verify", "refs/remotes/origin/ai-main^{commit}"])
-        run(["git", "-C", str(source), "merge-base", "--is-ancestor", revision, "refs/remotes/origin/ai-main"])
+        if is_development_branch:
+            branch = "refs/remotes/origin/ai-dev"
+            run(["git", "-C", str(source), "rev-parse", "--verify", f"{branch}^{{commit}}"])
+            run(["git", "-C", str(source), "merge-base", "--is-ancestor", revision, branch])
+        else:
+            tagged_revision = run(["git", "-C", str(source), "rev-parse", "--verify", f"{fetch_ref}^{{commit}}"])
+            if tagged_revision != revision:
+                raise CiError(f"{name} tag mismatch: {fetch_ref} resolves to {tagged_revision}, expected {revision}")
+            run(["git", "-C", str(source), "rev-parse", "--verify", "refs/remotes/origin/ai-main^{commit}"])
+            run(["git", "-C", str(source), "merge-base", "--is-ancestor", revision, "refs/remotes/origin/ai-main"])
     except CiError as error:
-        raise CiError(f"{name} tagged ai-main provenance failed: {error}") from error
+        provenance_kind = "ai-dev" if is_development_branch else "tagged ai-main"
+        raise CiError(f"{name} {provenance_kind} provenance failed: {error}") from error
 
 
 def fetch_private_dependencies(lock_file: Path, root: Path, key_files: dict[str, Path]) -> dict[str, Path]:
-    """Fetch each pinned tag and ai-main, then detach at the verified immutable revision."""
+    """Fetch each approved locator, then detach at the verified immutable revision."""
     dependencies = require_private_dependency_lock(lock_file)
     if root.exists():
         raise CiError(f"private dependency root already exists: {root}")
@@ -281,10 +297,13 @@ def fetch_private_dependencies(lock_file: Path, root: Path, key_files: dict[str,
         source = root / name
         run(["git", "init", str(source)])
         run(["git", "-C", str(source), "remote", "add", "origin", f"git@github.com:{dependency['repository']}.git"])
-        fetch_refs = [
-            f"+{dependency['fetch_ref']}:{dependency['fetch_ref']}",
-            "+refs/heads/ai-main:refs/remotes/origin/ai-main",
-        ]
+        if dependency["fetch_ref"] == "refs/heads/ai-dev":
+            fetch_refs = ["+refs/heads/ai-dev:refs/remotes/origin/ai-dev"]
+        else:
+            fetch_refs = [
+                f"+{dependency['fetch_ref']}:{dependency['fetch_ref']}",
+                "+refs/heads/ai-main:refs/remotes/origin/ai-main",
+            ]
         run(git_with_key(key_file, known_hosts_file, ["-C", str(source), "fetch", "--no-tags", "origin", *fetch_refs]))
         verify_private_dependency_git_provenance(
             source,

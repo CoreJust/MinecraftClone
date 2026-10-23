@@ -15,10 +15,10 @@ namespace generation
 
 inline constexpr uint32_t WORLD_SIZE_BLOCKS = 65'536U;
 inline constexpr uint32_t WORLD_DEPTH_BLOCKS = 1'024U;
-// Bump MODEL_REVISION when fixed kernel coefficients or numerical steps change,
-// including the binary64 tanh/shelf-exp kernels and local column refinement.
+// Bump MODEL_REVISION when fixed kernels, numerical steps, local refinement,
+// or canonical surface-material classification changes.
 inline constexpr uint32_t TERRAIN_VERSION = 2U;
-inline constexpr uint32_t MODEL_REVISION = 5U;
+inline constexpr uint32_t MODEL_REVISION = 6U;
 inline constexpr std::string_view NUMERICAL_KERNEL_IDENTITY = "shelf-exp=exp64-to-f32-v1";
 // SHA-256 of UTF-8 Python default json.dumps(sources, sort_keys=True) for the
 // seven frozen v3 source hashes recorded in tests/fixtures/terrain_v2/manifest.json.

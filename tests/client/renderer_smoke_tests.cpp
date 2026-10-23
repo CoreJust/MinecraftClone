@@ -1,7 +1,9 @@
 #include <client/Camera.hpp>
 #include <client/PlayerPresentation.hpp>
+#include <client/TerrainLodPresentation.hpp>
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/StoneFaceCapacity.hpp>
+#include <client/render/StoneIndirectDraws.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/world/ChunkMesher.hpp>
@@ -11,22 +13,31 @@
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 #include <gtest/gtest.h>
 
 #include <testsupport/ImageComparison.hpp>
+#include <testsupport/TerrainFixtures.hpp>
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <chrono>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -59,13 +70,17 @@ public:
     bool ready = false;
     uint32_t acquire_count = 0U;
     uint32_t submit_count = 0U;
+    uint32_t image_count = 1U;
+    bool invoke_record_callback = false;
+    std::vector<uint32_t> waited_slots;
     std::vector<std::chrono::nanoseconds> recreation_wait_budgets;
 
     [[nodiscard]] core::graphics::vulkan::FenceWaitResult waitForSlot(
-        uint32_t,
+        uint32_t const slot,
         std::chrono::nanoseconds
     ) override
     {
+        waited_slots.push_back(slot);
         return core::graphics::vulkan::FenceWaitResult::Completed;
     }
 
@@ -84,12 +99,19 @@ public:
     ) override
     {
         ++acquire_count;
-        image = 0U;
+        image = (acquire_count - 1U) % image_count;
         return ready ? core::graphics::vulkan::PresentationAcquireResult::Ready
             : core::graphics::vulkan::PresentationAcquireResult::NotReady;
     }
 
-    void record(VkCommandBuffer, void (*)(VkCommandBuffer, void*), void*) override {}
+    void record(
+        VkCommandBuffer const command, void (*callback)(VkCommandBuffer, void*), void* const user_data
+    ) override
+    {
+        if (invoke_record_callback) {
+            callback(command, user_data);
+        }
+    }
     void submit(uint32_t, VkCommandBuffer) override { ++submit_count; }
 
     [[nodiscard]] core::graphics::vulkan::PresentationAcquireResult present(
@@ -137,8 +159,198 @@ struct PendingGrowthPresentationFixture final {
     }
 };
 
+class SynchronizationRecorder final {
+public:
+    SynchronizationRecorder()
+        : m_previous(s_current)
+    {
+        s_current = this;
+    }
+
+    ~SynchronizationRecorder() { s_current = m_previous; }
+    SynchronizationRecorder(SynchronizationRecorder const&) = delete;
+    SynchronizationRecorder& operator=(SynchronizationRecorder const&) = delete;
+
+    static VKAPI_ATTR void VKAPI_CALL pipelineBarrier(
+        VkCommandBuffer, VkPipelineStageFlags const source_stages, VkPipelineStageFlags const destination_stages,
+        VkDependencyFlags, uint32_t, VkMemoryBarrier const*, uint32_t const buffer_count,
+        VkBufferMemoryBarrier const* const buffers, uint32_t const image_count,
+        VkImageMemoryBarrier const* const images
+    )
+    {
+        auto& recorder = *s_current;
+        for (uint32_t i = 0U; i < buffer_count; ++i) {
+            auto const& barrier = buffers[i];
+            if ((source_stages & VK_PIPELINE_STAGE_VERTEX_SHADER_BIT) != 0U
+                && (destination_stages & VK_PIPELINE_STAGE_TRANSFER_BIT) != 0U) {
+                recorder.completeTextReads();
+            }
+            if ((source_stages & VK_PIPELINE_STAGE_TRANSFER_BIT) != 0U
+                && (destination_stages & VK_PIPELINE_STAGE_TRANSFER_BIT) != 0U
+                && (barrier.srcAccessMask & VK_ACCESS_TRANSFER_WRITE_BIT) != 0U
+                && (barrier.dstAccessMask & VK_ACCESS_TRANSFER_WRITE_BIT) != 0U) {
+                ++recorder.ordered_text_overwrites;
+            }
+            if ((source_stages & VK_PIPELINE_STAGE_TRANSFER_BIT) != 0U
+                && (destination_stages & VK_PIPELINE_STAGE_VERTEX_SHADER_BIT) != 0U
+                && (barrier.srcAccessMask & VK_ACCESS_TRANSFER_WRITE_BIT) != 0U
+                && (barrier.dstAccessMask & VK_ACCESS_SHADER_READ_BIT) != 0U) {
+                recorder.m_text_visible = true;
+            }
+        }
+        for (uint32_t i = 0U; i < image_count; ++i) {
+            auto const& barrier = images[i];
+            recorder.depth_layouts.push_back({barrier.oldLayout, barrier.newLayout});
+            bool const orders_depth = (source_stages & VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT) != 0U
+                && (destination_stages & VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT) != 0U
+                && (barrier.srcAccessMask & VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT) != 0U
+                && (barrier.dstAccessMask & VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT) != 0U
+                && (barrier.dstAccessMask & VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT) != 0U;
+            if (orders_depth) {
+                std::erase(recorder.m_pending_depth_writes, barrier.image);
+            }
+        }
+    }
+
+    static VKAPI_ATTR void VKAPI_CALL updateBuffer(
+        VkCommandBuffer, VkBuffer, VkDeviceSize const offset, VkDeviceSize const size, void const* const data
+    )
+    {
+        auto& recorder = *s_current;
+        EXPECT_LE(size, 65'536U);
+        EXPECT_EQ(size % 4U, 0U);
+        EXPECT_EQ(offset % 4U, 0U);
+        recorder.m_text_storage.resize(std::max<uint64_t>(recorder.m_text_storage.size(), offset + size));
+        std::memcpy(recorder.m_text_storage.data() + offset, data, size);
+        recorder.m_text_visible = false;
+        ++recorder.text_update_count;
+    }
+
+    void readText(uint64_t const byte_count)
+    {
+        EXPECT_TRUE(m_text_visible);
+        m_pending_text_reads.push_back(byte_count);
+    }
+
+    void completeTextReads()
+    {
+        for (uint64_t const byte_count : m_pending_text_reads) {
+            std::vector<std::byte> bytes(byte_count);
+            std::memcpy(bytes.data(), m_text_storage.data(), byte_count);
+            completed_text_reads.push_back(std::move(bytes));
+        }
+        m_pending_text_reads.clear();
+    }
+
+    void clearAndUseDepth(VkImage const image)
+    {
+        unordered_depth_reuses += std::ranges::find(m_pending_depth_writes, image) != m_pending_depth_writes.end()
+            ? 1U : 0U;
+        m_pending_depth_writes.push_back(image);
+    }
+
+    uint32_t ordered_text_overwrites = 0U;
+    uint32_t text_update_count = 0U;
+    uint32_t unordered_depth_reuses = 0U;
+    std::vector<std::vector<std::byte>> completed_text_reads;
+    std::vector<std::array<VkImageLayout, 2>> depth_layouts;
+
+private:
+    inline static thread_local SynchronizationRecorder* s_current = nullptr;
+    SynchronizationRecorder* m_previous = nullptr;
+    std::vector<std::byte> m_text_storage;
+    std::vector<uint64_t> m_pending_text_reads;
+    std::vector<VkImage> m_pending_depth_writes;
+    bool m_text_visible = false;
+};
+
+TEST(RendererSmokeTest, TextUploadsKeepEverySubmittedFramesGlyphsAcrossThreeSlots)
+{
+    static constexpr uint32_t FRAME_COUNT = 3U;
+    static constexpr uint32_t GLYPH_COUNT = 2'500U;
+    VkBuffer const buffer = std::bit_cast<VkBuffer>(uintptr_t{1U});
+    SynchronizationRecorder recorder;
+    PendingGrowthPresentationFixture fixture;
+    fixture.backend->invoke_record_callback = true;
+    std::vector<std::vector<std::byte>> expected;
+    for (uint32_t i = 0U; i < FRAME_COUNT; ++i) {
+        std::vector<client::TextGlyph> glyphs(GLYPH_COUNT);
+        for (uint32_t glyph = 0U; glyph < GLYPH_COUNT; ++glyph) {
+            glyphs[glyph].character = 'A' + i;
+            glyphs[glyph].packed_color = i + glyph;
+            glyphs[glyph].x = static_cast<float>(glyph);
+        }
+        auto const bytes = std::as_bytes(std::span{glyphs});
+        expected.emplace_back(bytes.begin(), bytes.end());
+        std::optional<core::graphics::vulkan::PresentationContext::Frame> frame;
+        ASSERT_EQ(fixture.context->acquire(std::chrono::milliseconds{8}, frame),
+            core::graphics::vulkan::PresentationAcquireResult::Ready);
+        ASSERT_TRUE(frame);
+        EXPECT_EQ(frame->slotIndex(), i);
+        struct Upload final {
+            SynchronizationRecorder& recorder;
+            VkBuffer buffer;
+            std::span<client::TextGlyph const> glyphs;
+        } upload{recorder, buffer, glyphs};
+        frame->record([](VkCommandBuffer const command, void* const data) {
+            auto const& upload = *static_cast<Upload*>(data);
+            client::detail::recordTextGlyphUpload(command, upload.buffer, upload.glyphs,
+                &SynchronizationRecorder::pipelineBarrier, &SynchronizationRecorder::updateBuffer);
+            upload.recorder.readText(upload.glyphs.size_bytes());
+        }, &upload);
+        fixture.context->complete(*frame);
+    }
+    EXPECT_TRUE(fixture.backend->waited_slots.empty());
+    EXPECT_EQ(fixture.backend->submit_count, FRAME_COUNT);
+    recorder.completeTextReads();
+    EXPECT_EQ(recorder.completed_text_reads, expected);
+    EXPECT_EQ(recorder.ordered_text_overwrites, FRAME_COUNT);
+    EXPECT_EQ(recorder.text_update_count, 9U);
+}
+
+TEST(RendererSmokeTest, DepthReuseFollowsSwapchainImageWhileAllThreeSlotsAreSubmitted)
+{
+    static constexpr std::array<VkImageLayout, 2> INITIAL{
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    };
+    static constexpr std::array<VkImageLayout, 2> REUSE{
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    };
+    std::array<bool, 2> initialized{};
+    SynchronizationRecorder recorder;
+    PendingGrowthPresentationFixture fixture;
+    fixture.backend->image_count = 2U;
+    fixture.backend->invoke_record_callback = true;
+    for (uint32_t i = 0U; i < 3U; ++i) {
+        std::optional<core::graphics::vulkan::PresentationContext::Frame> frame;
+        core::graphics::vulkan::PresentationAcquireDiagnostics acquired;
+        ASSERT_EQ(fixture.context->acquire(std::chrono::milliseconds{8}, frame, acquired),
+            core::graphics::vulkan::PresentationAcquireResult::Ready);
+        ASSERT_TRUE(frame);
+        ASSERT_TRUE(acquired.image_index);
+        uint32_t const image_index = *acquired.image_index;
+        EXPECT_EQ(frame->slotIndex(), i);
+        struct DepthUse final {
+            SynchronizationRecorder& recorder;
+            VkImage image;
+            bool initialized;
+        } depth{recorder, std::bit_cast<VkImage>(uintptr_t{image_index + 1U}), initialized[image_index]};
+        frame->record([](VkCommandBuffer const command, void* const data) {
+            auto const& depth = *static_cast<DepthUse*>(data);
+            client::detail::recordDepthAttachmentBarrier(command, depth.image, depth.initialized,
+                &SynchronizationRecorder::pipelineBarrier);
+            depth.recorder.clearAndUseDepth(depth.image);
+        }, &depth);
+        initialized[image_index] = true;
+        fixture.context->complete(*frame);
+    }
+    EXPECT_TRUE(fixture.backend->waited_slots.empty());
+    EXPECT_EQ(fixture.backend->submit_count, 3U);
+    EXPECT_EQ(recorder.unordered_depth_reuses, 0U);
+    EXPECT_EQ(recorder.depth_layouts, (std::vector<std::array<VkImageLayout, 2>>{INITIAL, INITIAL, REUSE}));
+}
+
 struct CaptureColorClasses final {
-    bool has_grid = false;
     bool has_platform = false;
     bool has_platform_side = false;
     bool has_sky = false;
@@ -148,7 +360,7 @@ struct CaptureColorClasses final {
 
     [[nodiscard]] bool complete() const
     {
-        return has_grid && has_platform && has_platform_side && has_sky
+        return has_platform && has_platform_side && has_sky
             && has_red_player && has_green_player && has_debug_hud;
     }
 
@@ -163,7 +375,6 @@ struct CaptureColorClasses final {
                 missing += name;
             }
         };
-        appendMissing(has_grid, "grid");
         appendMissing(has_platform, "platform");
         appendMissing(has_platform_side, "platform-side");
         appendMissing(has_sky, "sky");
@@ -176,7 +387,11 @@ struct CaptureColorClasses final {
 
 [[nodiscard]] shared::HeightTileSurfaceMesh denseHeightTileMesh(int32_t const tile_x)
 {
-    shared::HeightTileSurfaceMesh mesh{ .coordinate = { .x = tile_x, .y = 0 } };
+    shared::HeightTileSurfaceMesh mesh{
+        .coordinate = { .x = tile_x, .y = 0 },
+        .quads = {},
+        .identity = {},
+    };
     mesh.quads.reserve(shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT);
     for (uint32_t index = 0U; index < shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT; ++index) {
         mesh.quads.push_back({
@@ -188,6 +403,282 @@ struct CaptureColorClasses final {
         });
     }
     return mesh;
+}
+
+[[nodiscard]] shared::HeightTileSurfaceMesh materialTerrainMesh(shared::HeightTileSurfaceNeighbors const& neighbors = {})
+{
+    shared::HeightTile::Heights heights{};
+    for (uint32_t y = 0U; y < shared::HeightTile::SIDE_LENGTH; ++y) {
+        for (uint32_t x = 0U; x < shared::HeightTile::SIDE_LENGTH; ++x) {
+            uint16_t const highest_solid_z = static_cast<uint16_t>(400U + (x / 4U) * 4U);
+            heights[y * shared::HeightTile::SIDE_LENGTH + x] = static_cast<uint16_t>(highest_solid_z + 1U);
+        }
+    }
+    shared::SurfaceTile surface = testsupport::makeSurfaceTile(
+        { .x = 0, .y = 0 },
+        testsupport::makeTerrainIdentity(0x0499U, 1U),
+        heights
+    );
+    for (uint32_t y = 0U; y < shared::HeightTile::SIDE_LENGTH; ++y) {
+        for (uint32_t x = 0U; x < shared::HeightTile::SIDE_LENGTH; ++x) {
+            uint32_t const column_index = y * shared::HeightTile::SIDE_LENGTH + x;
+            double const temperature = x >= 8U && x < 12U ? -5.0 : 0.0;
+            double const precipitation = x >= 4U && x < 8U ? 0.1 : 0.5;
+            surface.columns[column_index] = testsupport::makeTerrainColumn(
+                static_cast<uint16_t>(heights[column_index] - 1U),
+                surface.block_sea_level,
+                testsupport::TerrainClimate{
+                    .temperature_celsius = temperature,
+                    .precipitation = precipitation,
+                }
+            );
+        }
+    }
+    shared::HeightTile typed_tile{
+        .coordinate = { .x = 0, .y = 0 },
+        .heights = heights,
+        .surface = std::move(surface),
+    };
+    return shared::HeightTileSurfaceMesher{}.build(typed_tile, neighbors);
+}
+
+[[nodiscard]] shared::HeightTileSurfaceMesh materialPaletteDisplayMesh()
+{
+    static constexpr std::array<shared::Block, 6U> MATERIALS{
+        shared::Block::Grass,
+        shared::Block::Dirt,
+        shared::Block::Stone,
+        shared::Block::Bedrock,
+        shared::Block::Snow,
+        shared::Block::Ice,
+    };
+    shared::HeightTileSurfaceMesh mesh = materialTerrainMesh();
+    for (uint32_t index = 0U; index < MATERIALS.size(); ++index) {
+        mesh.quads.push_back({
+            .x = 20 + static_cast<int32_t>((index % 3U) * 4U),
+            .y = -1,
+            .z = 400 + static_cast<int32_t>((index / 3U) * 8U),
+            .direction = shared::HeightTileSurfaceDirection::NegativeY,
+            .u_extent = 4U,
+            .v_extent = 8U,
+            .material = MATERIALS[index],
+        });
+    }
+    return mesh;
+}
+
+TEST(RendererSmokeTest, MaterialPaletteFixtureCarriesCanonicalMaterialsIntoFaceInstances)
+{
+    static constexpr std::array<shared::Block, 6U> EXPECTED_MATERIALS{
+        shared::Block::Grass,
+        shared::Block::Dirt,
+        shared::Block::Stone,
+        shared::Block::Bedrock,
+        shared::Block::Snow,
+        shared::Block::Ice,
+    };
+    std::array<bool, 7U> observed_materials{};
+    // An explicit empty neighbor exposes the full side profile down to bedrock.
+    shared::HeightTileSurfaceNeighbors neighbors{};
+    neighbors.negative_y = shared::HeightTile::Heights{};
+    shared::HeightTileSurfaceMesh const mesh = materialTerrainMesh(neighbors);
+    for (shared::HeightTileSurfaceQuad const& quad : mesh.quads) {
+        client::StoneFaceInstance const instance = client::StoneFaceInstance::fromHeightTileQuad(quad);
+        EXPECT_EQ(instance.material_id, static_cast<uint32_t>(quad.material));
+        observed_materials[instance.material_id] = true;
+    }
+    for (shared::Block const material : EXPECTED_MATERIALS) {
+        EXPECT_TRUE(observed_materials[static_cast<uint8_t>(material)])
+            << "mesher fixture lacks material id " << static_cast<uint32_t>(material);
+    }
+}
+
+struct TerrainMaterialColorClasses final {
+    bool has_grass = false;
+    bool has_dirt = false;
+    bool has_stone = false;
+    bool has_bedrock = false;
+    bool has_snow = false;
+    bool has_ice = false;
+
+    [[nodiscard]] bool complete() const noexcept
+    {
+        return has_grass && has_dirt && has_stone && has_bedrock && has_snow && has_ice;
+    }
+
+    [[nodiscard]] std::string missingClasses() const
+    {
+        std::string missing;
+        auto append_missing = [&missing](bool const present, char const* const name) {
+            if (!present) {
+                if (!missing.empty()) {
+                    missing += ", ";
+                }
+                missing += name;
+            }
+        };
+        append_missing(has_grass, "grass");
+        append_missing(has_dirt, "dirt");
+        append_missing(has_stone, "stone");
+        append_missing(has_bedrock, "bedrock");
+        append_missing(has_snow, "snow");
+        append_missing(has_ice, "ice");
+        return missing;
+    }
+};
+
+struct PixelRectangle final {
+    uint32_t left = 0U;
+    uint32_t top = 0U;
+    uint32_t right = 0U;
+    uint32_t bottom = 0U;
+
+    [[nodiscard]] bool contains(uint32_t const x, uint32_t const y) const noexcept
+    {
+        return x >= left && x < right && y >= top && y < bottom;
+    }
+};
+
+[[nodiscard]] std::optional<std::array<uint32_t, 2U>> projectedPixel(
+    client::Camera const& camera,
+    glm::vec3 const world_position,
+    uint32_t const width,
+    uint32_t const height
+)
+{
+    std::optional<glm::mat4> const projection = camera.projectionMatrix(width, height);
+    if (!projection.has_value()) {
+        return std::nullopt;
+    }
+    glm::vec4 const clip = *projection * camera.viewMatrix() * glm::vec4{ world_position, 1.0F };
+    if (clip.w <= 0.0F) {
+        return std::nullopt;
+    }
+    float const pixel_x = (clip.x / clip.w * 0.5F + 0.5F) * static_cast<float>(width);
+    float const pixel_y = (clip.y / clip.w * 0.5F + 0.5F) * static_cast<float>(height);
+    if (pixel_x < 0.0F || pixel_x >= static_cast<float>(width)
+        || pixel_y < 0.0F || pixel_y >= static_cast<float>(height)) {
+        return std::nullopt;
+    }
+    return std::array<uint32_t, 2U>{
+        static_cast<uint32_t>(std::floor(pixel_x)),
+        static_cast<uint32_t>(std::floor(pixel_y)),
+    };
+}
+
+[[nodiscard]] std::optional<std::array<uint8_t, 4U>> capturePixelAtWorld(
+    client::RendererFrameCapture const& capture,
+    client::Camera const& camera,
+    glm::vec3 const world_position
+)
+{
+    std::optional<std::array<uint32_t, 2U>> const pixel = projectedPixel(
+        camera,
+        world_position,
+        capture.width,
+        capture.height
+    );
+    if (!pixel.has_value()) {
+        return std::nullopt;
+    }
+    uint64_t const offset = (static_cast<uint64_t>((*pixel)[1U]) * capture.width + (*pixel)[0U]) * 4U;
+    if (offset + 4U > capture.rgba8.size()) {
+        return std::nullopt;
+    }
+    return std::array<uint8_t, 4U>{
+        capture.rgba8[offset],
+        capture.rgba8[offset + 1U],
+        capture.rgba8[offset + 2U],
+        capture.rgba8[offset + 3U],
+    };
+}
+
+[[nodiscard]] std::optional<PixelRectangle> projectedIcePanelBounds(
+    client::Camera const& camera,
+    uint32_t const width,
+    uint32_t const height
+)
+{
+    static constexpr std::array<glm::vec3, 4U> ICE_PANEL_CORNERS{
+        glm::vec3{ 28.0F, -1.0F, 408.0F },
+        glm::vec3{ 32.0F, -1.0F, 408.0F },
+        glm::vec3{ 32.0F, -1.0F, 416.0F },
+        glm::vec3{ 28.0F, -1.0F, 416.0F },
+    };
+    std::optional<glm::mat4> const projection = camera.projectionMatrix(width, height);
+    if (!projection.has_value()) {
+        return std::nullopt;
+    }
+    glm::mat4 const projection_view = *projection * camera.viewMatrix();
+    float left = static_cast<float>(width);
+    float top = static_cast<float>(height);
+    float right = 0.0F;
+    float bottom = 0.0F;
+    for (glm::vec3 const corner : ICE_PANEL_CORNERS) {
+        glm::vec4 const clip = projection_view * glm::vec4{ corner, 1.0F };
+        if (clip.w <= 0.0F) {
+            return std::nullopt;
+        }
+        float const pixel_x = (clip.x / clip.w * 0.5F + 0.5F) * static_cast<float>(width);
+        float const pixel_y = (clip.y / clip.w * 0.5F + 0.5F) * static_cast<float>(height);
+        left = std::min(left, pixel_x);
+        top = std::min(top, pixel_y);
+        right = std::max(right, pixel_x);
+        bottom = std::max(bottom, pixel_y);
+    }
+    PixelRectangle const bounds{
+        .left = static_cast<uint32_t>(std::clamp(std::floor(left), 0.0F, static_cast<float>(width))),
+        .top = static_cast<uint32_t>(std::clamp(std::floor(top), 0.0F, static_cast<float>(height))),
+        .right = static_cast<uint32_t>(std::clamp(std::ceil(right), 0.0F, static_cast<float>(width))),
+        .bottom = static_cast<uint32_t>(std::clamp(std::ceil(bottom), 0.0F, static_cast<float>(height))),
+    };
+    return bounds.right > bounds.left && bounds.bottom > bounds.top
+        ? std::optional<PixelRectangle>{ bounds }
+        : std::nullopt;
+}
+
+[[nodiscard]] TerrainMaterialColorClasses classifyTerrainMaterialColors(
+    client::RendererFrameCapture const& capture,
+    PixelRectangle const ice_panel_bounds
+)
+{
+    TerrainMaterialColorClasses classes;
+    for (uint64_t offset = 0U; offset < capture.rgba8.size(); offset += 4U) {
+        uint64_t const pixel_index = offset / 4U;
+        uint32_t const pixel_x = static_cast<uint32_t>(pixel_index % capture.width);
+        uint32_t const pixel_y = static_cast<uint32_t>(pixel_index / capture.width);
+        uint8_t const red = capture.rgba8[offset];
+        uint8_t const green = capture.rgba8[offset + 1U];
+        uint8_t const blue = capture.rgba8[offset + 2U];
+        bool const gray = std::abs(static_cast<int>(red) - static_cast<int>(green)) < 14
+            && std::abs(static_cast<int>(green) - static_cast<int>(blue)) < 14;
+        uint8_t const brightness = static_cast<uint8_t>(
+            (static_cast<uint32_t>(red) + green + blue) / 3U
+        );
+        bool const stone_brightness = capture.srgb_encoded
+            ? brightness > 135U && brightness < 225U
+            : brightness > 65U && brightness < 190U;
+        bool const bedrock_brightness = capture.srgb_encoded
+            ? brightness >= 55U && brightness <= 145U
+            : brightness >= 25U && brightness <= 90U;
+        classes.has_grass = classes.has_grass || (green > red + 18U && green > blue + 18U);
+        classes.has_dirt = classes.has_dirt || (red > green + 18U && green > blue + 10U);
+        classes.has_stone = classes.has_stone || (gray && stone_brightness);
+        classes.has_bedrock = classes.has_bedrock || (gray && bedrock_brightness);
+        classes.has_snow = classes.has_snow || (capture.srgb_encoded
+            ? (red > 220U && green > 220U && blue > 220U
+                && std::max({ red, green, blue }) - std::min({ red, green, blue }) < 40U)
+            : (red > 205U && green > 215U && blue > 225U
+                && std::max({ red, green, blue }) - std::min({ red, green, blue }) < 60U));
+        if (ice_panel_bounds.contains(pixel_x, pixel_y)) {
+            classes.has_ice = classes.has_ice || (capture.srgb_encoded
+                ? red >= 105U && red <= 190U && green >= 140U && green <= 210U
+                    && blue >= 210U && blue <= 240U && blue > green + 15U
+                : red >= 45U && red <= 125U && green >= 75U && green <= 155U
+                    && blue >= 165U && blue <= 235U && blue > green + 20U);
+        }
+    }
+    return classes;
 }
 
 [[nodiscard]] bool isObservableHudPixel(
@@ -211,8 +702,6 @@ struct CaptureColorClasses final {
 {
     CaptureColorClasses classes;
     uint32_t debug_hud_pixel_count = 0U;
-    uint8_t const grid_min = capture.srgb_encoded ? 90U : 32U;
-    uint8_t const grid_max = capture.srgb_encoded ? 160U : 64U;
     for (uint64_t offset = 0U; offset < capture.rgba8.size(); offset += 4U) {
         uint32_t const pixel_index = static_cast<uint32_t>(offset / 4U);
         uint32_t const x = pixel_index % capture.width;
@@ -220,10 +709,6 @@ struct CaptureColorClasses final {
         uint8_t const red = capture.rgba8[offset];
         uint8_t const green = capture.rgba8[offset + 1U];
         uint8_t const blue = capture.rgba8[offset + 2U];
-        classes.has_grid = classes.has_grid || (
-            red > grid_min && red < grid_max && green > grid_min && green < grid_max
-                && blue > grid_min && blue < grid_max
-        );
         classes.has_sky = classes.has_sky || (
             blue > green + 20U && green > red + 20U
         );
@@ -350,7 +835,6 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
     );
     EXPECT_EQ(retained_capture->rgba8, original_capture->rgba8);
     CaptureColorClasses const retained_colors = classifyCaptureColors(*retained_capture);
-    EXPECT_TRUE(retained_colors.has_grid);
     EXPECT_TRUE(retained_colors.has_platform);
     EXPECT_TRUE(retained_colors.has_platform_side);
     EXPECT_TRUE(retained_colors.has_sky);
@@ -386,6 +870,88 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
         << "; the platform/grid/sky scene may cover every physical framebuffer sample";
     EXPECT_GE(rendered_frames, 3U);
     EXPECT_EQ(renderer.runtimeInfo().pipeline_path, client::RendererPipelinePath::Vertex);
+}
+
+TEST(RendererSmokeTest, ProjectedGridLineContrastsWithAdjacentCellSurface)
+{
+    static constexpr uint32_t LOGICAL_WIDTH = 320U;
+    static constexpr uint32_t LOGICAL_HEIGHT = 240U;
+    static constexpr uint32_t MAX_CAPTURE_FRAMES = 12U;
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+    static constexpr std::array<float, 3U> GRID_LINE_POSITION{ 16.0F, 0.0F, 0.0F };
+    static constexpr std::array<float, 3U> GRID_CELL_POSITION{ 16.5F, 0.5F, 0.0F };
+    static constexpr uint8_t MINIMUM_CHANNEL_CONTRAST = 20U;
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = LOGICAL_WIDTH,
+            .height = LOGICAL_HEIGHT,
+            .title = "MinecraftClone projected grid-line capture",
+        },
+    };
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window,
+            { .require_validation = true, .enable_frame_capture = true }
+        ),
+        shader_assets,
+        { .require_validation = true, .enable_frame_capture = true },
+    };
+    renderer.setDebugHudEnabled(false);
+    client::Camera const camera{
+        {
+            .position = { 16.0, -2.0, 2.0 },
+            .angles = { .pitch_degrees = -45.0 },
+        },
+    };
+    renderer.setCamera(camera.pose());
+    renderer.requestFrameCapture();
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    std::optional<client::RendererFrameCapture> capture;
+    for (uint32_t frame = 0U;
+         frame < MAX_CAPTURE_FRAMES && std::chrono::steady_clock::now() < deadline;
+         ++frame) {
+        ASSERT_TRUE(window.nextFrame());
+        static_cast<void>(renderer.render({}, deadline));
+        capture = renderer.takeFrameCapture();
+        if (capture.has_value()) {
+            break;
+        }
+    }
+    ASSERT_TRUE(capture.has_value());
+    std::optional<std::array<uint8_t, 4U>> const line = capturePixelAtWorld(
+        *capture,
+        camera,
+        glm::vec3{ GRID_LINE_POSITION[0U], GRID_LINE_POSITION[1U], GRID_LINE_POSITION[2U] }
+    );
+    std::optional<std::array<uint8_t, 4U>> const cell = capturePixelAtWorld(
+        *capture,
+        camera,
+        glm::vec3{ GRID_CELL_POSITION[0U], GRID_CELL_POSITION[1U], GRID_CELL_POSITION[2U] }
+    );
+    ASSERT_TRUE(line.has_value());
+    ASSERT_TRUE(cell.has_value());
+    if (char const* const capture_path = std::getenv("MC_PROJECTED_GRID_CAPTURE_PATH");
+        capture_path != nullptr && capture_path[0] != '\0') {
+        auto const written = testsupport::writePpm(
+            {
+                .width = capture->width,
+                .height = capture->height,
+                .srgb_encoded = capture->srgb_encoded,
+                .pixels = capture->rgba8,
+            },
+            std::filesystem::path{ capture_path },
+            "projected grid line and adjacent cell presentation capture"
+        );
+        ASSERT_TRUE(written.has_value()) << written.error();
+    }
+    for (uint32_t channel = 0U; channel < 3U; ++channel) {
+        EXPECT_GE(
+            static_cast<uint32_t>((*cell)[channel]),
+            static_cast<uint32_t>((*line)[channel]) + MINIMUM_CHANNEL_CONTRAST
+        ) << "grid line must remain darker than the adjacent cell in channel " << channel;
+    }
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
 }
 
 TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
@@ -605,9 +1171,10 @@ TEST(RendererSmokeTest, HeightTileBatchKeepsBothOldMeshesWhenDeadlinePreventsAre
 {
     static constexpr uint32_t LOGICAL_WIDTH = 320U;
     static constexpr uint32_t LOGICAL_HEIGHT = 240U;
-    static constexpr uint32_t FILLER_TILE_COUNT = 63U;
     static constexpr uint32_t INITIAL_CAPACITY = 65'536U;
     static constexpr uint32_t BATCH_TILE_COUNT = 2U;
+    static constexpr uint32_t FILLER_TILE_COUNT = (INITIAL_CAPACITY - BATCH_TILE_COUNT)
+        / shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT;
     static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
 
     core::platform::glfw::GlfwWindow window{
@@ -634,7 +1201,11 @@ TEST(RendererSmokeTest, HeightTileBatchKeepsBothOldMeshesWhenDeadlinePreventsAre
     std::array<shared::HeightTileSurfaceMesh, BATCH_TILE_COUNT> replacements;
     for (uint32_t index = 0U; index < BATCH_TILE_COUNT; ++index) {
         int32_t const tile_x = static_cast<int32_t>(FILLER_TILE_COUNT + index);
-        shared::HeightTileSurfaceMesh original{ .coordinate = { .x = tile_x, .y = 0 } };
+        shared::HeightTileSurfaceMesh original{
+            .coordinate = { .x = tile_x, .y = 0 },
+            .quads = {},
+            .identity = {},
+        };
         original.quads.push_back({
             .x = tile_x * static_cast<int32_t>(shared::HeightTile::SIDE_LENGTH),
             .y = 0,
@@ -803,6 +1374,76 @@ TEST(RendererSmokeTest, RejectedDuplicateBatchDoesNotChangeResidentFaceCounts)
     );
     EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, ORIGINAL_FACE_COUNT);
     EXPECT_EQ(renderer.runtimeInfo().height_tile_mesh_count, 1U);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, RuntimeSceneAndHudReceiptAdvanceOnlyAfterSubmission)
+{
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 320U,
+            .height = 240U,
+            .title = "MinecraftClone submitted scene receipt",
+        },
+    };
+    glfwHideWindow(window.nativeHandle());
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(window, { .require_validation = true }),
+        shader_assets,
+        { .require_validation = true },
+    };
+    renderer.setDebugHudEnabled(false);
+    auto first = std::make_shared<client::TerrainLodScene>();
+    first->faces = { client::StoneFaceInstance::fromHeightTileQuad({
+        .z = 6,
+        .direction = shared::HeightTileSurfaceDirection::PositiveZ,
+    }) };
+    first->groups = { { .range = { 0U, 1U }, .extent = 16U } };
+    auto second = std::make_shared<client::TerrainLodScene>(*first);
+    second->faces[0].z += 1;
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    auto publish = [&](std::shared_ptr<client::TerrainLodScene const> const& scene) {
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (renderer.upsertTerrainLodScene(scene, deadline)) {
+                return true;
+            }
+            std::this_thread::yield();
+        }
+        return false;
+    };
+    auto submit = [&] {
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (!window.nextFrame()) {
+                return false;
+            }
+            if (renderer.render({}, deadline)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    ASSERT_TRUE(publish(first));
+    EXPECT_EQ(renderer.runtimeInfo().submitted_frame_count, 0U);
+    EXPECT_FALSE(renderer.runtimeInfo().terrain_lod_scene);
+    ASSERT_TRUE(submit());
+    auto const first_receipt = renderer.runtimeInfo();
+    EXPECT_EQ(first_receipt.terrain_lod_scene, first);
+    EXPECT_FALSE(first_receipt.debug_hud_enabled);
+
+    ASSERT_TRUE(publish(second));
+    renderer.setDebugHudEnabled(true);
+    auto const undrawn_receipt = renderer.runtimeInfo();
+    EXPECT_EQ(undrawn_receipt.submitted_frame_count, first_receipt.submitted_frame_count);
+    EXPECT_EQ(undrawn_receipt.terrain_lod_scene, first);
+    EXPECT_FALSE(undrawn_receipt.debug_hud_enabled);
+    ASSERT_TRUE(submit());
+    auto const second_receipt = renderer.runtimeInfo();
+    EXPECT_GT(second_receipt.submitted_frame_count, first_receipt.submitted_frame_count);
+    EXPECT_EQ(second_receipt.terrain_lod_scene, second);
+    EXPECT_TRUE(second_receipt.debug_hud_enabled);
+    EXPECT_EQ(first_receipt.terrain_lod_scene, first);
     EXPECT_EQ(renderer.validationErrorCount(), 0U);
 }
 
@@ -1074,6 +1715,8 @@ TEST(RendererSmokeTest, UnknownArenaExceptionsStayCountedAndDoNotReplaceKnownEmp
     client::StoneFaceGrowthDiagnostics diagnostics;
     auto const unknown_recreate = [&](std::chrono::steady_clock::time_point) {
         if (capacity != INITIAL_CAPACITY) {
+            // This deliberately exercises unknown non-std exception accounting through catch(...).
+            // NOLINTNEXTLINE(bugprone-std-exception-baseclass)
             throw uint32_t{ 1U };
         }
     };
@@ -1443,6 +2086,427 @@ TEST(RendererSmokeTest, GlfwCursorCaptureSupportsContinuousCameraLook)
     EXPECT_EQ(glfwGetInputMode(window.nativeHandle(), GLFW_CURSOR), GLFW_CURSOR_NORMAL);
 }
 
+TEST(RendererSmokeTest, NormalRendererDisplaysCanonicalTerrainTextures)
+{
+    static constexpr uint32_t LOGICAL_WIDTH = 320U;
+    static constexpr uint32_t LOGICAL_HEIGHT = 240U;
+    static constexpr uint32_t MAX_CAPTURE_FRAMES = 12U;
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = LOGICAL_WIDTH,
+            .height = LOGICAL_HEIGHT,
+            .title = "MinecraftClone canonical terrain textures",
+        },
+    };
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window,
+            { .require_validation = true, .enable_frame_capture = true }
+        ),
+        shader_assets,
+        { .require_validation = true, .enable_frame_capture = true },
+    };
+    renderer.setDebugHudEnabled(false);
+    client::Camera const capture_camera{
+        { .position = { 16.0, -32.0, 420.0 }, .angles = { .pitch_degrees = -20.0 } },
+    };
+    renderer.setCamera(capture_camera.pose());
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    shared::HeightTileSurfaceMesh mesh = materialPaletteDisplayMesh();
+    ASSERT_FALSE(mesh.quads.empty());
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(mesh, deadline));
+    ASSERT_EQ(renderer.runtimeInfo().pipeline_path, client::RendererPipelinePath::Vertex);
+    renderer.requestFrameCapture();
+
+    client::RendererFrameCapture capture;
+    bool captured = false;
+    for (uint32_t frame = 0U;
+         frame < MAX_CAPTURE_FRAMES && std::chrono::steady_clock::now() < deadline;
+         ++frame) {
+        ASSERT_TRUE(window.nextFrame());
+        static_cast<void>(renderer.render({}, deadline));
+        if (std::optional<client::RendererFrameCapture> completed = renderer.takeFrameCapture(); completed.has_value()) {
+            capture = std::move(*completed);
+            captured = true;
+            break;
+        }
+    }
+
+    ASSERT_TRUE(captured);
+    ASSERT_GT(capture.width, 0U);
+    ASSERT_GT(capture.height, 0U);
+    if (char const* const capture_path = std::getenv("MC_TERRAIN_MATERIAL_CAPTURE_PATH");
+        capture_path != nullptr && capture_path[0] != '\0') {
+        auto const written = testsupport::writePpm(
+            {
+                .width = capture.width,
+                .height = capture.height,
+                .srgb_encoded = capture.srgb_encoded,
+                .pixels = capture.rgba8,
+            },
+            std::filesystem::path{ capture_path },
+            "MC-AI-0499 normal renderer canonical terrain textures"
+        );
+        ASSERT_TRUE(written.has_value()) << written.error();
+    }
+    std::optional<PixelRectangle> const ice_panel_bounds = projectedIcePanelBounds(
+        capture_camera,
+        capture.width,
+        capture.height
+    );
+    ASSERT_TRUE(ice_panel_bounds.has_value());
+    TerrainMaterialColorClasses const classes = classifyTerrainMaterialColors(capture, *ice_panel_bounds);
+    EXPECT_TRUE(classes.complete()) << "capture lacks: " << classes.missingClasses();
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, GrassBlockUsesVanillaTopSideAndBottomTextures)
+{
+    static constexpr uint32_t LOGICAL_WIDTH = 320U;
+    static constexpr uint32_t LOGICAL_HEIGHT = 240U;
+    static constexpr uint32_t MAX_CAPTURE_FRAMES = 12U;
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = LOGICAL_WIDTH,
+            .height = LOGICAL_HEIGHT,
+            .title = "MinecraftClone vanilla grass face orientation",
+        },
+    };
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window,
+            { .require_validation = true, .enable_frame_capture = true }
+        ),
+        shader_assets,
+        { .require_validation = true, .enable_frame_capture = true },
+    };
+    renderer.setDebugHudEnabled(false);
+    shared::ChunkMesh const mesh{
+        .coordinate = { .x = 0, .y = 0, .z = 0 },
+        .content_identity = { .revision = 1U, .content_hash = 1U },
+        .faces = {
+            {
+                .local_origin = { .x = 0U, .y = 0U, .z = 0U },
+                .direction = shared::FaceDirection::NegativeY,
+                .material = shared::Block::Grass,
+            },
+            {
+                .local_origin = { .x = 2U, .y = 0U, .z = 0U },
+                .direction = shared::FaceDirection::PositiveZ,
+                .material = shared::Block::Grass,
+            },
+            {
+                .local_origin = { .x = 4U, .y = 0U, .z = 0U },
+                .direction = shared::FaceDirection::NegativeZ,
+                .material = shared::Block::Grass,
+            },
+        },
+    };
+    renderer.setChunkMesh(mesh);
+    client::Camera const upper_camera{
+        { .position = { 2.5, -5.0, 2.5 }, .angles = { .pitch_degrees = -20.0 } },
+    };
+    client::Camera const lower_camera{
+        { .position = { 2.5, -5.0, -2.5 }, .angles = { .pitch_degrees = 20.0 } },
+    };
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    auto captureWithCamera = [&](client::Camera const& camera) -> std::optional<client::RendererFrameCapture> {
+        renderer.setCamera(camera.pose());
+        renderer.requestFrameCapture();
+        for (uint32_t frame = 0U;
+             frame < MAX_CAPTURE_FRAMES && std::chrono::steady_clock::now() < deadline;
+             ++frame) {
+            if (!window.nextFrame()) {
+                return std::nullopt;
+            }
+            static_cast<void>(renderer.render({}, deadline));
+            if (std::optional<client::RendererFrameCapture> capture = renderer.takeFrameCapture();
+                capture.has_value()) {
+                return capture;
+            }
+        }
+        return std::nullopt;
+    };
+
+    std::optional<client::RendererFrameCapture> const upper_capture = captureWithCamera(upper_camera);
+    ASSERT_TRUE(upper_capture.has_value());
+    char const* const capture_prefix = std::getenv("MC_GRASS_FACE_CAPTURE_PREFIX");
+    auto write_face_capture = [capture_prefix](
+        client::RendererFrameCapture const& capture,
+        char const* const suffix
+    ) {
+        if (capture_prefix == nullptr || capture_prefix[0] == '\0') {
+            return;
+        }
+        std::string output_path{ capture_prefix };
+        output_path += suffix;
+        output_path += ".ppm";
+        auto const written = testsupport::writePpm(
+            {
+                .width = capture.width,
+                .height = capture.height,
+                .srgb_encoded = true,
+                .pixels = capture.rgba8,
+            },
+            std::filesystem::path{ output_path },
+            "vanilla grass top and side face orientation"
+        );
+        ASSERT_TRUE(written.has_value()) << written.error();
+    };
+    write_face_capture(*upper_capture, "-upper");
+    std::optional<std::array<uint8_t, 4U>> const grass_side_top = capturePixelAtWorld(
+        *upper_capture,
+        upper_camera,
+        { 0.53F, 0.0F, 0.9F }
+    );
+    std::optional<std::array<uint8_t, 4U>> const grass_side_bottom = capturePixelAtWorld(
+        *upper_capture,
+        upper_camera,
+        { 0.53F, 0.0F, 0.1F }
+    );
+    std::optional<std::array<uint8_t, 4U>> const grass_top = capturePixelAtWorld(
+        *upper_capture,
+        upper_camera,
+        { 2.53F, 0.53F, 1.0F }
+    );
+    ASSERT_TRUE(grass_side_top.has_value());
+    ASSERT_TRUE(grass_side_bottom.has_value());
+    ASSERT_TRUE(grass_top.has_value());
+    static constexpr std::array<uint8_t, 3U> GRASS_TOP_SRGB{ 100U, 132U, 60U };
+    static constexpr std::array<uint8_t, 3U> GRASS_SIDE_TOP_SRGB{ 87U, 115U, 52U };
+    auto expectSrgbColor = [](
+        std::array<uint8_t, 4U> const& actual,
+        std::array<uint8_t, 3U> const& expected,
+        char const* const label
+    ) {
+        for (size_t channel = 0U; channel < expected.size(); ++channel) {
+            EXPECT_NEAR(actual[channel], expected[channel], 2U) << label << " channel " << channel;
+        }
+    };
+    expectSrgbColor(*grass_top, GRASS_TOP_SRGB, "pinned vanilla grass top texel after Plains tint");
+    expectSrgbColor(*grass_side_top, GRASS_SIDE_TOP_SRGB, "pinned vanilla grass side texel after overlay tint and shade");
+    EXPECT_GT(static_cast<int>((*grass_side_top)[1U]), static_cast<int>((*grass_side_top)[0U]) + 10);
+    EXPECT_GT(static_cast<int>((*grass_side_top)[1U]), static_cast<int>((*grass_side_top)[2U]) + 10);
+    EXPECT_GT(static_cast<int>((*grass_side_bottom)[0U]), static_cast<int>((*grass_side_bottom)[1U]) + 10);
+    EXPECT_GT(static_cast<int>((*grass_side_bottom)[1U]), static_cast<int>((*grass_side_bottom)[2U]) + 10);
+    EXPECT_GT(static_cast<int>((*grass_top)[1U]), static_cast<int>((*grass_top)[0U]) + 10);
+    EXPECT_GT(static_cast<int>((*grass_top)[1U]), static_cast<int>((*grass_top)[2U]) + 10);
+
+    std::optional<client::RendererFrameCapture> const lower_capture = captureWithCamera(lower_camera);
+    ASSERT_TRUE(lower_capture.has_value());
+    write_face_capture(*lower_capture, "-lower");
+    std::optional<std::array<uint8_t, 4U>> const grass_bottom = capturePixelAtWorld(
+        *lower_capture,
+        lower_camera,
+        { 4.53F, 0.53F, 0.0F }
+    );
+    ASSERT_TRUE(grass_bottom.has_value());
+    EXPECT_GT(static_cast<uint32_t>((*grass_bottom)[0U]) * 10U,
+              static_cast<uint32_t>((*grass_bottom)[1U]) * 13U);
+    EXPECT_GT(static_cast<uint32_t>((*grass_bottom)[1U]) * 10U,
+              static_cast<uint32_t>((*grass_bottom)[2U]) * 13U);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, NormalRendererDisplaysAspectFittedMapPixelsAndGuiOverlay)
+{
+    static constexpr uint32_t LOGICAL_WIDTH = 320U;
+    static constexpr uint32_t LOGICAL_HEIGHT = 240U;
+    static constexpr uint32_t MAP_WIDTH = 4U;
+    static constexpr uint32_t MAP_HEIGHT = 2U;
+    static constexpr uint32_t MAX_CAPTURE_FRAMES = 12U;
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+    static constexpr std::array<
+        std::array<uint8_t, 4>,
+        static_cast<size_t>(MAP_WIDTH) * MAP_HEIGHT
+    > MAP_PIXELS{
+        std::array<uint8_t, 4>{ 255U, 0U, 0U, 255U },
+        std::array<uint8_t, 4>{ 0U, 255U, 0U, 255U },
+        std::array<uint8_t, 4>{ 0U, 0U, 255U, 255U },
+        std::array<uint8_t, 4>{ 255U, 255U, 0U, 255U },
+        std::array<uint8_t, 4>{ 0U, 255U, 255U, 255U },
+        std::array<uint8_t, 4>{ 255U, 0U, 255U, 255U },
+        std::array<uint8_t, 4>{ 255U, 255U, 255U, 255U },
+        std::array<uint8_t, 4>{ 255U, 128U, 0U, 255U },
+    };
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = LOGICAL_WIDTH,
+            .height = LOGICAL_HEIGHT,
+            .title = "MinecraftClone loading map capture",
+        },
+    };
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window,
+            { .require_validation = true, .enable_frame_capture = true }
+        ),
+        shader_assets,
+        { .require_validation = true, .enable_frame_capture = true },
+    };
+    renderer.setDebugHudEnabled(false);
+    renderer.setFrameCompletionTracking(true);
+    renderer.addGuiText(
+        "MAP READY",
+        client::TextPlacement{ .position = { 8.0F, 100.0F, 0.0F } }
+    );
+    ASSERT_TRUE(renderer.setMapImage(MAP_WIDTH, MAP_HEIGHT, MAP_PIXELS));
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    auto captureFrame = [&]() -> std::optional<client::RendererFrameCapture> {
+        renderer.requestFrameCapture();
+        for (uint32_t frame = 0U;
+             frame < MAX_CAPTURE_FRAMES && std::chrono::steady_clock::now() < deadline;
+             ++frame) {
+            if (!window.nextFrame()) {
+                return std::nullopt;
+            }
+            static_cast<void>(renderer.render({}, deadline));
+            if (std::optional<client::RendererFrameCapture> capture = renderer.takeFrameCapture();
+                capture.has_value()) {
+                return capture;
+            }
+        }
+        return std::nullopt;
+    };
+    auto const capture = captureFrame();
+    ASSERT_TRUE(capture.has_value());
+    ASSERT_GT(capture->width, 0U);
+    ASSERT_GT(capture->height, 0U);
+    client::RendererFrameProgress const frame_progress = renderer.frameProgress();
+    ASSERT_TRUE(frame_progress.submitted.has_value());
+    ASSERT_TRUE(frame_progress.completed.has_value());
+    EXPECT_EQ(frame_progress.completed->sequence, frame_progress.submitted->sequence);
+    EXPECT_EQ(
+        frame_progress.completed->swapchain_generation,
+        frame_progress.submitted->swapchain_generation
+    );
+    ASSERT_EQ(
+        capture->rgba8.size(),
+        static_cast<uint64_t>(capture->width) * capture->height * 4U
+    );
+
+    auto pixelAt = [&capture](uint32_t const x, uint32_t const y) {
+        size_t const offset = (static_cast<size_t>(y) * capture->width + x) * 4U;
+        return std::array<uint8_t, 4>{
+            capture->rgba8[offset],
+            capture->rgba8[offset + 1U],
+            capture->rgba8[offset + 2U],
+            capture->rgba8[offset + 3U],
+        };
+    };
+    double const scale = std::min(
+        static_cast<double>(capture->width) / MAP_WIDTH,
+        static_cast<double>(capture->height) / MAP_HEIGHT
+    );
+    double const fitted_width = MAP_WIDTH * scale;
+    double const fitted_height = MAP_HEIGHT * scale;
+    double const origin_x = (capture->width - fitted_width) * 0.5;
+    double const origin_y = (capture->height - fitted_height) * 0.5;
+    auto expectedCaptureChannel = [srgb_encoded = capture->srgb_encoded](uint8_t const source) {
+        if (srgb_encoded || source == 255U) {
+            return source;
+        }
+        float const encoded = static_cast<float>(source) / 255.0F;
+        float const linear = encoded <= 0.04045F
+            ? encoded / 12.92F
+            : std::pow((encoded + 0.055F) / 1.055F, 2.4F);
+        return static_cast<uint8_t>(std::lround(linear * 255.0F));
+    };
+    auto expectMapPixel = [&](uint32_t const source_x, uint32_t const source_y,
+                              uint32_t const sample_x, uint32_t const sample_y) {
+        std::array<uint8_t, 4> const actual = pixelAt(sample_x, sample_y);
+        std::array<uint8_t, 4> const source = MAP_PIXELS[source_y * MAP_WIDTH + source_x];
+        for (size_t channel = 0U; channel < source.size(); ++channel) {
+            EXPECT_NEAR(actual[channel], expectedCaptureChannel(source[channel]), 12U)
+                << "map pixel (" << source_x << ", " << source_y << "), channel " << channel
+                << " at viewport (" << sample_x << ", " << sample_y << ")";
+        }
+    };
+    for (uint32_t y = 0U; y < MAP_HEIGHT; ++y) {
+        for (uint32_t x = 0U; x < MAP_WIDTH; ++x) {
+            uint32_t const sample_x = static_cast<uint32_t>(
+                std::floor(origin_x + (static_cast<double>(x) + 0.5) * scale - 0.5)
+            );
+            uint32_t const sample_y = static_cast<uint32_t>(
+                std::floor(origin_y + (static_cast<double>(y) + 0.5) * scale - 0.5)
+            );
+            expectMapPixel(x, y, sample_x, sample_y);
+
+            uint32_t const near_edge_x = static_cast<uint32_t>(std::floor(origin_x + x * scale + 1.0));
+            uint32_t const near_edge_y = static_cast<uint32_t>(std::floor(origin_y + y * scale + 1.0));
+            expectMapPixel(x, y, near_edge_x, near_edge_y);
+        }
+    }
+
+    double const letterbox_x = origin_x > 0.0 ? origin_x * 0.5 : capture->width * 0.5;
+    double const letterbox_y = origin_y > 0.0 ? origin_y * 0.5 : capture->height * 0.5;
+    std::array<uint8_t, 4> const letterbox = pixelAt(
+        static_cast<uint32_t>(letterbox_x),
+        static_cast<uint32_t>(letterbox_y)
+    );
+    auto encodeChannel = [srgb_encoded = capture->srgb_encoded](float const linear) {
+        float encoded = linear;
+        if (srgb_encoded) {
+            encoded = linear <= 0.003'130'8F
+                ? linear * 12.92F
+                : 1.055F * std::pow(linear, 1.0F / 2.4F) - 0.055F;
+        }
+        return static_cast<uint8_t>(std::lround(encoded * 255.0F));
+    };
+    static constexpr std::array<float, 3> LETTERBOX_LINEAR{ 0.035F, 0.043F, 0.055F };
+    for (size_t channel = 0U; channel < LETTERBOX_LINEAR.size(); ++channel) {
+        EXPECT_NEAR(letterbox[channel], encodeChannel(LETTERBOX_LINEAR[channel]), 8U);
+    }
+
+    uint32_t const text_pixel_count = [&] {
+        uint32_t count = 0U;
+        for (uint32_t y = 0U; y < std::min(capture->height, 140U); ++y) {
+            for (uint32_t x = 0U; x < std::min(capture->width, 120U); ++x) {
+                std::array<uint8_t, 4> const pixel = pixelAt(x, y);
+                if (pixel[0] > 220U && pixel[1] > 220U && pixel[2] > 220U) {
+                    ++count;
+                }
+            }
+        }
+        return count;
+    }();
+    EXPECT_GE(text_pixel_count, 20U);
+    if (char const* const capture_path = std::getenv("MC_MAP_IMAGE_CAPTURE_PATH");
+        capture_path != nullptr && capture_path[0] != '\0') {
+        auto const written = testsupport::writePpm(
+            {
+                .width = capture->width,
+                .height = capture->height,
+                .srgb_encoded = capture->srgb_encoded,
+                .pixels = capture->rgba8,
+            },
+            std::filesystem::path{ capture_path },
+            "loading map RGBA8 pixels, aspect fit and GUI text overlay"
+        );
+        ASSERT_TRUE(written.has_value()) << written.error();
+    }
+
+    renderer.clearMapImage();
+    auto const cleared_capture = captureFrame();
+    ASSERT_TRUE(cleared_capture.has_value());
+    ASSERT_EQ(cleared_capture->width, capture->width);
+    ASSERT_EQ(cleared_capture->height, capture->height);
+    size_t const first_pixel_center_x = static_cast<size_t>(std::floor(origin_x + 0.5 * scale - 0.5));
+    size_t const first_pixel_center_y = static_cast<size_t>(std::floor(origin_y + 0.5 * scale - 0.5));
+    size_t const first_pixel_offset = (first_pixel_center_y * cleared_capture->width + first_pixel_center_x) * 4U;
+    EXPECT_FALSE(
+        cleared_capture->rgba8[first_pixel_offset] > 220U
+        && cleared_capture->rgba8[first_pixel_offset + 1U] < 30U
+        && cleared_capture->rgba8[first_pixel_offset + 2U] < 30U
+    );
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
 TEST(RendererSmokeTest, ActiveThirdPersonRendererShowsPlatformPlayersAndTopLeftHud)
 {
     static constexpr uint32_t LOGICAL_WIDTH = 320U;
@@ -1517,7 +2581,7 @@ TEST(RendererSmokeTest, ActiveThirdPersonRendererShowsPlatformPlayersAndTopLeftH
             1.0F,
             deadline
         ));
-        if (std::optional<client::RendererFrameCapture> const completed = renderer.takeFrameCapture(); completed.has_value()) {
+        if (std::optional<client::RendererFrameCapture> completed = renderer.takeFrameCapture(); completed.has_value()) {
             capture = std::move(*completed);
             captured = true;
             break;
@@ -1540,7 +2604,6 @@ TEST(RendererSmokeTest, ActiveThirdPersonRendererShowsPlatformPlayersAndTopLeftH
         ASSERT_TRUE(written.has_value()) << written.error();
     }
     CaptureColorClasses const classes = classifyCaptureColors(capture);
-    EXPECT_TRUE(classes.has_grid);
     EXPECT_TRUE(classes.has_platform);
     EXPECT_TRUE(classes.has_platform_side);
     EXPECT_TRUE(classes.has_sky);

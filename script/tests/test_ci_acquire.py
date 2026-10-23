@@ -900,18 +900,18 @@ class CiAcquireTests(unittest.TestCase):
         lock = Path(__file__).resolve().parents[2] / "dependencies.lock.json"
         parsed = acquire.require_private_dependency_lock(lock)
         self.assertEqual(set(parsed), {"CoreCpp", "CoreProject2026"})
-        self.assertEqual(parsed["CoreCpp"]["revision"], "63004f816348778e95703e2d92061531a4bcb277")
+        self.assertEqual(parsed["CoreCpp"]["revision"], "5c1bad11346cfad44470f5985f1944929952b9a6")
         self.assertEqual(
             parsed["CoreCpp"]["fetch_ref"],
-            "refs/tags/v0.1.0-s7-present-fence-poll",
+            "refs/tags/v0.1.0-cc-0050-compiled-fmt",
         )
         self.assertEqual(
             parsed["CoreProject2026"]["revision"],
-            "9840659b27dbd6feaf99fa932dde19107e51d720",
+            "23f81441c10a44896b87865a9b8ae7d4b51687db",
         )
         self.assertEqual(
             parsed["CoreProject2026"]["fetch_ref"],
-            "refs/tags/v0.1.3.3-s7-display-timing",
+            "refs/heads/ai-dev",
         )
 
     def test_private_dependency_lock_rejects_corecpp_branch_fetch_ref(self):
@@ -989,8 +989,30 @@ class CiAcquireTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(acquire.CiError, "CoreProject2026 fetch_ref must be a safe full refs/tags/"):
+            with self.assertRaisesRegex(acquire.CiError, "CoreProject2026 fetch_ref must be a safe full"):
                 acquire.require_private_dependency_lock(lock)
+
+    def test_private_dependency_lock_allows_only_coreproject_ai_dev_branch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "dependencies.lock.json"
+            value = {
+                "schema": 2,
+                "dependencies": {
+                    "CoreCpp": {
+                        "repository": "CoreJust/CoreCpp",
+                        "revision": "a" * 40,
+                        "fetch_ref": "refs/tags/v1.0",
+                    },
+                    "CoreProject2026": {
+                        "repository": "CoreJust/CoreProject2026",
+                        "revision": "b" * 40,
+                        "fetch_ref": "refs/heads/ai-dev",
+                    },
+                },
+            }
+            lock.write_text(json.dumps(value), encoding="utf-8")
+            parsed = acquire.require_private_dependency_lock(lock)
+            self.assertEqual(parsed["CoreProject2026"]["fetch_ref"], "refs/heads/ai-dev")
 
     def test_private_dependency_lock_rejects_unsafe_coreproject_tag_components(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1077,7 +1099,7 @@ class CiAcquireTests(unittest.TestCase):
             else:
                 self.assertEqual(known_hosts.stat().st_mode & 0o777, 0o600)
 
-    def test_private_dependency_fetch_uses_two_key_files_and_exact_detached_pins(self):
+    def test_private_dependency_fetch_uses_exact_detached_pins_from_approved_refs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             lock = root / "dependencies.lock.json"
@@ -1094,7 +1116,7 @@ class CiAcquireTests(unittest.TestCase):
                             "CoreProject2026": {
                                 "repository": "CoreJust/CoreProject2026",
                                 "revision": "b" * 40,
-                                "fetch_ref": "refs/tags/v1.0",
+                                "fetch_ref": "refs/heads/ai-dev",
                             },
                         },
                     }
@@ -1122,9 +1144,11 @@ class CiAcquireTests(unittest.TestCase):
             commands = [call.args[0] for call in run.call_args_list]
             for name, revision in (("CoreCpp", "a" * 40), ("CoreProject2026", "b" * 40)):
                 source = str(root / "sources" / name)
-                self.assertIn(["git", "-C", source, "rev-parse", "--verify", "refs/tags/v1.0^{commit}"], commands)
+                retrieval_ref = "refs/tags/v1.0^{commit}" if name == "CoreCpp" else "refs/remotes/origin/ai-dev^{commit}"
+                self.assertIn(["git", "-C", source, "rev-parse", "--verify", retrieval_ref], commands)
+                ancestry_ref = "refs/remotes/origin/ai-main" if name == "CoreCpp" else "refs/remotes/origin/ai-dev"
                 self.assertIn(
-                    ["git", "-C", source, "merge-base", "--is-ancestor", revision, "refs/remotes/origin/ai-main"],
+                    ["git", "-C", source, "merge-base", "--is-ancestor", revision, ancestry_ref],
                     commands,
                 )
                 self.assertIn(["git", "-C", source, "checkout", "--detach", revision], commands)
@@ -1136,15 +1160,7 @@ class CiAcquireTests(unittest.TestCase):
                 ["git@github.com:CoreJust/CoreCpp.git", "git@github.com:CoreJust/CoreProject2026.git"],
             )
             self.assertEqual(fetches[0][-4:], ["--no-tags", "origin", "+refs/tags/v1.0:refs/tags/v1.0", "+refs/heads/ai-main:refs/remotes/origin/ai-main"])
-            self.assertEqual(
-                fetches[1][-4:],
-                [
-                    "--no-tags",
-                    "origin",
-                    "+refs/tags/v1.0:refs/tags/v1.0",
-                    "+refs/heads/ai-main:refs/remotes/origin/ai-main",
-                ],
-            )
+            self.assertEqual(fetches[1][-3:], ["--no-tags", "origin", "+refs/heads/ai-dev:refs/remotes/origin/ai-dev"])
             self.assertNotIn("PRIVATE KEY", "\n".join(" ".join(command) for command in commands))
 
     def test_private_dependency_fetch_fails_clearly_when_pin_is_not_in_fetched_ref(self):
@@ -1195,7 +1211,7 @@ class CiAcquireTests(unittest.TestCase):
                     )
             self.assertFalse(any("checkout" in call.args[0] for call in run.call_args_list))
 
-    def test_private_dependency_fetches_tag_and_checks_out_exact_ancestor_pin(self):
+    def test_private_dependency_fetches_approved_locator_and_checks_out_exact_ancestor_pin(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             key_files = {}
@@ -1224,11 +1240,11 @@ class CiAcquireTests(unittest.TestCase):
                 subprocess.run(["git", "-C", str(seed), "tag", "v1.0"], capture_output=True, check=True)
                 fixture_file.write_text("later ai-main tip\n", encoding="utf-8")
                 subprocess.run(["git", "-C", str(seed), "commit", "-am", "later ai-main tip"], capture_output=True, check=True)
-                subprocess.run(
-                    ["git", "-C", str(seed), "push", str(remote), "HEAD:refs/heads/ai-main", "refs/tags/v1.0"],
-                    capture_output=True,
-                    check=True,
-                )
+                destination_branch = "ai-dev" if name == "CoreProject2026" else "ai-main"
+                push_args = ["git", "-C", str(seed), "push", str(remote), f"HEAD:refs/heads/{destination_branch}"]
+                if name == "CoreCpp":
+                    push_args.append("refs/tags/v1.0")
+                subprocess.run(push_args, capture_output=True, check=True)
                 key_file = root / f"{name}-key"
                 key_file.touch()
                 key_file.chmod(0o600)
@@ -1237,7 +1253,7 @@ class CiAcquireTests(unittest.TestCase):
                 dependencies[name] = {
                     "repository": repository,
                     "revision": revision,
-                    "fetch_ref": "refs/tags/v1.0",
+                    "fetch_ref": "refs/tags/v1.0" if name == "CoreCpp" else "refs/heads/ai-dev",
                 }
 
             lock = root / "dependencies.lock.json"
@@ -1317,6 +1333,43 @@ class CiAcquireTests(unittest.TestCase):
                 for revision, tag in (("main", "refs/tags/light"), (base, "refs/heads/ai-main"), (base, "refs/tags/a..b"), (base, "refs/tags/missing")):
                     with self.subTest(name=name, tag=tag), self.assertRaises(acquire.CiError):
                         acquire.verify_private_dependency_git_provenance(source, name, revision, tag)
+
+    def test_coreproject_ai_dev_provenance_requires_fetched_branch_ancestry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+
+            def git(*arguments):
+                return acquire.run(["git", "-C", str(source), *arguments])
+
+            git("init")
+            git("config", "user.name", "CI fixture")
+            git("config", "user.email", "fixture@example.invalid")
+            git("commit", "--allow-empty", "-m", "branch base")
+            base = git("rev-parse", "HEAD")
+            git("update-ref", "refs/remotes/origin/ai-dev", base)
+            acquire.verify_private_dependency_git_provenance(
+                source,
+                "CoreProject2026",
+                base,
+                "refs/heads/ai-dev",
+            )
+
+            git("commit", "--allow-empty", "-m", "unrelated pin")
+            unrelated = git("rev-parse", "HEAD")
+            with self.assertRaisesRegex(acquire.CiError, "CoreProject2026 ai-dev provenance failed"):
+                acquire.verify_private_dependency_git_provenance(
+                    source,
+                    "CoreProject2026",
+                    unrelated,
+                    "refs/heads/ai-dev",
+                )
+            with self.assertRaisesRegex(acquire.CiError, "approved retrieval ref"):
+                acquire.verify_private_dependency_git_provenance(
+                    source,
+                    "CoreCpp",
+                    base,
+                    "refs/heads/ai-dev",
+                )
 
     def test_cmake_paths_normalize_windows_separators_without_changing_flags(self):
         self.assertEqual(

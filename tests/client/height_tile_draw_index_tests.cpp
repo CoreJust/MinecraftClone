@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <random>
 #include <ranges>
@@ -185,20 +186,22 @@ TEST(HeightTileDrawIndexTest, DirectionalSpansRejectOnlyExhaustivelyProvenBackFa
 
 TEST(HeightTileDrawIndexTest, DirectionalSpansIncludeAppendedSeamBridgesAndRetainWrapCutAmbiguity)
 {
-    shared::HeightTile first{ .coordinate = { .x = 4'095, .y = 0 } };
-    shared::HeightTile second{ .coordinate = { .x = 0, .y = 0 } };
-    first.heights.fill(8U);
-    second.heights.fill(3U);
+    auto first = std::make_unique<shared::HeightTile>();
+    first->coordinate = { .x = 4'095, .y = 0 };
+    first->heights.fill(8U);
+    auto second = std::make_unique<shared::HeightTile>();
+    second->coordinate = { .x = 0, .y = 0 };
+    second->heights.fill(3U);
     shared::HeightTileSurfaceMesher const mesher;
     shared::HeightTileSurfaceMesh mesh = mesher.build(
-        first, {
+        *first, {
             .negative_x = std::nullopt,
-            .positive_x = first.heights,
+            .positive_x = first->heights,
             .negative_y = std::nullopt,
             .positive_y = std::nullopt,
         }, shared::HeightTileSurfaceDetail::Coarse
     );
-    shared::HeightTileSurfaceMesh const neighbor = mesher.build(second);
+    shared::HeightTileSurfaceMesh const neighbor = mesher.build(*second);
     shared::HeightTileSurfaceSeamBridge const bridge = shared::heightTileSurfaceSeamBridge(
         mesh, neighbor, shared::HeightTileSurfaceDirection::PositiveX
     );

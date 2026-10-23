@@ -1,19 +1,84 @@
 #include <client/render/StoneIndirectDraws.hpp>
 
+#include <shared/world/Chunk.hpp>
+#include <shared/world/ChunkMesher.hpp>
+#include <shared/world/HeightTileSurfaceMesher.hpp>
+
 #include <algorithm>
+#include <array>
+#include <bit>
+#include <cstdint>
 #include <initializer_list>
 #include <limits>
 #include <new>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
 namespace client {
+
+StoneFaceInstance StoneFaceInstance::fromTerrainTriangle(
+    std::array<std::array<int32_t, 3>, 3> const& vertices, shared::Block const material)
+{
+    if (!shared::isSolidBlock(material)) {
+        throw std::invalid_argument("terrain triangle contains an invalid material");
+    }
+    auto const offset = [&vertices](uint32_t const vertex) {
+        int64_t const dx = static_cast<int64_t>(vertices[vertex][0]) - vertices[0][0];
+        int64_t const dy = static_cast<int64_t>(vertices[vertex][1]) - vertices[0][1];
+        if (dx < -32'768 || dx > 32'767 || dy < -32'768 || dy > 32'767) {
+            throw std::invalid_argument("terrain triangle offset exceeds signed 16-bit range");
+        }
+        return static_cast<uint32_t>(static_cast<uint16_t>(dx))
+            | (static_cast<uint32_t>(static_cast<uint16_t>(dy)) << 16U);
+    };
+    for (auto const& vertex : vertices) {
+        if (vertex[2] < 0 || vertex[2] > 65'535) {
+            throw std::invalid_argument("terrain triangle height exceeds unsigned 16-bit range");
+        }
+    }
+    uint32_t const heights = static_cast<uint32_t>(vertices[0][2]) | (static_cast<uint32_t>(vertices[1][2]) << 16U);
+    return {
+        .x = vertices[0][0],
+        .y = vertices[0][1],
+        .z = std::bit_cast<int32_t>(heights),
+        .direction = TERRAIN_TRIANGLE,
+        .u_extent = offset(1U),
+        .v_extent = offset(2U),
+        .material_id = static_cast<uint32_t>(material),
+        .reserved_1 = static_cast<uint32_t>(vertices[2][2]),
+    };
+}
+
+StoneFaceInstance StoneFaceInstance::fromTerrainSurfaceTriangle(
+    std::array<std::array<int32_t, 3>, 3> const& vertices,
+    std::array<int32_t, 3> const& temperatures
+)
+{
+    for (int32_t const temperature : temperatures) {
+        if (temperature < -16'384 || temperature > 16'383) {
+            throw std::invalid_argument("terrain temperature exceeds signed 15-bit range");
+        }
+    }
+    StoneFaceInstance face = fromTerrainTriangle(vertices, shared::Block::Grass);
+    face.reserved_1 |= 0x8000'0000U | ((static_cast<uint32_t>(temperatures[0]) & 0x7fffU) << 16U);
+    face.material_id = static_cast<uint32_t>(static_cast<uint16_t>(temperatures[1]))
+        | (static_cast<uint32_t>(static_cast<uint16_t>(temperatures[2])) << 16U);
+    return face;
+}
 
 namespace {
 
 constexpr uint32_t STONE_FACE_VERTEX_COUNT = 6U;
 constexpr uint32_t STONE_INDEX_COUNT_PER_QUAD = 6U;
 constexpr uint32_t STONE_VERTEX_COUNT_PER_QUAD = 4U;
+
+[[nodiscard]]
+bool isValidHeightTileSurfaceDirection(uint32_t const direction) noexcept
+{
+    return direction <= static_cast<uint32_t>(shared::HeightTileSurfaceDirection::PositiveY)
+        || direction == static_cast<uint32_t>(shared::HeightTileSurfaceDirection::PositiveZ);
+}
 
 [[nodiscard]] int32_t checkedVertexOffset(uint32_t const first_quad)
 {
@@ -98,6 +163,42 @@ void appendIndexedBlockCommands(
 }
 
 } // namespace
+
+StoneFaceInstance StoneFaceInstance::fromChunkFace(
+    shared::ChunkCoordinate const coordinate,
+    shared::MeshFace const& face
+)
+{
+    uint32_t const direction = static_cast<uint32_t>(face.direction);
+    if (!shared::isSolidBlock(face.material) || direction >= 6U || !shared::Chunk::isValid(face.local_origin)) {
+        throw std::invalid_argument("chunk mesh contains an invalid material face");
+    }
+    return {
+        .x = coordinate.x * static_cast<int32_t>(shared::Chunk::SIDE_LENGTH) + face.local_origin.x,
+        .y = coordinate.y * static_cast<int32_t>(shared::Chunk::SIDE_LENGTH) + face.local_origin.y,
+        .z = coordinate.z * static_cast<int32_t>(shared::Chunk::SIDE_LENGTH) + face.local_origin.z,
+        .direction = direction,
+        .material_id = static_cast<uint32_t>(static_cast<uint8_t>(face.material)),
+    };
+}
+
+StoneFaceInstance StoneFaceInstance::fromHeightTileQuad(shared::HeightTileSurfaceQuad const& quad)
+{
+    uint32_t const direction = static_cast<uint32_t>(quad.direction);
+    if (!shared::isSolidBlock(quad.material) || !isValidHeightTileSurfaceDirection(direction)
+        || quad.u_extent == 0U || quad.v_extent == 0U) {
+        throw std::invalid_argument("height tile mesh contains an invalid material quad");
+    }
+    return {
+        .x = quad.x,
+        .y = quad.y,
+        .z = quad.z,
+        .direction = direction,
+        .u_extent = quad.u_extent,
+        .v_extent = quad.v_extent,
+        .material_id = static_cast<uint32_t>(static_cast<uint8_t>(quad.material)),
+    };
+}
 
 StoneIndirectDraws::AllocationError::AllocationError(VkResult const result, char const* const operation)
     : std::runtime_error(std::string{ operation } + " failed with Vulkan result " + std::to_string(result))

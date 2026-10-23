@@ -6,6 +6,8 @@
 
 #include <gtest/gtest.h>
 
+#include <testsupport/TerrainFixtures.hpp>
+
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -280,9 +282,19 @@ TEST(PreviewMeshWorkQueueTest, ResidencyChangesWaitUntilPlayerInterestIsKnown)
     static constexpr client::HeightTileRevision REVISION{ 1U, 1U };
     static constexpr client::HeightTileKey KEY{ 15, 27 };
     client::PreviewResidency residency{ REVISION };
-    std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> heights{};
+    std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> const heights = testsupport::makeHeightSamples();
     ASSERT_EQ(
-        residency.accept(KEY, REVISION, 1U, heights).replacement,
+        residency.accept(
+            KEY,
+            REVISION,
+            1U,
+            heights,
+            testsupport::makeSurfaceTile(
+                KEY,
+                testsupport::makeTerrainIdentity(42U, REVISION.revision),
+                heights
+            )
+        ).replacement,
         client::HeightTileReplacement::Published
     );
     client::PreviewMeshWorkQueue queue;

@@ -1,11 +1,14 @@
 #include <generation/Generation.hpp>
 
 #include "GenerationStages.hpp"
+#include "Numerics.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <utility>
 
@@ -74,7 +77,7 @@ void publishStage(
     ProgressCallback const& progress,
     GenerationStage stage,
     GenerationSnapshot snapshot,
-    std::stop_token cancellation
+    std::stop_token const& cancellation
 )
 {
     detail::checkCancellation(cancellation);
@@ -91,7 +94,7 @@ void publishStage(
 void publishStage(
     ProgressCallback const& progress,
     GenerationStage stage,
-    std::stop_token cancellation
+    std::stop_token const& cancellation
 )
 {
     detail::checkCancellation(cancellation);
@@ -124,7 +127,7 @@ std::string configurationIdentity(GenerationConfiguration const& configuration)
     identity += ";wind-sign=" + std::to_string(static_cast<int>(configuration.wind_sign));
     identity += ";coastal-elaboration="
         + std::to_string(configuration.coastal_elaboration ? 1 : 0);
-    identity += ";";
+    identity += ';';
     identity += NUMERICAL_KERNEL_IDENTITY;
     return identity;
 }
@@ -135,15 +138,17 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     ProgressCallback progress
 )
 {
-    detail::checkCancellation(cancellation);
+    std::stop_token cancellation_context = std::move(cancellation);
+    ProgressCallback progress_context = std::move(progress);
+    detail::checkCancellation(cancellation_context);
     validateConfiguration(configuration);
 
     detail::TectonicsFields geology = detail::generateTectonics(
         configuration,
-        cancellation,
-        progress
+        cancellation_context,
+        progress_context
     );
-    detail::checkCancellation(cancellation);
+    detail::checkCancellation(cancellation_context);
 
     detail::FloatField elevation = std::move(geology.elevation);
     float const sea_shift = detail::medianFloat32(elevation);
@@ -153,10 +158,10 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     }
     detail::FloatField tectonic_elevation = elevation;
     publishStage(
-        progress,
+        progress_context,
         GenerationStage::Tectonics,
         makeSnapshot(GenerationStage::Tectonics, configuration.resolution, elevation),
-        cancellation
+        cancellation_context
     );
 
     detail::FloatField activity(elevation.size());
@@ -164,7 +169,7 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     {
         if ((index & 4'095U) == 0U)
         {
-            detail::checkCancellation(cancellation);
+            detail::checkCancellation(cancellation_context);
         }
         float const relative_motion = geology.uplift[index] - geology.subduction[index]
             + std::abs(geology.divergence[index]);
@@ -175,15 +180,15 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
         configuration,
         elevation,
         activity,
-        cancellation,
-        progress
+        cancellation_context,
+        progress_context
     );
     elevation = std::move(coast.elevation);
     publishStage(
-        progress,
+        progress_context,
         GenerationStage::CoastalElaboration,
         makeSnapshot(GenerationStage::CoastalElaboration, configuration.resolution, elevation),
-        cancellation
+        cancellation_context
     );
 
     detail::HydrologyFields initial_hydrology = detail::buildHydrology(
@@ -191,11 +196,13 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
         elevation,
         {},
         {},
-        0U,
-        0.0F,
-        GenerationStage::InitialDrainage,
-        cancellation,
-        progress
+        detail::HydrologyParameters{
+            .erosion_steps = 0U,
+            .sea_level = 0.0F,
+            .stage = GenerationStage::InitialDrainage,
+        },
+        cancellation_context,
+        progress_context
     );
     GenerationSnapshot initial_snapshot = makeSnapshot(
         GenerationStage::InitialDrainage,
@@ -203,18 +210,25 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
         elevation
     );
     addHydrology(initial_snapshot, initial_hydrology);
-    publishStage(progress, GenerationStage::InitialDrainage, std::move(initial_snapshot), cancellation);
+    publishStage(
+        progress_context,
+        GenerationStage::InitialDrainage,
+        std::move(initial_snapshot),
+        cancellation_context
+    );
 
     detail::ClimateFields provisional_climate = detail::simulateClimate(
         configuration,
         elevation,
-        configuration.initial_climate_iterations,
-        0.0F,
+        detail::ClimateParameters{
+            .iterations = configuration.initial_climate_iterations,
+            .sea_level = 0.0F,
+        },
         initial_hydrology.ocean_mask,
         initial_hydrology.lake_mask,
         GenerationStage::ProvisionalClimate,
-        cancellation,
-        progress
+        cancellation_context,
+        progress_context
     );
     GenerationSnapshot provisional_snapshot = makeSnapshot(
         GenerationStage::ProvisionalClimate,
@@ -223,18 +237,25 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     );
     addHydrology(provisional_snapshot, initial_hydrology);
     addClimate(provisional_snapshot, provisional_climate);
-    publishStage(progress, GenerationStage::ProvisionalClimate, std::move(provisional_snapshot), cancellation);
+    publishStage(
+        progress_context,
+        GenerationStage::ProvisionalClimate,
+        std::move(provisional_snapshot),
+        cancellation_context
+    );
 
     detail::HydrologyFields erosion = detail::buildHydrology(
         configuration,
         elevation,
         provisional_climate.precipitation,
         provisional_climate.temperature,
-        configuration.erosion_steps,
-        0.0F,
-        GenerationStage::TerrainErosion,
-        cancellation,
-        progress
+        detail::HydrologyParameters{
+            .erosion_steps = configuration.erosion_steps,
+            .sea_level = 0.0F,
+            .stage = GenerationStage::TerrainErosion,
+        },
+        cancellation_context,
+        progress_context
     );
     elevation = erosion.elevation;
     GenerationSnapshot erosion_snapshot = makeSnapshot(
@@ -244,18 +265,25 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     );
     addHydrology(erosion_snapshot, erosion);
     addClimate(erosion_snapshot, provisional_climate);
-    publishStage(progress, GenerationStage::TerrainErosion, std::move(erosion_snapshot), cancellation);
+    publishStage(
+        progress_context,
+        GenerationStage::TerrainErosion,
+        std::move(erosion_snapshot),
+        cancellation_context
+    );
 
     detail::ClimateFields climate = detail::simulateClimate(
         configuration,
         elevation,
-        configuration.climate_iterations,
-        0.0F,
+        detail::ClimateParameters{
+            .iterations = configuration.climate_iterations,
+            .sea_level = 0.0F,
+        },
         erosion.ocean_mask,
         erosion.lake_mask,
         GenerationStage::FinalClimate,
-        cancellation,
-        progress
+        cancellation_context,
+        progress_context
     );
     GenerationSnapshot climate_snapshot = makeSnapshot(
         GenerationStage::FinalClimate,
@@ -264,24 +292,31 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     );
     addHydrology(climate_snapshot, erosion);
     addClimate(climate_snapshot, climate);
-    publishStage(progress, GenerationStage::FinalClimate, std::move(climate_snapshot), cancellation);
+    publishStage(
+        progress_context,
+        GenerationStage::FinalClimate,
+        std::move(climate_snapshot),
+        cancellation_context
+    );
 
     detail::HydrologyFields final_hydrology = detail::buildHydrology(
         configuration,
         elevation,
         climate.precipitation,
         climate.temperature,
-        0U,
-        0.0F,
-        GenerationStage::FinalDrainage,
-        cancellation,
-        progress
+        detail::HydrologyParameters{
+            .erosion_steps = 0U,
+            .sea_level = 0.0F,
+            .stage = GenerationStage::FinalDrainage,
+        },
+        cancellation_context,
+        progress_context
     );
     for (size_t index = 0U; index < final_hydrology.fjord_candidate_mask.size(); ++index)
     {
         if ((index & 4'095U) == 0U)
         {
-            detail::checkCancellation(cancellation);
+            detail::checkCancellation(cancellation_context);
         }
         final_hydrology.fjord_candidate_mask[index] = static_cast<uint8_t>(
             erosion.fjord_candidate_mask[index] & final_hydrology.ocean_mask[index]
@@ -294,7 +329,12 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     );
     addHydrology(final_snapshot, final_hydrology);
     addClimate(final_snapshot, climate);
-    publishStage(progress, GenerationStage::FinalDrainage, std::move(final_snapshot), cancellation);
+    publishStage(
+        progress_context,
+        GenerationStage::FinalDrainage,
+        std::move(final_snapshot),
+        cancellation_context
+    );
 
     auto const [minimum, maximum] = std::minmax_element(
         final_hydrology.elevation.begin(),
@@ -341,7 +381,7 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     atlas.plate_vy = std::move(geology.plate_vy);
     atlas.plate_id = std::move(geology.plate_id);
 
-    publishStage(progress, GenerationStage::Complete, cancellation);
+    publishStage(progress_context, GenerationStage::Complete, cancellation_context);
     return std::make_shared<GlobalAtlas const>(std::move(atlas));
 }
 

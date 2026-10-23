@@ -1,6 +1,11 @@
 #include <acceptance/EvidenceJson.hpp>
 
 #include <client/render/StoneFaceCapacity.hpp>
+#include <shared/corelang/ExecutionTypes.hpp>
+#include <shared/world/TerrainWorld.hpp>
+#include <shared/world/World.hpp>
+
+#include <acceptance/ReplayInput.hpp>
 
 #include <algorithm>
 #include <array>
@@ -53,6 +58,54 @@ std::string jsonString(std::string_view const value)
     return result;
 }
 
+std::string phaseMetricsJson(GameBenchmarkServerStreamSample::PhaseMetrics const& phase)
+{
+    return "{ \"calls\": " + std::to_string(phase.calls)
+        + ", \"duration_ns\": " + std::to_string(phase.duration_ns) + " }";
+}
+
+std::string_view terrainBackendName(shared::corelang::Backend const backend) noexcept
+{
+    switch (backend) {
+        case shared::corelang::Backend::Interpreter: return "interpreter";
+        case shared::corelang::Backend::Jit: return "jit";
+        case shared::corelang::Backend::Aot: return "aot";
+    }
+    return "unknown";
+}
+
+std::string sha256Hex(std::array<uint8_t, 32U> const& digest)
+{
+    static constexpr std::array<char, 16U> HEX_DIGITS{
+        '0', '1', '2', '3', '4', '5', '6', '7',
+        '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+    };
+    std::string result;
+    result.reserve(digest.size() * 2U);
+    for (uint8_t const byte : digest) {
+        result += HEX_DIGITS[static_cast<uint32_t>(byte >> 4U)];
+        result += HEX_DIGITS[static_cast<uint32_t>(byte & 0x0fU)];
+    }
+    return result;
+}
+
+std::string terrainBackendReceiptJson(
+    std::optional<shared::corelang::BackendReceipt> const& receipt
+)
+{
+    if (!receipt) {
+        return "null";
+    }
+    return "{ \"requested_backend\": " + jsonString(terrainBackendName(receipt->requested_backend))
+        + ", \"actual_backend\": " + jsonString(terrainBackendName(receipt->actual_backend))
+        + ", \"source_sha256\": " + jsonString(sha256Hex(receipt->source_sha256))
+        + ", \"bytecode_sha256\": " + jsonString(sha256Hex(receipt->bytecode_sha256))
+        + ", \"native_image_sha256\": "
+        + (receipt->native_image_sha256 ? jsonString(sha256Hex(*receipt->native_image_sha256)) : "null")
+        + ", \"compiler_version\": " + jsonString(receipt->compiler_version)
+        + ", \"target\": " + jsonString(receipt->target) + " }";
+}
+
 uint64_t millisecondsCount(std::chrono::milliseconds const duration)
 {
     return duration.count() > 0
@@ -82,12 +135,22 @@ std::string frameTimingSummaryJson(FrameTimingSummary const& summary)
 
 std::string frameBudgetJson(GameBenchmarkFrameBudgetEvidence const& evidence)
 {
-    return "{ \"target_frame_duration_ns\": " + std::to_string(evidence.target_frame_duration_ns)
+    return "{ \"measurement_scope\": \"fence-confirmed-render-frame-completion-observations\", "
+        "\"target_frame_duration_ns\": " + std::to_string(evidence.target_frame_duration_ns)
         + ", \"required_in_budget_time_permille\": "
         + std::to_string(evidence.required_in_budget_time_permille)
+        + ", \"measurement_window_start_offset_ns\": "
+        + std::to_string(evidence.measurement_window_start_offset_ns)
+        + ", \"measurement_window_end_offset_ns\": "
+        + std::to_string(evidence.measurement_window_end_offset_ns)
+        + ", \"required_window_duration_ns\": "
+        + std::to_string(evidence.required_window_duration_ns)
         + ", \"measured_time_ns\": " + std::to_string(evidence.measured_time_ns)
         + ", \"in_budget_time_ns\": " + std::to_string(evidence.in_budget_time_ns)
         + ", \"sample_count\": " + std::to_string(evidence.sample_count)
+        + ", \"fence_confirmed_frame_count\": " + std::to_string(evidence.fence_confirmed_frame_count)
+        + ", \"measurement_window_complete\": "
+        + (evidence.measurement_window_complete ? "true" : "false")
         + ", \"passed\": " + (evidence.passed ? "true" : "false")
         + ", \"required_for_benchmark_pass\": "
         + (evidence.required_for_benchmark_pass ? "true" : "false") + " }";
@@ -168,6 +231,19 @@ std::string diagnosticCameraJson(std::array<double, 7> const& camera)
         result.append(buffer.data(), converted.ptr);
     }
     return result + "]";
+}
+
+std::string jsonNumber(double const value)
+{
+    std::array<char, 64> buffer{};
+    auto const converted = std::to_chars(
+        buffer.data(),
+        buffer.data() + buffer.size(),
+        value,
+        std::chars_format::general,
+        std::numeric_limits<double>::max_digits10
+    );
+    return std::string{buffer.data(), converted.ptr};
 }
 
 [[nodiscard]]
@@ -412,9 +488,114 @@ std::string optionalCountJson(std::optional<uint32_t> const count)
     return count ? std::to_string(*count) : "null";
 }
 
+std::string optionalUint64Json(std::optional<uint64_t> const value)
+{
+    return value ? std::to_string(*value) : "null";
+}
+
 std::string optionalBoolJson(std::optional<bool> const value)
 {
     return value ? (*value ? "true" : "false") : "null";
+}
+
+std::string playerPositionJson(shared::PlayerPosition const& position)
+{
+    return "{ \"x\": " + std::to_string(position.x)
+        + ", \"y\": " + std::to_string(position.y)
+        + ", \"z\": " + std::to_string(position.z)
+        + ", \"x_subcell\": " + std::to_string(position.x_subcell)
+        + ", \"y_subcell\": " + std::to_string(position.y_subcell)
+        + ", \"z_subcell\": " + std::to_string(position.z_subcell) + " }";
+}
+
+std::string optionalPlayerPositionJson(std::optional<shared::PlayerPosition> const& position)
+{
+    return position ? playerPositionJson(*position) : "null";
+}
+
+std::string playableSphereJson(GameBenchmarkFrameSample::PlayableSphere const& sphere)
+{
+    std::string result = "{ \"radius_blocks\": " + std::to_string(sphere.radius_blocks)
+        + ", \"active_coverage_epoch\": "
+            + (sphere.active_coverage_epoch ? std::to_string(*sphere.active_coverage_epoch) : "null")
+        + ", \"active_coverage_center\": " + optionalPlayerPositionJson(sphere.active_coverage_center)
+        + ", \"world_loading_center\": " + optionalPlayerPositionJson(sphere.world_loading_center)
+        + ", \"ready_chunks\": " + std::to_string(sphere.ready_chunks)
+        + ", \"required_chunks\": " + std::to_string(sphere.required_chunks)
+        + ", \"ready\": " + (sphere.ready ? "true" : "false");
+    if (!sphere.coverage_scope.empty()) {
+        result += ", \"coverage_scope\": " + jsonString(sphere.coverage_scope)
+            + ", \"required_authoritative_columns\": " + std::to_string(sphere.required_authoritative_columns)
+            + ", \"resident_authoritative_columns\": " + std::to_string(sphere.resident_authoritative_columns)
+            + ", \"vertical_chunk_count\": " + std::to_string(sphere.vertical_chunk_count)
+            + ", \"authoritative_columns_center\": " + optionalPlayerPositionJson(sphere.authoritative_columns_center);
+    }
+    return result + " }";
+}
+
+std::string terrainIdentityJson(std::optional<shared::TerrainIdentity> const& identity)
+{
+    if (!identity) {
+        return "null";
+    }
+    return "{ \"terrain_version\": " + std::to_string(identity->terrain_version)
+        + ", \"revision\": " + std::to_string(identity->revision)
+        + ", \"seed\": " + std::to_string(identity->seed)
+        + ", \"configuration_identity\": " + jsonString(identity->configuration_identity) + " }";
+}
+
+std::string visualLodJson(GameBenchmarkFrameSample::VisualLod const& sample)
+{
+    return "{ \"contract\": \"mc.presented-terrain-coverage.v1\", \"radius_blocks\": "
+        + std::to_string(sample.radius_blocks)
+        + ", \"scene_active\": " + (sample.scene_active ? "true" : "false")
+        + ", \"leaf_count\": " + std::to_string(sample.leaf_count)
+        + ", \"actual_column_count\": " + std::to_string(sample.actual_column_count)
+        + ", \"terrain_identity\": " + terrainIdentityJson(sample.terrain_identity)
+        + ", \"session_join_epoch\": " + std::to_string(sample.session_join_epoch)
+        + ", \"coverage_epoch\": " + std::to_string(sample.coverage_epoch)
+        + ", \"submitted_frame_count\": " + std::to_string(sample.submitted_frame_count)
+        + ", \"scene_center\": { \"x\": " + std::to_string(sample.scene_center_x)
+            + ", \"y\": " + std::to_string(sample.scene_center_y) + " }"
+        + ", \"actual_radius_blocks\": " + std::to_string(sample.actual_radius_blocks)
+        + ", \"required_actual_columns\": " + std::to_string(sample.required_actual_columns)
+        + ", \"presented_current_actual_columns\": " + std::to_string(sample.presented_current_actual_columns)
+        + ", \"coverage_center\": " + optionalPlayerPositionJson(sample.coverage_center)
+        + ", \"sources_current\": " + (sample.sources_current ? "true" : "false") + " }";
+}
+
+std::string qualificationSettingsJson(
+    std::optional<GameBenchmarkFrameSample::QualificationSettings> const& sample
+)
+{
+    if (!sample) {
+        return "null";
+    }
+    return "{ \"framebuffer\": { \"width\": " + std::to_string(sample->framebuffer_width)
+        + ", \"height\": " + std::to_string(sample->framebuffer_height) + " }"
+        + ", \"render_distance\": " + std::to_string(sample->render_distance)
+        + ", \"debug_hud_enabled\": " + (sample->debug_hud_enabled ? "true" : "false")
+        + ", \"terrain_model\": " + jsonString(sample->terrain_model)
+        + ", \"camera_perspective\": " + jsonString(sample->camera_perspective)
+        + ", \"world_mode\": " + jsonString(sample->world_mode) + " }";
+}
+
+std::string presentedPlayerJson(std::optional<GameBenchmarkFrameSample::PresentedPlayer> const& sample)
+{
+    if (!sample) {
+        return "null";
+    }
+    return "{ \"body\": [" + std::to_string(sample->body[0]) + ", " + std::to_string(sample->body[1])
+        + ", " + std::to_string(sample->body[2]) + "]"
+        + ", \"submitted_frame_count\": " + std::to_string(sample->submitted_frame_count)
+        + ", \"sampled_offset_ns\": " + std::to_string(sample->sampled_offset_ns) + " }";
+}
+
+std::string optionalVisualLodField(
+    std::optional<GameBenchmarkFrameSample::VisualLod> const& sample
+)
+{
+    return sample ? ", \"visual_lod\": " + visualLodJson(*sample) : std::string{};
 }
 
 std::string fullTerrainSnapshotJson(GameBenchmarkFullTerrainSnapshot const& snapshot)
@@ -433,6 +614,11 @@ std::string fullTerrainSnapshotJson(GameBenchmarkFullTerrainSnapshot const& snap
         + ", \"scan_performed\": " + (snapshot.scan_performed ? "true" : "false")
         + ", \"potentially_ready\": " + (snapshot.potentially_ready ? "true" : "false")
         + ", \"exact_current_coverage\": " + optionalBoolJson(snapshot.exact_current_coverage)
+        + ", \"world_loading_state\": " + jsonString(snapshot.world_loading_state)
+        + ", \"playable_sphere_radius_blocks\": " + std::to_string(snapshot.playable_sphere_radius_blocks)
+        + ", \"playable_sphere_ready_chunks\": " + std::to_string(snapshot.playable_sphere_ready_chunks)
+        + ", \"playable_sphere_required_chunks\": " + std::to_string(snapshot.playable_sphere_required_chunks)
+        + ", \"playable_sphere_ready\": " + (snapshot.playable_sphere_ready ? "true" : "false")
         + ", \"center\": "
             + (snapshot.center_valid
                 ? "{ \"x\": " + std::to_string(snapshot.center_x) + ", \"y\": "
@@ -491,7 +677,7 @@ std::string fullTerrainSnapshotJson(GameBenchmarkFullTerrainSnapshot const& snap
 
 std::string fullRadiusTerrainJson(GameBenchmarkFullRadiusEvidence const& evidence)
 {
-    return "{ \"contract\": \"mc.full-radius-terrain-barriers.v1\", "
+    std::string result = "{ \"contract\": \"mc.full-radius-terrain-barriers.v1\", "
         "\"render_distance\": " + std::to_string(evidence.render_distance)
         + ", \"expected_tile_count\": " + std::to_string(evidence.expected_tile_count)
         + ", \"warmup_timeout_ms\": " + std::to_string(evidence.warmup_timeout_ms)
@@ -537,7 +723,122 @@ std::string fullRadiusTerrainJson(GameBenchmarkFullRadiusEvidence const& evidenc
         + ", \"recovered_loop_timings_ns\": " + frameTimingSummaryJson(evidence.recovered_loop_timings)
         + ", \"recovered_successful_present_request_intervals_ns\": "
             + frameTimingSummaryJson(evidence.recovered_successful_present_request_intervals)
-        + ", \"complete\": " + (evidence.complete ? "true" : "false") + " }";
+        + ", \"movement_playable_sphere_contract\": "
+            "\"mc.authoritative-materialized-playable-sphere.v1\""
+        + ", \"movement_playable_sphere_sample_scope\": "
+            + jsonString(evidence.movement_playable_sphere_sample_scope)
+        + ", \"movement_authoritative_update_count\": "
+            + std::to_string(evidence.movement_authoritative_update_count)
+        + ", \"movement_trajectory_anchor\": "
+            + (evidence.movement_trajectory_anchor
+                ? "{ \"update_ordinal\": "
+                    + std::to_string(evidence.movement_trajectory_anchor->update_ordinal)
+                    + ", \"offset_ns\": " + std::to_string(evidence.movement_trajectory_anchor->offset_ns)
+                    + ", \"state_revision\": "
+                        + std::to_string(evidence.movement_trajectory_anchor->state_revision)
+                    + ", \"acknowledged_input_sequence\": "
+                        + std::to_string(evidence.movement_trajectory_anchor->acknowledged_input_sequence)
+                    + ", \"authoritative_position\": "
+                        + playerPositionJson(evidence.movement_trajectory_anchor->authoritative_position)
+                    + ", \"movement_capabilities\": "
+                        + std::to_string(evidence.movement_trajectory_anchor->movement_capabilities)
+                    + ", \"vertical_velocity_subcells\": "
+                        + std::to_string(evidence.movement_trajectory_anchor->vertical_velocity_subcells)
+                    + ", \"playable_sphere\": "
+                        + playableSphereJson(evidence.movement_trajectory_anchor->playable_sphere) + " }"
+                : "null")
+        + ", \"movement_playable_sphere_complete\": "
+            + (evidence.movement_playable_sphere_complete ? "true" : "false")
+        + ", \"movement_authoritative_sphere_updates\": [";
+    for (size_t index = 0U; index < evidence.movement_authoritative_sphere_updates.size(); ++index) {
+        if (index != 0U) {
+            result += ", ";
+        }
+        GameBenchmarkFullRadiusEvidence::AuthoritativePlayableSphereUpdate const& update =
+            evidence.movement_authoritative_sphere_updates[index];
+        result += "{ \"update_ordinal\": " + std::to_string(update.update_ordinal)
+            + ", \"offset_ns\": " + std::to_string(update.offset_ns)
+            + ", \"state_revision\": " + std::to_string(update.state_revision)
+            + ", \"acknowledged_input_sequence\": "
+                + std::to_string(update.acknowledged_input_sequence)
+            + ", \"authoritative_position\": " + playerPositionJson(update.authoritative_position)
+            + ", \"movement_capabilities\": " + std::to_string(update.movement_capabilities)
+            + ", \"vertical_velocity_subcells\": "
+                + std::to_string(update.vertical_velocity_subcells)
+            + ", \"playable_sphere\": " + playableSphereJson(update.playable_sphere)
+            + optionalVisualLodField(update.visual_lod) + " }";
+    }
+    result += "], \"complete\": ";
+    result += evidence.complete ? "true" : "false";
+    result += " }";
+    return result;
+}
+
+std::string s1TerrainPerformanceJson(GameBenchmarkS1TerrainPerformanceEvidence const& evidence)
+{
+    auto const updateJson = [](GameBenchmarkFullRadiusEvidence::AuthoritativePlayableSphereUpdate const& update) {
+        return "{ \"update_ordinal\": " + std::to_string(update.update_ordinal)
+            + ", \"offset_ns\": " + std::to_string(update.offset_ns)
+            + ", \"state_revision\": " + std::to_string(update.state_revision)
+            + ", \"acknowledged_input_sequence\": "
+                + std::to_string(update.acknowledged_input_sequence)
+            + ", \"authoritative_position\": " + playerPositionJson(update.authoritative_position)
+            + ", \"movement_capabilities\": " + std::to_string(update.movement_capabilities)
+            + ", \"vertical_velocity_subcells\": "
+                + std::to_string(update.vertical_velocity_subcells)
+            + ", \"playable_sphere\": " + playableSphereJson(update.playable_sphere)
+            + optionalVisualLodField(update.visual_lod) + " }";
+    };
+
+    std::string result = "{ \"contract\": \"mc.s1-lod-performance.v2\", "
+        "\"timing_origin\": \"world-request-accepted\", \"initial_radius_blocks\": 48, "
+        "\"actual_radius_blocks\": " + std::to_string(evidence.actual_radius_blocks)
+        + ", \"visual_lod_radius_blocks\": " + std::to_string(evidence.visual_lod_radius_blocks)
+        + ", \"ready_prompt_frame_offset_ns\": "
+            + optionalUint64Json(evidence.ready_prompt_frame_offset_ns)
+        + ", \"playable_sphere_first_ready_offset_ns\": "
+            + optionalUint64Json(evidence.playable_sphere_first_ready_offset_ns)
+        + ", \"initial_deadline_missed\": "
+            + (evidence.initial_deadline_missed ? "true" : "false")
+        + ", \"playable_deadline_missed\": "
+            + (evidence.playable_deadline_missed ? "true" : "false")
+        + ", \"movement_started_after_current_sphere_ready\": "
+            + (evidence.movement_started_after_current_sphere_ready ? "true" : "false")
+        + ", \"movement_input_during_fill\": "
+            + (evidence.movement_input_during_fill ? "true" : "false")
+        + ", \"movement_start_offset_ns\": " + std::to_string(evidence.movement_start_offset_ns)
+        + ", \"movement_end_offset_ns\": " + std::to_string(evidence.movement_end_offset_ns)
+        + ", \"movement_authoritative_update_count\": "
+            + std::to_string(evidence.movement_authoritative_update_count)
+        + ", \"movement_trajectory_anchor\": "
+            + (evidence.movement_trajectory_anchor
+                ? updateJson(*evidence.movement_trajectory_anchor) : "null")
+        + ", \"movement_trajectory_anchor_sphere_sample_offset_ns\": "
+            + optionalUint64Json(evidence.movement_trajectory_anchor_sphere_sample_offset_ns)
+        + ", \"movement_boundary_authoritative_updates_complete\": "
+            + (evidence.movement_boundary_authoritative_updates_complete ? "true" : "false")
+        + ", \"movement_boundary_authoritative_updates\": [";
+    for (size_t index = 0U; index < evidence.movement_boundary_authoritative_updates.size(); ++index) {
+        if (index != 0U) {
+            result += ", ";
+        }
+        result += updateJson(evidence.movement_boundary_authoritative_updates[index]);
+    }
+    result += "], \"movement_authoritative_sphere_updates\": [";
+    for (size_t index = 0U; index < evidence.movement_authoritative_sphere_updates.size(); ++index) {
+        if (index != 0U) {
+            result += ", ";
+        }
+        result += updateJson(evidence.movement_authoritative_sphere_updates[index]);
+    }
+    result += "], \"movement_playable_sphere_complete\": ";
+    result += evidence.movement_playable_sphere_complete ? "true" : "false";
+    result += ", \"movement_visual_lod_samples_complete\": ";
+    result += evidence.movement_visual_lod_samples_complete ? "true" : "false";
+    result += ", \"complete\": ";
+    result += evidence.complete ? "true" : "false";
+    result += " }";
+    return result;
 }
 
 std::string_view presentationPollScopeName(GameBenchmarkPresentationPollScope const scope)
@@ -642,17 +943,44 @@ std::string presentationTimingJson(GameBenchmarkPresentationTimingEvidence const
     return result;
 }
 
+std::string startActionJson(GameBenchmarkStartActionEvidence const& evidence)
+{
+    return "{ \"contract\": \"mc.controlled-world-start.v1\", \"input_source\": "
+        + jsonString(evidence.input_source)
+        + ", \"production_path\": " + jsonString(evidence.production_path)
+        + ", \"synthetic_input_override_invoked\": "
+        + std::string(evidence.synthetic_input_override_invoked ? "true" : "false")
+        + ", \"eligible_prompt_rendered_offset_ns\": "
+        + optionalUint64Json(evidence.eligible_prompt_rendered_offset_ns)
+        + ", \"synthetic_input_requested_offset_ns\": "
+        + optionalUint64Json(evidence.synthetic_input_requested_offset_ns)
+        + ", \"key_accepted_offset_ns\": " + optionalUint64Json(evidence.key_accepted_offset_ns)
+        + ", \"server_start_acknowledged_offset_ns\": "
+        + optionalUint64Json(evidence.server_start_acknowledged_offset_ns)
+        + ", \"input_ordinal\": " + optionalUint64Json(evidence.input_ordinal)
+        + ", \"offset_origin\": \"GameBenchmark.request_accepted_at\", \"complete\": "
+        + std::string(evidence.complete ? "true" : "false") + " }";
+}
+
 std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
 {
     std::string result = "{\n"
         "    \"workload\": " + jsonString(benchmark.workload) + ",\n"
         "    \"qualification_proof\": " + jsonString(benchmark.qualification_proof) + ",\n"
+        "    \"movement_trajectory_contract\": "
+            + jsonString(benchmark.movement_trajectory_contract) + ",\n"
+        "    \"terrain_backend\": " + terrainBackendReceiptJson(benchmark.terrain_backend_receipt) + ",\n"
         "    \"measurement_kind\": \"full-game-render-submit-present-request\",\n"
         "    \"package_id\": " + jsonString(benchmark.package_id) + ",\n"
         "    \"hardware\": " + jsonString(benchmark.hardware) + ",\n"
         "    \"gpu\": " + (benchmark.gpu ? jsonString(*benchmark.gpu) : "null") + ",\n"
         "    \"present_mode\": " + jsonString(benchmark.present_mode) + ",\n"
         "    \"build_mode\": " + jsonString(benchmark.build_mode) + ",\n"
+        "    \"qualification_settings_manifest\": "
+            + (benchmark.qualification_settings_manifest.empty() ? "null" : benchmark.qualification_settings_manifest)
+            + ",\n"
+        "    \"terrain_identity\": " + terrainIdentityJson(benchmark.terrain_identity) + ",\n"
+        "    \"session_join_epoch\": " + std::to_string(benchmark.session_join_epoch) + ",\n"
         "    \"diagnostic_overrides_present\": "
             + (benchmark.diagnostic_overrides_present ? "true" : "false") + ",\n"
         "    \"cold_duration_ms\": " + std::to_string(benchmark.cold_duration_ms) + ",\n"
@@ -703,10 +1031,44 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
         "    \"full_radius_terrain\": "
             + (benchmark.full_radius_terrain
                 ? fullRadiusTerrainJson(*benchmark.full_radius_terrain) : "null") + ",\n"
+        "    \"s1_terrain_performance\": "
+            + (benchmark.s1_terrain_performance
+                ? s1TerrainPerformanceJson(*benchmark.s1_terrain_performance) : "null") + ",\n"
         "    \"presentation_timing\": "
             + (benchmark.presentation_timing
                 ? presentationTimingJson(*benchmark.presentation_timing) : "null") + ",\n"
-        "    \"raw_server_stream_samples\": [";
+        "    \"controlled_start\": "
+            + (benchmark.controlled_start ? startActionJson(*benchmark.controlled_start) : "null") + ",\n"
+        "    \"frame_completion_source\": \"per-slot-submitted-frame-fence-success-observed-on-reuse\",\n"
+        "    \"raw_gameplay_inputs\": [";
+    for (uint64_t index = 0U; index < benchmark.raw_gameplay_inputs.size(); ++index) {
+        if (index != 0U) {
+            result += ',';
+        }
+        GameBenchmarkRawInputEvidence const& input = benchmark.raw_gameplay_inputs[index];
+        result += "\n      { \"input_ordinal\": " + std::to_string(input.input_ordinal)
+            + ", \"sequence\": " + std::to_string(input.sequence)
+            + ", \"sent_offset_ns\": " + std::to_string(input.sent_offset_ns)
+            + ", \"scheduled_offset_ns\": " + std::to_string(input.scheduled_offset_ns)
+            + ", \"movement_intent\": { \"strafe\": "
+                + std::to_string(input.movement_intent.strafe)
+            + ", \"forward\": " + std::to_string(input.movement_intent.forward)
+            + ", \"vertical\": " + std::to_string(input.movement_intent.vertical) + " }"
+            + ", \"camera_look\": { \"yaw_degrees\": "
+                + jsonNumber(input.movement_intent.yaw_degrees)
+            + ", \"pitch_degrees\": " + jsonNumber(input.movement_intent.pitch_degrees) + " }"
+            + ", \"direction\": { \"x\": "
+                + std::to_string(static_cast<int8_t>(input.direction.x))
+            + ", \"y\": " + std::to_string(static_cast<int8_t>(input.direction.y))
+            + ", \"z\": " + std::to_string(static_cast<int8_t>(input.direction.z))
+            + ", \"view_x\": " + std::to_string(input.direction.view_x)
+            + ", \"view_y\": " + std::to_string(input.direction.view_y)
+            + ", \"accelerated\": " + (input.direction.accelerated ? "true" : "false")
+            + ", \"speedup\": " + std::to_string(input.direction.speedup)
+            + ", \"cycle_movement_capabilities\": "
+                + (input.direction.cycle_movement_capabilities ? "true" : "false") + " } }";
+    }
+    result += "\n    ],\n    \"raw_server_stream_samples\": [";
     for (uint64_t index = 0U; index < benchmark.raw_server_stream_samples.size(); ++index) {
         GameBenchmarkServerStreamSample const& sample = benchmark.raw_server_stream_samples[index];
         if (index != 0U) {
@@ -738,7 +1100,58 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
             + ", \"worker_queued\": " + std::to_string(sample.worker_queued_count)
             + ", \"worker_running\": " + std::to_string(sample.worker_running_count)
             + ", \"worker_completed_uncollected\": "
-                + std::to_string(sample.worker_completed_uncollected_count) + " }";
+                + std::to_string(sample.worker_completed_uncollected_count)
+            + ", \"preview_stream_metrics\": { \"coverage_refresh\": "
+                + phaseMetricsJson(sample.coverage_refresh)
+            + ", \"worker_result_publication\": "
+                + phaseMetricsJson(sample.worker_result_publication)
+            + ", \"queue_refill\": " + phaseMetricsJson(sample.queue_refill)
+            + ", \"delivery\": " + phaseMetricsJson(sample.delivery)
+            + ", \"worker_dispatch\": " + phaseMetricsJson(sample.worker_dispatch)
+            + ", \"materialization_candidate_keys_examined\": "
+                + std::to_string(sample.materialization_candidate_keys_examined)
+            + ", \"materialization_resident_chunk_lookups\": "
+                + std::to_string(sample.materialization_resident_chunk_lookups)
+            + ", \"materialization_admission_attempts\": "
+                + std::to_string(sample.materialization_admission_attempts)
+            + ", \"materialization_admissions\": "
+                + std::to_string(sample.materialization_admissions)
+            + ", \"materialization_duplicate_requests\": "
+                + std::to_string(sample.materialization_duplicate_requests)
+            + ", \"chunk_delivery_candidate_keys_examined\": "
+                + std::to_string(sample.chunk_delivery_candidate_keys_examined)
+            + ", \"chunk_delivery_resident_chunk_lookups\": "
+                + std::to_string(sample.chunk_delivery_resident_chunk_lookups)
+            + ", \"chunk_delivery_batches_sent\": "
+                + std::to_string(sample.chunk_delivery_batches_sent)
+            + ", \"chunk_delivery_chunks_sent\": "
+                + std::to_string(sample.chunk_delivery_chunks_sent)
+            + ", \"chunk_delivery_credits_consumed\": "
+                + std::to_string(sample.chunk_delivery_credits_consumed)
+            + ", \"world_generation_jobs_dispatched\": "
+                + std::to_string(sample.world_generation_jobs_dispatched)
+            + ", \"height_tile_jobs_dispatched\": "
+                + std::to_string(sample.height_tile_jobs_dispatched)
+            + ", \"height_tile_worker_queued\": " + std::to_string(sample.worker_queued_count)
+            + ", \"height_tile_worker_running\": " + std::to_string(sample.worker_running_count)
+            + ", \"height_tile_worker_completed_uncollected\": "
+                + std::to_string(sample.worker_completed_uncollected_count)
+            + ", \"world_generation_worker_queued\": "
+                + std::to_string(sample.world_generation_worker_queued_count)
+            + ", \"world_generation_worker_running\": "
+                + std::to_string(sample.world_generation_worker_running_count)
+            + ", \"world_generation_worker_completed_uncollected\": "
+                + std::to_string(sample.world_generation_worker_completed_uncollected_count)
+            + ", \"global_server_world_resident_chunks\": "
+                + std::to_string(sample.global_server_world_resident_chunks)
+            + ", \"required_near_chunk_keys\": " + std::to_string(sample.required_near_chunk_keys)
+            + ", \"required_full_chunk_keys\": " + std::to_string(sample.required_full_chunk_keys)
+            + ", \"acknowledged_chunk_keys\": " + std::to_string(sample.acknowledged_chunk_keys)
+            + ", \"inflight_chunk_batches\": " + std::to_string(sample.inflight_chunk_batches)
+            + ", \"inflight_chunk_keys\": " + std::to_string(sample.inflight_chunk_keys)
+            + ", \"chunk_delivery_credits\": " + std::to_string(sample.chunk_delivery_credits)
+            + ", \"near_required_chunks_all_resident\": "
+                + (sample.near_required_chunks_all_resident ? "true" : "false") + " } }";
     }
     result += "\n    ],\n    \"raw_server_tick_durations_ns\": [";
     for (uint64_t index = 0U; index < benchmark.raw_server_tick_durations_ns.size(); ++index) {
@@ -771,11 +1184,23 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
                 + (sample.swapchain_generation ? std::to_string(*sample.swapchain_generation) : "null")
             + ", \"application_present_id\": "
                 + (sample.application_present_id ? std::to_string(*sample.application_present_id) : "null")
+            + ", \"submitted_frame_sequence_id\": "
+                + (sample.submitted_frame_sequence_id
+                    ? std::to_string(*sample.submitted_frame_sequence_id) : "null")
+            + ", \"submitted_frame_slot\": "
+                + (sample.submitted_frame_slot ? std::to_string(*sample.submitted_frame_slot) : "null")
+            + ", \"submitted_frame_offset_ns\": " + std::to_string(sample.submitted_frame_offset_ns)
+            + ", \"submitted_frame_phase\": " + jsonString(sample.submitted_frame_phase)
             + ", \"terrain_center\": "
             + (sample.terrain_center_valid
                 ? "{ \"x\": " + std::to_string(sample.terrain_center_x) + ", \"y\": "
                     + std::to_string(sample.terrain_center_y) + " }"
                 : "null")
+            + ", \"playable_sphere\": "
+                + (sample.playable_sphere ? playableSphereJson(*sample.playable_sphere) : "null")
+            + optionalVisualLodField(sample.visual_lod)
+            + ", \"qualification_settings\": " + qualificationSettingsJson(sample.qualification_settings)
+            + ", \"presented_player\": " + presentedPlayerJson(sample.presented_player)
             + ", \"started_offset_ns\": " + std::to_string(sample.started_offset_ns)
             + ", \"loop_duration_ns\": " + std::to_string(sample.loop_duration_ns)
             + ", \"render_duration_ns\": " + std::to_string(sample.render_duration_ns)
@@ -918,6 +1343,23 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
             + ", \"diagnostic_terrain_occlusion_removed_command_count\": "
             + std::to_string(sample.diagnostic_terrain_occlusion_removed_command_count)
             + " }";
+    }
+    result += "\n    ],\n    \"raw_fence_confirmed_frames\": [";
+    for (uint64_t index = 0U; index < benchmark.raw_fence_confirmed_frames.size(); ++index) {
+        GameBenchmarkFrameCompletion const& completion = benchmark.raw_fence_confirmed_frames[index];
+        if (index != 0U) {
+            result += ',';
+        }
+        result += "\n      { \"sequence_id\": " + std::to_string(completion.sequence_id)
+            + ", \"swapchain_generation\": " + std::to_string(completion.swapchain_generation)
+            + ", \"frame_slot\": " + std::to_string(completion.frame_slot)
+            + ", \"submitted_offset_ns\": " + std::to_string(completion.submitted_offset_ns)
+            + ", \"completion_observed_offset_ns\": "
+                + std::to_string(completion.completion_observed_offset_ns)
+            + ", \"application_present_id\": "
+                + (completion.application_present_id
+                    ? std::to_string(*completion.application_present_id) : "null")
+            + ", \"submission_phase\": " + jsonString(completion.submission_phase) + " }";
     }
     result += "\n    ]\n  }";
     return result;

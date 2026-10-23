@@ -1,0 +1,88 @@
+{
+  "status": "captured",
+  "radius": 24,
+  "readiness": "Playing, aggregate potentially_ready; exact_current_coverage logged true",
+  "per_view_deadline_seconds": 40,
+  "production_binary_sha256": "0aacbd2ff732cc328e29b38509161a54c99b60706fcab0b98cf40495bc26fba7",
+  "assets": {
+    "capture.cpp": {
+      "bytes": 3184,
+      "sha256": "06a9375ee8cd383c13a6272a9ed480d5fded89a26a9a6c44991bca222754f0f6"
+    },
+    "capture.o": {
+      "bytes": 42928,
+      "sha256": "5ae3f6c51001b3060867c313b141ba6f35f33c0b870ecfc2955f220b63243b25"
+    },
+    "capture": {
+      "bytes": 12499352,
+      "sha256": "33437b1336d49c4668f00fa2489487de6fb08583e0ca9d878fcecd6425aa3ef1"
+    },
+    "view1.log": {
+      "bytes": 671,
+      "sha256": "72208392d5bf961544c679965134c727eb746afc5a48e33a66bcae97a9d5d144"
+    },
+    "view2.log": {
+      "bytes": 24127,
+      "sha256": "a9c81a3e0d10ea2cba34d12c980e08c491ecb506d8e28060ca773c71a20e8b67"
+    },
+    "view3.log": {
+      "bytes": 24052,
+      "sha256": "fda03ca9f571244a1dfdfa841be12305a9a9e7dc54cfa5e9bf974adb5c7ecdf2"
+    },
+    "view4.log": {
+      "bytes": 24031,
+      "sha256": "cd0338333b047edfda736d45b776023bd62e3c5d1795d9071a48c189fe668c6e"
+    },
+    "terrain-current-r24.ppm": {
+      "bytes": 11059217,
+      "sha256": "fb4ee11b54c78f5b9103cbd5330a669bd930961a9721ed1dfc73d2c9ecf827a4"
+    },
+    "terrain-current-r24.png": {
+      "bytes": 565653,
+      "sha256": "6d6a4158c307a352173bcb4b40e5ac04552ede892203b968fbf6b3ab7eb36680"
+    }
+  },
+  "shader_directory": "/Users/core-just/.codex/task-evidence/mc-s1-20261021/evidence-boundaries/build/shaders",
+  "runtime_attempts": [
+    {
+      "radius": 40,
+      "seconds": 40,
+      "result": "sandbox GUI initialization timeout"
+    },
+    {
+      "radius": 40,
+      "seconds": 40,
+      "result": "3854/5025 visible at36s; no request"
+    },
+    {
+      "radius": 24,
+      "seconds": 40,
+      "result": "aggregate potentially_ready at22s; Playing plus exact coverage conjunction not reached; no request"
+    },
+    {
+      "radius": 24,
+      "maximum_seconds": 90,
+      "actual_seconds_approx": 20,
+      "result": "return0, capture_success=1, automatic start after rendered ready prompt"
+    }
+  ],
+  "free_bytes": 10708418560,
+  "view": {
+    "yaw_degrees": 45,
+    "pitch_degrees": -18,
+    "width": 2560,
+    "height": 1440,
+    "debug_hud": false,
+    "canonical_safe_spawn": [
+      32896,
+      32768,
+      463
+    ]
+  },
+  "raw_encoding": "PPM RGB8 produced by diagnostic API despite initial .png suffix",
+  "png_conversion": "sips lossless PPM to PNG; no visual edits",
+  "visual_inspection": "aboveground grass/dirt terraces, blue sky, close ledge foreground; no loading overlay or HUD",
+  "owner_acceptance_proof": false,
+  "capture_context": "Private production-library consumer, canonical seed and safe spawn; 24-chunk capture radius; ordinary shipped target is 40 chunks. Image documents rendered S1 content, not platform or performance acceptance.",
+  "image": "earlydev-0.1.1-1-terrain.png"
+}

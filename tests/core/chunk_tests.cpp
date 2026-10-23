@@ -34,7 +34,7 @@ TEST(ChunkTest, PreservesTerrainMaterialIdsAndStoresEveryMaterial)
         shared::Block::Ice,
     };
 
-    for (uint8_t index = 0; index < MATERIALS.size(); ++index) {
+    for (uint32_t index = 0U; index < MATERIALS.size(); ++index) {
         EXPECT_EQ(static_cast<uint8_t>(MATERIALS[index]), index);
         EXPECT_TRUE(shared::isValidBlock(MATERIALS[index]));
         EXPECT_EQ(shared::isSolidBlock(MATERIALS[index]), MATERIALS[index] != shared::Block::Air);
@@ -43,8 +43,8 @@ TEST(ChunkTest, PreservesTerrainMaterialIdsAndStoresEveryMaterial)
     EXPECT_FALSE(shared::isSolidBlock(static_cast<shared::Block>(7U)));
 
     shared::Chunk chunk;
-    for (uint8_t index = 1; index < MATERIALS.size(); ++index) {
-        shared::BlockCoordinate const coordinate{ .x = index, .y = 0, .z = 0 };
+    for (uint32_t index = 1U; index < MATERIALS.size(); ++index) {
+        shared::BlockCoordinate const coordinate{ .x = static_cast<uint8_t>(index), .y = 0, .z = 0 };
         ASSERT_TRUE(chunk.setBlock(coordinate, MATERIALS[index]));
         EXPECT_EQ(chunk.blockAt(coordinate), MATERIALS[index]);
     }

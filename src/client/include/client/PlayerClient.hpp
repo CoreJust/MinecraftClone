@@ -3,12 +3,17 @@
 #include "Camera.hpp"
 #include "GameClient.hpp"
 #include "HeightTileInterestRegion.hpp"
+#include "PlayerClientInputState.hpp"
 #include "PlayerPresentation.hpp"
 #include "PlayerPreviewLod.hpp"
+#include "PreviewMeshConnectivity.hpp"
 #include "PreviewMeshing.hpp"
 #include "PreviewResidency.hpp"
+#include "TerrainLodRuntime.hpp"
+#include "WorldLoading.hpp"
 #include "render/DebugHud.hpp"
 #include "render/InstalledShaderAssets.hpp"
+#include "render/PresentationFrameProgress.hpp"
 #include "render/VulkanRenderer.hpp"
 
 #include <shared/ProjectInfo.hpp>
@@ -17,7 +22,7 @@
 #include <shared/world/HeightTileSurfaceMesher.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
-
+#include <generation/Generation.hpp>
 #include <core/graphics/vulkan/Vulkan.hpp>
 #include <core/platform/glfw/GlfwWindow.hpp>
 
@@ -29,15 +34,34 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 namespace client {
+
+[[nodiscard]]
+bool playerClientContinuousLookEnabled(
+    WorldLoadingState state,
+    bool focused,
+    bool system_shortcut_modifier_pressed = false
+) noexcept;
+
+[[nodiscard]]
+bool playerClientLoadingStartInputEligible(
+    WorldLoadingState state,
+    bool focused,
+    bool new_input_edge,
+    bool system_shortcut_modifier_pressed = false
+) noexcept;
+
+[[nodiscard]] bool playerClientMovementInputEnabled(bool system_shortcut_modifier_pressed) noexcept;
 
 enum class PlayerClientCapturePreset : uint8_t {
     CentralSpike,
@@ -97,6 +121,16 @@ struct PlayerClientBenchmarkOptions final {
     bool show_debug_hud = false;
     bool enable_mesh_stage_diagnostics = false;
     bool enable_presentation_history = false;
+    bool capture_frame_completion = false;
+    std::function<std::optional<CameraAngles>(std::chrono::steady_clock::time_point)> camera_angles_override;
+    bool enable_diagnostic_frame_capture = false;
+};
+
+enum class PlayerClientDiagnosticFrameCaptureState : uint8_t {
+    NotRequested,
+    Pending,
+    Succeeded,
+    Failed,
 };
 
 struct PlayerClientMeshResultDrainDiagnostics final {
@@ -511,6 +545,15 @@ std::optional<PlayerPreviewMeshAdmissionCandidate> nextPlayerPreviewMeshAdmissio
     std::span<shared::HeightTileKey const> forecast_candidates = {},
     bool forecast_probe_complete = true);
 
+struct PlayerClientBenchmarkPresentationInfo final {
+    PlayerPresentationPosition body;
+    CameraPose camera;
+    CameraPerspective perspective = CameraPerspective::FirstPerson;
+    shared::WorldMode world_mode = shared::WorldMode::Flat;
+    uint64_t submitted_frame_count = 0U;
+    std::chrono::steady_clock::time_point sampled_at;
+};
+
 class PlayerClient final : public GameClient {
 public:
     explicit PlayerClient(
@@ -520,6 +563,10 @@ public:
     );
     ~PlayerClient();
     [[nodiscard]] RendererRuntimeInfo benchmarkRuntimeInfo() const;
+    [[nodiscard]] std::optional<PlayerClientBenchmarkPresentationInfo> benchmarkPresentationInfo() const noexcept
+    {
+        return m_benchmark_presentation;
+    }
     [[nodiscard]] core::graphics::vulkan::PresentationHistoryResult benchmarkQueryPresentationHistory(
         std::span<core::graphics::vulkan::PresentationTiming> records
     );
@@ -535,8 +582,18 @@ public:
         bool scan_exact_coverage = false
     ) const;
     [[nodiscard]] bool captureSucceeded() const noexcept { return m_capture_succeeded; }
+    [[nodiscard]] bool requestDiagnosticFrameCapture(std::filesystem::path image_path);
+    [[nodiscard]] PlayerClientDiagnosticFrameCaptureState diagnosticFrameCaptureState() const noexcept
+    {
+        return m_diagnostic_frame_capture_state;
+    }
+    [[nodiscard]] std::string_view diagnosticFrameCaptureError() const noexcept
+    {
+        return m_diagnostic_frame_capture_error;
+    }
 private:
     friend struct PlayerClientTestAccess;
+    friend struct PlayerClientFocusTestAccess;
     class PreviewMeshWorkerPool;
     class PreviewCacheRetirementReaper;
     struct PreviewMeshPendingAge final {
@@ -560,6 +617,9 @@ private:
         std::array<uint64_t, 4> tokens{};
     };
     shared::Direction input() override;
+    void onInputSubmitted(shared::Direction const& direction) override;
+    void observeInputCreditStall(shared::Direction const& direction, bool submitted);
+    void observeMovementDiagnostics();
     void servicePlatformEvents() override;
     void render() override;
     [[nodiscard]] bool presentationSucceeded() const override;
@@ -569,8 +629,17 @@ private:
         PlayerClientBenchmarkTerrainInfo &info) const;
 
   private:
-    void beginContinuousLook() noexcept;
+    void synchronizeContinuousLook() noexcept;
+    void failDiagnosticFrameCapture(std::string_view reason);
+    void updateLoadingPresentation(WorldLoadingStatus const& status);
     void updateFlightControlToggles();
+    [[nodiscard]] bool updateLoadingInputSnapshot(
+        std::span<int const> pressed_keys,
+        std::span<int const> pressed_mouse_buttons
+    );
+    void setScreenshotFeedback(std::string message, bool successful = false);
+    void captureStartTransitionInputs();
+    [[nodiscard]] bool hasStartTransitionInputs() const noexcept;
     void refreshHeightTileInterest(
         shared::Player const& player,
         shared::HeightTileSurfaceProjection projection = {},
@@ -599,6 +668,7 @@ private:
     void queuePreviewMesh(shared::HeightTileKey key);
     void queuePreviewMeshes(std::span<shared::HeightTileKey const> keys);
     void queuePreviewRemoval(shared::HeightTileKey key);
+    void queueDisconnectedPreviewMeshes(std::span<shared::HeightTileKey const> keys);
     void markPreviewMeshVisible(shared::HeightTileKey key);
     [[nodiscard]] bool publishPreviewMesh(
         shared::HeightTileKey key,
@@ -637,21 +707,45 @@ private:
     std::optional<PlayerClientCaptureOptions> m_capture;
     std::optional<PlayerClientBenchmarkOptions> m_benchmark;
     PlayerClientRenderDiagnostics m_render_diagnostics{};
+    std::optional<PlayerClientBenchmarkPresentationInfo> m_benchmark_presentation;
     bool m_last_presentation_succeeded = false;
     core::platform::glfw::GlfwWindow m_window;
     InstalledShaderAssets m_shader_assets;
+    void updateTerrainLod(std::chrono::steady_clock::time_point deadline);
     VulkanRenderer m_renderer;
+    TerrainLodRuntime m_terrain_lod;
     std::vector<PlayerRenderData> m_render_data;
     DebugHudToggleLatch m_debug_hud_toggle;
     DebugHudToggleLatch m_speedup_increase_latch;
     DebugHudToggleLatch m_speedup_decrease_latch;
     DebugHudToggleLatch m_acceleration_toggle_latch;
     DebugHudToggleLatch m_camera_perspective_latch;
-    DebugHudToggleLatch m_movement_capability_latch;
+    PlayerClientInputState m_input_actions;
+    std::optional<std::chrono::steady_clock::time_point> m_input_credit_stall_started;
+    std::chrono::steady_clock::time_point m_input_credit_next_log{};
+    uint32_t m_input_credit_log_count = 0U;
+    bool m_input_credit_stall_reported = false;
+    bool m_input_credit_recovery_pending = false;
+    shared::Direction m_movement_diagnostic_direction{};
+    std::chrono::steady_clock::time_point m_movement_diagnostic_sampled_at{};
+    std::chrono::steady_clock::time_point m_movement_diagnostic_next_observation{};
+    std::chrono::steady_clock::time_point m_movement_diagnostic_next_log{};
+    std::optional<uint64_t> m_movement_diagnostic_state;
+    uint64_t m_movement_diagnostic_samples = 0U;
+    uint64_t m_movement_diagnostic_submissions = 0U;
+    uint32_t m_movement_diagnostic_log_count = 0U;
     CameraPerspective m_camera_perspective = CameraPerspective::FirstPerson;
     size_t m_speedup_profile_index = 2U;
+    std::optional<bool> m_window_focused;
+    bool m_continuous_look_active = false;
+    std::unordered_set<int> m_pressed_loading_keys;
+    std::unordered_set<int> m_pressed_loading_mouse_buttons;
+    std::unordered_set<int> m_start_transition_keys;
+    std::unordered_set<int> m_start_transition_mouse_buttons;
+    bool m_loading_overlay_active = false;
+    std::optional<RendererFrameIdentity> m_loading_prompt_frame;
+    std::shared_ptr<generation::GenerationSnapshot const> m_loading_map_snapshot;
     bool m_acceleration_enabled = false;
-    bool m_jump_queued = false;
     double m_last_cursor_x = 0.0;
     double m_last_cursor_y = 0.0;
     bool m_has_cursor_position = false;
@@ -669,6 +763,10 @@ private:
     std::deque<shared::HeightTileKey> m_pending_preview_removals;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_pending_preview_removal_set;
     PlayerPreviewMeshQueue m_pending_preview_meshes;
+    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_connectivity_waiting;
+    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_connectivity_retirements;
+    std::vector<shared::HeightTileKey> m_preview_mesh_removal_keys_scratch;
+    PreviewMeshConnectivity m_preview_mesh_connectivity;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_jobs;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_dirty_jobs;
     std::optional<std::chrono::steady_clock::time_point> m_deferred_preview_mesh_result_deadline;
@@ -719,6 +817,19 @@ private:
     bool m_capture_rotation_started = false;
     bool m_capture_succeeded = false;
     bool m_capture_failed = false;
+    std::optional<std::filesystem::path> m_diagnostic_frame_capture_path;
+    std::string m_diagnostic_frame_capture_error;
+    PlayerClientDiagnosticFrameCaptureState m_diagnostic_frame_capture_state =
+        PlayerClientDiagnosticFrameCaptureState::NotRequested;
+    bool m_diagnostic_frame_capture_requested = false;
+    DebugHudToggleLatch m_screenshot_capture_key_latch;
+    bool m_screenshot_capture_pending = false;
+    bool m_screenshot_capture_requested = false;
+    std::optional<std::string> m_screenshot_test_pasteboard_name;
+    std::string m_screenshot_feedback;
+    bool m_screenshot_feedback_successful = false;
+    std::chrono::steady_clock::time_point m_screenshot_feedback_started_at{};
+    std::chrono::steady_clock::time_point m_screenshot_feedback_until{};
 };
 
 } // namespace client

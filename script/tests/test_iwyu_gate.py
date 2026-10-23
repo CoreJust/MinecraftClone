@@ -72,6 +72,23 @@ class IwyuGateTests(unittest.TestCase):
         record = json.loads(result_line[len(iwyu_gate.RESULT_MARKER) :])
         return exit_code, record, marker_lines, run
 
+    def test_compiler_warning_before_clean_report_blocks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, _ = self.create_repository(root)
+            output = (
+                f"{source}:1:1: warning: ignoring return value [-Wunused-result]\n"
+            ).encode() + self.clean_report(source)
+            with self.assertRaisesRegex(iwyu_gate.GateError, "compiler diagnostic"):
+                iwyu_gate.parse_report(output, source, root)
+
+    def test_unknown_preamble_before_clean_report_blocks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, _ = self.create_repository(root)
+            with self.assertRaisesRegex(iwyu_gate.GateError, "unrecognized IWYU output"):
+                iwyu_gate.parse_report(b"unexpected output\n" + self.clean_report(source), source, root)
+
     def test_clean_report_passes_and_writes_source_bound_receipt(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

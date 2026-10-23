@@ -1,12 +1,14 @@
 #include <client/render/StoneIndirectDraws.hpp>
-
+#include <shared/world/Chunk.hpp>
 #include <shared/world/ChunkMesher.hpp>
+#include <shared/world/HeightTileSurfaceMesher.hpp>
 
 #include <gtest/gtest.h>
 #include <vulkan/vulkan_core.h>
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -202,6 +204,70 @@ TEST(StoneIndirectDrawsTest, QuadIndicesPreserveBothTriangleVerticesAndWindingFo
             EXPECT_EQ(corners[Draws::QUAD_INDICES[vertex]], expected[vertex]);
         }
     }
+}
+
+TEST(StoneIndirectDrawsTest, PacksCanonicalMaterialsForChunkAndHeightTileVertexPaths)
+{
+    shared::MeshFace const chunk_face{
+        .local_origin = { .x = 2U, .y = 3U, .z = 4U },
+        .direction = shared::FaceDirection::PositiveZ,
+        .material = shared::Block::Grass,
+    };
+    client::StoneFaceInstance const chunk_instance = client::StoneFaceInstance::fromChunkFace(
+        { .x = 1, .y = 2, .z = 3 },
+        chunk_face
+    );
+    EXPECT_EQ(chunk_instance.x, 18);
+    EXPECT_EQ(chunk_instance.y, 35);
+    EXPECT_EQ(chunk_instance.z, 52);
+    EXPECT_EQ(chunk_instance.direction, static_cast<uint32_t>(shared::FaceDirection::PositiveZ));
+    EXPECT_EQ(chunk_instance.material_id, static_cast<uint32_t>(shared::Block::Grass));
+
+    shared::HeightTileSurfaceQuad const tile_quad{
+        .x = 7,
+        .y = 11,
+        .z = 5,
+        .direction = shared::HeightTileSurfaceDirection::NegativeX,
+        .u_extent = 9U,
+        .v_extent = 3U,
+        .material = shared::Block::Ice,
+    };
+    client::StoneFaceInstance const tile_instance = client::StoneFaceInstance::fromHeightTileQuad(tile_quad);
+    EXPECT_EQ(tile_instance.x, tile_quad.x);
+    EXPECT_EQ(tile_instance.y, tile_quad.y);
+    EXPECT_EQ(tile_instance.z, tile_quad.z);
+    EXPECT_EQ(tile_instance.direction, static_cast<uint32_t>(tile_quad.direction));
+    EXPECT_EQ(tile_instance.u_extent, tile_quad.u_extent);
+    EXPECT_EQ(tile_instance.v_extent, tile_quad.v_extent);
+    EXPECT_EQ(tile_instance.material_id, static_cast<uint32_t>(shared::Block::Ice));
+    EXPECT_EQ(offsetof(client::StoneFaceInstance, material_id), 24U);
+    EXPECT_EQ(sizeof(client::StoneFaceInstance), 32U);
+}
+
+TEST(StoneIndirectDrawsTest, RejectsAirAndUnknownMaterialIdsBeforePacking)
+{
+    shared::MeshFace air_face{
+        .local_origin = { .x = 0U, .y = 0U, .z = 0U },
+        .direction = shared::FaceDirection::PositiveZ,
+        .material = shared::Block::Air,
+    };
+    EXPECT_THROW(static_cast<void>(client::StoneFaceInstance::fromChunkFace({}, air_face)), std::invalid_argument);
+
+    shared::HeightTileSurfaceQuad invalid_quad{
+        .direction = shared::HeightTileSurfaceDirection::PositiveZ,
+        .material = static_cast<shared::Block>(255U),
+    };
+    EXPECT_THROW(
+        static_cast<void>(client::StoneFaceInstance::fromHeightTileQuad(invalid_quad)),
+        std::invalid_argument
+    );
+
+    invalid_quad.material = shared::Block::Grass;
+    invalid_quad.direction = static_cast<shared::HeightTileSurfaceDirection>(4U);
+    EXPECT_THROW(
+        static_cast<void>(client::StoneFaceInstance::fromHeightTileQuad(invalid_quad)),
+        std::invalid_argument
+    );
 }
 
 TEST(StoneIndirectDrawsTest, GeneratesACompleteSixteenBitQuadIndexBlock)
@@ -596,3 +662,63 @@ TEST(StoneIndirectDrawsTest, ValidatesBothRangeCountsBeforeAnyFactoryAllocation)
 }
 
 } // namespace
+
+TEST(StoneIndirectDrawsTest, TerrainTrianglePreservesSignedOffsetsAndFractionalHeightsInSharedLayout)
+{
+    std::array<std::array<int32_t, 3>, 3> const vertices {
+        std::array { 65'528, 65'528, 12'801 },
+        std::array { 65'520, 65'536, 12'825 },
+        std::array { 65'536, 65'536, 12'800 },
+    };
+    auto const face = client::StoneFaceInstance::fromTerrainTriangle(vertices, shared::Block::Grass);
+    EXPECT_EQ(face.direction, 6U);
+    EXPECT_EQ(face.x, vertices[0][0]);
+    EXPECT_EQ(face.y, vertices[0][1]);
+    EXPECT_EQ(static_cast<uint32_t>(face.z) & 0xffffU, 12'801U);
+    EXPECT_EQ(static_cast<uint32_t>(face.z) >> 16U, 12'825U);
+    EXPECT_EQ(static_cast<int16_t>(face.u_extent & 0xffffU), -8);
+    EXPECT_EQ(static_cast<int16_t>(face.u_extent >> 16U), 8);
+    EXPECT_EQ(static_cast<int16_t>(face.v_extent & 0xffffU), 8);
+    EXPECT_EQ(static_cast<int16_t>(face.v_extent >> 16U), 8);
+    EXPECT_EQ(face.reserved_1, 12'800U);
+    EXPECT_EQ(face.material_id, static_cast<uint32_t>(shared::Block::Grass));
+    EXPECT_EQ(sizeof(face), 32U);
+}
+
+TEST(StoneIndirectDrawsTest, RejectsUnrepresentableTerrainTriangleHeights)
+{
+    std::array<std::array<int32_t, 3>, 3> vertices { };
+    vertices[1][2] = -1;
+    EXPECT_THROW(static_cast<void>(client::StoneFaceInstance::fromTerrainTriangle(vertices, shared::Block::Stone)),
+        std::invalid_argument);
+}
+
+TEST(StoneIndirectDrawsTest, RejectsUnrepresentableTerrainTriangleOffsets)
+{
+    std::array<std::array<int32_t, 3>, 3> vertices { };
+    vertices[1][0] = 32'768;
+    EXPECT_THROW(static_cast<void>(client::StoneFaceInstance::fromTerrainTriangle(vertices, shared::Block::Stone)),
+        std::invalid_argument);
+}
+
+TEST(StoneIndirectDrawsTest, SurfaceTrianglePacksSignedInterpolatedClimateWithoutChangingGeometry)
+{
+    std::array<std::array<int32_t, 3>, 3> const vertices{
+        std::array{ 16, 16, 12'321 }, std::array{ 0, 16, 12'449 }, std::array{ 16, 0, 12'288 },
+    };
+    auto const face = client::StoneFaceInstance::fromTerrainSurfaceTriangle(vertices, { -160, -64, 400 });
+    EXPECT_NE(face.reserved_1 & 0x8000'0000U, 0U);
+    uint32_t const encoded_temperature = (face.reserved_1 << 1U) >> 17U;
+    int32_t const temperature = encoded_temperature < 0x4000U
+        ? static_cast<int32_t>(encoded_temperature)
+        : static_cast<int32_t>(encoded_temperature) - 0x8000;
+    EXPECT_EQ(temperature, -160);
+    EXPECT_EQ(static_cast<int16_t>(face.material_id), -64);
+    EXPECT_EQ(static_cast<int16_t>(face.material_id >> 16U), 400);
+    EXPECT_EQ(face.reserved_1 & 0xffffU, 12'288U);
+    auto const explicit_face = client::StoneFaceInstance::fromTerrainTriangle(vertices, shared::Block::Stone);
+    EXPECT_EQ(explicit_face.reserved_1 & 0x8000'0000U, 0U);
+    EXPECT_EQ(face.z, explicit_face.z);
+    EXPECT_EQ(face.u_extent, explicit_face.u_extent);
+    EXPECT_EQ(face.v_extent, explicit_face.v_extent);
+}

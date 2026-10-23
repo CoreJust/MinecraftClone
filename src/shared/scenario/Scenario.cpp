@@ -1,5 +1,6 @@
 #include <shared/scenario/Scenario.hpp>
 
+#include <shared/corelang/ExecutionTypes.hpp>
 #include <shared/world/World.hpp>
 
 #include <array>

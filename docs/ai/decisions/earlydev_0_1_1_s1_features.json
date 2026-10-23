@@ -1,0 +1,74 @@
+[
+  {
+    "id": "S1-01",
+    "name": "Solid block materials"
+  },
+  {
+    "id": "S1-02",
+    "name": "Single bottom bedrock layer"
+  },
+  {
+    "id": "S1-03",
+    "name": "Seeded tectonic geography"
+  },
+  {
+    "id": "S1-04",
+    "name": "Connected mountain ranges"
+  },
+  {
+    "id": "S1-05",
+    "name": "Land and basin balance"
+  },
+  {
+    "id": "S1-06",
+    "name": "Exact land column layers"
+  },
+  {
+    "id": "S1-07",
+    "name": "Climate-driven surface materials"
+  },
+  {
+    "id": "S1-08",
+    "name": "Exact submerged soil band"
+  },
+  {
+    "id": "S1-09",
+    "name": "Inherited gameplay regressions"
+  },
+  {
+    "id": "S1-10",
+    "name": "Progressive global and regional generation"
+  },
+  {
+    "id": "S1-11",
+    "name": "Standalone six-seed world maps"
+  },
+  {
+    "id": "S1-12",
+    "name": "Coast, island and landmass diversity"
+  },
+  {
+    "id": "S1-13",
+    "name": "CoreLang0.1.5 JIT/AOT integration"
+  },
+  {
+    "id": "S1-14",
+    "name": "Actual loading map and start gate"
+  },
+  {
+    "id": "S1-15",
+    "name": "Coupled load/radius/fresh-FPS targets"
+  },
+  {
+    "id": "S1-16",
+    "name": "Shared normal-game2D mode"
+  },
+  {
+    "id": "S1-17",
+    "name": "Two-physical-laptop multiplayer"
+  },
+  {
+    "id": "S1-18",
+    "name": "Reusable modules and exact reference testing"
+  }
+]

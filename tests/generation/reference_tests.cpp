@@ -8,8 +8,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <iomanip>
+#include <memory>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <type_traits>
 #include <vector>

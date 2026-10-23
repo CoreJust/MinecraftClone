@@ -14,9 +14,12 @@ ownership are linked below.
 The experiment's v1/v2/v3 labels describe research iterations, not terrain
 versions. Terrain-v2 adopts the selected **prototype v3 at 256²**, with 512²
 as a separate higher-detail world configuration. The retained source identity,
-maps and PDF remain the evidence for that choice. The native port defines its
-own explicit numerical/configuration revision within Terrain-v2; the name
-alone is not a sufficient world or save identity.
+maps and PDF remain evidence for that choice. Freeze an explicit numerical
+specification and complete configuration identity for native reproduction.
+Same version, seed and configuration must preserve the world; do not change
+random streams or regenerate goldens silently during the port. The
+[pixel/reference contract](earlydev_0_1_1_s1_testing.md) supersedes the earlier
+proposal to accept a newly generated native corpus under the same design name.
 
 ## Global dependency graph
 
@@ -95,5 +98,10 @@ Python measurements establish the measured host/model costs and appearance;
 they do not establish C++/Android costs, gameplay FPS, multiplayer correctness
 or cross-platform bitwise regeneration. Those gates remain explicit native
 implementation work, alongside the inherited defects and ordinary S1 gameplay
-acceptance. No in-game map UI, physical water or later biome content is added
-by this planning/experiment task.
+acceptance. S1 now requires the [loading-map/key gate](earlydev_0_1_1_s1_loading.md),
+[CoreLang 0.1.5](earlydev_0_1_1_s1_corelang.md),
+[performance targets](earlydev_0_1_1_s1_performance.md),
+[shared 2D/headless tests](earlydev_0_1_1_s1_testing.md) and
+[two-laptop qualification](earlydev_0_1_1_s1_multiplayer.md). Physical water
+and later biome content remain outside S1. The retained PDF predates these
+additional product/test contracts; the current S1 notes govern implementation.

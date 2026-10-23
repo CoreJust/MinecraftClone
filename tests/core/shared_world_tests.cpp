@@ -37,6 +37,97 @@ TEST(WorldTest, ExplicitSpawnAndLookup) {
     EXPECT_TRUE(world.playerByCharacter('@').has_value());
 }
 
+TEST(WorldTest, ReplicatedOverlapAcceptsOnlyDefinedMovementCapabilities) {
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', shared::PlayerPosition{ .x = 100, .y = 100, .z = 2'000 });
+    shared::Player state{
+        .id = 2U,
+        .x = 100,
+        .y = 100,
+        .z = 2'000,
+        .z_subcell = 1'000U,
+        .ch = '#',
+        .palette_index = 7U,
+        .vertical_velocity_subcells = -2'500,
+    };
+    uint8_t last_accepted = 0U;
+    for (uint16_t bits = 0U; bits <= 255U; ++bits) {
+        SCOPED_TRACE(bits);
+        state.movement_capabilities.bits = static_cast<uint8_t>(bits);
+        bool const valid = bits == 0U || bits == 1U || bits == 3U;
+
+        EXPECT_EQ(world.applyReplicatedPlayerState(state), valid);
+
+        if (valid) {
+            last_accepted = static_cast<uint8_t>(bits);
+        }
+        auto const replicated = world.player(2U);
+        ASSERT_TRUE(replicated.has_value());
+        EXPECT_EQ(replicated->movement_capabilities.bits, last_accepted);
+        EXPECT_EQ(replicated->vertical_velocity_subcells, -2'500);
+        EXPECT_EQ(replicated->z_subcell, 1'000U);
+        EXPECT_EQ(replicated->palette_index, 7U);
+        EXPECT_EQ(requiredValue(world.player(1U)).movement_capabilities.bits, 3U);
+        EXPECT_EQ(world.players().size(), 2U);
+    }
+}
+
+TEST(WorldTest, RequestedCapabilitiesStillRequireCollisionAdmissionAfterReplication) {
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', shared::PlayerPosition{ .x = 100, .y = 100, .z = 2'000 });
+    ASSERT_TRUE(world.applyReplicatedPlayerState({
+        .id = 2U,
+        .x = 100,
+        .y = 100,
+        .z = 2'000,
+        .ch = '#',
+        .movement_capabilities = { .bits = 3U },
+        .vertical_velocity_subcells = -2'500,
+    }));
+
+    EXPECT_FALSE(world.setPlayerMovementCapabilities(2U, { .bits = 0U }));
+    EXPECT_FALSE(world.setPlayerMovementCapabilities(2U, { .bits = 1U }));
+    EXPECT_EQ(requiredValue(world.player(2U)).movement_capabilities.bits, 3U);
+    EXPECT_EQ(requiredValue(world.player(2U)).vertical_velocity_subcells, -2'500);
+
+    ASSERT_TRUE(world.setPlayerPosition(1U, { .x = 104, .y = 100, .z = 2'000 }));
+    EXPECT_TRUE(world.setPlayerMovementCapabilities(2U, { .bits = 0U }));
+    EXPECT_TRUE(world.setPlayerMovementCapabilities(2U, { .bits = 1U }));
+}
+
+TEST(WorldTest, ReplicatedStateRejectsInvalidValuesAndIdentityWithoutMutation) {
+    shared::Player const original{
+        .id = 1U,
+        .x = 100,
+        .y = 100,
+        .z = 2'000,
+        .ch = '@',
+        .palette_index = 7U,
+        .vertical_velocity_subcells = -2'500,
+    };
+    shared::World world{ shared::WorldMode::Flight };
+    ASSERT_TRUE(world.applyReplicatedPlayerState(original));
+    std::array invalid{ original, original, original, original, original, original };
+    invalid[0].palette_index = shared::PLAYER_PALETTE_COUNT;
+    invalid[1].x = -1;
+    invalid[2].z = shared::World::FLIGHT_ENTITY_MAX_Z + 1;
+    invalid[3].x_subcell = shared::SUBCELLS_PER_CELL;
+    invalid[4].ch = '#';
+    invalid[5].id = 2U;
+    for (auto const& state : invalid) {
+        EXPECT_FALSE(world.applyReplicatedPlayerState(state));
+        auto const replicated = world.player(1U);
+        ASSERT_TRUE(replicated.has_value());
+        EXPECT_EQ(replicated->ch, '@');
+        EXPECT_EQ(replicated->x, 100);
+        EXPECT_EQ(replicated->z, 2'000);
+        EXPECT_EQ(replicated->x_subcell, 0U);
+        EXPECT_EQ(replicated->palette_index, 7U);
+        EXPECT_EQ(replicated->vertical_velocity_subcells, -2'500);
+        EXPECT_EQ(world.players().size(), 1U);
+    }
+}
+
 TEST(WorldTest, MovePlayerRejectsUnknownAndOccupiedPositions) {
     shared::World world;
     world.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 5, 5 });

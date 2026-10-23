@@ -11,6 +11,7 @@
 #include <cmath>
 #include <compare>
 #include <cstdlib>
+#include <memory>
 #include <random>
 
 namespace shared {
@@ -95,13 +96,26 @@ int32_t signedDirectionComponent(uint8_t const component) noexcept
     int64_t const last_y = floorDivide(y_subcells + LAST_SUBCELL_OFFSET, SUBCELLS_PER_CELL);
     int64_t const upper_block = std::min<int64_t>(
         floorDivide(upper_z_subcells, SUBCELLS_PER_CELL),
-        World::FLIGHT_MAX_Z
+        static_cast<int64_t>(WorldExtent::DEPTH) - 1
     );
     int64_t surface = 0;
     for (int64_t cell_x = first_x; cell_x <= last_x; ++cell_x) {
         int32_t const wrapped_x = wrapFlightCell(cell_x);
         for (int64_t cell_y = first_y; cell_y <= last_y; ++cell_y) {
             int32_t const wrapped_y = wrapFlightCell(cell_y);
+            if (auto const column = world.authoritativeColumn(wrapped_x, wrapped_y)) {
+                int64_t support_block = std::min<int64_t>(upper_block, column->highest_solid_z);
+                if (column->dense_blocks) {
+                    while (support_block >= 0
+                        && !isSolidBlock(column->materialAt(static_cast<uint16_t>(support_block)))) {
+                        --support_block;
+                    }
+                }
+                if (support_block >= 0) {
+                    surface = std::max(surface, (support_block + 1) * SUBCELLS_PER_CELL);
+                }
+                continue;
+            }
             int64_t const chunk_x = wrapped_x / Chunk::SIDE_LENGTH;
             int64_t const chunk_y = wrapped_y / Chunk::SIDE_LENGTH;
             int64_t const upper_chunk_z = upper_block / Chunk::SIDE_LENGTH;
@@ -163,6 +177,9 @@ enum class UnknownCollisionPolicy : uint8_t {
     for (int64_t cell_x = first_x; cell_x <= last_x; ++cell_x) {
         for (int64_t cell_y = first_y; cell_y <= last_y; ++cell_y) {
             for (int64_t cell_z = first_z; cell_z <= last_z; ++cell_z) {
+                if (cell_z >= static_cast<int64_t>(WorldExtent::DEPTH)) {
+                    continue;
+                }
                 SparseBlockQuery const query = world.queryBlock({.x = cell_x, .y = cell_y, .z = cell_z});
                 if (query.state != GenerationState::Materialized) {
                     if (unknown_policy == UnknownCollisionPolicy::Block) {
@@ -752,14 +769,18 @@ bool World::setPlayerPosition(
     });
 }
 
+bool World::isPlayerPositionInBounds(PlayerPosition const position) const noexcept
+{
+    return m_mode == WorldMode::Flight ? isFlightPositionInBounds(position)
+        : position.x >= 0 && position.x <= MAX_PLAYER_ORIGIN_CELL
+            && position.y >= 0 && position.y <= MAX_PLAYER_ORIGIN_CELL && position.z == 0
+            && position.x_subcell < SUBCELLS_PER_CELL && position.y_subcell < SUBCELLS_PER_CELL
+            && position.z_subcell == 0;
+}
+
 bool World::setPlayerPosition(PlayerId const id, PlayerPosition const position)
 {
-    if ((m_mode == WorldMode::Flight && !isFlightPositionInBounds(position))
-        || (m_mode == WorldMode::Flat
-            && (position.x < 0 || position.x > MAX_PLAYER_ORIGIN_CELL
-                || position.y < 0 || position.y > MAX_PLAYER_ORIGIN_CELL || position.z != 0
-                || position.x_subcell >= SUBCELLS_PER_CELL || position.y_subcell >= SUBCELLS_PER_CELL
-                || position.z_subcell != 0))) {
+    if (!isPlayerPositionInBounds(position)) {
         return false;
     }
     for (Player& player : m_players) {
@@ -775,6 +796,36 @@ bool World::setPlayerPosition(PlayerId const id, PlayerPosition const position)
         }
     }
     return false;
+}
+
+bool World::applyReplicatedPlayerState(Player const& state)
+{
+    if (!isValidPlayerPaletteIndex(state.palette_index)
+        || !isValidMovementCapabilities(state.movement_capabilities)
+        || !isPlayerPositionInBounds({
+            .x = state.x,
+            .y = state.y,
+            .z = state.z,
+            .x_subcell = state.x_subcell,
+            .y_subcell = state.y_subcell,
+            .z_subcell = state.z_subcell,
+        })) {
+        return false;
+    }
+    for (Player& player : m_players) {
+        if (player.id == state.id) {
+            if (player.ch != state.ch) {
+                return false;
+            }
+            player = state;
+            return true;
+        }
+        if (player.ch == state.ch) {
+            return false;
+        }
+    }
+    m_players.push_back(state);
+    return true;
 }
 
 bool World::setPlayerPaletteIndex(
@@ -957,7 +1008,7 @@ bool World::isFlightPositionInBounds(PlayerPosition const position) noexcept
 {
     return position.x >= FLIGHT_MIN_CELL && position.x <= FLIGHT_MAX_CELL
         && position.y >= FLIGHT_MIN_CELL && position.y <= FLIGHT_MAX_CELL
-        && position.z >= FLIGHT_MIN_CELL && position.z <= FLIGHT_MAX_Z
+        && position.z >= FLIGHT_MIN_CELL && position.z <= FLIGHT_ENTITY_MAX_Z
         && position.x_subcell < SUBCELLS_PER_CELL && position.y_subcell < SUBCELLS_PER_CELL
         && position.z_subcell < SUBCELLS_PER_CELL;
 }
@@ -1128,7 +1179,7 @@ bool World::moveFlightPlayer(
             }
         }
 
-        if (delta_z != 0) {
+        if (!direct_path_clear && delta_z != 0) {
             int64_t const starting_surface = m_collision_world == nullptr
                 ? terrainSurfaceUnderPlayer(resolved_x, resolved_y) : 0;
             int64_t const vertical_steps = std::max<int64_t>(

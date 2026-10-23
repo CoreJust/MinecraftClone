@@ -1,0 +1,89 @@
+set(test_root "@MC_TEST_BINARY_DIR@/column-map-cpu-consumer")
+set(corecpp_prefix "@MC_CORECPP_DIR@/../../..")
+set(coreproject_dir "@MC_COREPROJECT2026_DIR@")
+set(dependency_prefix "@MC_CMAKE_PREFIX_PATH@")
+set(nested_msvc_runtime_arguments)
+if(NOT "@CMAKE_MSVC_RUNTIME_LIBRARY@" STREQUAL "")
+    list(APPEND nested_msvc_runtime_arguments
+        "-DCMAKE_MSVC_RUNTIME_LIBRARY=@CMAKE_MSVC_RUNTIME_LIBRARY@"
+    )
+endif()
+if(NOT DEFINED MC_TEST_CONFIGURATION)
+    set(MC_TEST_CONFIGURATION "@CMAKE_BUILD_TYPE@")
+endif()
+
+file(MAKE_DIRECTORY "${test_root}")
+message(STATUS "CPU column-map consumer: configuring without graphics")
+execute_process(
+    COMMAND
+        "@MC_CMAKE_COMMAND@"
+        -S "@MC_PROJECT_SOURCE_DIR@"
+        -B "${test_root}/build"
+        -G "@CMAKE_GENERATOR@"
+        "-DCMAKE_PREFIX_PATH=${corecpp_prefix};${dependency_prefix}"
+        "-DCMAKE_C_COMPILER=@MC_CMAKE_C_COMPILER@"
+        "-DCMAKE_CXX_COMPILER=@MC_CMAKE_CXX_COMPILER@"
+        "-DCMAKE_C_FLAGS=@CMAKE_C_FLAGS@"
+        "-DCMAKE_CXX_FLAGS=@CMAKE_CXX_FLAGS@"
+        "-DCMAKE_EXE_LINKER_FLAGS=@CMAKE_EXE_LINKER_FLAGS@"
+        "-DCMAKE_SHARED_LINKER_FLAGS=@CMAKE_SHARED_LINKER_FLAGS@"
+        "-DCoreProject2026_DIR=${coreproject_dir}"
+        -DMC_ANALYSIS_HOST=@MC_ANALYSIS_HOST@
+        -DMC_ENABLE_SANITIZERS=@MC_ENABLE_SANITIZERS@
+        -DMC_SANITIZER=@MC_SANITIZER@
+        "-DCoreLangNumerics_GMP_INCLUDE_DIR=@CoreLangNumerics_GMP_INCLUDE_DIR@"
+        "-DCoreLangNumerics_GMP_LIBRARY=@CoreLangNumerics_GMP_LIBRARY@"
+        "-DCoreLangNumerics_MPFR_INCLUDE_DIR=@CoreLangNumerics_MPFR_INCLUDE_DIR@"
+        "-DCoreLangNumerics_MPFR_LIBRARY=@CoreLangNumerics_MPFR_LIBRARY@"
+        -DMC_BUILD_CLIENT=OFF
+        -DMC_BUILD_COLUMN_MAP=ON
+        -DBUILD_TESTING=OFF
+        -DMC_REGISTER_SERVER_ONLY_BUILD_TEST=OFF
+        -DVCPKG_MANIFEST_INSTALL=OFF
+        ${nested_msvc_runtime_arguments}
+        "-DCMAKE_BUILD_TYPE=${MC_TEST_CONFIGURATION}"
+    RESULT_VARIABLE configure_result
+    OUTPUT_VARIABLE configure_output
+    ERROR_VARIABLE configure_error
+)
+if(NOT configure_result EQUAL 0)
+    string(CONCAT configure_log "${configure_output}" "${configure_error}")
+    message(FATAL_ERROR "CPU column-map configure failed:\n${configure_log}")
+endif()
+
+file(
+    STRINGS "${test_root}/build/CMakeCache.txt" nested_configuration_types
+    REGEX "^CMAKE_CONFIGURATION_TYPES:.*="
+)
+set(nested_is_multi_config FALSE)
+if(nested_configuration_types)
+    if(MC_TEST_CONFIGURATION STREQUAL "")
+        message(FATAL_ERROR "Nested multi-config MinecraftClone build requires an enclosing test configuration")
+    endif()
+    set(nested_is_multi_config TRUE)
+endif()
+
+message(STATUS "CPU column-map consumer: building the executable")
+set(build_command "@MC_CMAKE_COMMAND@" --build "${test_root}/build" --target mc_column_map --parallel 4)
+if(nested_is_multi_config)
+    list(APPEND build_command --config "${MC_TEST_CONFIGURATION}")
+endif()
+execute_process(COMMAND ${build_command}
+    RESULT_VARIABLE build_result OUTPUT_VARIABLE build_output ERROR_VARIABLE build_error)
+file(WRITE "${test_root}/build.log" "${build_output}${build_error}")
+if(NOT build_result EQUAL 0)
+    message(FATAL_ERROR "CPU column-map build failed:\n${build_output}${build_error}")
+endif()
+set(executable "${test_root}/build/src/mc_column_map@CMAKE_EXECUTABLE_SUFFIX@")
+if(nested_is_multi_config)
+    set(executable "${test_root}/build/src/${MC_TEST_CONFIGURATION}/mc_column_map@CMAKE_EXECUTABLE_SUFFIX@")
+endif()
+message(STATUS "CPU column-map consumer: executing input validation")
+execute_process(COMMAND "${executable}" --address 127.0.0.1:20040
+    --replay stationary --seconds 0 --evidence "${test_root}/invalid-output"
+    RESULT_VARIABLE run_result OUTPUT_VARIABLE run_output ERROR_VARIABLE run_error TIMEOUT 15)
+if(NOT run_result EQUAL 2 OR NOT "${run_output}${run_error}" MATCHES "2D replay seconds must be")
+    message(FATAL_ERROR "CPU column-map executable failed validation:\n${run_result}\n${run_output}${run_error}")
+endif()
+file(WRITE "${test_root}/run.log" "${run_output}${run_error}")
+message(STATUS "CPU column-map consumer: configure, link and execution passed")

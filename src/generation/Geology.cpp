@@ -1,15 +1,18 @@
 #include "Numerics.hpp"
 #include "NumpyRandom.hpp"
 
+#include <generation/Generation.hpp>
 #include <generation/GenerationStages.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <span>
 #include <stdexcept>
+#include <stop_token>
 #include <utility>
 #include <vector>
 
@@ -26,6 +29,20 @@ struct Point
 {
     double x = 0.0;
     double y = 0.0;
+};
+
+struct CoordinateFields final
+{
+    std::span<double const> x;
+    std::span<double const> y;
+};
+
+struct EllipseParameters final
+{
+    double major;
+    double minor;
+    double amplitude;
+    double angle;
 };
 
 struct PlateMap
@@ -88,13 +105,12 @@ std::pair<DoubleField, DoubleField> makeCoordinates(uint32_t resolution)
 
 [[nodiscard]]
 PlateMap mapPlates(
-    std::span<double const> x,
-    std::span<double const> y,
+    CoordinateFields const& coordinates,
     std::vector<Point> const& centres,
-    std::stop_token cancellation
+    std::stop_token const& cancellation
 )
 {
-    uint64_t const field_size = x.size();
+    uint64_t const field_size = coordinates.x.size();
     double const infinity = std::numeric_limits<double>::infinity();
     PlateMap result{
         .first = Int16Field(field_size, 0),
@@ -108,8 +124,8 @@ PlateMap mapPlates(
     for (uint32_t plate = 0U; plate < plate_count; ++plate) {
         checkCancellation(cancellation);
         for (uint64_t index = 0U; index < field_size; ++index) {
-            double const dx = wrappedDelta(x[index], centres[plate].x);
-            double const dy = wrappedDelta(y[index], centres[plate].y);
+            double const dx = wrappedDelta(coordinates.x[index], centres[plate].x);
+            double const dy = wrappedDelta(coordinates.y[index], centres[plate].y);
             double const distance = dx * dx + dy * dy;
             if (distance < best[index]) {
                 second[index] = best[index];
@@ -126,10 +142,10 @@ PlateMap mapPlates(
     for (uint64_t index = 0U; index < field_size; ++index) {
         uint32_t const first = static_cast<uint32_t>(result.first[index]);
         uint32_t const second_id = static_cast<uint32_t>(result.second[index]);
-        double const dx = wrappedDelta(centres[second_id].x, x[index])
-            - wrappedDelta(centres[first].x, x[index]);
-        double const dy = wrappedDelta(centres[second_id].y, y[index])
-            - wrappedDelta(centres[first].y, y[index]);
+        double const dx = wrappedDelta(centres[second_id].x, coordinates.x[index])
+            - wrappedDelta(centres[first].x, coordinates.x[index]);
+        double const dy = wrappedDelta(centres[second_id].y, coordinates.y[index])
+            - wrappedDelta(centres[first].y, coordinates.y[index]);
         double const separation = std::max(std::hypot(dx, dy), 1.0);
         result.edge_distance[index] = std::max((second[index] - best[index]) / (2.0 * separation), 0.0);
     }
@@ -138,16 +154,17 @@ PlateMap mapPlates(
 
 [[nodiscard]]
 MotionField calculateMotion(
-    std::span<double const> x,
-    std::span<double const> y,
+    CoordinateFields const& coordinates,
+    // Plate centres and velocities use the same plate-indexed order.
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     std::vector<Point> const& centres,
     std::vector<Point> const& velocities,
     double blend_width,
-    std::stop_token cancellation
+    std::stop_token const& cancellation
 )
 {
-    PlateMap plate_map = mapPlates(x, y, centres, cancellation);
-    uint64_t const field_size = x.size();
+    PlateMap plate_map = mapPlates(coordinates, centres, cancellation);
+    uint64_t const field_size = coordinates.x.size();
     uint32_t const plate_count = static_cast<uint32_t>(centres.size());
     MotionField motion{
         .plate_id = std::move(plate_map.first),
@@ -161,15 +178,15 @@ MotionField calculateMotion(
             checkCancellation(cancellation);
         }
         uint32_t const nearest = static_cast<uint32_t>(motion.plate_id[index]);
-        double const nearest_dx = wrappedDelta(x[index], centres[nearest].x);
-        double const nearest_dy = wrappedDelta(y[index], centres[nearest].y);
+        double const nearest_dx = wrappedDelta(coordinates.x[index], centres[nearest].x);
+        double const nearest_dy = wrappedDelta(coordinates.y[index], centres[nearest].y);
         double const nearest_distance = nearest_dx * nearest_dx + nearest_dy * nearest_dy;
         double sum_weights = 0.0;
         double vx = 0.0;
         double vy = 0.0;
         for (uint32_t plate = 0U; plate < plate_count; ++plate) {
-            double const dx = wrappedDelta(x[index], centres[plate].x);
-            double const dy = wrappedDelta(y[index], centres[plate].y);
+            double const dx = wrappedDelta(coordinates.x[index], centres[plate].x);
+            double const dy = wrappedDelta(coordinates.y[index], centres[plate].y);
             double const distance = dx * dx + dy * dy;
             double const weight = std::exp(
                 -0.5 * (distance - nearest_distance) / (blend_width * blend_width)
@@ -199,8 +216,16 @@ CrustFields makeInitialCrust(
     uint32_t const large_count = static_cast<uint32_t>(random.integers(3, 6));
     uint32_t const middle_count = static_cast<uint32_t>(random.integers(6, 11));
     uint32_t const island_count = static_cast<uint32_t>(random.integers(10, 19));
-    FloatField warp_x_noise = periodicFbm(seed + 701U, resolution, 3U, 2U, cancellation);
-    FloatField warp_y_noise = periodicFbm(seed + 709U, resolution, 3U, 2U, cancellation);
+    FloatField warp_x_noise = periodicFbm(
+        seed + 701U,
+        FbmParameters{.resolution = resolution, .octaves = 3U, .start_frequency = 2U},
+        cancellation
+    );
+    FloatField warp_y_noise = periodicFbm(
+        seed + 709U,
+        FbmParameters{.resolution = resolution, .octaves = 3U, .start_frequency = 2U},
+        cancellation
+    );
     DoubleField warped_x(field_size);
     DoubleField warped_y(field_size);
     float const warp_scale = static_cast<float>(0.040 * WORLD_SIZE);
@@ -228,7 +253,10 @@ CrustFields makeInitialCrust(
             .y = random.uniform(0.0, WORLD_SIZE),
         };
         if (random.random() < concentration) {
-            double const coordinate = random.vonmises(concentration_phase, 1.8) * WORLD_SIZE
+            double const coordinate = random.vonmises({
+                .mean = concentration_phase,
+                .concentration = 1.8,
+            }) * WORLD_SIZE
                 / (2.0 * PI);
             if (concentration_axis == 0U) {
                 centre.x = wrapValue(coordinate, WORLD_SIZE);
@@ -239,16 +267,16 @@ CrustFields makeInitialCrust(
         return centre;
     };
 
-    auto add_core = [&](Point centre, double major, double minor, double amplitude, double angle) {
+    auto add_core = [&](Point centre, EllipseParameters const& shape) {
         checkCancellation(cancellation);
-        double const cosine = std::cos(angle);
-        double const sine = std::sin(angle);
+        double const cosine = std::cos(shape.angle);
+        double const sine = std::sin(shape.angle);
         for (uint64_t index = 0U; index < field_size; ++index) {
             double const dx = wrappedDelta(warped_x[index], centre.x);
             double const dy = wrappedDelta(warped_y[index], centre.y);
-            double const u = (cosine * dx + sine * dy) / major;
-            double const v = (-sine * dx + cosine * dy) / minor;
-            double const influence = amplitude * std::exp(-0.5 * (u * u + v * v));
+            double const u = (cosine * dx + sine * dy) / shape.major;
+            double const v = (-sine * dx + cosine * dy) / shape.minor;
+            double const influence = shape.amplitude * std::exp(-0.5 * (u * u + v * v));
             if (influence > strongest[index]) {
                 runner_up[index] = strongest[index];
                 strongest[index] = influence;
@@ -353,7 +381,12 @@ CrustFields makeInitialCrust(
         double const angle = random.uniform(0.0, 2.0 * PI);
         double const major = radius * std::sqrt(aspect);
         double const minor = radius / std::sqrt(aspect);
-        add_core(centre, major, minor, amplitude, angle);
+        add_core(centre, EllipseParameters{
+            .major = major,
+            .minor = minor,
+            .amplitude = amplitude,
+            .angle = angle,
+        });
     }
 
     DoubleField overlap(field_size);
@@ -370,7 +403,11 @@ CrustFields makeInitialCrust(
     if (lobe_regime) {
         lobe_strength = lobe_random.uniform(0.55, 0.70);
     }
-    FloatField roughness_noise = periodicFbm(seed + 719U, resolution, 5U, 2U, cancellation);
+    FloatField roughness_noise = periodicFbm(
+        seed + 719U,
+        FbmParameters{.resolution = resolution, .octaves = 5U, .start_frequency = 2U},
+        cancellation
+    );
     for (uint64_t index = 0U; index < field_size; ++index) {
         double const cold_offset = 2.0 * std::abs(y[index] / WORLD_SIZE - 0.5);
         double const cold_proxy = cold_offset * cold_offset;
@@ -405,7 +442,7 @@ CrustFields makeInitialCrust(
 
 TectonicsFields generateTectonics(
     GenerationConfiguration const& configuration,
-    std::stop_token cancellation,
+    std::stop_token const& cancellation,
     ProgressCallback const& progress
 )
 {
@@ -444,16 +481,12 @@ TectonicsFields generateTectonics(
     auto [x, y] = makeCoordinates(resolution);
     FloatField warp_x_noise = periodicFbm(
         configuration.seed + 401U,
-        resolution,
-        3U,
-        2U,
+        FbmParameters{.resolution = resolution, .octaves = 3U, .start_frequency = 2U},
         cancellation
     );
     FloatField warp_y_noise = periodicFbm(
         configuration.seed + 409U,
-        resolution,
-        3U,
-        2U,
+        FbmParameters{.resolution = resolution, .octaves = 3U, .start_frequency = 2U},
         cancellation
     );
     DoubleField warped_x(field_size);
@@ -465,6 +498,7 @@ TectonicsFields generateTectonics(
         warped_x[index] = x[index] + warp_x;
         warped_y[index] = y[index] + warp_y;
     }
+    CoordinateFields const warped_coordinates{.x = warped_x, .y = warped_y};
 
     DoubleField polarity_rank(plate_count);
     for (double& rank : polarity_rank) {
@@ -472,9 +506,7 @@ TectonicsFields generateTectonics(
     }
     FloatField substrate = periodicFbm(
         configuration.seed + 211U,
-        resolution,
-        4U,
-        2U,
+        FbmParameters{.resolution = resolution, .octaves = 4U, .start_frequency = 2U},
         cancellation
     );
     CrustFields crust = makeInitialCrust(
@@ -493,9 +525,7 @@ TectonicsFields generateTectonics(
     FloatField divergence(field_size, 0.0F);
     FloatField arc_segments = periodicFbm(
         configuration.seed + 521U,
-        resolution,
-        3U,
-        5U,
+        FbmParameters{.resolution = resolution, .octaves = 3U, .start_frequency = 5U},
         cancellation
     );
     for (float& value : arc_segments) {
@@ -511,8 +541,7 @@ TectonicsFields generateTectonics(
     for (uint32_t epoch = 0U; epoch < configuration.epochs; ++epoch) {
         checkCancellation(cancellation);
         MotionField const motion = calculateMotion(
-            warped_x,
-            warped_y,
+            warped_coordinates,
             centres,
             velocities,
             blend_width,
@@ -529,26 +558,40 @@ TectonicsFields generateTectonics(
             sampled_continental[index] = bilinearPeriodic(
                 crust.continental,
                 resolution,
-                source_x,
-                source_y
+                WorldPoint{.x = source_x, .y = source_y}
             );
             next_uplift[index] = static_cast<float>(
-                0.88 * bilinearPeriodic(uplift, resolution, source_x, source_y)
+                0.88 * bilinearPeriodic(
+                    uplift,
+                    resolution,
+                    WorldPoint{.x = source_x, .y = source_y}
+                )
             );
             next_island_arc_uplift[index] = static_cast<float>(
-                0.88 * bilinearPeriodic(island_arc_uplift, resolution, source_x, source_y)
+                0.88 * bilinearPeriodic(
+                    island_arc_uplift,
+                    resolution,
+                    WorldPoint{.x = source_x, .y = source_y}
+                )
             );
             next_subduction[index] = static_cast<float>(
-                0.88 * bilinearPeriodic(subduction, resolution, source_x, source_y)
+                0.88 * bilinearPeriodic(
+                    subduction,
+                    resolution,
+                    WorldPoint{.x = source_x, .y = source_y}
+                )
             );
             next_divergence[index] = static_cast<float>(
-                0.88 * bilinearPeriodic(divergence, resolution, source_x, source_y)
+                0.88 * bilinearPeriodic(
+                    divergence,
+                    resolution,
+                    WorldPoint{.x = source_x, .y = source_y}
+                )
             );
         }
         DoubleField smoothed_continental = gaussianFilterWrap(
             sampled_continental,
-            resolution,
-            0.45,
+            GaussianFilterParameters{.resolution = resolution, .sigma = 0.45},
             cancellation
         );
         for (uint64_t index = 0U; index < field_size; ++index) {
@@ -571,26 +614,22 @@ TectonicsFields generateTectonics(
         }
         DoubleField broad_convergence = gaussianFilterWrap(
             convergent,
-            resolution,
-            broad_cells,
+            GaussianFilterParameters{.resolution = resolution, .sigma = broad_cells},
             cancellation
         );
         DoubleField narrow_convergence = gaussianFilterWrap(
             convergent,
-            resolution,
-            narrow_cells,
+            GaussianFilterParameters{.resolution = resolution, .sigma = narrow_cells},
             cancellation
         );
         DoubleField broad_divergence = gaussianFilterWrap(
             divergent,
-            resolution,
-            broad_cells,
+            GaussianFilterParameters{.resolution = resolution, .sigma = broad_cells},
             cancellation
         );
         DoubleField narrow_divergence = gaussianFilterWrap(
             divergent,
-            resolution,
-            narrow_cells,
+            GaussianFilterParameters{.resolution = resolution, .sigma = narrow_cells},
             cancellation
         );
 
@@ -602,8 +641,7 @@ TectonicsFields generateTectonics(
         }
         FloatField local_continent = gaussianFilterWrap(
             continent,
-            resolution,
-            broad_cells,
+            GaussianFilterParameters{.resolution = resolution, .sigma = broad_cells},
             cancellation
         );
         DoubleField polarity(field_size);
@@ -616,7 +654,11 @@ TectonicsFields generateTectonics(
                 motion.edge_distance[index] / (0.006 * WORLD_SIZE)
             ) * rank_sign;
         }
-        polarity = gaussianFilterWrap(polarity, resolution, narrow_cells, cancellation);
+        polarity = gaussianFilterWrap(
+            polarity,
+            GaussianFilterParameters{.resolution = resolution, .sigma = narrow_cells},
+            cancellation
+        );
 
         for (uint64_t index = 0U; index < field_size; ++index) {
             float const continent_weight = continent[index];
@@ -663,8 +705,7 @@ TectonicsFields generateTectonics(
     }
 
     MotionField final_motion = calculateMotion(
-        warped_x,
-        warped_y,
+        warped_coordinates,
         centres,
         velocities,
         blend_width,
@@ -685,7 +726,11 @@ TectonicsFields generateTectonics(
                 .x = hotspot_random.uniform(0.0, WORLD_SIZE),
                 .y = hotspot_random.uniform(0.0, WORLD_SIZE),
             };
-            if (bilinearPeriodic(crust.continental, resolution, location.x, location.y) < 0.35) {
+            if (bilinearPeriodic(
+                crust.continental,
+                resolution,
+                WorldPoint{.x = location.x, .y = location.y}
+            ) < 0.35) {
                 accepted = true;
                 break;
             }
@@ -693,8 +738,16 @@ TectonicsFields generateTectonics(
         if (!accepted) {
             continue;
         }
-        double const motion_x = bilinearPeriodic(final_motion.vx, resolution, location.x, location.y);
-        double const motion_y = bilinearPeriodic(final_motion.vy, resolution, location.x, location.y);
+        double const motion_x = bilinearPeriodic(
+            final_motion.vx,
+            resolution,
+            WorldPoint{.x = location.x, .y = location.y}
+        );
+        double const motion_y = bilinearPeriodic(
+            final_motion.vy,
+            resolution,
+            WorldPoint{.x = location.x, .y = location.y}
+        );
         double const speed = std::max(std::hypot(motion_x, motion_y), 1.0);
         double const ux = motion_x / speed;
         double const uy = motion_y / speed;
@@ -727,9 +780,7 @@ TectonicsFields generateTectonics(
     if (configuration.epochs > 0U) {
         FloatField ruggedness = periodicFbm(
             configuration.seed + 307U,
-            resolution,
-            5U,
-            2U,
+            FbmParameters{.resolution = resolution, .octaves = 5U, .start_frequency = 2U},
             cancellation
         );
         for (uint64_t index = 0U; index < field_size; ++index) {
@@ -739,9 +790,7 @@ TectonicsFields generateTectonics(
         }
         FloatField shelf_noise = periodicFbm(
             configuration.seed + 727U,
-            resolution,
-            6U,
-            2U,
+            FbmParameters{.resolution = resolution, .octaves = 6U, .start_frequency = 2U},
             cancellation
         );
         for (uint64_t index = 0U; index < field_size; ++index) {

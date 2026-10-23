@@ -1,9 +1,12 @@
 #include <shared/world/WorldCoverage.hpp>
 
+#include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/World.hpp>
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <vector>
@@ -30,21 +33,25 @@ bool isValidPosition(shared::PlayerPosition const position) noexcept
     return position.x_subcell < shared::SUBCELLS_PER_CELL
         && position.y_subcell < shared::SUBCELLS_PER_CELL
         && position.z_subcell < shared::SUBCELLS_PER_CELL
-        && shared::WorldBounds::isValidZ(position.z);
+        && shared::World::isFlightPositionInBounds(position);
 }
+
+struct ClosedInterval final {
+    int64_t lower;
+    int64_t upper;
+};
 
 [[nodiscard]]
 int64_t distanceToClosedInterval(
     int64_t const point,
-    int64_t const lower,
-    int64_t const upper
+    ClosedInterval const& interval
 ) noexcept
 {
-    if (point < lower) {
-        return lower - point;
+    if (point < interval.lower) {
+        return interval.lower - point;
     }
-    if (point > upper) {
-        return point - upper;
+    if (point > interval.upper) {
+        return point - interval.upper;
     }
     return 0;
 }
@@ -65,7 +72,10 @@ int64_t periodicDistanceToChunk(
     for (int64_t const image : IMAGE_OFFSETS) {
         nearest = std::min(
             nearest,
-            distanceToClosedInterval(center, chunk_start + image, chunk_end + image)
+            distanceToClosedInterval(
+                center,
+                ClosedInterval{.lower = chunk_start + image, .upper = chunk_end + image}
+            )
         );
     }
     return nearest;
@@ -95,8 +105,7 @@ bool intersectsClosedSphere(
     );
     int64_t const z_distance = distanceToClosedInterval(
         center_z,
-        z_start,
-        z_start + CHUNK_SIZE_SUBCELLS
+        ClosedInterval{.lower = z_start, .upper = z_start + CHUNK_SIZE_SUBCELLS}
     );
     return x_distance * x_distance + y_distance * y_distance + z_distance * z_distance
         <= radius_squared;
@@ -200,5 +209,35 @@ std::vector<ChunkCoordinate> requiredChunkKeys(
     return chunkKeysWithinRadius(center, radius_blocks);
 }
 
+std::vector<ChunkCoordinate> requiredTerrainColumns(PlayerPosition const center, uint32_t const radius_blocks)
+{
+    if (!isValidPosition(center) || radius_blocks > AUTHORITATIVE_PREFETCH_RADIUS_BLOCKS) {
+        return {};
+    }
+    int32_t const radius = static_cast<int32_t>((radius_blocks + Chunk::SIDE_LENGTH - 1U) / Chunk::SIDE_LENGTH);
+    int32_t const center_x = static_cast<int32_t>(WorldBounds::wrapHorizontal(center.x) / Chunk::SIDE_LENGTH);
+    int32_t const center_y = static_cast<int32_t>(WorldBounds::wrapHorizontal(center.y) / Chunk::SIDE_LENGTH);
+    std::vector<ChunkCoordinate> result;
+    size_t const side = static_cast<size_t>(radius) * 2U + 1U;
+    result.reserve(side * side);
+    for (int32_t y = -radius; y <= radius; ++y) {
+        for (int32_t x = -radius; x <= radius; ++x) {
+            result.push_back({
+                .x = static_cast<int32_t>(WorldBounds::wrapHorizontal(
+                    static_cast<int64_t>(center_x + x) * Chunk::SIDE_LENGTH) / Chunk::SIDE_LENGTH),
+                .y = static_cast<int32_t>(WorldBounds::wrapHorizontal(
+                    static_cast<int64_t>(center_y + y) * Chunk::SIDE_LENGTH) / Chunk::SIDE_LENGTH),
+                .z = 0,
+            });
+        }
+    }
+    std::sort(result.begin(), result.end(), isZyxLess);
+    return result;
+}
+
+std::vector<ChunkCoordinate> materializedInterestChunkKeys(PlayerPosition const center)
+{
+    return chunkKeysWithinRadius(center, MAX_MATERIALIZED_INTEREST_RADIUS_BLOCKS);
+}
 
 } // namespace shared

@@ -158,7 +158,9 @@ bool AndroidInputState::endLookTouch(int32_t const pointer_id) noexcept
     if (pointer_id != m_look_pointer_id || m_look_pointer_id < 0) {
         return false;
     }
-    static_cast<void>(cancelLookTouch());
+    m_look_pointer_id = -1;
+    m_look_x = 0.0F;
+    m_look_y = 0.0F;
     return true;
 }
 

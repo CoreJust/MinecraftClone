@@ -5,6 +5,24 @@
 namespace generation::detail
 {
 
+struct Pcg64State final
+{
+    uint64_t low = 0U;
+    uint64_t high = 0U;
+};
+
+struct Pcg64Increment final
+{
+    uint64_t low = 0U;
+    uint64_t high = 0U;
+};
+
+struct VonMisesParameters final
+{
+    double mean;
+    double concentration;
+};
+
 class NumpyRandom final
 {
 public:
@@ -14,15 +32,13 @@ public:
     [[nodiscard]] double random();
     [[nodiscard]] double uniform(double low, double high);
     [[nodiscard]] int64_t integers(int64_t low, int64_t high);
-    [[nodiscard]] double vonmises(double mean, double concentration);
+    [[nodiscard]] double vonmises(VonMisesParameters const& parameters);
 
 private:
     [[nodiscard]] uint32_t nextUInt32();
 
-    uint64_t state_low_ = 0U;
-    uint64_t state_high_ = 0U;
-    uint64_t increment_low_ = 0U;
-    uint64_t increment_high_ = 0U;
+    Pcg64State state_;
+    Pcg64Increment increment_;
     uint32_t cached_uint32_ = 0U;
     bool has_cached_uint32_ = false;
 };

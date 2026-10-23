@@ -1,23 +1,42 @@
 #pragma once
 
+#include <shared/world/Chunk.hpp>
+#include <shared/world/SparseWorld.hpp>
+#include <shared/world/TerrainWorld.hpp>
 #include <shared/world/World.hpp>
+#include <shared/world/WorldCoverage.hpp>
+#include <generation/Generation.hpp>
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <variant>
 #include <vector>
 
 namespace shared {
 
 constexpr uint8_t PROTOCOL_MAGIC = 0x4DU;
-constexpr uint8_t PROTOCOL_VERSION = 14U;
+constexpr uint8_t PROTOCOL_VERSION = 20U;
 constexpr uint8_t GAME_CHANNEL = 0U;
 constexpr uint8_t HEIGHT_TILE_CHANNEL = 1U;
+constexpr uint32_t MAX_MESSAGE_SIZE_BYTES = 5'000'000U;
+constexpr uint32_t MAX_GENERATION_SNAPSHOT_RESOLUTION = 512U;
+constexpr uint32_t MAX_GENERATION_SNAPSHOT_SAMPLES =
+    MAX_GENERATION_SNAPSHOT_RESOLUTION * MAX_GENERATION_SNAPSHOT_RESOLUTION;
+constexpr uint16_t MAX_WORLD_PREPARATION_FAILURE_BYTES = 512U;
+constexpr uint8_t MATERIALIZED_CHUNK_BATCH_CAPACITY = 16U;
+constexpr uint8_t MATERIALIZED_CHUNK_DELIVERY_WINDOW = 40U;
+constexpr uint8_t MATERIALIZED_CHUNK_RETRY_KEY_CAPACITY = MATERIALIZED_CHUNK_BATCH_CAPACITY;
 constexpr uint32_t HEIGHT_TILE_SIDE_LENGTH = 16U;
 constexpr uint32_t HEIGHT_TILE_SAMPLE_COUNT = HEIGHT_TILE_SIDE_LENGTH * HEIGHT_TILE_SIDE_LENGTH;
-constexpr uint32_t HEIGHT_TILE_PAYLOAD_BYTES = HEIGHT_TILE_SAMPLE_COUNT * sizeof(uint16_t);
+constexpr uint32_t HEIGHT_TILE_SURFACE_COLUMN_BYTES = 36U;
+constexpr uint32_t HEIGHT_TILE_SURFACE_IDENTITY_BYTES = 22U + TERRAIN_CONFIGURATION_IDENTITY_MAX_BYTES;
+constexpr uint32_t HEIGHT_TILE_PAYLOAD_BYTES = HEIGHT_TILE_SAMPLE_COUNT
+    * (HEIGHT_TILE_SURFACE_COLUMN_BYTES + sizeof(uint16_t))
+    + 8U + HEIGHT_TILE_SURFACE_IDENTITY_BYTES;
 constexpr uint32_t HEIGHT_TILE_INTEREST_RADIUS = 256U;
 constexpr uint32_t MIN_HEIGHT_TILE_INTEREST_RADIUS = 1U;
 constexpr uint32_t MAX_HEIGHT_TILE_INTEREST_RADIUS = 256U;
@@ -91,10 +110,97 @@ struct JoinRequestMessage final {
     WorldMode mode = WorldMode::Flat;
     WorldConfiguration configuration = World::canonicalConfiguration();
     bool wants_previews = false;
+    uint64_t join_epoch = 1U;
 };
 
 struct JoinResponseMessage final {
     bool accepted;
+    uint64_t join_epoch = 1U;
+};
+
+struct TerrainSessionIdentity final {
+    uint64_t join_epoch = 0U;
+    TerrainIdentity terrain{};
+    generation::GenerationConfiguration configuration{};
+
+    bool operator==(TerrainSessionIdentity const&) const = default;
+};
+
+struct ServerWorldPreparationMessage final {
+    TerrainSessionIdentity session;
+    uint64_t sequence = 0U;
+    generation::GenerationStage stage = generation::GenerationStage::Tectonics;
+    uint32_t work_completed = 0U;
+    uint32_t work_total = 0U;
+    uint64_t server_elapsed_microseconds = 0U;
+    std::shared_ptr<generation::GenerationSnapshot const> latest_snapshot;
+    bool final_atlas_complete = false;
+    std::optional<PlayerPosition> refined_safe_spawn;
+    std::string failure;
+};
+
+struct UniformChunkData final {
+    Block material = Block::Air;
+};
+
+struct DenseChunkData final {
+    Chunk::Blocks blocks{};
+};
+
+struct MaterializedChunkPayload final {
+    ChunkCoordinate coordinate{};
+    uint64_t content_hash = 0U;
+    std::variant<UniformChunkData, DenseChunkData> data = UniformChunkData{};
+};
+
+struct ServerMaterializedChunkBatchMessage final {
+    TerrainSessionIdentity session;
+    uint64_t coverage_epoch = 1U;
+    uint64_t delivery_token = 0U;
+    std::vector<MaterializedChunkPayload> chunks;
+};
+
+struct ClientChunkDeliveryAckMessage final {
+    TerrainSessionIdentity session;
+    uint64_t coverage_epoch = 1U;
+    uint64_t delivery_token = 0U;
+    uint8_t credits = 0U;
+    std::vector<ChunkCoordinate> not_resident_keys;
+};
+
+inline constexpr uint8_t AUTHORITATIVE_TERRAIN_BATCH_CAPACITY = 64U;
+inline constexpr uint8_t AUTHORITATIVE_TERRAIN_DELIVERY_WINDOW = 8U;
+
+struct ServerAuthoritativeTerrainBatchMessage final {
+    TerrainSessionIdentity session;
+    uint64_t coverage_epoch = 1U;
+    uint64_t delivery_token = 0U;
+    std::vector<AuthoritativeTerrainTile> tiles;
+};
+
+struct ClientAuthoritativeTerrainAckMessage final {
+    TerrainSessionIdentity session;
+    uint64_t coverage_epoch = 1U;
+    uint64_t delivery_token = 0U;
+    std::vector<ChunkCoordinate> not_resident_keys;
+};
+
+struct ClientStartWorldMessage final {
+    TerrainSessionIdentity session;
+};
+
+struct ServerStartWorldAckMessage final {
+    TerrainSessionIdentity session;
+    bool accepted = false;
+    std::string failure;
+};
+
+struct ServerChunkCoverageMessage final {
+    TerrainSessionIdentity session;
+    uint64_t coverage_epoch = 1U;
+    PlayerPosition center{};
+    uint16_t actual_radius_blocks = ACTUAL_TERRAIN_RADIUS_BLOCKS;
+    uint16_t visual_lod_radius_blocks = FULL_WORLD_VISUAL_LOD_RADIUS_BLOCKS;
 };
 
 struct ClientInputMessage final {
@@ -133,6 +239,7 @@ struct ServerRemovePlayerMessage final {
 
 struct ServerHeightTileDescriptorMessage final {
     WorldConfiguration configuration = World::canonicalConfiguration();
+    TerrainIdentity world_identity{};
     uint64_t world_revision = 1;
     uint32_t max_height_tiles = HEIGHT_TILE_INTEREST_COUNT;
     uint32_t max_height_tile_bytes = HEIGHT_TILE_PAYLOAD_BYTES;
@@ -147,10 +254,17 @@ struct ServerHeightTileMessage final {
     uint64_t revision = 1;
     uint64_t token = 0;
     std::array<uint16_t, HEIGHT_TILE_SAMPLE_COUNT> heights{};
+    SurfaceTile surface{};
 };
 
 [[nodiscard]]
 uint32_t encodedHeightTileSize(ServerHeightTileMessage const& message) noexcept;
+
+[[nodiscard]]
+uint64_t encodedMaterializedChunkBatchSize(ServerMaterializedChunkBatchMessage const& message) noexcept;
+
+[[nodiscard]]
+uint64_t encodedAuthoritativeTerrainBatchSize(ServerAuthoritativeTerrainBatchMessage const& message) noexcept;
 
 struct ServerRemoveHeightTileMessage final {
     HeightTileKey key{};
@@ -175,7 +289,15 @@ using Message = std::variant<
     ServerWorldRevisionMessage,
     ServerHeightTileMessage,
     ServerHeightTileBatchMessage,
-    ServerRemoveHeightTileMessage>;
+    ServerRemoveHeightTileMessage,
+    ServerWorldPreparationMessage,
+    ServerMaterializedChunkBatchMessage,
+    ClientChunkDeliveryAckMessage,
+    ClientStartWorldMessage,
+    ServerStartWorldAckMessage,
+    ServerChunkCoverageMessage,
+    ServerAuthoritativeTerrainBatchMessage,
+    ClientAuthoritativeTerrainAckMessage>;
 
 [[nodiscard]]
 constexpr int32_t normalizeHeightTileCoordinate(int64_t const value, int32_t const extent) noexcept
@@ -207,5 +329,8 @@ constexpr bool isNewerSequence(uint32_t const candidate, uint32_t const referenc
 
 std::vector<uint8_t> encodeMessage(Message message);
 std::optional<Message> decodeMessage(std::span<uint8_t const> data);
+
+[[nodiscard]]
+std::optional<Chunk> materializeChunkPayload(MaterializedChunkPayload const& payload);
 
 } // namespace shared

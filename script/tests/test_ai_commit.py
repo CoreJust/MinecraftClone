@@ -475,6 +475,65 @@ class AiCommitTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("clean two-parent promotions", result.stderr)
 
+    def test_snapshot_precommit_propagates_exact_staged_source(self) -> None:
+        checker = self.root / "script/ai_check.py"
+        checker.write_text(
+            "import importlib.util, json, os, pathlib, sys\n"
+            f"spec = importlib.util.spec_from_file_location('real_check', {str(REPOSITORY / 'script/ai_check.py')!r})\n"
+            "module = importlib.util.module_from_spec(spec)\n"
+            "sys.modules[spec.name] = module\n"
+            "spec.loader.exec_module(module)\n"
+            "args = sys.argv[1:]\n"
+            "source = args[args.index('--snapshot-source-commit') + 1] if '--snapshot-source-commit' in args else None\n"
+            "bound = module.snapshot_source_for_check(pathlib.Path.cwd(), source, candidate=True, strict=False)\n"
+            "pathlib.Path(os.environ['AI_CHECK_LOG']).write_text(json.dumps({'args': args, 'source': bound}))\n"
+            "raise SystemExit(0 if bound == os.environ['AI_SNAPSHOT_SOURCE_COMMIT'] else 1)\n",
+            encoding="utf-8",
+        )
+        (self.root / "script/ai_publish.py").write_text("print('')\n", encoding="utf-8")
+        (self.root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+        self.stage_task(level="snapshot", finalized=True)
+        self.git("add", "script/ai_check.py", "script/ai_publish.py", ".gitignore")
+        tree = self.git("write-tree").stdout.strip()
+        source = self.git("commit-tree", tree, "-p", self.baseline,
+                          "-m", "immutable staged qualification").stdout.strip()
+        log = self.root / ".git/check.log"
+        environment = os.environ | {"AI_CHECK_LOG": str(log), "AI_SNAPSHOT_SOURCE_COMMIT": source}
+        for branch in ("ai-dev", "codex/ai-MC-AI-0001"):
+            with self.subTest(branch=branch):
+                self.git("branch", "-M", branch)
+                self.assertEqual(self.record(self.candidate()).returncode, 0)
+                (self.root / "report.json").unlink()
+                result = self.run_command("precommit", environment=environment)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                proof = json.loads(log.read_text(encoding="utf-8"))
+                self.assertEqual(proof["source"], source)
+                self.assertIn("--require-index-match", proof["args"])
+
+    def test_snapshot_source_environment_preserves_precommit_precedence(self) -> None:
+        implementation = load_ai_commit_module()
+        source = "a" * 40
+        for branch, level, merge_head, tagged, expected in (
+            ("codex/ai-task", "snapshot", "", "", source),
+            ("feature/unrelated", "snapshot", "", "", None),
+            ("codex/ai-task", "minor", "", "", None),
+            ("codex/ai-task", "snapshot", "b" * 40, "", None),
+            ("ai-main", "snapshot", "b" * 40, "", "b" * 40),
+            ("ai-dev", "snapshot", "", "c" * 40, "c" * 40),
+        ):
+            with self.subTest(branch=branch, level=level, merge_head=merge_head, tagged=tagged):
+                candidate = {"level": level, "merge_head": merge_head,
+                             "head": self.baseline, "task_id": "MC-AI-0001"}
+                completed = subprocess.CompletedProcess([], 0, stdout=tagged, stderr="")
+                with mock.patch.object(implementation, "check", return_value=candidate), \
+                     mock.patch.object(implementation, "git", return_value=branch), \
+                     mock.patch.dict(os.environ, {"AI_SNAPSHOT_SOURCE_COMMIT": source}), \
+                     mock.patch.object(implementation.subprocess, "run", return_value=completed) as run:
+                    self.assertEqual(implementation.precommit(self.root), 0)
+                args = run.call_args.args[0]
+                actual = args[args.index("--snapshot-source-commit") + 1] if "--snapshot-source-commit" in args else None
+                self.assertEqual(actual, expected)
+
     def test_precommit_selects_fast_or_candidate_check_by_level(self) -> None:
         log = self.root / "check.log"
         checker = self.root / "script/ai_check.py"

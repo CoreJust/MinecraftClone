@@ -3,8 +3,9 @@
 Checked-in sources are CoreLang scripts. See the
 [scripting guide](../docs/scripting/README.md) for the contracts.
 
-CoreLang `.core` examples use `@version("0.1.2")`, `@use minecraft`, and
-`pub fn scenario()`:
+Scenario `.core` examples use bare `@version(0.1.5)`, `@use minecraft`, and
+`pub fn scenario()`. The version selects the CoreLang frontend; profiles such
+as `flight3d-v1` and `sparse-world-v1` select scenario behavior.
 
 - `canonical_sample.core` is the smallest typed flight scenario.
 - `s5_flight_boundary.core` uses functions and loops to move two players to
@@ -24,14 +25,14 @@ CoreLang `.core` examples use `@version("0.1.2")`, `@use minecraft`, and
 `z - 6 + random < 0`, writes stone block id `1`, and publishes only after the
 candidate is complete. It is seeded world content, not a per-tick scenario.
 
-The `sparse-world-v1` profile uses the versioned `0.1.3` contract.
+The `sparse-world-v1` profile uses the same `0.1.5` frontend as player scenarios.
 `sparseWorldOptions` selects generator version `1` and a positive resident
 chunk bound. `expectBlockXYZ` materializes and checks a block through the
 existing sparse world; `expectResidentChunks` checks current residency. Each
 observation counts against the scenario operation and evidence limits.
 
 ```corelang
-@version("0.1.3")
+@version(0.1.5)
 @use minecraft
 
 pub fn scenario() {

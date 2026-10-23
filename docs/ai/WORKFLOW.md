@@ -51,12 +51,11 @@ Full, candidate, and strict checks run the complete Python suite. Batch up to
 runtime checks per batch, then push. Reuse only unchanged evidence; avoid
 duplicate precommit checks and broad reviews.
 
-Cap automated stages at 600 seconds, local analyzer matrices and `ai_check.py`
-invocations at 1,500, and each GitHub artifact job at 30 minutes. Python tests
-get 300 seconds (420 on Windows), renderer smoke 600, CTest 600 per phase
-(240 per test), Android emulator stages and analyzer rows 600. Timeouts retain
-partial logs/failing receipts and mark remaining checks unrun; split work to
-resume rather than extending a gate.
+Keep ordinary stages, including renderer, Android and analyzer checks, at 600
+seconds; artifact jobs get 30 minutes. Python gets 420 seconds on each host.
+CTest gets a 1,800-second phase budget (240 seconds per test), based on a
+measured 1,228-second Debug run. `ai_check.py` gets 3,900 seconds. Timeouts
+fail; retain partial logs and record unrun checks.
 
 The Windows runtime-staging CMake fixture is limited to 60 seconds; timeout
 remains a failure and reports elapsed time and captured partial output.
@@ -77,13 +76,19 @@ including its [early gameplay diagnostic gate](QUALIFICATION.md#early-gameplay-d
 
 ## Snapshots and versions
 
-A snapshot records the preceding `ai-main` commit as `baseline_commit`. At
-finalization collect **all basic-task commits since that boundary**, including
-merged branches. Related branches may diverge, so include all reachable commits
-outside the baseline and both parents of a pending promotion. Map imported
-pre-policy commits explicitly; never omit changes or rewrite history.
+A snapshot records the preceding `ai-main` commit as `baseline_commit`. Collect
+every basic-task commit since it, including merged branches and both parents of
+pending promotions. Map pre-policy commits explicitly; never omit changes or
+rewrite history.
 
-Fill product changes first, code changes second; reconcile planned and actual children, then `ai_history.py finalize <id>`. It refuses missing/unfinished children and untraceable commits. Plans are retained beside actual results. Acceptance review must also establish that no promised product scope was silently dropped.
+The first snapshot in a new minor also validates the prior snapshot ledger from
+the baseline's exact tagged promotion source. Keep its existing parent and
+allow only designated mutable-field corrections.
+
+Record product changes before code changes. Reconcile planned and actual
+children, then run `ai_history.py finalize <id>`; it rejects unfinished children
+and untraceable commits. Keep plans beside results and verify no promised scope
+was dropped.
 
 Snapshot closure runs the full suite, enabled code checks, and additional gates.
 Local dependency, environment, qualification and provenance checks fail closed;

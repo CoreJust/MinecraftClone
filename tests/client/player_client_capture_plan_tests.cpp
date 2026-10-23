@@ -17,6 +17,8 @@
 #include <glm/vec4.hpp>
 #include <gtest/gtest.h>
 
+#include <testsupport/TerrainFixtures.hpp>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -35,6 +37,31 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+namespace {
+
+client::HeightTileReplacementResult acceptTerrainTile(
+    client::PreviewResidency& residency,
+    shared::HeightTileKey const key,
+    client::HeightTileRevision const revision,
+    uint64_t const token,
+    std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> const& heights
+)
+{
+    return residency.accept(
+        key,
+        revision,
+        token,
+        heights,
+        testsupport::makeSurfaceTile(
+            key,
+            testsupport::makeTerrainIdentity(42U, revision.revision),
+            heights
+        )
+    );
+}
+
+} // namespace
 
 TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether) {
   static constexpr int32_t WORLD_CENTER = 32'768;
@@ -311,15 +338,13 @@ TEST(PlayerClientCapturePlanTest,
       .generation = 1U,
       .revision = 1U,
   };
-  std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> heights{};
+  std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> const heights = testsupport::makeHeightSamples();
   client::PreviewResidency residency{REVISION};
 
   for (uint32_t index = 0U; index < CHANGE_COUNT; ++index) {
     shared::HeightTileKey const key{static_cast<int32_t>(index), 1};
     ASSERT_EQ(
-        residency
-            .accept(key, REVISION, static_cast<uint64_t>(index) + 1U, heights)
-            .replacement,
+        acceptTerrainTile(residency, key, REVISION, static_cast<uint64_t>(index) + 1U, heights).replacement,
         client::HeightTileReplacement::Published);
   }
 
@@ -344,12 +369,12 @@ TEST(PlayerClientCapturePlanTest,
       shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY * shared::HEIGHT_TILE_DELIVERY_WINDOW;
   static constexpr uint32_t REPLACEMENT_COUNT = WINDOW_OPERATIONS / 2U;
   static constexpr client::HeightTileRevision REVISION{1U, 1U};
-  std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> heights{};
+  std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> const heights = testsupport::makeHeightSamples();
   for (bool const capture_enabled : {false, true}) {
     client::PreviewResidency residency{REVISION};
     for (uint32_t index = 0U; index < REPLACEMENT_COUNT; ++index) {
       client::HeightTileKey const key{static_cast<int32_t>(index), 0};
-      ASSERT_EQ(residency.accept(key, REVISION, 1U, heights).replacement,
+      ASSERT_EQ(acceptTerrainTile(residency, key, REVISION, 1U, heights).replacement,
                 client::HeightTileReplacement::Published);
     }
     ASSERT_EQ(residency.takeChanges(WINDOW_OPERATIONS).size(), REPLACEMENT_COUNT);
@@ -357,7 +382,7 @@ TEST(PlayerClientCapturePlanTest,
       client::HeightTileKey const old_key{static_cast<int32_t>(index), 0};
       client::HeightTileKey const new_key{static_cast<int32_t>(index), 1};
       ASSERT_TRUE(residency.evict(old_key, REVISION, 2U));
-      ASSERT_EQ(residency.accept(new_key, REVISION, 3U, heights).replacement,
+      ASSERT_EQ(acceptTerrainTile(residency, new_key, REVISION, 3U, heights).replacement,
                 client::HeightTileReplacement::Published);
     }
     ASSERT_EQ(residency.pendingChangeCount(), WINDOW_OPERATIONS);
@@ -506,9 +531,9 @@ TEST(PlayerClientCapturePlanTest,
                      client::PlayerHeightTileKeyHash> const interest{KEY};
   std::unordered_set<shared::HeightTileKey,
                      client::PlayerHeightTileKeyHash> const visible_meshes{KEY};
-  std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> heights{};
+  std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> const heights = testsupport::makeHeightSamples();
 
-  ASSERT_EQ(residency.accept(KEY, REVISION, 1U, heights).replacement,
+  ASSERT_EQ(acceptTerrainTile(residency, KEY, REVISION, 1U, heights).replacement,
             client::HeightTileReplacement::Published);
   EXPECT_FALSE(client::playerClientCaptureCoverageComplete(
       interest, visible_meshes, residency, EXPECTED_TILES, 0U));
@@ -534,7 +559,7 @@ TEST(PlayerClientCapturePlanTest, GeometricCaptureCoverageRequiresEveryResidentD
     interest.set(CENTER, RADIUS);
     client::PreviewResidency residency{ REVISION };
     std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> visible_meshes;
-    std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> heights{};
+    std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> const heights = testsupport::makeHeightSamples();
     uint32_t covered_count = 0U;
 
     for (int32_t y = -static_cast<int32_t>(RADIUS); y <= static_cast<int32_t>(RADIUS); ++y) {
@@ -546,7 +571,7 @@ TEST(PlayerClientCapturePlanTest, GeometricCaptureCoverageRequiresEveryResidentD
             if (!interest.contains(key)) {
                 continue;
             }
-            ASSERT_EQ(residency.accept(key, REVISION, 1U, heights).replacement,
+            ASSERT_EQ(acceptTerrainTile(residency, key, REVISION, 1U, heights).replacement,
                 client::HeightTileReplacement::Published);
             visible_meshes.insert(key);
             ++covered_count;

@@ -24,8 +24,9 @@ TASK_ID = "MC-AI-0249"
 SCHEMA_VERSION = 2
 DEFAULT_MANIFEST = Path(__file__).with_name("ai_analysis_matrix.json")
 DEFAULT_RECEIPT = Path("build/ai-checks/analysis-matrix.json")
-MAX_ROW_TIMEOUT_SECONDS = 600
-MAX_LOCAL_TIMEOUT_SECONDS = 1500
+# TSan reached 855/1197 tests at 1800 seconds including build; allow the complete suite.
+MAX_ROW_TIMEOUT_SECONDS = 3600
+MAX_LOCAL_TIMEOUT_SECONDS = 7200
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 # Keep this list synchronized with the acceptance rows in MC-AI-0249.  The
@@ -224,8 +225,9 @@ REQUIRED_EFFECTIVE_COMPILE_FLAGS = {
     "macos_ubsan": ["-fsanitize=undefined"],
     "macos_tsan": ["-fsanitize=thread"],
     "windows_msvc_asan": ["/fsanitize=address"],
-    "linux_lsan": ["-fsanitize=leak"],
+    "linux_lsan": ["-fsanitize=leak", "-fexperimental-library"],
     "linux_msan": [
+        "-fexperimental-library",
         "-fsanitize=memory",
         "-fsanitize-memory-track-origins=2",
         "-stdlib=libc++",
@@ -236,7 +238,7 @@ REQUIRED_ANALYSIS_CONFIGURATION = {
     "clang_static_analysis": (
         "analysis-clang-static",
         "CMAKE_CXX_FLAGS",
-        ["-Xanalyzer", "-analyzer-output=text"],
+        ["-Xclang", "-analyzer-output=text"],
     ),
     "clang_tidy": (
         "analysis-clang-tidy",
@@ -270,7 +272,7 @@ ANALYSIS_TOOL_MARKERS = {
     "windows_msvc_analyze": ["cl.exe", "/analyze", "/W4", "/WX"],
     "clang_static_analysis": [
         "scan-build",
-        "-Xanalyzer",
+        "-Xclang",
         "-analyzer-output=text",
     ],
     "clang_tidy": ["clang-tidy", "--checks=bugprone-*,performance-*", "--warnings-as-errors=*"],
@@ -1640,10 +1642,10 @@ def _validate_row_receipt(
         if argv != input_identity["effective_commands"][index]:
             raise MatrixError(f"{field}.argv does not match the recorded effective command")
         if declared[:2] == ["cmake", "--build"] and not any(
-            argv[offset : offset + 2] == ["--parallel", "2"]
+            argv[offset : offset + 2] == ["--parallel", _build_parallelism(manifest_row)]
             for offset in range(len(argv) - 1)
         ):
-            raise MatrixError(f"{field}.argv must enforce the matrix two-job build cap")
+            raise MatrixError(f"{field}.argv must enforce the matrix host build cap")
         if row_id in REQUIRED_ANALYSIS_CONFIGURATION and declared[:2] == ["cmake", "--build"] and "--verbose" not in argv:
             raise MatrixError(f"{field}.argv must enable verbose analyzer command capture")
         if execution.get("return_code") != 0:
@@ -1981,12 +1983,16 @@ def _capture_tool_probes(
     return versions, identities, None
 
 
+def _build_parallelism(manifest_row: Mapping[str, Any]) -> str:
+    return "1" if manifest_row["id"] in {"windows_msvc_asan", "windows_msvc_analyze"} else "2"
+
+
 def _effective_command_argv(manifest_row: Mapping[str, Any], environment: Mapping[str, str]) -> list[list[str]]:
     commands: list[list[str]] = []
     for command in manifest_row["commands"]:
         expanded = _expand_environment(command, environment)
         if expanded[:2] == ["cmake", "--build"]:
-            expanded.extend(["--parallel", "2"])
+            expanded.extend(["--parallel", _build_parallelism(manifest_row)])
         if (
             manifest_row["id"] in REQUIRED_ANALYSIS_CONFIGURATION
             and expanded[:2] == ["cmake", "--build"]

@@ -20,6 +20,8 @@ heatmaps. Runtime samples remain fixtures; this acceptance does not qualify nati
 S2 also owns the terrain-model replacement deferred from S1. The separate
 world-model study has no accepted production candidate. Its adoption is an
 explicit dependency, not something editing or renderer tests can substitute for.
+The [S1 carryover targets](earlydev_0_1_1_s2_delivery_targets.md) record the
+known performance, coverage, rendering and platform gaps to close in S2.
 
 ## Requirements and authority
 

@@ -1,11 +1,12 @@
+#include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/TerrainWorld.hpp>
-
 #include <generation/Generation.hpp>
 
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -13,13 +14,18 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace {
 
+struct AtlasClimate final {
+    float temperature = 12.0F;
+    float precipitation = 0.3F;
+};
+
 std::shared_ptr<generation::GlobalAtlas const> makeAtlas(
     int32_t const height,
-    float const temperature = 12.0F,
-    float const precipitation = 0.3F
+    AtlasClimate const climate = {}
 )
 {
     auto atlas = std::make_shared<generation::GlobalAtlas>();
@@ -29,13 +35,14 @@ std::shared_ptr<generation::GlobalAtlas const> makeAtlas(
     atlas->block_sea_level = 384U;
     atlas->max_height = 1'020U;
     atlas->vertical_scale = 1.0F;
-    atlas->elevation.assign(256U * 256U, static_cast<float>(height - 384) + 0.5F);
-    atlas->temperature.assign(256U * 256U, temperature);
-    atlas->precipitation.assign(256U * 256U, precipitation);
-    atlas->water_level.assign(256U * 256U, static_cast<float>(height - 384) + 0.5F);
-    atlas->lake_mask.assign(256U * 256U, 0U);
-    atlas->river_mask.assign(256U * 256U, 0U);
-    atlas->ocean_mask.assign(256U * 256U, 0U);
+    std::vector<float>::size_type const sample_count = static_cast<std::vector<float>::size_type>(256U) * 256U;
+    atlas->elevation.assign(sample_count, static_cast<float>(height - 384) + 0.5F);
+    atlas->temperature.assign(sample_count, climate.temperature);
+    atlas->precipitation.assign(sample_count, climate.precipitation);
+    atlas->water_level.assign(sample_count, static_cast<float>(height - 384) + 0.5F);
+    atlas->lake_mask.assign(sample_count, 0U);
+    atlas->river_mask.assign(sample_count, 0U);
+    atlas->ocean_mask.assign(sample_count, 0U);
     return atlas;
 }
 
@@ -45,7 +52,10 @@ std::shared_ptr<shared::TerrainWorld const> makeWorld(
     float const precipitation = 0.3F
 )
 {
-    return std::make_shared<shared::TerrainWorld>(makeAtlas(height, temperature, precipitation));
+    return std::make_shared<shared::TerrainWorld>(makeAtlas(height, {
+        .temperature = temperature,
+        .precipitation = precipitation,
+    }));
 }
 
 shared::SurfaceTile sampleTile(shared::TerrainWorld const& world, int32_t const x = 0, int32_t const y = 0)
@@ -172,8 +182,11 @@ TEST(TerrainWorldTest, MaterialIntervalsMatchInclusiveSeaAndBedrockRules)
 
 TEST(TerrainWorldTest, SamplesClimateMaterialsAndMaterializesMatchingChunks)
 {
-    shared::TerrainWorld const warm_wet{ makeAtlas(384, 12.0F, 0.3F) };
-    shared::SurfaceTile const warm_tile = sampleTile(warm_wet);
+    shared::TerrainWorld const warm_wet{ makeAtlas(384) };
+    std::unique_ptr<shared::SurfaceTile const> const warm_tile_owner{
+        new shared::SurfaceTile(sampleTile(warm_wet))
+    };
+    shared::SurfaceTile const& warm_tile = *warm_tile_owner;
     ASSERT_EQ(warm_tile.columns.front().highest_solid_z, 384U);
     EXPECT_EQ(warm_tile.columns.front().top_material, shared::Block::Grass);
     EXPECT_EQ(warm_tile.columns.front().ground_material, shared::Block::Dirt);
@@ -192,8 +205,11 @@ TEST(TerrainWorldTest, SamplesClimateMaterialsAndMaterializesMatchingChunks)
     EXPECT_EQ(lower.blockAt({ .x = 0, .y = 0, .z = 12 }), shared::Block::Dirt);
     EXPECT_EQ(lower.blockAt({ .x = 0, .y = 0, .z = 11 }), shared::Block::Stone);
 
-    shared::TerrainWorld const cold_seabed{ makeAtlas(383, -5.0F, 0.3F) };
-    shared::SurfaceTile const seabed_tile = sampleTile(cold_seabed);
+    shared::TerrainWorld const cold_seabed{ makeAtlas(383, { .temperature = -5.0F }) };
+    std::unique_ptr<shared::SurfaceTile const> const seabed_tile_owner{
+        new shared::SurfaceTile(sampleTile(cold_seabed))
+    };
+    shared::SurfaceTile const& seabed_tile = *seabed_tile_owner;
     ASSERT_EQ(seabed_tile.columns.front().highest_solid_z, 383U);
     EXPECT_TRUE(seabed_tile.columns.front().submerged);
     EXPECT_EQ(seabed_tile.columns.front().top_material, shared::Block::Dirt);
@@ -206,47 +222,47 @@ TEST(TerrainWorldTest, SamplesClimateMaterialsAndMaterializesMatchingChunks)
     EXPECT_EQ(seabed.blockAt({ .x = 0, .y = 0, .z = 15 }), shared::Block::Ice);
     EXPECT_EQ(seabed.blockAt({ .x = 0, .y = 0, .z = 12 }), shared::Block::Ice);
 
-    shared::TerrainWorld const warm_dry{ makeAtlas(384, 12.0F, 0.1F) };
-    shared::SurfaceTile const dry_tile = sampleTile(warm_dry);
-    EXPECT_EQ(dry_tile.columns.front().top_material, shared::Block::Dirt);
+    shared::TerrainWorld const warm_dry{ makeAtlas(384, { .precipitation = 0.1F }) };
+    std::unique_ptr<shared::SurfaceTile const> const dry_tile_owner{
+        new shared::SurfaceTile(sampleTile(warm_dry))
+    };
+    shared::SurfaceTile const& dry_tile = *dry_tile_owner;
+    EXPECT_EQ(dry_tile.columns.front().top_material, shared::Block::Grass);
     EXPECT_EQ(dry_tile.columns.front().ground_material, shared::Block::Dirt);
 
     auto lake_atlas = std::make_shared<generation::GlobalAtlas>(*makeAtlas(384));
     lake_atlas->lake_mask.front() = 1U;
     lake_atlas->water_level.front() = 10.75F;
     shared::TerrainWorld const inland_lake{ lake_atlas };
-    shared::SurfaceTile const lake_tile = sampleTile(inland_lake);
+    std::unique_ptr<shared::SurfaceTile const> const lake_tile_owner{
+        new shared::SurfaceTile(sampleTile(inland_lake))
+    };
+    shared::SurfaceTile const& lake_tile = *lake_tile_owner;
     shared::TerrainColumn const lake_column = lake_tile.columns.front();
     EXPECT_TRUE(lake_column.water_present);
     EXPECT_EQ(lake_column.water_height_z, 394U);
     EXPECT_EQ(lake_column.top_material, shared::Block::Grass);
 }
 
-TEST(TerrainWorldTest, AppliesClimateMaterialThresholdsAtSourcePrecision)
+TEST(TerrainWorldTest, KeepsColdExposedLandSnowAndWarmLandGrass)
 {
     static constexpr float COLD_THRESHOLD_CELSIUS = -2.0F;
-    static constexpr float PRECIPITATION_BELOW_THRESHOLD = 0.199'999'988'079'071'044'921'875F;
-    static constexpr float PRECIPITATION_AT_FLOAT32_THRESHOLD = 0.20F;
 
     shared::TerrainWorld const threshold_cold{
-        makeAtlas(384, COLD_THRESHOLD_CELSIUS, PRECIPITATION_AT_FLOAT32_THRESHOLD + 0.01F)
+        makeAtlas(384, { .temperature = COLD_THRESHOLD_CELSIUS, .precipitation = 0.9F })
     };
     shared::TerrainWorld const just_warm{
-        makeAtlas(384, COLD_THRESHOLD_CELSIUS + 0.001F, PRECIPITATION_AT_FLOAT32_THRESHOLD + 0.01F)
+        makeAtlas(384, { .temperature = COLD_THRESHOLD_CELSIUS + 0.001F, .precipitation = 0.1F })
     };
-    shared::TerrainWorld const threshold_dry{
-        makeAtlas(384, COLD_THRESHOLD_CELSIUS + 0.001F, PRECIPITATION_BELOW_THRESHOLD)
-    };
-    shared::TerrainWorld const just_wet{
-        makeAtlas(384, COLD_THRESHOLD_CELSIUS + 0.001F, PRECIPITATION_AT_FLOAT32_THRESHOLD)
+    shared::TerrainWorld const warm_wet{
+        makeAtlas(384, { .temperature = COLD_THRESHOLD_CELSIUS + 0.001F, .precipitation = 0.9F })
     };
 
     EXPECT_EQ(sampleTile(threshold_cold).columns.front().top_material, shared::Block::Snow);
     EXPECT_EQ(sampleTile(threshold_cold).columns.front().ground_material, shared::Block::Ice);
     EXPECT_EQ(sampleTile(just_warm).columns.front().top_material, shared::Block::Grass);
     EXPECT_EQ(sampleTile(just_warm).columns.front().ground_material, shared::Block::Dirt);
-    EXPECT_EQ(sampleTile(threshold_dry).columns.front().top_material, shared::Block::Dirt);
-    EXPECT_EQ(sampleTile(just_wet).columns.front().top_material, shared::Block::Grass);
+    EXPECT_EQ(sampleTile(warm_wet).columns.front().top_material, shared::Block::Grass);
 }
 
 TEST(TerrainWorldTest, SamplesExactHMinusFiveThroughSeaLevelLayers)
@@ -260,7 +276,10 @@ TEST(TerrainWorldTest, SamplesExactHMinusFiveThroughSeaLevelLayers)
         atlas->water_level[row + 1U] = 251.5F;
     }
     shared::TerrainWorld const world{ atlas };
-    shared::SurfaceTile const tile = sampleTile(world);
+    std::unique_ptr<shared::SurfaceTile const> const tile_owner{
+        new shared::SurfaceTile(sampleTile(world))
+    };
+    shared::SurfaceTile const& tile = *tile_owner;
 
     for (uint8_t x = 0U; x <= 5U; ++x) {
         shared::TerrainColumn const& column = tile.columns[x];
@@ -297,7 +316,7 @@ TEST(TerrainWorldTest, UniformChunkMaterializationMatchesCanonicalBlocksAndHashe
         shared::TerrainColumn& column = tile.columns[index];
         if (index % 3U == 1U) {
             column.precipitation = 0.1;
-            column.top_material = shared::Block::Dirt;
+            column.top_material = shared::Block::Grass;
         } else if (index % 3U == 2U) {
             column.temperature_celsius = -5.0;
             column.top_material = shared::Block::Snow;
@@ -364,7 +383,7 @@ TEST(TerrainWorldTest, UniformChunkMaterializationMatchesCanonicalBlocksAndHashe
     EXPECT_EQ(ground_boundary.blockAt({ .x = 0U, .y = 0U, .z = 12U }), shared::Block::Dirt);
     EXPECT_EQ(ground_boundary.blockAt({ .x = 2U, .y = 0U, .z = 12U }), shared::Block::Ice);
     EXPECT_EQ(surface_boundary.blockAt({ .x = 0U, .y = 0U, .z = LOWEST_BLOCK_Z }), shared::Block::Grass);
-    EXPECT_EQ(surface_boundary.blockAt({ .x = 1U, .y = 0U, .z = LOWEST_BLOCK_Z }), shared::Block::Dirt);
+    EXPECT_EQ(surface_boundary.blockAt({ .x = 1U, .y = 0U, .z = LOWEST_BLOCK_Z }), shared::Block::Grass);
     EXPECT_EQ(surface_boundary.blockAt({ .x = 2U, .y = 0U, .z = LOWEST_BLOCK_Z }), shared::Block::Snow);
     EXPECT_EQ(surface_boundary.blockAt({ .x = 0U, .y = 0U, .z = TOP_BLOCK_Z }), shared::Block::Air);
     EXPECT_EQ(at_chunk_top.blockAt({ .x = BOUNDARY_COLUMN_X, .y = 0U, .z = TOP_BLOCK_Z }), shared::Block::Stone);
@@ -706,9 +725,11 @@ TEST(TerrainWorldTest, IdentityRequiresVersionedPortableShelfKernel)
     );
     EXPECT_FALSE(shared::isValidTerrainIdentity(wrong_kernel));
 
-    for (std::string_view const old_revision : { "model-revision=4", "model-revision=3" }) {
+    for (std::string_view const old_revision : {
+        "model-revision=5", "model-revision=4", "model-revision=3",
+    }) {
         auto invalid_identity = identity;
-        size_t const revision = invalid_identity.configuration_identity.find("model-revision=5");
+        size_t const revision = invalid_identity.configuration_identity.find("model-revision=6");
         ASSERT_NE(revision, std::string::npos);
         invalid_identity.configuration_identity.replace(revision, 16U, old_revision);
         EXPECT_FALSE(shared::isValidTerrainIdentity(invalid_identity));

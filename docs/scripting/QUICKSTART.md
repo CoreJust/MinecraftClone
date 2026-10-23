@@ -4,7 +4,7 @@ Save a `.core` source with the explicit CoreLang header and
 public entry point:
 
 ```text
-@version("0.1.2")
+@version(0.1.5)
 @use minecraft
 
 fn moveRight(name: str) {
@@ -22,14 +22,19 @@ pub fn scenario() {
 ```
 
 CoreLang values must use the types expected by the host calls: `str`, `c8`,
-`i8`, `i16`, `i32`, and `u64`. Functions, `if`, and `for` are ordinary
-CoreLang composition; the host calls remain the only scenario effects.
+`i8`, `i16`, `i32`, and `u64`. Functions and `if` conditions are supported
+when the bounded analyzer can prove their execution stays under the configured
+instruction limit. A `for` loop must use an immutable induction variable and
+matching nonnegative integer literals as its range bounds. Dynamic loops and
+recursive or indirect calls are rejected; a compiled cycle is accepted only
+when it is accounted for by a proven finite `for` range.
 
-At load time the runner compiles the source, invokes `scenario`, and collects
-the typed calls into a private plan. The plan is published to the authoritative
-runner only after the whole source succeeds. `wait(10u64)` advances ten fixed
-authoritative steps. Inputs submitted before it take effect on the next step;
-an expectation observes the current boundary without advancing it.
+At load time the runner validates source and bytecode bounds, proves a static
+instruction upper bound, invokes `scenario`, and collects the typed calls into
+a private plan. The plan is published to the authoritative runner only after
+the whole source succeeds. `wait(10u64)` advances ten fixed authoritative
+steps. Inputs submitted before it take effect on the next step; an expectation
+observes the current boundary without advancing it.
 
 Run the checked-in examples from the repository root with the scenario command
 used by the application. The most useful S5 fixtures are

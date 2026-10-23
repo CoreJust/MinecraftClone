@@ -46,6 +46,11 @@ struct TerrainRegionKey final {
     constexpr bool operator==(TerrainRegionKey const&) const noexcept = default;
 };
 
+struct TerrainClimateSample final {
+    double temperature_celsius = 0.0;
+    double precipitation = 0.0;
+};
+
 struct TerrainColumn {
     uint16_t highest_solid_z = 0U;
     uint16_t water_height_z = 0U;
@@ -145,10 +150,18 @@ public:
     [[nodiscard]]
     std::shared_ptr<generation::GlobalAtlas const> atlas() const noexcept { return m_atlas; }
 
+    // Matches actual-column climate at finite periodic world XY, without local altitude adjustment.
+    [[nodiscard]]
+    TerrainClimateSample sampleClimate(double world_x, double world_y) const;
+
+    // Samples one canonical R6 solid-column height at periodic block XY.
+    [[nodiscard]]
+    uint16_t sampleSurfaceHeight(uint32_t world_x, uint32_t world_y) const;
+
     [[nodiscard]]
     std::shared_ptr<RegionalArtifact const> prepareRegion(
         TerrainRegionKey key,
-        std::stop_token cancellation = {}
+        std::stop_token const& cancellation = {}
     ) const;
 
     // The coarsest extent takes no parent; each child requires the matching preceding extent.
@@ -156,7 +169,7 @@ public:
     std::shared_ptr<RegionalArtifact const> refineRegion(
         TerrainRegionKey key,
         std::shared_ptr<RegionalArtifact const> exact_parent,
-        std::stop_token cancellation = {}
+        std::stop_token const& cancellation = {}
     ) const;
 
     [[nodiscard]]
@@ -164,27 +177,27 @@ public:
         RegionalArtifact const& region,
         double world_x,
         double world_y,
-        std::stop_token cancellation = {}
+        std::stop_token const& cancellation = {}
     ) const;
 
     [[nodiscard]]
     SurfaceTile sampleSurface(
         RegionalArtifact const& leaf,
         ChunkCoordinate coordinate,
-        std::stop_token cancellation = {}
+        std::stop_token const& cancellation = {}
     ) const;
 
     [[nodiscard]]
     SurfaceTile sampleSurface(
         ChunkCoordinate coordinate,
-        std::stop_token cancellation = {}
+        std::stop_token const& cancellation = {}
     ) const;
 
     [[nodiscard]]
     Chunk materializeChunk(
         SurfaceTile const& tile,
         ChunkCoordinate coordinate,
-        std::stop_token cancellation = {}
+        std::stop_token const& cancellation = {}
     ) const;
 
 private:
@@ -193,7 +206,7 @@ private:
         TerrainRegionKey key,
         uint32_t level_index,
         std::shared_ptr<RegionalArtifact const> parent,
-        std::stop_token cancellation
+        std::stop_token const& cancellation
     ) const;
 
     [[nodiscard]]

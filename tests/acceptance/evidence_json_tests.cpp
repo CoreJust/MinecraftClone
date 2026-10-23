@@ -1,6 +1,12 @@
 #include <client/render/StoneFaceCapacity.hpp>
 
+#include <shared/corelang/ExecutionTypes.hpp>
+#include <shared/world/TerrainWorld.hpp>
+#include <shared/world/World.hpp>
+#include <shared/world/WorldCoverage.hpp>
+
 #include <acceptance/EvidenceJson.hpp>
+#include <acceptance/ReplayInput.hpp>
 
 #include <gtest/gtest.h>
 
@@ -22,10 +28,238 @@ TEST(EvidenceJson, IdentifiesGameplayQualificationAndRawLoopOrder)
     acceptance::RuntimeEvidence evidence{};
     evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
     evidence.game_benchmark->qualification_proof = "terrain-coverage";
-    evidence.game_benchmark->raw_frames.push_back({ .loop_ordinal = 42U });
+    evidence.game_benchmark->raw_frames.push_back({
+        .loop_ordinal = 42U,
+        .submitted_frame_phase = {},
+    });
     std::string const json = acceptance::evidenceJson(evidence);
     EXPECT_NE(json.find("\"qualification_proof\": \"terrain-coverage\""), std::string::npos);
     EXPECT_NE(json.find("\"loop_ordinal\": 42"), std::string::npos);
+}
+
+TEST(EvidenceJson, SerializesTerrainBackendReceiptAndArtifactIdentity)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
+    std::array<uint8_t, 32U> source_hash{};
+    source_hash[0] = 0x01U;
+    std::array<uint8_t, 32U> bytecode_hash{};
+    bytecode_hash[0] = 0xabU;
+    std::array<uint8_t, 32U> native_image_hash{};
+    native_image_hash[0] = 0xcdU;
+    evidence.game_benchmark->terrain_backend_receipt = shared::corelang::BackendReceipt{
+        .requested_backend = shared::corelang::Backend::Aot,
+        .actual_backend = shared::corelang::Backend::Aot,
+        .source_sha256 = source_hash,
+        .bytecode_sha256 = bytecode_hash,
+        .native_image_sha256 = native_image_hash,
+        .compiler_version = "CoreLang/0.1.5",
+        .target = "arm64-apple-darwin",
+    };
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"terrain_backend\": { \"requested_backend\": \"aot\", "
+        "\"actual_backend\": \"aot\""), std::string::npos);
+    EXPECT_NE(json.find("\"source_sha256\": \"01" + std::string(62U, '0') + "\""),
+        std::string::npos);
+    EXPECT_NE(json.find("\"bytecode_sha256\": \"ab" + std::string(62U, '0') + "\""),
+        std::string::npos);
+    EXPECT_NE(json.find("\"native_image_sha256\": \"cd" + std::string(62U, '0') + "\""),
+        std::string::npos);
+    EXPECT_NE(json.find("\"compiler_version\": \"CoreLang/0.1.5\", "
+        "\"target\": \"arm64-apple-darwin\""), std::string::npos);
+}
+
+TEST(EvidenceJson, WritesNullForTerrainBackendReceiptUntilWorldPreparationSucceeds)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"terrain_backend\": null"), std::string::npos);
+}
+
+TEST(EvidenceJson, WritesNullNativeImageHashForNonAotTerrainBackend)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
+    evidence.game_benchmark->terrain_backend_receipt = shared::corelang::BackendReceipt{
+        .requested_backend = shared::corelang::Backend::Jit,
+        .actual_backend = shared::corelang::Backend::Jit,
+        .native_image_sha256 = std::nullopt,
+        .compiler_version = "CoreLang/0.1.5",
+        .target = "arm64-apple-darwin",
+    };
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"requested_backend\": \"jit\", \"actual_backend\": \"jit\""),
+        std::string::npos);
+    EXPECT_NE(json.find("\"native_image_sha256\": null"), std::string::npos);
+}
+
+TEST(EvidenceJson, SerializesX30InputsAndAcknowledgedMovementTrajectory)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
+    acceptance::GameBenchmarkEvidence& benchmark = *evidence.game_benchmark;
+    benchmark.workload = "turning-x30-movement-v3";
+    benchmark.movement_trajectory_contract = "mc.x30-authoritative-trajectory.v1";
+    benchmark.frame_budget = acceptance::GameBenchmarkFrameBudgetEvidence{
+        .measurement_window_start_offset_ns = 100'000U,
+        .measurement_window_end_offset_ns = 30'000'100'000U,
+        .required_window_duration_ns = 30'000'000'000U,
+        .measurement_window_complete = true,
+    };
+    benchmark.raw_gameplay_inputs.push_back({
+        .input_ordinal = 4U,
+        .sequence = 23U,
+        .sent_offset_ns = 100'000U,
+        .scheduled_offset_ns = -50'000,
+        .movement_intent = {
+            .strafe = 0,
+            .forward = 1,
+            .vertical = 1,
+            .yaw_degrees = -45.0,
+            .pitch_degrees = -5.0,
+        },
+        .direction = {
+            .x = 167U,
+            .y = 89U,
+            .z = 127U,
+            .accelerated = true,
+            .speedup = 30U,
+            .cycle_movement_capabilities = false,
+            .view_x = -89,
+            .view_y = 89,
+        },
+    });
+    benchmark.raw_gameplay_inputs.push_back({
+        .input_ordinal = 5U,
+        .sequence = 24U,
+        .sent_offset_ns = 29'995'100'000U,
+        .scheduled_offset_ns = 29'900'000'000,
+        .movement_intent = {
+            .strafe = 0,
+            .forward = 0,
+            .vertical = -1,
+            .yaw_degrees = -1.0,
+            .pitch_degrees = 8.0,
+        },
+        .direction = {
+            .x = 0U,
+            .y = 0U,
+            .z = 129U,
+            .accelerated = true,
+            .speedup = 30U,
+            .cycle_movement_capabilities = false,
+            .view_x = -127,
+            .view_y = 0,
+        },
+    });
+    acceptance::GameBenchmarkFullRadiusEvidence& full_radius = benchmark.full_radius_terrain.emplace();
+    full_radius.movement_playable_sphere_sample_scope =
+        "per-movement-loop-and-every-in-window-movement-input-ack";
+    full_radius.movement_trajectory_anchor = {
+        .update_ordinal = 10U,
+        .offset_ns = 99'000U,
+        .state_revision = 31U,
+        .acknowledged_input_sequence = 22U,
+        .authoritative_position = {
+            .x = 32'768,
+            .y = 32'768,
+            .z = 64,
+            .x_subcell = 8U,
+            .y_subcell = 9U,
+            .z_subcell = 10U,
+        },
+        .movement_capabilities = 3U,
+        .vertical_velocity_subcells = 0,
+        .playable_sphere = {},
+    };
+    full_radius.movement_authoritative_sphere_updates.push_back({
+        .update_ordinal = 11U,
+        .offset_ns = 200'000U,
+        .state_revision = 32U,
+        .acknowledged_input_sequence = 23U,
+        .authoritative_position = {
+            .x = 32'768,
+            .y = 32'768,
+            .z = 64,
+            .x_subcell = 9U,
+            .y_subcell = 9U,
+            .z_subcell = 10U,
+        },
+        .movement_capabilities = 3U,
+        .vertical_velocity_subcells = 0,
+        .playable_sphere = {},
+    });
+    full_radius.movement_authoritative_sphere_updates.push_back({
+        .update_ordinal = 12U,
+        .offset_ns = 30'005'100'000U,
+        .state_revision = 33U,
+        .acknowledged_input_sequence = 24U,
+        .authoritative_position = {
+            .x = 32'768,
+            .y = 32'768,
+            .z = 64,
+            .x_subcell = 9U,
+            .y_subcell = 9U,
+            .z_subcell = 9U,
+        },
+        .movement_capabilities = 3U,
+        .vertical_velocity_subcells = 0,
+        .playable_sphere = {},
+    });
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"movement_trajectory_contract\": \"mc.x30-authoritative-trajectory.v1\""),
+        std::string::npos);
+    EXPECT_NE(json.find("\"input_ordinal\": 4, \"sequence\": 23, \"sent_offset_ns\": 100000"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"scheduled_offset_ns\": -50000"), std::string::npos);
+    EXPECT_NE(json.find("\"measurement_window_end_offset_ns\": 30000100000"), std::string::npos);
+    EXPECT_NE(json.find("\"input_ordinal\": 5, \"sequence\": 24, \"sent_offset_ns\": 29995100000, "
+        "\"scheduled_offset_ns\": 29900000000"), std::string::npos);
+    EXPECT_NE(json.find("\"movement_playable_sphere_sample_scope\": "
+        "\"per-movement-loop-and-every-in-window-movement-input-ack\""), std::string::npos);
+    EXPECT_NE(json.find("\"movement_intent\": { \"strafe\": 0, \"forward\": 1, \"vertical\": 1 }"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"movement_intent\": { \"strafe\": 0, \"forward\": 0, \"vertical\": -1 }"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"camera_look\": { \"yaw_degrees\": -45, \"pitch_degrees\": -5 }"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"accelerated\": true, \"speedup\": 30"), std::string::npos);
+    EXPECT_NE(json.find("\"direction\": { \"x\": 0, \"y\": 0, \"z\": -127"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"movement_trajectory_anchor\": { \"update_ordinal\": 10, \"offset_ns\": 99000"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"state_revision\": 32, \"acknowledged_input_sequence\": 23"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"state_revision\": 33, \"acknowledged_input_sequence\": 24"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"update_ordinal\": 12, \"offset_ns\": 30005100000"), std::string::npos);
+}
+
+TEST(EvidenceJson, PreservesRequestedAndActualTerrainBackendsSeparately)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
+    evidence.game_benchmark->terrain_backend_receipt = shared::corelang::BackendReceipt{
+        .requested_backend = shared::corelang::Backend::Jit,
+        .actual_backend = shared::corelang::Backend::Interpreter,
+        .native_image_sha256 = std::nullopt,
+        .compiler_version = {},
+        .target = {},
+    };
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"requested_backend\": \"jit\", \"actual_backend\": \"interpreter\""),
+        std::string::npos);
 }
 
 TEST(EvidenceJson, SerializesDriverPresentationHistoryAndRawFrameIdentity)
@@ -60,6 +294,7 @@ TEST(EvidenceJson, SerializesDriverPresentationHistoryAndRawFrameIdentity)
         .presentation_succeeded = true,
         .swapchain_generation = 9U,
         .application_present_id = 17U,
+        .submitted_frame_phase = {},
     });
 
     std::string const json = acceptance::evidenceJson(evidence);
@@ -78,6 +313,143 @@ TEST(EvidenceJson, SerializesDriverPresentationHistoryAndRawFrameIdentity)
     EXPECT_NE(json.find("\"presentation_succeeded\": true, \"swapchain_generation\": 9, "
         "\"application_present_id\": 17"), std::string::npos);
     EXPECT_NE(json.find("\"drain\": { \"complete\": true, \"request_ids\": ["), std::string::npos);
+}
+
+TEST(EvidenceJson, SerializesFenceConfirmedFrameBudgetWindowAndRawCompletion)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
+    evidence.game_benchmark->frame_budget = acceptance::GameBenchmarkFrameBudgetEvidence{
+        .target_frame_duration_ns = 8'333'333U,
+        .required_in_budget_time_permille = 990U,
+        .measurement_window_start_offset_ns = 12'000U,
+        .measurement_window_end_offset_ns = 30'000'012'000U,
+        .required_window_duration_ns = 30'000'000'000U,
+        .measured_time_ns = 30'000'000'000U,
+        .in_budget_time_ns = 29'999'000'000U,
+        .sample_count = 3'600U,
+        .fence_confirmed_frame_count = 3'599U,
+        .measurement_window_complete = true,
+        .passed = true,
+        .required_for_benchmark_pass = true,
+    };
+    evidence.game_benchmark->raw_fence_confirmed_frames.push_back({
+        .sequence_id = 19U,
+        .swapchain_generation = 7U,
+        .frame_slot = 1U,
+        .submitted_offset_ns = 100U,
+        .completion_observed_offset_ns = 200U,
+        .application_present_id = 31U,
+        .submission_phase = "speed-200-movement",
+    });
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"measurement_scope\": \"fence-confirmed-render-frame-completion-observations\""),
+        std::string::npos);
+    EXPECT_NE(json.find("\"measurement_window_start_offset_ns\": 12000"), std::string::npos);
+    EXPECT_NE(json.find("\"measurement_window_end_offset_ns\": 30000012000"), std::string::npos);
+    EXPECT_NE(json.find("\"required_window_duration_ns\": 30000000000"), std::string::npos);
+    EXPECT_NE(json.find("\"fence_confirmed_frame_count\": 3599"), std::string::npos);
+    EXPECT_NE(json.find("\"measurement_window_complete\": true"), std::string::npos);
+    EXPECT_NE(json.find("\"frame_completion_source\": "
+        "\"per-slot-submitted-frame-fence-success-observed-on-reuse\""), std::string::npos);
+    EXPECT_NE(json.find("\"sequence_id\": 19, \"swapchain_generation\": 7, \"frame_slot\": 1"),
+        std::string::npos);
+}
+
+TEST(EvidenceJson, SerializesVersionedS1TerrainPerformanceEvidence)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
+    acceptance::GameBenchmarkS1TerrainPerformanceEvidence& s1 =
+        evidence.game_benchmark->s1_terrain_performance.emplace();
+    s1.ready_prompt_frame_offset_ns = 3'900'000'000U;
+    s1.playable_sphere_first_ready_offset_ns = 19'900'000'000U;
+    s1.initial_deadline_missed = false;
+    s1.playable_deadline_missed = false;
+    s1.movement_started_after_current_sphere_ready = true;
+    s1.movement_input_during_fill = true;
+    s1.movement_start_offset_ns = 19'950'000'000U;
+    s1.movement_end_offset_ns = 49'950'000'000U;
+    s1.movement_authoritative_update_count = 1U;
+    s1.movement_trajectory_anchor = acceptance::GameBenchmarkFullRadiusEvidence::
+        AuthoritativePlayableSphereUpdate{
+            .update_ordinal = 4U,
+            .offset_ns = 20U,
+            .state_revision = 11U,
+            .acknowledged_input_sequence = 8U,
+            .authoritative_position = { .x = 12, .y = 13, .z = 14 },
+            .movement_capabilities = 3U,
+            .vertical_velocity_subcells = 0,
+            .playable_sphere = {
+                .radius_blocks = shared::ACTUAL_TERRAIN_RADIUS_BLOCKS,
+                .active_coverage_epoch = 9U,
+                .active_coverage_center = shared::PlayerPosition{ .x = 12, .y = 13, .z = 14 },
+                .world_loading_center = shared::PlayerPosition{ .x = 12, .y = 13, .z = 14 },
+                .ready_chunks = 419'904U,
+                .required_chunks = 419'904U,
+                .ready = true,
+                .coverage_scope = "horizontal_full_volume",
+                .required_authoritative_columns = 6'561U,
+                .resident_authoritative_columns = 6'561U,
+                .vertical_chunk_count = 64U,
+                .authoritative_columns_center = shared::PlayerPosition{ .x = 12, .y = 13, .z = 14 },
+            },
+            .visual_lod = acceptance::GameBenchmarkFrameSample::VisualLod{
+                .radius_blocks = shared::FULL_WORLD_VISUAL_LOD_RADIUS_BLOCKS,
+                .scene_active = true,
+                .leaf_count = 16U,
+                .actual_column_count = 4U,
+                .terrain_identity = std::nullopt,
+                .coverage_center = std::nullopt,
+            },
+        };
+    s1.movement_trajectory_anchor_sphere_sample_offset_ns = 21U;
+    s1.movement_boundary_authoritative_updates_complete = true;
+    auto boundary_update = *s1.movement_trajectory_anchor;
+    boundary_update.update_ordinal = 5U;
+    boundary_update.offset_ns = 22U;
+    boundary_update.state_revision = 12U;
+    boundary_update.acknowledged_input_sequence = 9U;
+    s1.movement_boundary_authoritative_updates.push_back(boundary_update);
+    s1.movement_authoritative_sphere_updates.push_back(*s1.movement_trajectory_anchor);
+    s1.movement_playable_sphere_complete = true;
+    s1.movement_visual_lod_samples_complete = true;
+    s1.complete = true;
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"s1_terrain_performance\": { \"contract\": \"mc.s1-lod-performance.v2\""),
+        std::string::npos);
+    EXPECT_NE(json.find("\"timing_origin\": \"world-request-accepted\", \"initial_radius_blocks\": 48, "
+        "\"actual_radius_blocks\": 640, \"visual_lod_radius_blocks\": 320"), std::string::npos);
+    EXPECT_NE(json.find("\"ready_prompt_frame_offset_ns\": 3900000000"), std::string::npos);
+    EXPECT_NE(json.find("\"playable_sphere_first_ready_offset_ns\": 19900000000"), std::string::npos);
+    EXPECT_NE(json.find("\"movement_start_offset_ns\": 19950000000, \"movement_end_offset_ns\": 49950000000"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"movement_authoritative_update_count\": 1"), std::string::npos);
+    EXPECT_NE(json.find("\"coverage_scope\": \"horizontal_full_volume\""), std::string::npos);
+    EXPECT_NE(json.find("\"required_authoritative_columns\": 6561, "
+        "\"resident_authoritative_columns\": 6561, \"vertical_chunk_count\": 64"), std::string::npos);
+    EXPECT_NE(json.find("\"authoritative_columns_center\": { \"x\": 12, \"y\": 13, \"z\": 14"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"movement_trajectory_anchor_sphere_sample_offset_ns\": 21, "
+        "\"movement_boundary_authoritative_updates_complete\": true"), std::string::npos);
+    EXPECT_NE(json.find("\"movement_boundary_authoritative_updates\": [{ \"update_ordinal\": 5, "
+        "\"offset_ns\": 22, \"state_revision\": 12, \"acknowledged_input_sequence\": 9"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"visual_lod\": { \"contract\": \"mc.presented-terrain-coverage.v1\", "
+        "\"radius_blocks\": 320, \"scene_active\": true, \"leaf_count\": 16, \"actual_column_count\": 4"), std::string::npos);
+    EXPECT_NE(json.find("\"active_coverage_epoch\": 9, \"active_coverage_center\": "
+        "{ \"x\": 12, \"y\": 13, \"z\": 14, \"x_subcell\": 0, \"y_subcell\": 0, \"z_subcell\": 0 }, "
+        "\"world_loading_center\": { \"x\": 12, \"y\": 13, \"z\": 14, \"x_subcell\": 0, "
+        "\"y_subcell\": 0, \"z_subcell\": 0 }, \"ready_chunks\": 419904, \"required_chunks\": 419904, \"ready\": true, "
+        "\"coverage_scope\": \"horizontal_full_volume\""),
+        std::string::npos);
+    EXPECT_NE(json.find("\"movement_playable_sphere_complete\": true, "
+        "\"movement_visual_lod_samples_complete\": true, \"complete\": true"),
+        std::string::npos);
 }
 
 TEST(EvidenceJson, SerializesDiagnosticOverridePresenceAsBooleans)
@@ -207,11 +579,14 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
         .game_benchmark = acceptance::GameBenchmarkEvidence{
             .workload = "speed-200-movement-v2",
             .qualification_proof = {},
+            .movement_trajectory_contract = {},
             .package_id = {},
             .hardware = {},
             .gpu = std::nullopt,
             .present_mode = {},
             .build_mode = {},
+            .qualification_settings_manifest = {},
+            .terrain_identity = std::nullopt,
             .client_message_payload_bytes_sent = 128U,
             .client_message_payload_bytes_received = 256U,
             .excluded_present_requests = 1U,
@@ -245,10 +620,12 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
                 .complete = true,
             },
             .full_radius_terrain = std::nullopt,
+            .raw_gameplay_inputs = {},
             .raw_frames = {
                 acceptance::GameBenchmarkFrameSample{
                     .warm = true,
                     .presentation_succeeded = true,
+                    .submitted_frame_phase = {},
                     .loop_duration_ns = 12'000U,
                     .network_event_count = 2U,
                     .terrain_phase = {},
@@ -301,6 +678,7 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
                 acceptance::GameBenchmarkFrameSample{
                     .uncapped = true,
                     .presentation_succeeded = false,
+                    .submitted_frame_phase = {},
                     .loop_duration_ns = 4'000U,
                     .terrain_phase = {},
                     .terrain_near = acceptance::GameBenchmarkFrameSample::TerrainNearSample{},
@@ -313,6 +691,7 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
                 acceptance::GameBenchmarkFrameSample{
                     .excluded = true,
                     .presentation_succeeded = true,
+                    .submitted_frame_phase = {},
                     .loop_duration_ns = 5'000U,
                     .terrain_phase = {},
                     .terrain_near = std::nullopt,
@@ -323,6 +702,7 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
                     .latest_gpu_frame_duration_ns = std::nullopt,
                 },
             },
+            .raw_fence_confirmed_frames = {},
             .raw_server_stream_samples = {},
             .raw_server_tick_durations_ns = { 100U, 200U },
             .raw_permission_publish_durations_ns = {},
@@ -415,6 +795,34 @@ TEST(EvidenceJson, SerializesServerNearWindowStagesOnTheBenchmarkFrameTimeline)
         .worker_queued_count = 12U,
         .worker_running_count = 8U,
         .worker_completed_uncollected_count = 5U,
+        .world_generation_worker_queued_count = 13U,
+        .world_generation_worker_running_count = 14U,
+        .world_generation_worker_completed_uncollected_count = 15U,
+        .coverage_refresh = { .calls = 3U, .duration_ns = 17U },
+        .worker_result_publication = { .calls = 4U, .duration_ns = 19U },
+        .queue_refill = { .calls = 5U, .duration_ns = 23U },
+        .delivery = { .calls = 6U, .duration_ns = 29U },
+        .worker_dispatch = { .calls = 7U, .duration_ns = 31U },
+        .materialization_candidate_keys_examined = 37U,
+        .materialization_resident_chunk_lookups = 41U,
+        .materialization_admission_attempts = 43U,
+        .materialization_admissions = 47U,
+        .materialization_duplicate_requests = 53U,
+        .chunk_delivery_candidate_keys_examined = 59U,
+        .chunk_delivery_resident_chunk_lookups = 61U,
+        .chunk_delivery_batches_sent = 67U,
+        .chunk_delivery_chunks_sent = 71U,
+        .chunk_delivery_credits_consumed = 73U,
+        .world_generation_jobs_dispatched = 79U,
+        .height_tile_jobs_dispatched = 83U,
+        .global_server_world_resident_chunks = 89U,
+        .required_near_chunk_keys = 97U,
+        .required_full_chunk_keys = 101U,
+        .acknowledged_chunk_keys = 103U,
+        .inflight_chunk_batches = 107U,
+        .inflight_chunk_keys = 109U,
+        .chunk_delivery_credits = 113U,
+        .near_required_chunks_all_resident = true,
     });
     evidence.game_benchmark = std::move(benchmark);
 
@@ -437,6 +845,19 @@ TEST(EvidenceJson, SerializesServerNearWindowStagesOnTheBenchmarkFrameTimeline)
         std::string::npos);
     EXPECT_NE(json.find("\"worker_queued\": 12, \"worker_running\": 8, \"worker_completed_uncollected\": 5"),
         std::string::npos);
+    EXPECT_NE(json.find("\"preview_stream_metrics\": { \"coverage_refresh\": { \"calls\": 3, \"duration_ns\": 17 }"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"worker_dispatch\": { \"calls\": 7, \"duration_ns\": 31 }"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"materialization_candidate_keys_examined\": 37"), std::string::npos);
+    EXPECT_NE(json.find("\"chunk_delivery_credits_consumed\": 73"), std::string::npos);
+    EXPECT_NE(json.find("\"world_generation_worker_queued\": 13, \"world_generation_worker_running\": 14, "
+        "\"world_generation_worker_completed_uncollected\": 15"), std::string::npos);
+    EXPECT_NE(json.find("\"global_server_world_resident_chunks\": 89"), std::string::npos);
+    EXPECT_NE(json.find("\"required_near_chunk_keys\": 97, \"required_full_chunk_keys\": 101"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"chunk_delivery_credits\": 113, \"near_required_chunks_all_resident\": true } }"),
+        std::string::npos);
 }
 
 TEST(EvidenceJson, SeparatesFailedRenderAttemptsFromLaggedTerrainGpuSamples)
@@ -451,11 +872,14 @@ TEST(EvidenceJson, SeparatesFailedRenderAttemptsFromLaggedTerrainGpuSamples)
         .game_benchmark = acceptance::GameBenchmarkEvidence{
             .workload = {},
             .qualification_proof = {},
+            .movement_trajectory_contract = {},
             .package_id = {},
             .hardware = {},
             .gpu = std::nullopt,
             .present_mode = {},
             .build_mode = {},
+            .qualification_settings_manifest = {},
+            .terrain_identity = std::nullopt,
             .cold_loop_timings = {},
             .warm_loop_timings = {},
             .uncapped_loop_timings = {},
@@ -463,9 +887,11 @@ TEST(EvidenceJson, SeparatesFailedRenderAttemptsFromLaggedTerrainGpuSamples)
             .permission_publish_timings = {},
             .terrain_readiness = std::nullopt,
             .full_radius_terrain = std::nullopt,
+            .raw_gameplay_inputs = {},
             .raw_frames = {
                 acceptance::GameBenchmarkFrameSample{
                     .presentation_succeeded = false,
+                    .submitted_frame_phase = {},
                     .visible_surface_face_count = 1'000U,
                     .terrain_phase = {},
                     .terrain_near = std::nullopt,
@@ -492,6 +918,7 @@ TEST(EvidenceJson, SeparatesFailedRenderAttemptsFromLaggedTerrainGpuSamples)
                     .diagnostic_terrain_occlusion_removed_command_count = 3U,
                 },
             },
+            .raw_fence_confirmed_frames = {},
             .raw_server_stream_samples = {},
             .raw_server_tick_durations_ns = {},
             .raw_permission_publish_durations_ns = {},
@@ -599,6 +1026,7 @@ TEST(EvidenceJson, ReportsUnsupportedTerrainTimestampScopeWithoutInventingGpuDur
     acceptance::RuntimeEvidence evidence;
     evidence.game_benchmark.emplace();
     evidence.game_benchmark->raw_frames.push_back({
+        .submitted_frame_phase = {},
         .terrain_phase = {},
         .terrain_near = std::nullopt,
         .renderer_stone_face_growth = std::nullopt,
@@ -645,6 +1073,7 @@ TEST(EvidenceJson, KeepsUnscannedFullRadiusCountsUnknownAndSerializesScannedRadi
         std::array<uint32_t, 5U>{ 1U, 2U, 3U, 4U, 5U };
     benchmark.full_radius_terrain->recovery_barrier.unclassified_current_visible_mesh_detail_count = 6U;
     benchmark.raw_frames.push_back({
+        .submitted_frame_phase = {},
         .terrain_phase = "speed-200-movement",
         .terrain_center_valid = true,
         .terrain_center_x = 128,
@@ -767,6 +1196,7 @@ TEST(EvidenceJson, AttributesStoneFaceGrowthIdenticallyInSnapshotAndFrame)
     evidence.game_benchmark->full_radius_terrain.emplace();
     evidence.game_benchmark->full_radius_terrain->initial_barrier.renderer_stone_face_growth = diagnostics;
     evidence.game_benchmark->raw_frames.push_back({
+        .submitted_frame_phase = {},
         .terrain_phase = {},
         .terrain_near = std::nullopt,
         .renderer_stone_face_growth = diagnostics,
@@ -869,22 +1299,31 @@ TEST(EvidenceJson, PreservesPlatformFrameBudgetEvidence)
     evidence.game_benchmark.emplace();
     evidence.game_benchmark->frame_budget = acceptance::GameBenchmarkFrameBudgetEvidence{
         .target_frame_duration_ns = 2'000'000U,
-        .required_in_budget_time_permille = 998U,
+        .required_in_budget_time_permille = 990U,
+        .measurement_window_start_offset_ns = 0U,
+        .measurement_window_end_offset_ns = 1'001'000'000U,
+        .required_window_duration_ns = 1'000'000'000U,
         .measured_time_ns = 1'001'000'000U,
         .in_budget_time_ns = 999'000'000U,
         .sample_count = 1'000U,
+        .fence_confirmed_frame_count = 1'001U,
+        .measurement_window_complete = true,
         .passed = true,
         .required_for_benchmark_pass = true,
     };
 
     std::string const json = acceptance::evidenceJson(evidence);
 
-    EXPECT_NE(json.find("\"frame_budget\": { \"target_frame_duration_ns\": 2000000"),
+    EXPECT_NE(json.find("\"frame_budget\": { \"measurement_scope\": "
+        "\"fence-confirmed-render-frame-completion-observations\", "
+        "\"target_frame_duration_ns\": 2000000"),
         std::string::npos);
-    EXPECT_NE(json.find("\"required_in_budget_time_permille\": 998"), std::string::npos);
+    EXPECT_NE(json.find("\"required_in_budget_time_permille\": 990"), std::string::npos);
     EXPECT_NE(json.find("\"measured_time_ns\": 1001000000"), std::string::npos);
     EXPECT_NE(json.find("\"in_budget_time_ns\": 999000000"), std::string::npos);
-    EXPECT_NE(json.find("\"sample_count\": 1000, \"passed\": true, \"required_for_benchmark_pass\": true }"),
+    EXPECT_NE(json.find("\"sample_count\": 1000, \"fence_confirmed_frame_count\": 1001, "
+        "\"measurement_window_complete\": true, \"passed\": true, "
+        "\"required_for_benchmark_pass\": true }"),
         std::string::npos);
 }
 
@@ -1092,3 +1531,44 @@ TEST(EvidenceJson, KeepsOriginalModeWhenFailureCallbackChangesCallerInput)
 }
 
 } // namespace
+
+TEST(EvidenceJson, SerializesSubmittedSceneSettingsAndPresentedPlayerProof)
+{
+    acceptance::RuntimeEvidence evidence{};
+    auto& benchmark = evidence.game_benchmark.emplace();
+    benchmark.qualification_settings_manifest = R"({"contract":"test-settings"})";
+    benchmark.terrain_identity = shared::TerrainIdentity{.revision = 6U, .configuration_identity = "cfg"};
+    benchmark.session_join_epoch = 7U;
+    auto& frame = benchmark.raw_frames.emplace_back();
+    frame.visual_lod = acceptance::GameBenchmarkFrameSample::VisualLod{
+        .terrain_identity = benchmark.terrain_identity,
+        .session_join_epoch = 7U,
+        .coverage_epoch = 8U,
+        .submitted_frame_count = 9U,
+        .scene_center_x = 16U,
+        .scene_center_y = 32U,
+        .actual_radius_blocks = 640U,
+        .required_actual_columns = 6'561U,
+        .presented_current_actual_columns = 6'560U,
+        .coverage_center = shared::PlayerPosition{.x = 17, .y = 33, .z = 96},
+        .sources_current = false,
+    };
+    frame.qualification_settings = acceptance::GameBenchmarkFrameSample::QualificationSettings{
+        .framebuffer_width = 2'560U, .framebuffer_height = 1'440U, .render_distance = 256U,
+        .debug_hud_enabled = true, .terrain_model = "lod-canonical-r6-height-v2",
+        .camera_perspective = "first-person", .world_mode = "flight",
+    };
+    frame.presented_player = acceptance::GameBenchmarkFrameSample::PresentedPlayer{
+        .body = {17.25, 33.5, 96.0}, .submitted_frame_count = 9U, .sampled_offset_ns = 11U,
+    };
+    std::string const json = acceptance::evidenceJson(evidence);
+    EXPECT_NE(json.find(R"("qualification_settings_manifest": {"contract":"test-settings"})"), std::string::npos);
+    EXPECT_NE(json.find(R"("session_join_epoch": 7, "coverage_epoch": 8, "submitted_frame_count": 9)"), std::string::npos);
+    EXPECT_NE(json.find(R"("presented_current_actual_columns": 6560)"), std::string::npos);
+    EXPECT_NE(json.find(R"("sources_current": false)"), std::string::npos);
+    EXPECT_NE(json.find(R"("framebuffer": { "width": 2560, "height": 1440 })"), std::string::npos);
+    EXPECT_NE(json.find(R"("debug_hud_enabled": true)"), std::string::npos);
+    EXPECT_NE(json.find(R"("camera_perspective": "first-person", "world_mode": "flight")"), std::string::npos);
+    EXPECT_NE(json.find(R"("body": [17.250000, 33.500000, 96.000000])"), std::string::npos);
+    EXPECT_NE(json.find(R"("submitted_frame_count": 9, "sampled_offset_ns": 11)"), std::string::npos);
+}

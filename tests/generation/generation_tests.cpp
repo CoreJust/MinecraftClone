@@ -25,7 +25,7 @@ TEST(GenerationConfigurationTests, IdentityBindsAllParametersAndSourceRevision)
 
     EXPECT_EQ(
         IDENTITY,
-        "terrain-v2;model-revision=5;source-map-sha256="
+        "terrain-v2;model-revision=6;source-map-sha256="
         "5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704"
         ";seed=42;resolution=256;epochs=12;erosion-steps=3"
         ";initial-climate-iterations=24;climate-iterations=80"
@@ -135,7 +135,7 @@ TEST(GenerationPreparationTests, PublishesImmutableMapsAtUsableStageBoundaries)
         generation::GenerationStage::FinalClimate,
         generation::GenerationStage::FinalDrainage,
     };
-    constexpr size_t FIELD_SIZE = CONFIGURATION.resolution * CONFIGURATION.resolution;
+    constexpr size_t FIELD_SIZE = static_cast<size_t>(CONFIGURATION.resolution) * CONFIGURATION.resolution;
 
     std::vector<std::shared_ptr<generation::GenerationSnapshot const>> snapshots;
     std::vector<std::vector<float>> elevation_at_publication;

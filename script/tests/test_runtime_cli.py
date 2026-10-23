@@ -36,8 +36,27 @@ class RuntimeCliTests(unittest.TestCase):
             if os.name == "nt":
                 launcher.write_text(
                     "@echo off\r\n"
+                    'if "%~1"=="--server" (\r\n'
+                    'if "%~2"=="--corelang-backend" if "%~3"=="invalid" '
+                    "echo CoreLang backend must be interpreter, jit, or aot 1>&2\r\n"
+                    'if "%~2"=="--corelang-backend" if "%~3"=="invalid" exit /b 1\r\n'
+                    "echo invalid port 1>&2\r\nexit /b 1\r\n)\r\n"
+                    'if "%~1"=="--local-game" (\r\n'
+                    'if "%~2"=="--corelang-backend" if "%~3"=="invalid" '
+                    "echo CoreLang backend must be interpreter, jit, or aot 1>&2\r\n"
+                    'if "%~2"=="--corelang-backend" if "%~3"=="invalid" exit /b 1\r\n'
+                    "echo invalid port 1>&2\r\nexit /b 1\r\n)\r\n"
+                    'if "%~1"=="--player-client-2d" '
+                    '(echo 2D replay seconds must be an integer from 1 to 120 1>&2 & exit /b 1)\r\n'
                     'if "%~1"=="--benchmark-game" (\r\n'
-                    "echo conflicts with render distance 1>&2\r\n"
+                    'if "%~2"=="--corelang-backend" if "%~3"=="invalid" '
+                    "echo CoreLang backend must be interpreter, jit, or aot 1>&2\r\n"
+                    'if "%~2"=="--corelang-backend" if "%~3"=="invalid" exit /b 1\r\n'
+                    'if "%~3"=="speed-200-full-radius" echo conflicts with render distance 1>&2\r\n'
+                    'if "%~3"=="ordinary-turning" if "%~7"=="128" '
+                    "echo gameplay proof conflicts with render distance 1>&2\r\n"
+                    'if "%~3"=="ordinary-turning" if not "%~7"=="128" '
+                    "echo gameplay proof requires its fixed radius and production settings 1>&2\r\n"
                     "exit /b 1\r\n"
                     ")\r\n"
                     "echo child stdout\r\necho child stderr 1>&2\r\nexit /b 37\r\n",
@@ -46,8 +65,22 @@ class RuntimeCliTests(unittest.TestCase):
             else:
                 launcher.write_text(
                     "#!/bin/sh\n"
+                    'if [ "$1" = "--server" ] || [ "$1" = "--local-game" ]; then\n'
+                    'if [ "$2" = "--corelang-backend" ] && [ "$3" = "invalid" ]; then\n'
+                    "printf '%s\\n' 'CoreLang backend must be interpreter, jit, or aot' >&2\n"
+                    "else\nprintf '%s\\n' 'invalid port' >&2\nfi\nexit 1\nfi\n"
+                    'if [ "$1" = "--player-client-2d" ]; then\n'
+                    "printf '%s\\n' '2D replay seconds must be an integer from 1 to 120' >&2\nexit 1\nfi\n"
                     'if [ "$1" = "--benchmark-game" ]; then\n'
+                    'if [ "$2" = "--corelang-backend" ] && [ "$3" = "invalid" ]; then\n'
+                    "printf '%s\\n' 'CoreLang backend must be interpreter, jit, or aot' >&2\nexit 1\nfi\n"
+                    'if [ "$3" = "speed-200-full-radius" ]; then\n'
                     "printf '%s\\n' 'conflicts with render distance' >&2\n"
+                    'elif [ "$3" = "ordinary-turning" ] && [ "$7" = "128" ]; then\n'
+                    "printf '%s\\n' 'gameplay proof conflicts with render distance' >&2\n"
+                    'elif [ "$3" = "ordinary-turning" ]; then\n'
+                    "printf '%s\\n' 'gameplay proof requires its fixed radius and production settings' >&2\n"
+                    "fi\n"
                     "exit 1\n"
                     "fi\n"
                     "printf '%s\\n' 'child stdout'\nprintf '%s\\n' 'child stderr' >&2\nexit 37\n",

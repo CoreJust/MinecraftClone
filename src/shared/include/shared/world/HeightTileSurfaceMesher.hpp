@@ -1,5 +1,7 @@
 #pragma once
 
+#include <shared/world/Chunk.hpp>
+#include <shared/world/TerrainWorld.hpp>
 #include <shared/world/WorldGeneration.hpp>
 
 #include <array>

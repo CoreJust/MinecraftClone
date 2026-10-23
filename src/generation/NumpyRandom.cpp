@@ -97,7 +97,7 @@ double deterministicCos(double argument)
     double const reduced_high = remainder - tail;
     double const reduced_low = (remainder - reduced_high) - tail;
 
-    switch (quadrant & 3)
+    switch (static_cast<uint32_t>(quadrant) & 3U)
     {
         case 0:
         {
@@ -130,7 +130,11 @@ std::array<uint64_t, 4> seedState(uint64_t seed)
     uint32_t hash_const = SEED_INIT_A;
     for (size_t i = 0; i < pool.size(); ++i)
     {
-        uint32_t const value = i < entropy_size ? entropy[i] : 0U;
+        uint32_t value = 0U;
+        if (i < entropy_size)
+        {
+            value = entropy[i];
+        }
         pool[i] = hashMix(value, hash_const);
     }
 
@@ -190,21 +194,19 @@ Product128 multiply64(uint64_t x, uint64_t y)
 }
 
 void advanceState(
-    uint64_t& state_low,
-    uint64_t& state_high,
-    uint64_t increment_low,
-    uint64_t increment_high
+    Pcg64State& state,
+    Pcg64Increment const& increment
 )
 {
-    uint64_t const old_low = state_low;
-    uint64_t const old_high = state_high;
+    uint64_t const old_low = state.low;
+    uint64_t const old_high = state.high;
     Product128 const product = multiply64(old_low, PCG_MULTIPLIER_LOW);
     uint64_t const low_without_increment = product.low;
 
-    state_low = product.low + increment_low;
-    state_high = product.high + old_high * PCG_MULTIPLIER_LOW +
-        old_low * PCG_MULTIPLIER_HIGH + increment_high +
-        static_cast<uint64_t>(state_low < low_without_increment);
+    state.low = product.low + increment.low;
+    state.high = product.high + old_high * PCG_MULTIPLIER_LOW +
+        old_low * PCG_MULTIPLIER_HIGH + increment.high +
+        static_cast<uint64_t>(state.low < low_without_increment);
 }
 
 } // namespace
@@ -217,18 +219,18 @@ NumpyRandom::NumpyRandom(uint64_t seed)
     uint64_t const init_seq_high = words[2];
     uint64_t const init_seq_low = words[3];
 
-    increment_low_ = (init_seq_low << 1U) | 1U;
-    increment_high_ = (init_seq_high << 1U) | (init_seq_low >> 63U);
-    advanceState(state_low_, state_high_, increment_low_, increment_high_);
-    state_low_ += init_state_low;
-    state_high_ += init_state_high + static_cast<uint64_t>(state_low_ < init_state_low);
-    advanceState(state_low_, state_high_, increment_low_, increment_high_);
+    increment_.low = (init_seq_low << 1U) | 1U;
+    increment_.high = (init_seq_high << 1U) | (init_seq_low >> 63U);
+    advanceState(state_, increment_);
+    state_.low += init_state_low;
+    state_.high += init_state_high + static_cast<uint64_t>(state_.low < init_state_low);
+    advanceState(state_, increment_);
 }
 
 uint64_t NumpyRandom::randomRaw()
 {
-    advanceState(state_low_, state_high_, increment_low_, increment_high_);
-    return std::rotr(state_low_ ^ state_high_, static_cast<int>(state_high_ >> 58U));
+    advanceState(state_, increment_);
+    return std::rotr(state_.low ^ state_.high, static_cast<int>(state_.high >> 58U));
 }
 
 uint32_t NumpyRandom::nextUInt32()
@@ -308,8 +310,10 @@ int64_t NumpyRandom::integers(int64_t low, int64_t high)
     return std::bit_cast<int64_t>(static_cast<uint64_t>(low) + offset);
 }
 
-double NumpyRandom::vonmises(double mean, double concentration)
+double NumpyRandom::vonmises(VonMisesParameters const& parameters)
 {
+    double const mean = parameters.mean;
+    double const concentration = parameters.concentration;
     if (std::isnan(concentration))
     {
         return std::numeric_limits<double>::quiet_NaN();

@@ -1,5 +1,6 @@
 #include "Numerics.hpp"
 
+#include <generation/Generation.hpp>
 #include <generation/GenerationStages.hpp>
 
 #include <algorithm>
@@ -7,10 +8,12 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <queue>
 #include <span>
 #include <stdexcept>
+#include <stop_token>
 #include <utility>
 #include <vector>
 
@@ -51,11 +54,30 @@ struct Drainage
     double threshold = 0.0;
 };
 
-[[nodiscard]]
-uint32_t wrapNeighbor(uint32_t coordinate, int32_t offset, uint32_t resolution)
+struct NeighborCoordinate final
 {
-    int32_t wrapped = static_cast<int32_t>(coordinate) + offset;
-    int32_t const extent = static_cast<int32_t>(resolution);
+    uint32_t coordinate;
+    int32_t offset;
+    uint32_t resolution;
+};
+
+struct OceanSelection final
+{
+    float sea_level;
+    uint32_t resolution;
+};
+
+struct RouteLinks final
+{
+    std::span<int32_t const> downstream;
+    std::span<int32_t const> rank;
+};
+
+[[nodiscard]]
+uint32_t wrapNeighbor(NeighborCoordinate const& neighbor)
+{
+    int32_t wrapped = static_cast<int32_t>(neighbor.coordinate) + neighbor.offset;
+    int32_t const extent = static_cast<int32_t>(neighbor.resolution);
     if (wrapped < 0) wrapped += extent;
     else if (wrapped >= extent) wrapped -= extent;
     return static_cast<uint32_t>(wrapped);
@@ -96,7 +118,11 @@ private:
 };
 
 [[nodiscard]]
-Components periodicComponents(std::span<uint8_t const> mask, uint32_t resolution, std::stop_token cancellation)
+Components periodicComponents(
+    std::span<uint8_t const> mask,
+    uint32_t resolution,
+    std::stop_token const& cancellation
+)
 {
     size_t const count = mask.size();
     DisjointSets sets(count);
@@ -106,8 +132,12 @@ Components periodicComponents(std::span<uint8_t const> mask, uint32_t resolution
             size_t const index = static_cast<size_t>(y) * resolution + x;
             if (mask[index] == 0U) continue;
             for (auto const [dy, dx] : NEIGHBORS) {
-                uint32_t const ny = wrapNeighbor(y, dy, resolution);
-                uint32_t const nx = wrapNeighbor(x, dx, resolution);
+                uint32_t const ny = wrapNeighbor(
+                    NeighborCoordinate{.coordinate = y, .offset = dy, .resolution = resolution}
+                );
+                uint32_t const nx = wrapNeighbor(
+                    NeighborCoordinate{.coordinate = x, .offset = dx, .resolution = resolution}
+                );
                 size_t const neighbor = static_cast<size_t>(ny) * resolution + nx;
                 if (mask[neighbor] != 0U) {
                     sets.join(static_cast<int32_t>(index), static_cast<int32_t>(neighbor));
@@ -147,12 +177,13 @@ Components periodicComponents(std::span<uint8_t const> mask, uint32_t resolution
 [[nodiscard]]
 ByteField chooseOcean(
     std::span<double const> bed,
-    float sea_level,
-    uint32_t resolution,
+    OceanSelection const& selection,
     uint32_t& sea_components,
-    std::stop_token cancellation
+    std::stop_token const& cancellation
 )
 {
+    float const sea_level = selection.sea_level;
+    uint32_t const resolution = selection.resolution;
     ByteField below_sea(bed.size(), 0U);
     for (size_t index = 0U; index < bed.size(); ++index) {
         below_sea[index] = static_cast<uint8_t>(bed[index] <= sea_level);
@@ -196,7 +227,7 @@ Route priorityFlood(
     std::span<double const> bed,
     std::span<uint8_t const> ocean,
     uint32_t resolution,
-    std::stop_token cancellation
+    std::stop_token const& cancellation
 )
 {
     size_t const count = bed.size();
@@ -228,7 +259,7 @@ Route priorityFlood(
 
     int32_t order = 0;
     while (!heap.empty()) {
-        if ((order & 4'095) == 0) checkCancellation(cancellation);
+        if ((static_cast<uint32_t>(order) & 4'095U) == 0U) checkCancellation(cancellation);
         HeapEntry const entry = heap.top();
         heap.pop();
         int32_t const index = entry.index;
@@ -236,8 +267,12 @@ Route priorityFlood(
         uint32_t const y = static_cast<uint32_t>(index) / resolution;
         uint32_t const x = static_cast<uint32_t>(index) % resolution;
         for (auto const [dy, dx] : NEIGHBORS) {
-            uint32_t const ny = wrapNeighbor(y, dy, resolution);
-            uint32_t const nx = wrapNeighbor(x, dx, resolution);
+            uint32_t const ny = wrapNeighbor(
+                NeighborCoordinate{.coordinate = y, .offset = dy, .resolution = resolution}
+            );
+            uint32_t const nx = wrapNeighbor(
+                NeighborCoordinate{.coordinate = x, .offset = dx, .resolution = resolution}
+            );
             size_t const target = static_cast<size_t>(ny) * resolution + nx;
             if (visited[target] != 0U) continue;
             visited[target] = 1U;
@@ -253,11 +288,15 @@ Route priorityFlood(
     for (auto const [dy, dx] : NEIGHBORS) {
         for (uint32_t y = 0U; y < resolution; ++y) {
             if ((y & 31U) == 0U) checkCancellation(cancellation);
-            uint32_t const ny = wrapNeighbor(y, dy, resolution);
+            uint32_t const ny = wrapNeighbor(
+                NeighborCoordinate{.coordinate = y, .offset = dy, .resolution = resolution}
+            );
             for (uint32_t x = 0U; x < resolution; ++x) {
                 size_t const index = static_cast<size_t>(y) * resolution + x;
                 if (ocean[index] != 0U) continue;
-                uint32_t const nx = wrapNeighbor(x, dx, resolution);
+                uint32_t const nx = wrapNeighbor(
+                    NeighborCoordinate{.coordinate = x, .offset = dx, .resolution = resolution}
+                );
                 size_t const neighbor = static_cast<size_t>(ny) * resolution + nx;
                 double const slope = (route.filled[index] - route.filled[neighbor])
                     / std::hypot(static_cast<double>(dx), static_cast<double>(dy));
@@ -277,37 +316,36 @@ Route priorityFlood(
 
 [[nodiscard]]
 DoubleField accumulate(
-    std::span<int32_t const> downstream,
-    std::span<int32_t const> rank,
+    RouteLinks const& route,
     std::span<double const> runoff,
-    std::stop_token cancellation
+    std::stop_token const& cancellation
 )
 {
     DoubleField flow(runoff.begin(), runoff.end());
-    std::vector<int32_t> order(rank.size());
-    for (size_t index = 0U; index < rank.size(); ++index) {
-        order[static_cast<size_t>(rank[index])] = static_cast<int32_t>(index);
+    std::vector<int32_t> order(route.rank.size());
+    for (size_t index = 0U; index < route.rank.size(); ++index) {
+        order[static_cast<size_t>(route.rank[index])] = static_cast<int32_t>(index);
     }
     for (size_t remaining = order.size(); remaining > 0U; --remaining) {
         if ((remaining & 4'095U) == 0U) checkCancellation(cancellation);
         int32_t const index = order[remaining - 1U];
-        int32_t const target = downstream[static_cast<size_t>(index)];
+        int32_t const target = route.downstream[static_cast<size_t>(index)];
         if (target >= 0) flow[static_cast<size_t>(target)] += flow[static_cast<size_t>(index)];
     }
     return flow;
 }
 
 [[nodiscard]]
-Int32Field outletIds(std::span<int32_t const> downstream, std::span<int32_t const> rank)
+Int32Field outletIds(RouteLinks const& route)
 {
-    Int32Field order(rank.size());
-    for (size_t index = 0U; index < rank.size(); ++index) {
-        order[static_cast<size_t>(rank[index])] = static_cast<int32_t>(index);
+    Int32Field order(route.rank.size());
+    for (size_t index = 0U; index < route.rank.size(); ++index) {
+        order[static_cast<size_t>(route.rank[index])] = static_cast<int32_t>(index);
     }
-    Int32Field outlet(rank.size(), -1);
+    Int32Field outlet(route.rank.size(), -1);
     for (size_t step = 0U; step < order.size(); ++step) {
         int32_t const index = order[step];
-        int32_t const target = downstream[static_cast<size_t>(index)];
+        int32_t const target = route.downstream[static_cast<size_t>(index)];
         outlet[static_cast<size_t>(index)] = target < 0
             ? index : outlet[static_cast<size_t>(target)];
     }
@@ -320,11 +358,16 @@ Drainage fields(
     float sea_level,
     std::span<double const> runoff,
     uint32_t resolution,
-    std::stop_token cancellation
+    std::stop_token const& cancellation
 )
 {
     Drainage result;
-    result.ocean = chooseOcean(bed, sea_level, resolution, result.sea_components, cancellation);
+    result.ocean = chooseOcean(
+        bed,
+        OceanSelection{.sea_level = sea_level, .resolution = resolution},
+        result.sea_components,
+        cancellation
+    );
     Route route = priorityFlood(bed, result.ocean, resolution, cancellation);
     result.filled = std::move(route.filled);
     result.downstream = std::move(route.downstream);
@@ -339,7 +382,11 @@ Drainage fields(
             && result.filled[index] > bed[index] + 1.0e-6);
         if (result.ocean[index] != 0U) effective_runoff[index] = 0.0;
     }
-    result.flow = accumulate(result.downstream, result.rank, effective_runoff, cancellation);
+    result.flow = accumulate(
+        RouteLinks{.downstream = result.downstream, .rank = result.rank},
+        effective_runoff,
+        cancellation
+    );
     result.threshold = std::max(8.0, static_cast<double>(count) * 0.0005);
     for (size_t index = 0U; index < count; ++index) {
         result.river[index] = static_cast<uint8_t>(result.flow[index] >= result.threshold
@@ -363,14 +410,15 @@ HydrologyFields buildHydrology(
     std::span<float const> elevation,
     std::span<float const> precipitation,
     std::span<float const> temperature,
-    uint32_t erosion_steps,
-    float sea_level,
-    GenerationStage stage,
-    std::stop_token cancellation,
+    HydrologyParameters const& parameters,
+    std::stop_token const& cancellation,
     ProgressCallback const& progress
 )
 {
     checkCancellation(cancellation);
+    uint32_t const erosion_steps = parameters.erosion_steps;
+    float const sea_level = parameters.sea_level;
+    GenerationStage const stage = parameters.stage;
     uint32_t const resolution = configuration.resolution;
     size_t const count = static_cast<size_t>(resolution) * resolution;
     if (resolution < 3U || count > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
@@ -390,7 +438,12 @@ HydrologyFields buildHydrology(
     DoubleField bed(elevation.begin(), elevation.end());
     DoubleField const original_bed = bed;
     uint32_t original_component_count = 0U;
-    ByteField const original_ocean = chooseOcean(bed, sea_level, resolution, original_component_count, cancellation);
+    ByteField const original_ocean = chooseOcean(
+        bed,
+        OceanSelection{.sea_level = sea_level, .resolution = resolution},
+        original_component_count,
+        cancellation
+    );
     DoubleField runoff(count, 1.0);
     if (!precipitation.empty()) {
         for (size_t index = 0U; index < count; ++index) {
@@ -437,7 +490,11 @@ HydrologyFields buildHydrology(
         for (size_t index = 0U; index < count; ++index) {
             channel_cut[index] = incision[index] * current.river[index];
         }
-        DoubleField valley = gaussianFilterWrap(channel_cut, resolution, 384.0 / cell_world_units, cancellation);
+        DoubleField valley = gaussianFilterWrap(
+            channel_cut,
+            GaussianFilterParameters{.resolution = resolution, .sigma = 384.0 / cell_world_units},
+            cancellation
+        );
         DoubleField cut(count);
         for (size_t index = 0U; index < count; ++index) {
             cut[index] = std::min(0.045, channel_cut[index] + 2.0 * valley[index]);
@@ -452,7 +509,11 @@ HydrologyFields buildHydrology(
                     cold_source[index] = runoff[index];
                 }
             }
-            DoubleField const cold_flow = accumulate(current.downstream, current.rank, cold_source, cancellation);
+            DoubleField const cold_flow = accumulate(
+                RouteLinks{.downstream = current.downstream, .rank = current.rank},
+                cold_source,
+                cancellation
+            );
             uint32_t const coast_radius = roundedRadius(1536.0, cell_world_units);
             ByteField const coastal = maximumFilterWrap(current.ocean, resolution, 2U * coast_radius + 1U, cancellation);
             ByteField glacier_route(count, 0U);
@@ -466,7 +527,11 @@ HydrologyFields buildHydrology(
             }
             DoubleField glacier_values(count);
             for (size_t index = 0U; index < count; ++index) glacier_values[index] = glacier_route[index];
-            DoubleField lateral = gaussianFilterWrap(glacier_values, resolution, 384.0 / cell_world_units, cancellation);
+            DoubleField lateral = gaussianFilterWrap(
+                glacier_values,
+                GaussianFilterParameters{.resolution = resolution, .sigma = 384.0 / cell_world_units},
+                cancellation
+            );
             for (size_t index = 0U; index < count; ++index) {
                 glacial[index] = std::min(0.035, 0.012 * glacier_route[index] + 0.03 * lateral[index]);
                 double const crossing = std::min(0.08, std::max(0.0, bed[index] - (sea_level - 0.025)));
@@ -491,7 +556,10 @@ HydrologyFields buildHydrology(
     checkCancellation(cancellation);
     Drainage final_fields = fields(bed, sea_level, runoff, resolution, cancellation);
     Components const lake_components = periodicComponents(final_fields.lake, resolution, cancellation);
-    Int32Field const outlet_id = outletIds(final_fields.downstream, final_fields.rank);
+    Int32Field const outlet_id = outletIds(RouteLinks{
+        .downstream = final_fields.downstream,
+        .rank = final_fields.rank,
+    });
 
     ByteField submerged_core(count, 0U);
     for (size_t index = 0U; index < count; ++index) {

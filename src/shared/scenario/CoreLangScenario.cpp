@@ -1,24 +1,21 @@
+#include <shared/corelang/Execution.hpp>
+#include <shared/corelang/ExecutionTypes.hpp>
 #include <shared/scenario/Scenario.hpp>
-
 #include <shared/world/Chunk.hpp>
-
 #include <core/lang/Bytecode.hpp>
 #include <core/lang/Compiler.hpp>
 #include <core/lang/CoreLang.hpp>
-#include <core/lang/Diagnostic.hpp>
 #include <core/lang/Registry.hpp>
-#include <core/lang/Runtime.hpp>
 #include <core/lang/Value.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
 #include <expected>
-#include <functional>
 #include <limits>
-#include <memory>
 #include <optional>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -654,7 +651,7 @@ private:
         if (!sparseWorldReady()) {
             return std::unexpected("expectBlockXYZ requires configured sparse-world options");
         }
-        if (*block > static_cast<uint64_t>(Block::Stone)) {
+        if (!isValidBlock(static_cast<Block>(*block))) {
             return std::unexpected("expectBlockXYZ received an unsupported block id");
         }
         if (m_evidence_count >= m_limits.max_evidence) {
@@ -833,9 +830,81 @@ core::lang::CustomManifest manifest(HostSpec const& spec)
             .parameters = std::vector<core::lang::BorrowAccess>(spec.arguments.size()),
             .returns = {},
         },
+        .clobber_regions = {},
     };
     result.digest = core::lang::customManifestDigest(result);
     return result;
+}
+
+[[nodiscard]]
+std::string_view backendErrorName(corelang::BackendErrorCode const code) noexcept
+{
+    using corelang::BackendErrorCode;
+    switch (code) {
+        case BackendErrorCode::Cancelled: return "cancelled";
+        case BackendErrorCode::InvalidConfiguration: return "invalid-configuration";
+        case BackendErrorCode::SourceTooLarge: return "source-too-large";
+        case BackendErrorCode::BytecodeTooLarge: return "bytecode-too-large";
+        case BackendErrorCode::NativeImageTooLarge: return "native-image-too-large";
+        case BackendErrorCode::CompileFailed: return "compile-failed";
+        case BackendErrorCode::InvalidArtifact: return "invalid-artifact";
+        case BackendErrorCode::InvalidHostCalls: return "invalid-host-calls";
+        case BackendErrorCode::InvalidManifest: return "invalid-manifest";
+        case BackendErrorCode::InstructionLimitExceeded: return "instruction-limit-exceeded";
+        case BackendErrorCode::UnboundedExecution: return "unbounded-execution";
+        case BackendErrorCode::BackendUnavailable: return "backend-unavailable";
+        case BackendErrorCode::InvalidResultType: return "invalid-result-type";
+        case BackendErrorCode::ExecutionFailed: return "execution-failed";
+    }
+    return "unknown-backend-error";
+}
+
+[[nodiscard]]
+ScenarioDiagnostic backendDiagnostic(
+    corelang::BackendError const& error,
+    std::string_view const filename,
+    bool const compiling,
+    std::string_view const source
+)
+{
+    using corelang::BackendErrorCode;
+    ScenarioDiagnosticCode code = ScenarioDiagnosticCode::CoreLangRuntimeFailure;
+    switch (error.code) {
+        case BackendErrorCode::Cancelled:
+            code = ScenarioDiagnosticCode::Cancelled;
+            break;
+        case BackendErrorCode::InvalidConfiguration:
+            code = ScenarioDiagnosticCode::InvalidLimits;
+            break;
+        case BackendErrorCode::SourceTooLarge:
+            code = ScenarioDiagnosticCode::SourceTooLarge;
+            break;
+        case BackendErrorCode::CompileFailed:
+        case BackendErrorCode::BytecodeTooLarge:
+        case BackendErrorCode::InvalidManifest:
+            if (compiling) {
+                code = ScenarioDiagnosticCode::CoreLangCompileFailure;
+            }
+            break;
+        case BackendErrorCode::NativeImageTooLarge:
+        case BackendErrorCode::InvalidArtifact:
+        case BackendErrorCode::InvalidHostCalls:
+        case BackendErrorCode::InstructionLimitExceeded:
+        case BackendErrorCode::UnboundedExecution:
+        case BackendErrorCode::BackendUnavailable:
+        case BackendErrorCode::InvalidResultType:
+        case BackendErrorCode::ExecutionFailed:
+            break;
+    }
+    ScenarioLocation const location = compiling && error.source_offset.has_value()
+        ? sourceLocation(source, *error.source_offset)
+        : ScenarioLocation{.line = 1U, .column = 1U};
+    return diagnostic(
+        code,
+        filename,
+        location,
+        "CoreLang bounded execution (" + std::string{backendErrorName(error.code)} + "): " + error.message
+    );
 }
 
 class CoreLangScenarioLowerer final {
@@ -845,17 +914,15 @@ public:
         std::string_view const filename,
         std::string_view const source,
         ScenarioLimits const& limits,
+        ScenarioExecutionOptions const& execution,
         ScenarioCancellation const* const cancellation,
         bool const supports_sparse_world
     )
     {
-        ScenarioPlanCollector collector{filename, limits, cancellation, supports_sparse_world};
         std::vector<HostSpec> const specs = hostSpecs(supports_sparse_world);
         core::lang::Ruleset ruleset{};
         ruleset.id = "minecraft";
         ruleset.version = 1U;
-        std::vector<core::lang::CustomProvider> providers;
-        providers.reserve(specs.size());
         for (HostSpec const& spec : specs) {
             core::lang::CustomManifest const host_manifest = manifest(spec);
             core::lang::Operation operation{};
@@ -869,99 +936,120 @@ public:
             operation.unsafe_callable = host_manifest.unsafe_;
             operation.borrow = host_manifest.borrow;
             ruleset.operations.push_back(std::move(operation));
-            providers.push_back({
-                .manifest = host_manifest,
-                .invoke = [&collector, host_call = spec.call](
-                    core::lang::CustomContext&,
-                    std::span<core::lang::Value const> const arguments
-                ) {
-                    auto const result = collector.call(host_call, arguments);
-                    if (!result) {
-                        return core::lang::CustomOutcome{core::lang::CustomFail{
-                            .code = 1U,
-                            .message = result.error(),
-                        }};
-                    }
-                    return core::lang::CustomOutcome{core::lang::CustomComplete{.value = unitValue()}};
-                },
-                .cancel = {},
-            });
         }
         core::lang::CompilerRegistry const registry{
             .rulesets = {std::move(ruleset)},
             .defaults = {"minecraft"},
             .restrictions = {},
         };
-        auto const compiled = core::lang::compile(
+
+        corelang::ExecutionLimits execution_limits = execution.limits;
+        execution_limits.max_source_bytes = std::min(
+            execution_limits.max_source_bytes,
+            limits.max_source_bytes
+        );
+        auto const cancellation_requested = [cancellation]() noexcept {
+            return cancellation && cancellation->isCancellationRequested();
+        };
+        auto const compiled = corelang::compileBounded(
             core::lang::Source{.id = std::string{filename}, .text = std::string{source}},
-            registry
+            registry,
+            execution_limits,
+            {},
+            cancellation_requested
         );
         if (!compiled) {
-            if (compiled.error().empty()) {
-                return std::unexpected(diagnostic(
-                    ScenarioDiagnosticCode::CoreLangCompileFailure,
-                    filename,
-                    {.line = 1U, .column = 1U},
-                    "CoreLang compilation failed without diagnostics"
-                ));
-            }
-            core::lang::Diagnostic const& error = compiled.error().front();
-            return std::unexpected(diagnostic(
-                ScenarioDiagnosticCode::CoreLangCompileFailure,
-                filename,
-                sourceLocation(source, error.offset),
-                error.message
-            ));
+            return std::unexpected(backendDiagnostic(compiled.error(), filename, true, source));
         }
-        core::lang::Runtime runtime;
-        for (core::lang::CustomProvider& provider : providers) {
-            auto const registered = runtime.registerProvider(std::move(provider));
-            if (!registered) {
+
+        uint64_t const execution_count = execution.backend == corelang::Backend::Interpreter ? 1U : 2U;
+        auto const instruction_count = corelang::boundedInstructionCount(
+            *compiled,
+            filename,
+            "scenario",
+            execution_limits,
+            execution_count
+        );
+        if (!instruction_count) {
+            return std::unexpected(backendDiagnostic(instruction_count.error(), filename, false, source));
+        }
+
+        struct ExecutedScenario final {
+            ScenarioPlan plan;
+            corelang::BackendReceipt receipt;
+        };
+        auto execute = [&](corelang::Backend const backend)
+            -> std::expected<ExecutedScenario, ScenarioDiagnostic> {
+            ScenarioPlanCollector collector{filename, limits, cancellation, supports_sparse_world};
+            std::vector<corelang::ExecutionHostCall> host_calls;
+            host_calls.reserve(compiled->compiled.artifact.customs.size());
+            for (HostSpec const& spec : specs) {
+                core::lang::CustomManifest host_manifest = manifest(spec);
+                if (std::ranges::none_of(
+                        compiled->compiled.artifact.customs,
+                        [&host_manifest](core::lang::CustomManifest const& imported) {
+                            return imported.provider_key == host_manifest.provider_key;
+                        })) {
+                    continue;
+                }
+                host_calls.push_back({
+                    .manifest = std::move(host_manifest),
+                    .invoke = [&collector, host_call = spec.call](
+                        std::span<core::lang::Value const> const arguments
+                              ) -> std::expected<core::lang::Value, std::string> {
+                        auto const result = collector.call(host_call, arguments);
+                        if (!result) {
+                            return std::unexpected(result.error());
+                        }
+                        return unitValue();
+                    },
+                });
+            }
+            auto const result = corelang::executeBounded(corelang::ExecutionRequest{
+                .program = *compiled,
+                .module_id = filename,
+                .entry = "scenario",
+                .backend = backend,
+                .expected_result_type = type(core::lang::TypeKind::Unit),
+                .limits = execution_limits,
+                .execution_count = 1U,
+                .host_calls = std::move(host_calls),
+                .stop_token = {},
+                .cancellation_requested = cancellation_requested,
+            });
+            if (!result) {
+                return std::unexpected(backendDiagnostic(result.error(), filename, false, source));
+            }
+            auto plan = std::move(collector).build();
+            if (!plan) {
+                return std::unexpected(plan.error());
+            }
+            return ExecutedScenario{
+                .plan = std::move(*plan),
+                .receipt = result->receipt,
+            };
+        };
+
+        auto selected = execute(execution.backend);
+        if (!selected) {
+            return std::unexpected(selected.error());
+        }
+        if (execution.backend != corelang::Backend::Interpreter) {
+            auto const oracle = execute(corelang::Backend::Interpreter);
+            if (!oracle) {
+                return std::unexpected(oracle.error());
+            }
+            if (scenarioReplayId(selected->plan) != scenarioReplayId(oracle->plan)) {
                 return std::unexpected(diagnostic(
                     ScenarioDiagnosticCode::CoreLangRuntimeFailure,
                     filename,
                     {.line = 1U, .column = 1U},
-                    registered.error().message
+                    "CoreLang selected backend disagrees with the Interpreter scenario plan"
                 ));
             }
         }
-        auto const program = runtime.load(compiled->bytes);
-        if (!program) {
-            return std::unexpected(diagnostic(
-                ScenarioDiagnosticCode::CoreLangRuntimeFailure,
-                filename,
-                {.line = 1U, .column = 1U},
-                program.error().message
-            ));
-        }
-        auto const executed = runtime.execute(*program, filename, "scenario", {}, {});
-        if (!executed) {
-            return std::unexpected(diagnostic(
-                ScenarioDiagnosticCode::CoreLangRuntimeFailure,
-                filename,
-                {.line = 1U, .column = 1U},
-                executed.error().message
-            ));
-        }
-        if (auto const* const failed = std::get_if<core::lang::Failed>(&*executed)) {
-            return std::unexpected(diagnostic(
-                failed->failure.code == core::lang::FailureCode::Cancelled
-                    ? ScenarioDiagnosticCode::Cancelled
-                    : ScenarioDiagnosticCode::CoreLangRuntimeFailure,
-                filename,
-                {.line = 1U, .column = 1U},
-                failed->failure.message
-            ));
-        }
-        if (!std::holds_alternative<core::lang::Completed>(*executed)) {
-            return std::unexpected(diagnostic(
-                ScenarioDiagnosticCode::CoreLangRuntimeFailure,
-                filename,
-                {.line = 1U, .column = 1U},
-                "CoreLang scenario did not complete"
-            ));
-        }
-        return std::move(collector).build();
+        selected->plan.m_execution_receipt = std::move(selected->receipt);
+        return std::move(selected->plan);
     }
 };
 
@@ -1012,14 +1100,30 @@ std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenarioSource(
     ScenarioCancellation const* const cancellation
 )
 {
+    ScenarioExecutionOptions execution{};
+    execution.limits.max_source_bytes = limits.max_source_bytes;
+    return parseScenarioSource(filename, source, limits, execution, cancellation);
+}
+
+std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenarioSource(
+    std::string_view const filename,
+    std::string_view const source,
+    ScenarioLimits const& limits,
+    ScenarioExecutionOptions const& execution,
+    ScenarioCancellation const* const cancellation
+)
+{
     if (limits.max_source_bytes == 0U || limits.max_statements == 0U || limits.max_actors == 0U
         || limits.max_total_ticks == 0U || limits.max_operations == 0U || limits.max_evidence == 0U
-        || limits.max_sparse_world_resident_chunks == 0U) {
+        || limits.max_sparse_world_resident_chunks == 0U
+        || execution.limits.max_source_bytes == 0U || execution.limits.max_bytecode_bytes == 0U
+        || execution.limits.max_native_image_bytes == 0U || execution.limits.max_instructions == 0U
+        || execution.limits.max_execution_count == 0U) {
         return std::unexpected(scenario_detail::diagnostic(
             ScenarioDiagnosticCode::InvalidLimits,
             filename,
             {.line = 1U, .column = 1U},
-            "all scenario limits must be positive"
+            "all scenario and backend execution limits must be positive"
         ));
     }
     if (source.size() > limits.max_source_bytes) {
@@ -1039,17 +1143,21 @@ std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenarioSource(
         ));
     }
     std::string_view const header = firstHeader(source);
-    if (isExplicitHeader(header, "@version(\"0.1.2\")")) {
-        return scenario_detail::CoreLangScenarioLowerer::lower(filename, source, limits, cancellation, false);
-    }
-    if (isExplicitHeader(header, "@version(\"0.1.3\")")) {
-        return scenario_detail::CoreLangScenarioLowerer::lower(filename, source, limits, cancellation, true);
+    if (isExplicitHeader(header, "@version(0.1.5)")) {
+        return scenario_detail::CoreLangScenarioLowerer::lower(
+            filename,
+            source,
+            limits,
+            execution,
+            cancellation,
+            true
+        );
     }
     return std::unexpected(scenario_detail::diagnostic(
         ScenarioDiagnosticCode::UnknownSourceHeader,
         filename,
         {.line = 1U, .column = 1U},
-        "expected @version(\"0.1.2\") or @version(\"0.1.3\") CoreLang source header"
+        "expected @version(0.1.5) CoreLang source header"
     ));
 }
 

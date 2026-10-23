@@ -28,14 +28,34 @@ against the lock file, including local development builds.
 checks. The focused
 `CoreCpp.ServerOnlyPackageConsumer` test links `CoreCpp::RuntimeNetwork` and
 rejects graphics, platform, and audio components.
-`MC_BUILD_CLIENT=OFF` is the MinecraftClone headless configuration: it omits
-Client sources, Vulkan discovery, and optional CoreCpp graphics/platform
-components. `MinecraftClone.ServerOnlyBuild` configures and builds that target
+`MC_BUILD_CLIENT=OFF` omits Vulkan discovery and optional CoreCpp graphics/platform
+components. `MC_BUILD_COLUMN_MAP` defaults to the selected client-build setting;
+set it explicitly to `ON` with graphics disabled to build the CPU-only
+`mc_column_map` normal-game consumer. This consumer uses audio output for the
+shared join cue, while the server-only configuration disables both options and
+retains the audio exclusion. `MinecraftClone.ServerOnlyBuild` configures and builds that target
 and asserts the forbidden imported and linked targets are absent.
 
 ## Boundaries and build layout
 
-There is no game-local core target. Reusable headers, Runtime sources,
+`mc_generation` and `mc_world_sampling` own the native numerical kernels and
+canonical sampler. `mc_terrain_corelang` owns bounded backend execution and the
+generation-plan adapter; it also supports a standalone CPU build without game
+or graphics startup. `mc_game_core` consumes that target and owns shared
+simulation, protocol, server services and the renderer-free client lifecycle. `mc_column_replay` adds pure
+replay inputs and the normal-game CPU column-map adapter. The `mc` application
+library adds platform/presentation adapters; graphics dependencies belong there.
+`mc_column_map` configures and links with graphics disabled and uses the same
+server protocol and materialized world as the graphical client.
+
+The client-side `TerrainLodSource` asynchronously builds a separate atlas from
+the exact session configuration and publishes only matching identity/epoch
+results. It duplicates server atlas work; it does not replace server-owned
+chunks, collision, edits, or state. Keep this preview adapter separate from
+server `WorldPreparation` and renderer ownership.
+
+
+Reusable headers, Runtime sources,
 Runtime network transport, and graphics/platform bridges are supplied by
 installed CoreCpp targets. Depend on the narrowest public header, not a
 directory-wide umbrella.
@@ -48,13 +68,9 @@ Vulkan.
 
 ## Process lifetime, diagnostics, and I/O
 
-- `AtAppExit` is a
-  process-global LIFO callback registry. It is intentionally one-shot; callbacks
-  registered by `StaticInitializer` and `Log` must be safe during shutdown.
-- `StaticInitializer`
-  runs `T::init()` exactly once with `std::call_once`, publishes initialization
-  with acquire/release atomics, and registers `T::destroy()` at app exit; the
-  Runtime network `Net` uses this lifecycle.
+- `AtAppExit` runs process-global LIFO callbacks once. `StaticInitializer`
+  initializes via `std::call_once`, publishes with acquire/release atomics and
+  registers teardown; callbacks must remain safe during shutdown.
 - `Log` owns the global asynchronous
   spdlog logger. `ensureInit` is idempotent, optionally creates `game.log`, and
   arranges teardown; logging macros silently do nothing before initialization.
@@ -83,18 +99,13 @@ Tests: [`crash_handler_tests.cpp`](../../tests/core/crash_handler_tests.cpp),
   that input for their whole use. This is native in-memory serialization, not a
   portable wire format: endianness remains part of its contract; enums and
   aggregates require dedicated codecs.
-- `InputSpan`, `SpanUtils`, and `VectorUtils` provide
-  zero-copy parameter views and append/byte reinterpretations. `asStringView`
-  accepts lvalues and temporary borrowed ranges only; callers retain element
-  lifetime and must ensure reinterpretation alignment/size are valid.
-- `EnumBits`, `TaggedBool`, `Version`, `TrivialPair`, and `HashCombiner` are
-  value types. `TaggedBool` prevents accidental mixing of independent booleans;
-  `EnumBits` requires a dense `Count` enum and a fitting unsigned storage type.
-- `Defer` executes its captured
-  lambda on scope exit. `NonCopyable`/`NonMovable` encode ownership; `Assume`,
-  `ConstString`, `Color`, and `CodeExecutionHelper` are lightweight contracts/
-  aliases. `ControlFlow` stops polling. `TopoSort`
-  returns `nullopt` for cycles; successor indices must be in `[0, node_count)`.
+- `InputSpan`, `SpanUtils`, and `VectorUtils` expose borrowed ranges; callers
+  preserve storage lifetime, alignment and size. `asStringView` rejects temporary
+  owning ranges.
+- `EnumBits` requires a dense `Count` enum and fitting storage; `TaggedBool`
+  distinguishes boolean meanings. Other small value types retain narrow headers.
+- `Defer` runs at scope exit. Ownership markers prohibit copying/moving.
+  `TopoSort` rejects cycles and requires valid successor indices.
 
 Tests: [`byte_io_tests.cpp`](../../tests/core/byte_io_tests.cpp),
 [`range_span_tests.cpp`](../../tests/core/range_span_tests.cpp),
@@ -121,7 +132,5 @@ broadcast, and graceful/ungraceful paths.
 
 ## Extension checklist
 
-New game-local core code needs explicit lifetime/error contracts, narrow CMake
-edges, and a focused suite under `tests/core`. GPU policy belongs in
-[RENDERING.md](RENDERING.md); never reintroduce a game-local Vulkan/window
-ownership layer.
+New core contracts need focused tests and narrow dependencies. GPU ownership
+belongs in [RENDERING.md](RENDERING.md) and installed Runtime components.

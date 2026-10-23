@@ -1,0 +1,400 @@
+{
+  "schema_version": 1,
+  "budgets_seconds": {
+    "small": 180,
+    "medium": 720,
+    "large": 2700,
+    "routine_aggregate": 900,
+    "full_aggregate": 3600
+  },
+  "checks": [
+    {
+      "id": "fast-code",
+      "module": "tooling",
+      "size": "small",
+      "always": true,
+      "commands": [
+        ["{python}", "script/ai_check.py", "--fast"]
+      ],
+      "inputs": [
+        "AGENTS.md",
+        "docs/**",
+        "script/**",
+        ".agents/**",
+        ".githooks/**",
+        "publish.py",
+        "src/**",
+        "tests/**",
+        "cmake/**",
+        "CMakeLists.txt",
+        "CMakePresets.json",
+        "vcpkg.json",
+        "vcpkg-configuration.json",
+        "dependencies.lock.json"
+      ],
+      "prerequisites": ["Python 3.12+", "repository fast-check inputs"]
+    }
+  ],
+  "required_python_test_groups": {
+    "python-gameplay-gate": "script/tests/test_verify_gameplay_gate.py"
+  },
+  "python_test_groups": [
+    {
+      "id": "python-gameplay-gate",
+      "module": "tooling",
+      "size": "medium",
+      "source": "script/tests/test_verify_gameplay_gate.py",
+      "reason": "The source-bound gameplay verifier suite is the measured medium validation group and is kept out of the small fast Python batch.",
+      "trigger_inputs": [
+        "script/tests/test_verify_gameplay_gate.py",
+        "script/ci/verify_gameplay_gate.py",
+        "script/ai_analysis_matrix.py",
+        "script/package_snapshot.py",
+        "script/ai_check.py",
+        "script/ai_validation.py",
+        "script/ai_python_tests.py",
+        "script/validation_inventory.json",
+        "script/ai_checks.json",
+        "docs/ai/S7-CADENCE-EXCEPTION-2026-10-18.json",
+        "src/**",
+        "assets/**",
+        "cmake/**",
+        "scenarios/**",
+        "CMakeLists.txt",
+        "CMakePresets.json",
+        "dependencies.lock.json",
+        "tests/**",
+        "vcpkg.json",
+        "vcpkg-configuration*.json"
+      ],
+      "inputs": [
+        "script/tests/test_verify_gameplay_gate.py",
+        "script/ci/verify_gameplay_gate.py",
+        "script/ai_analysis_matrix.py",
+        "script/package_snapshot.py",
+        "script/ai_check.py",
+        "script/ai_validation.py",
+        "script/ai_python_tests.py",
+        "script/validation_inventory.json",
+        "script/ai_checks.json",
+        "docs/ai/S7-CADENCE-EXCEPTION-2026-10-18.json",
+        "src/**",
+        "assets/**",
+        "cmake/**",
+        "scenarios/**",
+        "CMakeLists.txt",
+        "CMakePresets.json",
+        "dependencies.lock.json",
+        "tests/**",
+        "vcpkg.json",
+        "vcpkg-configuration*.json"
+      ],
+      "prerequisites": ["Python 3.12+"],
+      "commands": [
+        ["{python}", "-m", "unittest", "discover", "-s", "script/tests", "-p", "test_verify_gameplay_gate.py", "-v"]
+      ]
+    }
+  ],
+  "path_rules": [
+    {"pattern": "assets/textures/**", "module": "client", "kind": "source"},
+    {"pattern": "src/client/ClientAudio.cpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/client/FrameScheduler.cpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/client/GameClient.cpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/client/WorldLoading.cpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/client/PreviewResidency.cpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/client/PlayerPresentation.cpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/client/ColumnMapClient.cpp", "module": "column-map", "kind": "source"},
+    {"pattern": "src/client/ColumnMapPresentation.cpp", "module": "column-map", "kind": "source"},
+    {"pattern": "src/client/GenerationMapPresentation.cpp", "module": "generation", "kind": "source"},
+    {"pattern": "src/acceptance/ColumnMapReplay.cpp", "module": "column-map", "kind": "source"},
+    {"pattern": "src/acceptance/ReplayInput.cpp", "module": "column-map", "kind": "source"},
+    {"pattern": "src/acceptance/include/acceptance/ColumnMapReplay.hpp", "module": "column-map", "kind": "source"},
+    {"pattern": "src/acceptance/include/acceptance/ReplayInput.hpp", "module": "column-map", "kind": "source"},
+    {"pattern": "src/tools/column_map_client.cpp", "module": "column-map", "kind": "source"},
+    {"pattern": "src/client/include/client/ColumnMapClient.hpp", "module": "column-map", "kind": "source"},
+    {"pattern": "src/client/include/client/ColumnMapPresentation.hpp", "module": "column-map", "kind": "source"},
+    {"pattern": "src/client/include/client/GenerationMapPresentation.hpp", "module": "generation", "kind": "source"},
+    {"pattern": "src/client/include/client/Camera.hpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/client/include/client/ClientAudio.hpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/client/include/client/FrameScheduler.hpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/client/include/client/GameClient.hpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/client/include/client/WorldLoading.hpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/client/include/client/PreviewResidency.hpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/client/include/client/PlayerPresentation.hpp", "module": "game-core", "kind": "source"},
+    {"pattern": "src/shared/**", "module": "shared", "kind": "source"},
+    {"pattern": "src/server/**", "module": "server", "kind": "source"},
+    {"pattern": "src/client/**", "module": "client", "kind": "source"},
+    {"pattern": "src/acceptance/**", "module": "acceptance", "kind": "source"},
+    {"pattern": "src/**/CMakeLists.txt", "module": "native-all", "kind": "native-global"},
+    {"pattern": "src/generation/CMakeLists.txt", "module": "native-all", "kind": "native-global"},
+    {"pattern": "src/generation/**", "module": "generation", "kind": "source"},
+    {"pattern": "src/tools/**", "module": "tools", "kind": "source"},
+    {"pattern": "src/android/**", "module": "android", "kind": "source"},
+    {"pattern": "src/main.cpp", "module": "client", "kind": "source"},
+    {"pattern": "tests/core/game_server_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/core/game_server_lifecycle_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/core/game_server_preview_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/core/flight_world_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/core/net_client_server_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/core/scripted_world_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/core/world_generation_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/core/world_preparation_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/core/corelang_scenario_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/core/corelang_sparse_world_scenario_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/core/terrain_world_reference_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/core/height_tile_worker_pool_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/generation/reference_tests.cpp", "module": "integration", "kind": "test"},
+    {"pattern": "tests/core/**", "module": "core", "kind": "test"},
+    {"pattern": "tests/testsupport/**", "module": "core", "kind": "test"},
+    {"pattern": "tests/**/CMakeLists.txt", "module": "native-all", "kind": "native-global"},
+    {"pattern": "tests/client/**", "module": "client", "kind": "test"},
+    {"pattern": "tests/android/**", "module": "android", "kind": "test"},
+    {"pattern": "tests/acceptance/**", "module": "acceptance", "kind": "test"},
+    {"pattern": "tests/generation/**", "module": "generation", "kind": "test"},
+    {"pattern": "tests/fixtures/terrain_v2/**", "module": "generation", "kind": "test"},
+    {"pattern": "tests/fixtures/terrain_v2_revision_4/**", "module": "generation", "kind": "test"},
+    {"pattern": "tests/fixtures/terrain_v2_revision_5/**", "module": "generation", "kind": "test"},
+    {"pattern": "tests/cmake/**", "module": "native-all", "kind": "native-global"},
+    {"pattern": "tests/main.cpp", "module": "native-all", "kind": "native-global"},
+    {"pattern": "CMakeLists.txt", "module": "native-all", "kind": "native-global"},
+    {"pattern": "CMakePresets.json", "module": "native-all", "kind": "native-global"},
+    {"pattern": "CMakeUserPresets.json", "module": "native-all", "kind": "native-global"},
+    {"pattern": "cmake/**", "module": "native-all", "kind": "native-global"},
+    {"pattern": "tests/CMakeLists.txt", "module": "native-all", "kind": "native-global"},
+    {"pattern": "src/CMakeLists.txt", "module": "native-all", "kind": "native-global"},
+    {"pattern": "vcpkg.json", "module": "native-all", "kind": "native-global"},
+    {"pattern": "vcpkg-configuration.json", "module": "native-all", "kind": "native-global"},
+    {"pattern": "dependencies.lock.json", "module": "native-all", "kind": "native-global"},
+    {"pattern": "assets/**", "module": "native-all", "kind": "native-global"},
+    {"pattern": "scenarios/**", "module": "native-all", "kind": "native-global"},
+    {"pattern": "script/**", "module": "tooling", "kind": "workflow"},
+    {"pattern": "script/tests/test_world_map_cli.py", "module": "tools", "kind": "test"},
+    {"pattern": "docs/**", "module": "tooling", "kind": "workflow"},
+    {"pattern": ".agents/**", "module": "tooling", "kind": "workflow"},
+    {"pattern": ".githooks/**", "module": "tooling", "kind": "workflow"},
+    {"pattern": "AGENTS.md", "module": "tooling", "kind": "workflow"},
+    {"pattern": "README.md", "module": "tooling", "kind": "workflow"},
+    {"pattern": "publish.py", "module": "tooling", "kind": "workflow"}
+  ],
+  "native": {
+    "preset": "debug",
+    "build_dir": "build/debug",
+    "build_command": ["cmake", "--build", "--preset", "debug", "--target", "mc_tests", "mc_main"],
+    "test_source_modules": [
+      {"prefix": "tests/core/", "module": "core", "size": "small"},
+      {"prefix": "tests/testsupport/", "module": "core", "size": "small"},
+      {"prefix": "tests/client/", "module": "client", "size": "medium"},
+      {"prefix": "tests/android/", "module": "android", "size": "medium"},
+      {"prefix": "tests/acceptance/", "module": "acceptance", "size": "medium"},
+      {"prefix": "tests/generation/", "module": "generation", "size": "medium"}
+    ],
+    "test_source_overrides": {
+      "tests/core/game_server_tests.cpp": {"module": "integration", "size": "medium"},
+      "tests/core/game_server_lifecycle_tests.cpp": {"module": "integration", "size": "medium"},
+      "tests/core/game_server_preview_tests.cpp": {"module": "integration", "size": "medium"},
+      "tests/core/flight_world_tests.cpp": {"module": "integration", "size": "medium"},
+      "tests/core/net_client_server_tests.cpp": {"module": "integration", "size": "medium"},
+      "tests/core/scripted_world_tests.cpp": {"module": "integration", "size": "medium"},
+      "tests/core/world_generation_tests.cpp": {"module": "integration", "size": "medium"},
+      "tests/core/world_preparation_tests.cpp": {"module": "integration", "size": "medium"},
+      "tests/core/corelang_scenario_tests.cpp": {"module": "integration", "size": "medium"},
+      "tests/core/corelang_sparse_world_scenario_tests.cpp": {"module": "integration", "size": "medium"},
+      "tests/core/terrain_world_reference_tests.cpp": {"module": "integration", "size": "large"},
+      "tests/core/height_tile_worker_pool_tests.cpp": {"module": "integration", "size": "medium"},
+      "tests/client/column_map_client_tests.cpp": {"module": "client", "size": "medium"},
+      "tests/client/column_map_presentation_tests.cpp": {"module": "client", "size": "medium"},
+      "tests/generation/reference_tests.cpp": {"module": "integration", "size": "medium"}
+    },
+    "registration_tests": {
+      "MinecraftClone.TerrainTextureAssets": {
+        "module": "client",
+        "size": "small",
+        "inputs": ["assets/textures/terrain/**", "script/generate_terrain_textures.py", "src/client/include/client/render/TerrainTextures.hpp"]
+      },
+      "CoreCpp.ServerOnlyPackageConsumer": {
+        "module": "integration",
+        "size": "medium",
+        "inputs": [
+          "tests/cmake/corecpp_server_consumer_test.cmake.in",
+          "cmake/fixtures/corecpp_server_consumer/**"
+        ]
+      },
+      "CoreProject2026.Provenance": {
+        "module": "integration",
+        "size": "medium",
+        "inputs": ["tests/cmake/coreproject2026_provenance_test.cmake.in"]
+      },
+      "CoreCpp.Provenance": {
+        "module": "integration",
+        "size": "medium",
+        "inputs": [
+          "tests/cmake/corecpp_provenance_test.cmake.in",
+          "tests/cmake/corecpp_provenance_fixture.cmake.in"
+        ]
+      },
+      "MinecraftClone.ServerOnlyBuild": {
+        "module": "integration",
+        "size": "medium",
+        "inputs": ["tests/cmake/minecraftclone_server_only_test.cmake.in"]
+      },
+      "MinecraftClone.ColumnMapCpuConsumer": {
+        "module": "integration",
+        "size": "medium",
+        "inputs": ["tests/cmake/column_map_cpu_consumer_test.cmake.in"],
+        "build_targets": ["mc_column_map"],
+        "artifacts": ["src/mc_column_map"]
+      },
+      "TerrainWorldMap.Cli": {
+        "module": "tools",
+        "size": "medium",
+        "inputs": ["script/tests/test_world_map_cli.py", "src/tools/world_map.cpp"],
+        "build_targets": ["mc_world_map"],
+        "artifacts": ["src/mc_world_map"]
+      },
+      "AcceptanceCli.AutomaticJoin": {
+        "module": "acceptance",
+        "size": "large",
+        "inputs": ["tests/acceptance/client_launch_test.py"]
+      },
+      "AcceptanceCli.RuntimeModes": {
+        "module": "acceptance",
+        "size": "medium",
+        "inputs": ["tests/acceptance/runtime_cli_tests.cmake"]
+      },
+      "ShaderSpirvTargetTest.grid.mesh.spv": {
+        "module": "shaders",
+        "size": "small",
+        "inputs": ["src/client/render/shaders/grid.mesh"]
+      },
+      "ShaderSpirvTargetTest.player.mesh.spv": {
+        "module": "shaders",
+        "size": "small",
+        "inputs": ["src/client/render/shaders/player.mesh"]
+      },
+      "ShaderSpirvTargetTest.grid.vert.spv": {
+        "module": "shaders",
+        "size": "small",
+        "inputs": ["src/client/render/shaders/grid.vert"]
+      },
+      "ShaderSpirvTargetTest.player.vert.spv": {
+        "module": "shaders",
+        "size": "small",
+        "inputs": ["src/client/render/shaders/player.vert"]
+      },
+      "ShaderSpirvTargetTest.trivial.frag.spv": {
+        "module": "shaders",
+        "size": "small",
+        "inputs": ["src/client/render/shaders/trivial.frag"]
+      },
+      "ShaderSpirvTargetTest.text.vert.spv": {
+        "module": "shaders",
+        "size": "small",
+        "inputs": ["src/client/render/shaders/text.vert"]
+      },
+      "ShaderSpirvTargetTest.text.frag.spv": {
+        "module": "shaders",
+        "size": "small",
+        "inputs": ["src/client/render/shaders/text.frag"]
+      },
+      "ShaderSpirvTargetTest.map.vert.spv": {
+        "module": "shaders",
+        "size": "small",
+        "inputs": ["src/client/render/shaders/map.vert"]
+      },
+      "ShaderSpirvTargetTest.map.frag.spv": {
+        "module": "shaders",
+        "size": "small",
+        "inputs": ["src/client/render/shaders/map.frag"]
+      }
+    },
+    "source_dependencies": {
+      "shared": ["core", "client", "android", "acceptance", "integration", "generation", "tools"],
+      "server": ["core", "client", "acceptance", "integration"],
+      "client": ["client", "acceptance"],
+      "column-map": ["client", "acceptance", "integration"],
+      "game-core": ["client", "acceptance", "integration"],
+      "generation": ["generation", "core", "client", "acceptance", "integration", "tools"],
+      "android": ["android", "acceptance"],
+      "acceptance": ["acceptance", "core", "client", "integration"],
+      "tools": ["tools"]
+    },
+    "all_test_modules": ["core", "client", "android", "acceptance", "integration", "shaders", "generation", "tools"],
+    "modules_requiring_tests": ["generation", "tools"],
+    "required_registration_tests": ["MinecraftClone.ColumnMapCpuConsumer"],
+    "build_inputs": [
+      "src/**",
+      "tests/**",
+      "cmake/**",
+      "assets/**",
+      "scenarios/**",
+      "CMakeLists.txt",
+      "CMakePresets.json",
+      "CMakeUserPresets.json",
+      "vcpkg.json",
+      "vcpkg-configuration.json",
+      "dependencies.lock.json"
+    ],
+    "ctest_executable": "ctest",
+    "configuration_inputs": [
+      "CMakeLists.txt",
+      "CMakePresets.json",
+      "CMakeUserPresets.json",
+      "src/**/CMakeLists.txt",
+      "src/generation/CMakeLists.txt",
+      "cmake/**",
+      "tests/cmake/**",
+      "tests/**/CMakeLists.txt",
+      "tests/CMakeLists.txt",
+      "src/CMakeLists.txt",
+      "vcpkg.json",
+      "vcpkg-configuration.json",
+      "dependencies.lock.json"
+    ]
+  },
+  "release_checks": [
+    {
+      "id": "renderer-smoke",
+      "module": "client",
+      "size": "large",
+      "levels": ["snapshot", "minor", "major"],
+      "owner": "script/ai_checks.json",
+      "execution": "ai_check.py release gate",
+      "reason": "Runs the renderer smoke acceptance check using the dedicated validation runtime."
+    },
+    {
+      "id": "sanitizer-static-analysis",
+      "module": "native-all",
+      "size": "large",
+      "levels": ["minor", "major"],
+      "owner": "script/ai_checks.json",
+      "execution": "ai_check.py release gate",
+      "reason": "Uses the source-bound analysis aggregate, including platform-qualified sanitizer and static-analysis rows."
+    },
+    {
+      "id": "sanitizer-static-analysis-s1-owner-profile",
+      "module": "native-all",
+      "size": "large",
+      "levels": ["snapshot"],
+      "owner": "script/ai_checks.json",
+      "execution": "ai_check.py release gate",
+      "reason": "Uses the exact S1 owner profile with seven strict source-bound rows and four explicit deferrals; other snapshots retain eleven-row validation."
+    },
+    {
+      "id": "full-radius-gameplay",
+      "module": "acceptance",
+      "size": "large",
+      "levels": ["snapshot", "minor", "major"],
+      "owner": "script/ai_checks.json",
+      "execution": "ai_check.py release gate",
+      "reason": "Requires source-bound Mac and Windows full-radius gameplay evidence at the active S1 FPS and frame-rate predicate."
+    },
+    {
+      "id": "environment",
+      "module": "tooling",
+      "size": "small",
+      "levels": ["minor", "major"],
+      "owner": "script/ai_checks.json",
+      "reason": "Version completion checks the local development environment."
+    }
+  ]
+}

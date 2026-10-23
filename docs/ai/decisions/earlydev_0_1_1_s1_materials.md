@@ -17,10 +17,13 @@ remaining solid blocks (`1 <= z <= H`):
 | Submerged | `z < S-4` | Stone |
 
 The bedrock rule takes precedence if a configured shallow column would overlap
-the bottom. TOPMOST_BLOCK/GROUND follow the [climate material table](earlydev_0_1_1_s1_climate.md):
-Snow/Ice when cold; Grass/Dirt when warmer and moist; Dirt/Dirt when
-warmer and dry. Submerged ground can therefore be Ice; no grass/snow cap is
-generated below sea level. Inland lake beds above S retain the land rule.
+the bottom. TOPMOST_BLOCK/GROUND follow the [revision-6 climate material
+table](earlydev_0_1_1_s1_climate.md): Snow/Ice at or below −2 °C, and
+Grass/Dirt on warmer exposed land regardless of precipitation. The earlier
+revision-5 warm-dry Dirt top is preserved in its frozen reference, then
+superseded for revision 6 after the owner reported broad bare Dirt surfaces.
+Submerged ground can still be Ice; no grass/snow cap is generated below sea
+level. Inland lake beds above S retain the exposed-land rule.
 
 Boundary examples, assuming enough depth above bedrock:
 

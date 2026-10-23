@@ -12,13 +12,10 @@ Planning alone authorizes neither local implementation nor remote publication.
 
 ## Finalize the plan
 
-Follow [release reporting](RELEASE_REPORTS.md) from aggregate start through
-verified full delivery: fixed ordered features, a user-visible PDF every three
-hours, and one twelve-hour consolidation per four periods. The local fast and
-full checks validate managed report state without generating PDFs. Initialize
-the folder at release start; after publication and all required acceptance
-evidence pass, run its evidence-checked cleanup. A failed gate, elapsed deadline
-or partial publication never authorizes cleanup or resets the reporting period.
+Follow [release reporting](RELEASE_REPORTS.md): ordered features, three-hour
+PDFs, twelve-hour consolidation, managed state checks, and evidence-checked
+cleanup after full delivery. Initialize at aggregate start. Failures, deadlines
+or partial publication never authorize cleanup or reset reporting periods.
 
 1. Keep `baseline_commit` immutable. If AI tags are absent, fetch without force using `git fetch --no-tags origin 'refs/tags/ai/*:refs/tags/ai/*'`; run `ai_history.py collect <id>` and verify every commit and promised scope.
 2. Complete basic tasks before snapshots, snapshots before minors, and minors before majors. Add discoveries; never remove unfinished work to pass closure.
@@ -44,11 +41,18 @@ requires local tests, basic runtime evidence and the development APK; its
 hosted HWASan and analyzer gates remain suspended by the owner's revised scope.
 
 Evidence binds relevant source, dependencies, configuration, tools and commands;
-docs or task-ledger edits alone do not invalidate native evidence. Release
-authenticity separately binds source commit, promotion parents/tree, immutable
-tag and artifact hashes. Build packages locally; GitHub does not qualify them
-or run automatic jobs. Manual artifact builds are optional. Never relabel hosted
-evidence as local or treat an unavailable tool as a pass.
+metadata-only edits preserve native evidence. Authenticity binds source,
+promotion parents/tree, immutable tags and artifact hashes. Build locally;
+GitHub supplies no qualification. Manual artifact builds are optional. Never
+relabel hosted evidence or unavailable tools as local passes.
+
+Windows `/analyze` qualifies shipping Release/MT against matching CoreCpp/CoreLang dependencies.
+
+MC-AI-0482 verifies current-source Mac Release hashes, build/runtime provenance
+and distinct movement. Failed performance/LOD remains
+`accepted_exception`, never passed; three other graphics proofs remain
+unqualified. Preserve raw failures and independent gates. Historical certificates remain
+historical; current-normal has no reuse certificate.
 
 ## Publish
 
@@ -56,10 +60,18 @@ Use the [version/branch procedure](../VERSION_CONVENTION.md). Finalization and `
 
 Commits/tags do not authorize remote publication. After authorized publication, make an `ai-dev` ledger commit with aggregate `Task-ID`, actual refs/artifacts, `resolved_at` and `done`. The snapshot date is fixed from the finalized source commit; the tag date uses the promotion commit, both in `Europe/Belgrade`. If a ledger follows workflow-only repairs, bind its date to the finalized source authenticated by the task's annotated promotion tag; reject gameplay changes or a missing, mismatched, or invalid tag/source. A completed ledger may clear a nonempty blocker, but may not rewrite one. Keep the ledger after the immutable tag, outside the next snapshot's task set. Snapshot 7's minor remains active until requested feedback; do not create S8.
 
-Run focused checks per task and one full integration gate per batch. Launch the normal macOS candidate for hands-on acceptance before final qualification. Approval does not authorize publication, replace evidence or close the release. S7's minor remains held; do not start S8.
+Launch the normal macOS candidate for hands-on acceptance before qualification. Approval does not replace evidence or authorize publication.
 
 Agents publish only `ai-dev` and `ai-main`; `dev` and `main` remain untouched. Canonical tags are single-use and never CI transport. Exact `ai-dev` commits may be dispatched.
 
 Attach late assets only with exact source, provenance and hashes. An authorized incomplete prerelease lists every pending platform/asset/check and stays active. Never replace accepted Mac bytes, move an immutable tag or misstate source identity. If tagged source cannot satisfy the contract, promote a correction under the next unused immutable `-rN` tag and retain the original as superseded. Shared/gameplay changes invalidate affected acceptance; `done` requires every artifact and runtime receipt.
 
-After publication, verify exact tag/signing and asset hashes. Replay Mac only for changed bytes, diagnosis or user request; the normal play checkpoint is pre-publication. Do not auto-publish the minor or create another snapshot during the S7 feedback hold.
+After publication, verify tag/signing and asset hashes. Replay Mac only for changed bytes, diagnosis or user request. Keep the S7 feedback hold.
+
+### MC-AI-0482 S1 analysis deferrals
+
+MC-AI-0482 EarlyDev BasicBlocks 0.1.1:1 snapshot profile
+`script/ci/s1_analysis_profile.py` defers TSan, MSan and both Windows rows.
+Seven rows remain mandatory. Only pinned ASan DispatchPing64 evidence permits
+`accepted_noise`, retaining its failed row/return code. Pinned cppcheck heap-reference false-positive retains its failed row. Defaults,
+later snapshots and minor/major require eleven. Owner trace separates coordinator selections.

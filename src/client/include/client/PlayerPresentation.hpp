@@ -29,6 +29,11 @@ enum class CameraPerspective : uint8_t {
     ThirdPersonFront,
 };
 
+enum class PlayerPresentationUpdateKind : uint8_t {
+    Reconciliation,
+    Prediction,
+};
+
 struct PlayerCameraView final {
     CameraPose pose;
     bool renders_local_body = false;
@@ -44,7 +49,11 @@ inline constexpr double PLAYER_EYE_HEIGHT = 1.625;
 
 class PlayerPresentation final {
 public:
-    void update(shared::Player const& player, std::chrono::steady_clock::time_point received_at);
+    void update(
+        shared::Player const& player,
+        std::chrono::steady_clock::time_point received_at,
+        PlayerPresentationUpdateKind update_kind = PlayerPresentationUpdateKind::Reconciliation
+    );
     void remove(char character) noexcept;
 
     [[nodiscard]]
@@ -62,6 +71,8 @@ private:
         double to_vertical_velocity = 0.0;
         bool has_transition = false;
         std::chrono::steady_clock::time_point started_at;
+        std::chrono::steady_clock::duration transition_duration = shared::TICK;
+        bool flight_vertical = false;
     };
 
     [[nodiscard]]

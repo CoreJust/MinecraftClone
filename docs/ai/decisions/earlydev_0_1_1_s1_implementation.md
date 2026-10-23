@@ -1,73 +1,71 @@
-# S1 — Production implementation sequence
+# S1 — Production implementation work packages
 
 Ready work packages derived from the [architecture](earlydev_0_1_1_s1_architecture.md)
 and qualified [model](earlydev_0_1_1_s1_generation.md). They are future work,
 not completed game tasks. Create one executable basic task per bounded slice;
-keep inherited fixes first and ordinary-gameplay evidence throughout.
+start inherited fixes immediately alongside independent feature lanes. Use the
+[parallel major plan](earlydev_0_1_1_s1_iterations.md) for scheduling; package
+numbers identify scope, not a serial execution order. Retain ordinary-gameplay
+evidence throughout.
 
-## Ordered slices
+## Work packages and dependency joins
 
-1. **Fix the inherited product defects.** MC-AI-0477/0478/0479 own cursor,
-   moving fresh frames and near-first visible streaming. Preserve actual-path
-   regressions and rerun them on final S1 geography.
-2. **Identity and numerical contract.** Extend `World.hpp/.cpp`,
-   `WorldGeneration.hpp/.cpp` and CoreLang plan validation with immutable
-   configuration/context, full keys and typed artifacts. Canonical config uses
-   little-endian fixed-width fields and fixed-point coefficients, with schema
-   version and content digest. Use the retained explicit SplitMix64-style
-   mixer for domain/feature random streams and local lattice values; no library
-   distribution defines the save/world format. Native authoritative kernels
-   use specified rounding, stable reductions and versioned lookup tables for
-   nonlinear functions, not platform `libm` behavior. Quantize published
-   geological heights to millimetres, climate to 0.01 °C and model flux to
-   1/65536 before shared sampling. Pin lookup tables/reference vectors in
-   source. This is a new native algorithm revision: NumPy's exploratory PCG64
-   sequence is not a native golden. Regenerate/reinspect the corpus, and require
-   exact native field/material digests on Mac/Android and Windows build tests
-   where available; keep owner Windows runtime restriction separate.
-3. **Global kernels and headless atlas export.** Port geology, drainage,
-   bounded terrain shaping and climate with fixed pass counts, cancellation
-   and memory reservations. Test zero-motion/current/wind causal variants,
-   connected sea, lake outlets and DAGs. Compare native morphology/statistics
-   and costs with the experiment. Add a CPU-only map path before any window or
-   GPU initialization; it uses the same factory as the server. Extract a CPU-only
-   `mc_generation` library from the monolithic `mc` target for atlas/configuration,
-   shared world sampling and map encoding; both gameplay and `mc_world_map` link it.
-   Keep scheduler/client/network ownership outside this numerical library.
-4. **Regional DAG and cache.** In `WorldGenerationScheduler.hpp/.cpp`, replace
-   opaque refinement bytes with typed immutable handles. Update `requestPlan`,
-   dispatch, exact-parent lookup, acceptance and invalidation. Test shared-job
-   deduplication, priority inheritance, cancellation, byte admission, eviction,
-   stale epochs and request-order independence. Update CoreLang host manifests
-   and bounded stage declarations together.
-5. **One authoritative sampler.** Replace `generateRegionOutput`'s 16² opaque
-   height buffer in `GameServer.cpp`; pass actual leaf/surface input to
-   `HeightTileWorkerPool::executeGenerationJob`. Materialize currently calls
-   the overload that ignores inherited refinement. Inject the same context
-   into `SparseWorld::ensureChunk` and mutable `blockAt`, which currently use
-   their own default generator. Test preview/chunk/collision parity before
-   accepting these paths. Choose a bounded deterministic safe land spawn with
-   standing clearance after atlas readiness.
-6. **Materials and wire.** Add stable palette IDs; update `Message.hpp/.cpp`,
-   descriptor/join identity and both codecs together with a protocol bump.
-   Surface payloads carry H and top/ground material/interval metadata, not the
-   atlas. Validate IDs/heights/layers and actual encoded-size credits before
-   mutation. Include world identity and quality in residency/mesh keys. No
-   unrequested old-protocol adapter is required.
-7. **Normal renderer and LOD.** Update `GameClient` preview ingestion,
-   `PreviewMeshing.hpp`, `HeightTileSurfaceMesher` and stone-specific
-   draw/instance paths. Quads/merges require matching material; cliffs expose
-   correct top, four ground layers and Stone. Preserve seams, shoreline and
-   material transitions during LOD. Snow/Ice are solid S1 materials. Water
-   transparency/rendering and physical water remain S3; map colours do not
-   implement either. Full voxel edit meshing remains S2.
-8. **Qualify the actual delivery.** Extend the existing generation/scheduler,
-   sparse-world, server-preview, message and player-LOD suites. Add fixed-seed
-   native map checks, offscreen material/cutaway visuals, malformed payload and
-   stale-result tests. Then normal-launcher Mac/Android play, moving-frame and
-   full-viewport streaming acceptance, aggregate/release gates and exact-package
-   owner acceptance or scoped exception. Follow the later implementation's
-   mandatory PDF-report lifecycle. No prototype result closes these gates.
+1. **Inherited product defects.** MC-AI-0477/0478/0479 own cursor capture,
+   fresh moving frames and near-first visible streaming. Preserve actual-path
+   regressions and recheck them on final S1 geography.
+2. **CoreLang dependency/backend adapter.** Obtain the exact temporary 0.1.5
+   ai-dev handoff; update lock, clean package provenance and affected consumers.
+   Integrate actual JIT/AOT APIs, explicit backend reporting and interpreter
+   parity for generation plans, scenarios and policy. Follow the
+   [pin/fix/release contract](earlydev_0_1_1_s1_corelang.md).
+3. **Module separation.** Implement the [source-reviewed boundaries](earlydev_0_1_1_s1_modules.md):
+   CPU `mc_generation`, extracted worker/scheduler service, CoreLang adapter,
+   authoritative gameplay/transport and selectable presentation. Build standalone
+   numerical/service/2D consumers without Vulkan; preserve normal compositions.
+4. **Identity and reference numerics.** Extend `World.hpp/.cpp`,
+   `WorldGeneration.hpp/.cpp` and plan validation with complete immutable
+   configuration, typed artifacts, schema/version and content digest. Specify
+   retained PCG64 global streams, local mixer, rounding, units and nonlinear
+   math explicitly; do not substitute a new random sequence. Freeze raw Python
+   height/material/color fixtures and require exact reference pixels plus native
+   cross-platform digests. Keep the world stable for version/seed/config;
+   numerical incompatibility requires an explicit versioned resolution, not
+   automatic corpus regeneration. See [testing](earlydev_0_1_1_s1_testing.md).
+5. **Global kernels and map export/progression.** Port the selected model with
+   fixed bounds, cancellation and memory reservations; retain causal variants.
+   Emit immutable diagnostic map snapshots during work. The CPU map exporter
+   and server share configuration, atlas and sampling without GPU initialization.
+6. **Regional DAG, readiness and frontier.** In `WorldGenerationScheduler.hpp/.cpp`,
+   replace opaque bytes with typed parent handles; update request/dispatch,
+   admission, leases, stale/cancel/dedup and eviction. Inject real dependencies,
+   classify uniform chunks exactly, enumerate Ready spheres and publish a
+   player-rooted connected frontier. Update bounded CoreLang stage declarations
+   with host manifests. Benchmark the required sphere and x30 prefetch lead.
+7. **Canonical blocks, materials and wire.** Replace `GameServer.cpp`'s opaque
+   `generateRegionOutput`; pass actual leaf/surface artifacts through
+   `HeightTileWorkerPool::executeGenerationJob` into materialization. Inject
+   that context into `SparseWorld::ensureChunk`/`blockAt`; remove default-wave
+   bypasses. Test exact layers and preview/chunk/collision parity. Add palette
+   IDs and update `Message.hpp/.cpp`, both codecs and protocol identity with
+   bounds/credit validation; include quality/world identity in mesh keys.
+8. **Loading gate and 2D normal-game mode.** Add actual progressive map,
+   refined safe spawn, 48-block Ready sphere and any-key gate before movement
+   or cursor capture. The column-color adapter reads the same published chunks
+   into bounded in-memory texture tiles. Reuse production scheduling, simulation,
+   networking and trace inputs; compare all raw pixels/coverage.
+9. **Normal renderer and LOD.** Update `GameClient` ingestion, `PreviewMeshing.hpp`,
+   `HeightTileSurfaceMesher` and stone-specific draw paths. Merge only compatible
+   materials; expose correct top/ground/Stone cliffs and retain seams/LOD.
+   Full voxel edit meshing remains S2; physical water remains S3.
+10. **Actual delivery qualification.** Execute the subsystem matrix, six-seed
+    exact references, order/movement/teleport/connectivity replays and offscreen
+    views as features integrate. Measure normal Mac/Windows loading and x30
+    radius/FPS concurrently from the first runnable slice; reserve the full
+    large matrix for the frozen candidate. Qualify
+    both two-laptop host roles, applicable Android gates and exact-package owner
+    playtests. Use the [performance](earlydev_0_1_1_s1_performance.md) and
+    [multiplayer](earlydev_0_1_1_s1_multiplayer.md) contracts. Start implementation's
+    planned 4h/12h lifecycle; no Python/2D pass substitutes for normal GPU results.
 
 ## Standalone map command
 
@@ -88,5 +86,5 @@ rasterization and serialization costs; preserve ordered seeds and rejected runs.
 
 When contracts actually change, reconcile `docs/code/GAMEPLAY.md`,
 `docs/scripting/README.md` and the code index against source before refreshing
-their hashes. This planning task does not falsely describe the proposal as
+their hashes. This planning task does not falsely describe the design as
 existing production behavior.

@@ -106,6 +106,23 @@ def load_snapshot(root: Path, task_id: str, head: str) -> dict[str, Any]:
     return task
 
 
+def expected_promotion_subject(root: Path, task_id: str, source: str) -> str:
+    subject = ai_history.expected_snapshot_promotion_subject(root, source, task_id)
+    if subject is None:
+        raise PublishError(f"{task_id} has no canonical version identity in its finalized task title")
+    try:
+        names, version = ai_check.project_version_arguments(root)
+    except (OSError, ValueError) as error:
+        raise PublishError(f"cannot read the candidate version from ProjectInfo.hpp: {error}") from error
+    major_name, separator, _minor_name = names.partition(":")
+    numeric, separator2, snapshot = version.partition(":")
+    if not separator or not separator2 or not major_name or not numeric or not snapshot:
+        raise PublishError("ProjectInfo version is not a snapshot version")
+    if subject.partition("(")[0] != f"{major_name} {numeric}:{snapshot}":
+        raise PublishError("snapshot task title does not match the ProjectInfo version")
+    return subject
+
+
 def require_task_trailer(root: Path, commit: str, task_id: str) -> None:
     message = git(root, "log", "-1", "--format=%B", commit)
     trailers = git(root, "interpret-trailers", "--parse", input_text=message)
@@ -217,17 +234,23 @@ def require_expected_promoted_tree(root: Path, baseline: str, source: str, promo
 def promotion_source_for_date_check(root: Path) -> str | None:
     promoted = revision(root, "HEAD")
     subject = git(root, "show", "-s", "--format=%s", promoted).strip()
-    if not subject.startswith("Promote MC-AI-"):
+    if not subject.startswith("Promote MC-AI-") and re.fullmatch(
+        r".+ \d+\.\d+\.\d+:[0-9]+\(\d{2}\.\d{2}\.\d{2}\)", subject
+    ) is None:
         return None
-    match = re.fullmatch(r"Promote (MC-AI-[0-9]+) to ai-main", subject)
-    if match is None:
-        raise PublishError("HEAD has a malformed ai-main promotion subject")
     parents = git(root, "show", "-s", "--format=%P", promoted).split()
     if len(parents) != 2:
         raise PublishError("HEAD promotion must have exactly two parents")
     promotion_base, source = parents
-    task_id = match.group(1)
+    task_id = ai_history.commit_task_id(root, promoted)
+    if task_id is None:
+        raise PublishError("HEAD promotion must contain exactly one valid Task-ID trailer")
     load_snapshot(root, task_id, source)
+    expected_subject = expected_promotion_subject(root, task_id, source)
+    if subject != expected_subject and not ai_history.is_legacy_tagged_promotion(
+        None, promoted, subject
+    ):
+        raise PublishError("HEAD promotion subject does not match the full canonical version identity")
     require_task_trailer(root, promoted, task_id)
     require_task_trailer(root, source, task_id)
     require_expected_promoted_tree(root, promotion_base, source, promoted)
@@ -348,11 +371,12 @@ def verify_promotion_bootstrap(root: Path, promoted_text: str, remote_base_text:
     if promotion_base != remote_base:
         raise PublishError("bootstrap promotion does not extend the destination ai-main")
     subject = git(root, "show", "-s", "--format=%s", promoted).strip()
-    match = re.fullmatch(r"Promote (MC-AI-[0-9]+) to ai-main", subject)
-    if match is None:
-        raise PublishError("bootstrap commit is not an ai_publish snapshot promotion")
-    task_id = match.group(1)
+    task_id = ai_history.commit_task_id(root, promoted)
+    if task_id is None:
+        raise PublishError("bootstrap commit must contain exactly one valid Task-ID trailer")
     load_snapshot(root, task_id, source)
+    if subject != expected_promotion_subject(root, task_id, source):
+        raise PublishError("bootstrap promotion subject does not match the full canonical version identity")
     require_task_trailer(root, promoted, task_id)
     require_task_trailer(root, source, task_id)
     require_expected_promoted_tree(root, promotion_base, source, promoted)
@@ -459,7 +483,8 @@ def finish(root: Path, task_id: str, source_text: str) -> None:
     require_pending_merge_clean(root)
     require_expected_pending_tree(root, promotion_base, source)
     check_ai_commit(root)
-    git(root, "commit", "-m", f"Promote {task_id} to ai-main", "-m", f"Task-ID: {task_id}")
+    subject = expected_promotion_subject(root, task_id, source)
+    git(root, "commit", "-m", subject, "-m", f"Task-ID: {task_id}")
     promoted = revision(root, "HEAD")
     parents = git(root, "show", "-s", "--format=%P", promoted).split()
     if parents != [promotion_base, source]:
@@ -486,6 +511,10 @@ def tag(root: Path, task_id: str, revision_number: int | None = None) -> None:
     promotion_base, source = parents
     require_task_trailer(root, promoted, task_id)
     require_task_trailer(root, source, task_id)
+    if git(root, "show", "-s", "--format=%s", promoted).strip() != expected_promotion_subject(
+        root, task_id, source
+    ):
+        raise PublishError("HEAD promotion subject does not match the full canonical version identity")
     require_expected_promoted_tree(root, promotion_base, source, promoted)
     if revision_number is not None:
         require_next_revision_tag(root, promoted, revision_number)

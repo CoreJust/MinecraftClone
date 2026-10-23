@@ -100,6 +100,8 @@
       "name": "analysis-windows-analyze",
       "inherits": "analysis-static-base",
       "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded",
         "CMAKE_C_FLAGS": "/analyze /W4 /WX /analyze:external-",
         "CMAKE_CXX_FLAGS": "/analyze /W4 /WX /EHsc /analyze:external-"
       }
@@ -123,7 +125,8 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "MC_SANITIZER": "leak",
-        "VCPKG_TARGET_TRIPLET": "x64-linux-lsan"
+        "VCPKG_TARGET_TRIPLET": "x64-linux-lsan",
+        "CMAKE_CXX_FLAGS": "$env{CXXFLAGS} -fexperimental-library"
       }
     },
     {
@@ -134,7 +137,7 @@
         "MC_SANITIZER": "memory",
         "VCPKG_TARGET_TRIPLET": "x64-linux-msan",
         "CMAKE_C_FLAGS": "-fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer",
-        "CMAKE_CXX_FLAGS": "-fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer -stdlib=libc++ -isystem $env{MC_MSAN_LIBCXX_PREFIX}/include/c++/v1",
+        "CMAKE_CXX_FLAGS": "-fexperimental-library -fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer -stdlib=libc++ -isystem $env{MC_MSAN_LIBCXX_PREFIX}/include/c++/v1",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=memory -stdlib=libc++ -L$env{MC_MSAN_LIBCXX_PREFIX}/lib -Wl,-rpath,$env{MC_MSAN_LIBCXX_PREFIX}/lib",
         "CMAKE_SHARED_LINKER_FLAGS": "-fsanitize=memory -stdlib=libc++ -L$env{MC_MSAN_LIBCXX_PREFIX}/lib -Wl,-rpath,$env{MC_MSAN_LIBCXX_PREFIX}/lib"
       }
@@ -155,8 +158,8 @@
       "name": "analysis-clang-static",
       "inherits": "analysis-static-base",
       "cacheVariables": {
-        "CMAKE_C_FLAGS": "-Xanalyzer -analyzer-output=text",
-        "CMAKE_CXX_FLAGS": "-Xanalyzer -analyzer-output=text",
+        "CMAKE_C_FLAGS": "-Xclang -analyzer-output=text",
+        "CMAKE_CXX_FLAGS": "-Xclang -analyzer-output=text",
         "CMAKE_C_COMPILER_LAUNCHER": "python3;${sourceDir}/script/ci/clang_static_gate.py;--;scan-build;--status-bugs;-v;--",
         "CMAKE_CXX_COMPILER_LAUNCHER": "python3;${sourceDir}/script/ci/clang_static_gate.py;--;scan-build;--status-bugs;-v;--"
       }

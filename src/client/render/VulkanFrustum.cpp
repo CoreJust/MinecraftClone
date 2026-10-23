@@ -3,11 +3,14 @@
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
 #include <glm/mat4x4.hpp>
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 
 namespace client {
@@ -37,6 +40,56 @@ WrappedBounds boundsNearestToCamera(
         .minimum = { minimum.x + x_shift, minimum.y + y_shift, minimum.z },
         .maximum = { maximum.x + x_shift, maximum.y + y_shift, maximum.z },
     };
+}
+
+float worldVisibilityRadius(double const camera_world_z) noexcept
+{
+    double const height = std::max(camera_world_z - WORLD_VISIBILITY_SEA_LEVEL, 0.0);
+    return static_cast<float>(std::clamp(
+        std::sqrt(2.0 * WORLD_CURVATURE_RADIUS * height),
+        static_cast<double>(MIN_WORLD_VISIBILITY_RADIUS),
+        static_cast<double>(MAX_WORLD_VISIBILITY_RADIUS)
+    ));
+}
+
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+double curvedWorldFarPlane(double const camera_altitude, double const current_far_plane) noexcept
+{
+    double const visibility_radius = worldVisibilityRadius(camera_altitude);
+    // The packed LOD height supports [0, 2048); include its full range and maximum curvature drop.
+    double const vertical_extent = std::abs(camera_altitude) + 2048.0
+        + visibility_radius * visibility_radius / (2.0 * WORLD_CURVATURE_RADIUS);
+    return std::max(current_far_plane, std::hypot(visibility_radius, vertical_extent) * 1.01);
+}
+
+glm::vec3 curvedWorldPosition(glm::vec3 position) noexcept
+{
+    position.z -= (position.x * position.x + position.y * position.y) / (2.0F * WORLD_CURVATURE_RADIUS);
+    return position;
+}
+
+WrappedBounds curvedBoundsNearestToCamera(
+    glm::vec3 const minimum,
+    glm::vec3 const maximum,
+    glm::dvec3 const camera_position
+) noexcept
+{
+    WrappedBounds result = boundsNearestToCamera(minimum, maximum, camera_position);
+    result.minimum -= glm::vec3(camera_position);
+    result.maximum -= glm::vec3(camera_position);
+    glm::vec2 const nearest = glm::max(glm::vec2(result.minimum), glm::vec2(0.0F))
+        + glm::min(glm::vec2(result.maximum), glm::vec2(0.0F));
+    glm::vec2 const farthest = glm::max(glm::abs(glm::vec2(result.minimum)), glm::abs(glm::vec2(result.maximum)));
+    result.minimum.z -= glm::dot(farthest, farthest) / (2.0F * WORLD_CURVATURE_RADIUS);
+    result.maximum.z -= glm::dot(nearest, nearest) / (2.0F * WORLD_CURVATURE_RADIUS);
+    return result;
+}
+
+bool insideWorldVisibility(WrappedBounds const& bounds, float const visibility_radius) noexcept
+{
+    glm::vec2 const nearest = glm::max(glm::vec2(bounds.minimum), glm::vec2(0.0F))
+        + glm::min(glm::vec2(bounds.maximum), glm::vec2(0.0F));
+    return glm::dot(nearest, nearest) < visibility_radius * visibility_radius;
 }
 
 VulkanFrustum::VulkanFrustum(glm::mat4 const& projection_view) noexcept

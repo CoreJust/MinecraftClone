@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <compare>
+#include <cstdint>
 #include <string>
 
 namespace {
@@ -28,9 +30,31 @@ TEST(FrameSchedulerTest, LateFramesDoNotCreateAnInputCatchUpBurst)
 
     EXPECT_TRUE(scheduler.simulationDue(started_at));
     EXPECT_TRUE(scheduler.simulationDue(started_at + std::chrono::milliseconds{ 350 }));
+    EXPECT_EQ(scheduler.lastSimulationBoundary(), started_at + std::chrono::milliseconds{ 300 });
     EXPECT_FALSE(scheduler.simulationDue(started_at + std::chrono::milliseconds{ 350 }));
-    EXPECT_FALSE(scheduler.simulationDue(started_at + std::chrono::milliseconds{ 449 }));
-    EXPECT_TRUE(scheduler.simulationDue(started_at + std::chrono::milliseconds{ 450 }));
+    EXPECT_EQ(scheduler.lastSimulationBoundary(), started_at + std::chrono::milliseconds{ 300 });
+    EXPECT_FALSE(scheduler.simulationDue(started_at + std::chrono::milliseconds{ 399 }));
+    EXPECT_TRUE(scheduler.simulationDue(started_at + std::chrono::milliseconds{ 400 }));
+    EXPECT_EQ(scheduler.lastSimulationBoundary(), started_at + std::chrono::milliseconds{ 400 });
+}
+
+TEST(FrameSchedulerTest, RenderingDelayDoesNotAccumulateIntoMovementSlowdown)
+{
+    static constexpr auto PERIOD = std::chrono::milliseconds{ 100 };
+    static constexpr auto RENDER_PERIOD = std::chrono::milliseconds{ 9 };
+    static constexpr auto DURATION = std::chrono::seconds{ 30 };
+    static constexpr uint32_t EXPECTED_INPUTS = 300U;
+    std::chrono::steady_clock::time_point const started_at{};
+    client::FrameScheduler scheduler{ started_at, PERIOD };
+    uint32_t inputs = 0U;
+
+    for (auto elapsed = std::chrono::milliseconds::zero(); elapsed < DURATION; elapsed += RENDER_PERIOD) {
+        if (scheduler.simulationDue(started_at + elapsed)) {
+            ++inputs;
+        }
+    }
+
+    EXPECT_EQ(inputs, EXPECTED_INPUTS);
 }
 
 TEST(FrameSchedulerTest, SuccessfulPresentationSkipsIdleDelayWithoutChangingSimulationCadence)

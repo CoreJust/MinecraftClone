@@ -8,15 +8,25 @@ target_sources(mc
             CameraController.hpp
             CameraObstruction.hpp
             ClientAudio.hpp
+            ColumnMapClient.hpp
+            ColumnMapPresentation.hpp
+            detail/ScreenshotPng.hpp
             FrameScheduler.hpp
             GameClient.hpp
+            TerrainLodSelection.hpp
+            TerrainLodPresentation.hpp
+            TerrainLodRuntime.hpp
+            GenerationMapPresentation.hpp
             HeightTileInterestRegion.hpp
             PlayerClient.hpp
+            PlayerClientInputState.hpp
             PlayerPreviewLod.hpp
             PlayerPresentation.hpp
+            PreviewMeshConnectivity.hpp
             PreviewMeshWorkQueue.hpp
             PreviewMeshing.hpp
             PreviewResidency.hpp
+            WorldLoading.hpp
             render/DebugHud.hpp
             render/DepthFormat.hpp
             render/GuiRenderer.hpp
@@ -26,8 +36,11 @@ target_sources(mc
             render/ShaderAssets.hpp
             render/StoneFaceCapacity.hpp
             render/StoneIndirectDraws.hpp
-            render/StoneTexture.hpp
+            render/TerrainTextures.hpp
+            render/TerrainLodUploadPlan.hpp
             render/TextRenderer.hpp
+            render/MapImageData.hpp
+            render/PresentationFrameProgress.hpp
             render/VulkanRenderer.hpp
             render/VulkanFrustum.hpp
 )

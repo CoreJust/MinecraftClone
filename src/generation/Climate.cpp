@@ -1,16 +1,20 @@
 #include "Numerics.hpp"
 #include "NumpyRandom.hpp"
 
+#include <generation/Generation.hpp>
 #include <generation/GenerationStages.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <numbers>
 #include <span>
 #include <stdexcept>
+#include <stop_token>
+#include <utility>
 #include <vector>
 
 namespace generation::detail
@@ -26,6 +30,12 @@ struct FaceFields
     DoubleField v;
 };
 
+struct AdvectionParameters final
+{
+    uint32_t resolution;
+    uint32_t steps;
+};
+
 [[nodiscard]]
 double maximumFaceSpeed(FaceFields const& faces)
 {
@@ -39,8 +49,7 @@ double maximumFaceSpeed(FaceFields const& faces)
 [[nodiscard]]
 DoubleField faceFlux(
     std::span<double const> field,
-    std::span<double const> u,
-    std::span<double const> v,
+    FaceFields const& faces,
     uint32_t resolution
 )
 {
@@ -54,8 +63,10 @@ DoubleField faceFlux(
         for (uint32_t x = 0U; x < resolution; ++x) {
             size_t const index = row + x;
             size_t const previous_x = (x + resolution - 1U) % resolution;
-            x_flux[index] = u[index] * (u[index] >= 0.0 ? field[row + previous_x] : field[index]);
-            y_flux[index] = v[index] * (v[index] >= 0.0 ? field[previous_row + x] : field[index]);
+            x_flux[index] = faces.u[index]
+                * (faces.u[index] >= 0.0 ? field[row + previous_x] : field[index]);
+            y_flux[index] = faces.v[index]
+                * (faces.v[index] >= 0.0 ? field[previous_row + x] : field[index]);
         }
     }
     for (uint32_t y = 0U; y < resolution; ++y) {
@@ -121,23 +132,23 @@ FaceFields makeOceanFaces(
 void advect(
     DoubleField& field,
     FaceFields const& faces,
-    uint32_t resolution,
-    uint32_t steps,
-    std::stop_token cancellation
+    AdvectionParameters const& parameters,
+    std::stop_token const& cancellation
 )
 {
     DoubleField u = faces.u;
     DoubleField v = faces.v;
-    double const divisor = static_cast<double>(steps);
+    double const divisor = static_cast<double>(parameters.steps);
     for (double& value : u) {
         value /= divisor;
     }
     for (double& value : v) {
         value /= divisor;
     }
-    for (uint32_t step = 0U; step < steps; ++step) {
+    FaceFields const scaled_faces{.u = std::move(u), .v = std::move(v)};
+    for (uint32_t step = 0U; step < parameters.steps; ++step) {
         checkCancellation(cancellation);
-        DoubleField const flux = faceFlux(field, u, v, resolution);
+        DoubleField const flux = faceFlux(field, scaled_faces, parameters.resolution);
         for (size_t index = 0U; index < field.size(); ++index) {
             field[index] -= flux[index];
         }
@@ -149,16 +160,17 @@ void advect(
 ClimateFields simulateClimate(
     GenerationConfiguration const& configuration,
     std::span<float const> elevation,
-    uint32_t iterations,
-    float sea_level,
+    ClimateParameters const& parameters,
     std::span<uint8_t const> ocean_mask,
     std::span<uint8_t const> lake_mask,
     GenerationStage stage,
-    std::stop_token cancellation,
+    std::stop_token const& cancellation,
     ProgressCallback const& progress
 )
 {
     checkCancellation(cancellation);
+    uint32_t const iterations = parameters.iterations;
+    float const sea_level = parameters.sea_level;
     uint32_t const resolution = configuration.resolution;
     size_t const field_size = static_cast<size_t>(resolution) * resolution;
     if (resolution < 8U || field_size > std::numeric_limits<uint32_t>::max()) {
@@ -201,9 +213,21 @@ ClimateFields simulateClimate(
 
     NumpyRandom random(configuration.seed);
     double const phase = random.uniform(0.0, 2.0 * PI);
-    FloatField const noise = periodicFbm(configuration.seed + 1987U, resolution, 3U, 2U, cancellation);
-    FloatField smooth_noise = gaussianFilterWrap(noise, resolution, std::max(1.0, 0.035 * resolution), cancellation);
-    DoubleField const pressure = gaussianFilterWrap(base_temperature, resolution, std::max(1.0, 0.07 * resolution), cancellation);
+    FloatField const noise = periodicFbm(
+        configuration.seed + 1987U,
+        FbmParameters{.resolution = resolution, .octaves = 3U, .start_frequency = 2U},
+        cancellation
+    );
+    FloatField smooth_noise = gaussianFilterWrap(
+        noise,
+        GaussianFilterParameters{.resolution = resolution, .sigma = std::max(1.0, 0.035 * resolution)},
+        cancellation
+    );
+    DoubleField const pressure = gaussianFilterWrap(
+        base_temperature,
+        GaussianFilterParameters{.resolution = resolution, .sigma = std::max(1.0, 0.07 * resolution)},
+        cancellation
+    );
     auto const [pressure_x, pressure_y] = gradientPeriodic(pressure, resolution);
     double const speed_scale = 0.42 * resolution / iterations;
     DoubleField wind_u(field_size);
@@ -239,13 +263,20 @@ ClimateFields simulateClimate(
     for (size_t index = 0U; index < field_size; ++index) {
         curl[index] = wind_v_x[index] - wind_u_y[index];
     }
-    DoubleField streamfunction = gaussianFilterWrap(curl, resolution, std::max(1.0, 0.06 * resolution), cancellation);
+    DoubleField streamfunction = gaussianFilterWrap(
+        curl,
+        GaussianFilterParameters{.resolution = resolution, .sigma = std::max(1.0, 0.06 * resolution)},
+        cancellation
+    );
     DoubleField ocean_values(field_size);
     for (size_t index = 0U; index < field_size; ++index) {
         ocean_values[index] = static_cast<double>(ocean[index]);
     }
     DoubleField const ocean_weight_for_current = gaussianFilterWrap(
-        ocean_values, resolution, std::max(1.0, 0.025 * resolution), cancellation);
+        ocean_values,
+        GaussianFilterParameters{.resolution = resolution, .sigma = std::max(1.0, 0.025 * resolution)},
+        cancellation
+    );
     for (size_t index = 0U; index < field_size; ++index) {
         streamfunction[index] *= ocean_weight_for_current[index]
             * ocean_weight_for_current[index] * ocean_weight_for_current[index];
@@ -302,13 +333,23 @@ ClimateFields simulateClimate(
     for (uint32_t step = 0U; step < iterations; ++step) {
         checkCancellation(cancellation);
         if (configuration.currents) {
-            advect(ocean_temperature, current_faces, resolution, current_steps, cancellation);
+            advect(
+                ocean_temperature,
+                current_faces,
+                AdvectionParameters{.resolution = resolution, .steps = current_steps},
+                cancellation
+            );
         }
         for (size_t index = 0U; index < field_size; ++index) {
             ocean_temperature[index] += heat_relaxation * (ocean_target[index] - ocean_temperature[index])
                 * static_cast<double>(ocean[index] != 0U);
         }
-        advect(moisture, wind_faces, resolution, wind_steps, cancellation);
+        advect(
+            moisture,
+            wind_faces,
+            AdvectionParameters{.resolution = resolution, .steps = wind_steps},
+            cancellation
+        );
         for (size_t index = 0U; index < field_size; ++index) {
             double const removed = moisture[index] * removal_fraction[index];
             moisture[index] -= removed;
@@ -327,8 +368,12 @@ ClimateFields simulateClimate(
         anomaly[index] = (ocean_temperature[index] - ocean_target[index]) * ocean[index];
     }
     double const coastal_sigma = std::max(1.0, 0.012 * resolution);
-    DoubleField const ocean_weight = gaussianFilterWrap(ocean_values, resolution, coastal_sigma, cancellation);
-    DoubleField coastal_anomaly = gaussianFilterWrap(anomaly, resolution, coastal_sigma, cancellation);
+    GaussianFilterParameters const coastal_filter{
+        .resolution = resolution,
+        .sigma = coastal_sigma,
+    };
+    DoubleField const ocean_weight = gaussianFilterWrap(ocean_values, coastal_filter, cancellation);
+    DoubleField coastal_anomaly = gaussianFilterWrap(anomaly, coastal_filter, cancellation);
     for (size_t index = 0U; index < field_size; ++index) {
         coastal_anomaly[index] /= std::max(ocean_weight[index], 1.0e-8);
     }

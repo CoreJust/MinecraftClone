@@ -1,8 +1,12 @@
 #include <server/GameServer.hpp>
+#include <server/WorldPreparation.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/policy/Policy.hpp>
+#include <shared/world/Chunk.hpp>
 #include <shared/world/World.hpp>
+#include <shared/world/WorldCoverage.hpp>
 #include <shared/world/WorldGeneration.hpp>
+#include <generation/Generation.hpp>
 #include <core/net/Address.hpp>
 #include <core/net/Client.hpp>
 #include <core/net/Event.hpp>
@@ -18,10 +22,13 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <expected>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -42,11 +49,41 @@ public:
         return send(shared::encodeMessage(message), 0, core::SendMode{ core::SendMode::Reliable });
     }
 
-    bool waitFor(std::function<bool()> const& ready)
+    void enablePreparedProtocol() noexcept { m_prepared_protocol = true; }
+    [[nodiscard]] bool preparedWorldStarted() const noexcept { return m_prepared_world_started; }
+
+    [[nodiscard]] std::string preparedStateSummary(char const character) const
     {
-        static constexpr std::chrono::seconds TIMEOUT{ 1 };
+        std::string result = "messages=" + std::to_string(messages.size())
+            + ", positions=" + std::to_string(positions(character).size());
+        for (shared::Message const& message : messages) {
+            if (auto const* response = std::get_if<shared::JoinResponseMessage>(&message)) {
+                result += response->accepted ? ", join=accepted" : ", join=rejected";
+            } else if (auto const* preparation = std::get_if<shared::ServerWorldPreparationMessage>(&message)) {
+                result += ", preparation=" + std::to_string(preparation->sequence)
+                    + (preparation->final_atlas_complete ? "/final" : "/progress");
+                if (!preparation->failure.empty()) {
+                    result += ", preparation-failure=" + preparation->failure;
+                }
+            } else if (auto const* coverage = std::get_if<shared::ServerChunkCoverageMessage>(&message)) {
+                result += ", coverage-z=" + std::to_string(coverage->center.z);
+            } else if (auto const* acknowledgement = std::get_if<shared::ServerStartWorldAckMessage>(&message)) {
+                result += acknowledgement->accepted ? ", start=accepted" : ", start=rejected";
+                if (!acknowledgement->failure.empty()) {
+                    result += ", start-failure=" + acknowledgement->failure;
+                }
+            }
+        }
+        return result;
+    }
+
+    bool waitFor(
+        std::function<bool()> const& ready,
+        std::chrono::seconds const timeout = std::chrono::seconds{ 1 }
+    )
+    {
         static constexpr std::chrono::milliseconds POLL_INTERVAL{ 1 };
-        auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+        auto const deadline = std::chrono::steady_clock::now() + timeout;
         while (!ready() && std::chrono::steady_clock::now() < deadline) {
             poll(POLL_INTERVAL);
         }
@@ -80,7 +117,30 @@ private:
         auto message = shared::decodeMessage(event.data);
         ASSERT_TRUE(message.has_value());
         messages.push_back(*message);
+        if (!m_prepared_protocol) {
+            return;
+        }
+        if (auto const* coverage = std::get_if<shared::ServerChunkCoverageMessage>(&*message)) {
+            if (m_credited_coverage_epoch != coverage->coverage_epoch) {
+                m_credited_coverage_epoch = coverage->coverage_epoch;
+                static_cast<void>(sendMessage(shared::ClientChunkDeliveryAckMessage{
+                    .session = coverage->session,
+                    .coverage_epoch = coverage->coverage_epoch,
+                    .delivery_token = 0U,
+                    .credits = shared::MATERIALIZED_CHUNK_DELIVERY_WINDOW,
+                    .not_resident_keys = {},
+                }));
+            }
+            static_cast<void>(sendMessage(shared::ClientStartWorldMessage{ .session = coverage->session }));
+        } else if (auto const* acknowledgement =
+                std::get_if<shared::ServerStartWorldAckMessage>(&*message)) {
+            m_prepared_world_started = m_prepared_world_started || acknowledgement->accepted;
+        }
     }
+
+    bool m_prepared_protocol = false;
+    bool m_prepared_world_started = false;
+    std::optional<uint64_t> m_credited_coverage_epoch;
 };
 
 class GameServerTest : public testing::Test {
@@ -145,12 +205,12 @@ protected:
 bool pumpUntil(
     server::GameServer& server,
     ProtocolClient& client,
-    std::function<bool()> const& ready
+    std::function<bool()> const& ready,
+    std::chrono::seconds const timeout = std::chrono::seconds{ 1 }
 )
 {
     static constexpr std::chrono::milliseconds POLL_INTERVAL{ 1 };
-    static constexpr std::chrono::seconds TIMEOUT{ 1 };
-    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    auto const deadline = std::chrono::steady_clock::now() + timeout;
     while (!ready() && std::chrono::steady_clock::now() < deadline) {
         static_cast<void>(server.tick(POLL_INTERVAL));
         client.poll(POLL_INTERVAL);
@@ -163,10 +223,10 @@ bool joinManually(
     ProtocolClient& client,
     char const character,
     shared::WorldMode const mode = shared::WorldMode::Flat,
-    shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration()
+    shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration(),
+    std::chrono::seconds const timeout = std::chrono::seconds{ 1 }
 )
 {
-    static constexpr std::chrono::seconds TIMEOUT{ 1 };
     std::atomic_bool stop_requested{ false };
     std::thread server_thread{ [&server, &stop_requested] {
         static constexpr std::chrono::milliseconds POLL_INTERVAL{ 1 };
@@ -174,7 +234,7 @@ bool joinManually(
             server.poll(POLL_INTERVAL);
         }
     } };
-    bool const joined = client.connect(core::Address::localhost(server.port()), TIMEOUT)
+    bool const joined = client.connect(core::Address::localhost(server.port()), timeout)
         && client.sendMessage(shared::JoinRequestMessage{
             .ch = character,
             .mode = mode,
@@ -182,10 +242,70 @@ bool joinManually(
         })
         && client.waitFor([&client, character] {
             return !client.positions(character).empty();
-        });
+        }, timeout);
     stop_requested.store(true, std::memory_order_relaxed);
     server_thread.join();
     return joined;
+}
+
+bool joinPreparedManually(
+    server::GameServer& server,
+    ProtocolClient& client,
+    char const character,
+    shared::WorldConfiguration const& configuration,
+    std::chrono::seconds const timeout = std::chrono::seconds{ 1 }
+)
+{
+    std::atomic_bool stop_requested{ false };
+    std::thread server_thread{ [&server, &stop_requested] {
+        static constexpr std::chrono::milliseconds POLL_INTERVAL{ 1 };
+        while (!stop_requested.load(std::memory_order_relaxed)) {
+            server.poll(POLL_INTERVAL);
+        }
+    } };
+    bool const request_sent = client.connect(core::Address::localhost(server.port()), timeout)
+        && client.sendMessage(shared::JoinRequestMessage{
+            .ch = character,
+            .mode = shared::WorldMode::Flight,
+            .configuration = configuration,
+        });
+    stop_requested.store(true, std::memory_order_relaxed);
+    server_thread.join();
+    return request_sent && pumpUntil(server, client, [&client, character] {
+            return client.preparedWorldStarted() && !client.positions(character).empty();
+        }, timeout);
+}
+
+std::shared_ptr<server::WorldPreparation> quickPreparedFlightWorld()
+{
+    static std::shared_ptr<server::WorldPreparation> const preparation = [] {
+        shared::WorldConfiguration const world_configuration = shared::World::canonicalConfiguration();
+        generation::GenerationConfiguration generation_configuration;
+        generation_configuration.seed = world_configuration.seed;
+        generation_configuration.epochs = 1U;
+        generation_configuration.erosion_steps = 0U;
+        generation_configuration.initial_climate_iterations = 1U;
+        generation_configuration.climate_iterations = 1U;
+        generation_configuration.currents = false;
+        generation_configuration.coastal_elaboration = false;
+        return std::make_shared<server::WorldPreparation>(
+            generation_configuration,
+            world_configuration.algorithm_version
+        );
+    }();
+    return preparation;
+}
+
+bool waitUntilPrepared(std::shared_ptr<server::WorldPreparation> const& preparation)
+{
+    static constexpr std::chrono::seconds TIMEOUT{ 15 };
+    static constexpr std::chrono::milliseconds POLL_INTERVAL{ 1 };
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (preparation->latest().state == server::WorldPreparationState::Preparing
+        && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(POLL_INTERVAL);
+    }
+    return preparation->latest().state == server::WorldPreparationState::Ready;
 }
 
 shared::PolicyCapabilityRegistry movementPolicyRegistry()
@@ -212,7 +332,7 @@ shared::PolicyCapabilityRegistry movementPolicyRegistry()
 
 std::expected<shared::PolicyCompilation, shared::PolicyDiagnostic> hardMovementDenyPolicy()
 {
-    static constexpr std::string_view SOURCE = R"core(@version("0.1.3.1")
+    static constexpr std::string_view SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyRule("lock", "minecraft:flight", 0i64, 1u8)
@@ -222,7 +342,7 @@ pub fn policy() {
 )core";
     shared::PolicyHost compiler;
     auto compiled = compiler.compile("hard-movement-deny.core", SOURCE, {
-        .jit_mode = shared::PolicyJitMode::Disabled,
+        .backend = shared::PolicyExecutionBackend::Interpreter,
         .require_interpreter_parity = true,
     });
     return compiled;
@@ -230,7 +350,7 @@ pub fn policy() {
 
 std::expected<shared::PolicyCompilation, shared::PolicyDiagnostic> invalidMovementPolicy()
 {
-    static constexpr std::string_view SOURCE = R"core(@version("0.1.3.1")
+    static constexpr std::string_view SOURCE = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyRule("invalid", "minecraft:flight", 0i64, 1u8)
@@ -240,7 +360,7 @@ pub fn policy() {
 )core";
     shared::PolicyHost compiler;
     auto compiled = compiler.compile("invalid-movement-permissions.core", SOURCE, {
-        .jit_mode = shared::PolicyJitMode::Disabled,
+        .backend = shared::PolicyExecutionBackend::Interpreter,
         .require_interpreter_parity = true,
     });
     return compiled;
@@ -250,7 +370,7 @@ std::expected<shared::PolicyCompilation, shared::PolicyDiagnostic> explicitMovem
     shared::PolicyEntityId const subject
 )
 {
-    static constexpr std::string_view SOURCE_PREFIX = R"core(@version("0.1.3.1")
+    static constexpr std::string_view SOURCE_PREFIX = R"core(@version(0.1.5)
 @use minecraft
 pub fn policy() {
     policyGroup("departing", 5u8, "")
@@ -266,7 +386,7 @@ pub fn policy() {
         + std::string{SOURCE_SUFFIX};
     shared::PolicyHost compiler;
     auto compiled = compiler.compile("explicit-movement-permission.core", source, {
-        .jit_mode = shared::PolicyJitMode::Disabled,
+        .backend = shared::PolicyExecutionBackend::Interpreter,
         .require_interpreter_parity = true,
     });
     return compiled;
@@ -359,6 +479,280 @@ TEST(GameServerFlightTest, AcceptsMatchingFlightModeAndReplicatesVerticalAuthori
     EXPECT_EQ(moved.y, spawn.y);
     EXPECT_EQ(moved.z, spawn.z);
     EXPECT_EQ(moved.z_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+}
+
+TEST(GameServerFlightTest, AirborneGravityContinuesWithoutNewInputAcknowledgements)
+{
+    static constexpr uint32_t IDLE_TICKS = 10U;
+    static constexpr int64_t SUBCELLS = 10'000;
+    static constexpr int32_t GRAVITY = 1'750;
+    server::GameServer server{
+        0U, {{'@', 5'000, 5'000, 1'400}, {'#', 5'002, 5'000, 1'400}}, shared::WorldMode::Flight,
+        shared::World::canonicalConfiguration(), shared::HEIGHT_TILE_INTEREST_RADIUS,
+        nullptr, nullptr, server::GameServer::BindMode::Loopback,
+    };
+    ProtocolClient client;
+    ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
+    ProtocolClient observer;
+    ASSERT_TRUE(joinManually(server, observer, '#', shared::WorldMode::Flight));
+    for (uint32_t sequence = 1U; sequence <= 2U; ++sequence) {
+        ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
+            .direction = {.x = 0U, .y = 0U, .cycle_movement_capabilities = true}, .sequence = sequence,
+        }));
+        ASSERT_TRUE(pumpUntil(server, client, [&] {
+            return client.positions('@').back().acknowledged_input_sequence == sequence;
+        }));
+    }
+    auto const before = client.positions('@').back();
+    ASSERT_EQ(before.movement_capabilities.bits, 0U);
+    for (uint32_t tick = 0U; tick < IDLE_TICKS; ++tick) {
+        static_cast<void>(server.tick());
+        client.poll(std::chrono::milliseconds{1});
+        observer.poll(std::chrono::milliseconds{1});
+    }
+    auto const after = client.positions('@').back();
+    int64_t const expected_z = static_cast<int64_t>(before.z) * SUBCELLS + before.z_subcell
+        + static_cast<int64_t>(IDLE_TICKS) * before.vertical_velocity_subcells
+        - static_cast<int64_t>(GRAVITY) * IDLE_TICKS * IDLE_TICKS / 2;
+    EXPECT_EQ(static_cast<int64_t>(after.z) * SUBCELLS + after.z_subcell, expected_z);
+    EXPECT_EQ(after.vertical_velocity_subcells,
+        before.vertical_velocity_subcells - static_cast<int32_t>(IDLE_TICKS) * GRAVITY);
+    EXPECT_EQ(after.acknowledged_input_sequence, 2U);
+    EXPECT_EQ(after.state_revision, before.state_revision + IDLE_TICKS);
+    ASSERT_TRUE(observer.waitFor([&] {
+        auto const positions = observer.positions('@');
+        return !positions.empty() && positions.back().state_revision == after.state_revision;
+    }));
+    auto const observed = observer.positions('@').back();
+    EXPECT_EQ(observed.z, after.z);
+    EXPECT_EQ(observed.z_subcell, after.z_subcell);
+    EXPECT_EQ(observed.vertical_velocity_subcells, after.vertical_velocity_subcells);
+    EXPECT_EQ(observed.acknowledged_input_sequence, 2U);
+}
+
+TEST(GameServerFlightTest, WalkingCommandAndIdleGravityShareTheSingleTickStep)
+{
+    static constexpr int32_t GRAVITY = 1'750;
+    server::GameServer server{
+        0U, {{'@', 5'000, 5'000, 1'400}}, shared::WorldMode::Flight,
+        shared::World::canonicalConfiguration(), shared::HEIGHT_TILE_INTEREST_RADIUS,
+        nullptr, nullptr, server::GameServer::BindMode::Loopback,
+    };
+    ProtocolClient client;
+    ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
+    for (uint32_t sequence = 1U; sequence <= 2U; ++sequence) {
+        ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
+            .direction = {.x = 0U, .y = 0U, .cycle_movement_capabilities = true}, .sequence = sequence,
+        }));
+        ASSERT_TRUE(pumpUntil(server, client, [&] {
+            return client.positions('@').back().acknowledged_input_sequence == sequence;
+        }));
+    }
+    auto const before = client.positions('@').back();
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
+        .direction = {.x = 127U, .y = 0U}, .sequence = 3U,
+    }));
+    client.flush();
+    static_cast<void>(server.tick(std::chrono::milliseconds{20}));
+    ASSERT_TRUE(client.waitFor([&] {
+        return client.positions('@').back().acknowledged_input_sequence == 3U;
+    }));
+    auto const commanded = client.positions('@').back();
+    EXPECT_EQ(commanded.vertical_velocity_subcells, before.vertical_velocity_subcells - GRAVITY);
+    EXPECT_EQ(commanded.state_revision, before.state_revision + 1U);
+    static_cast<void>(server.tick());
+    ASSERT_TRUE(client.waitFor([&] {
+        return client.positions('@').back().state_revision != commanded.state_revision;
+    }));
+    auto const idle = client.positions('@').back();
+    EXPECT_EQ(idle.vertical_velocity_subcells, commanded.vertical_velocity_subcells - GRAVITY);
+    EXPECT_EQ(idle.acknowledged_input_sequence, 3U);
+    EXPECT_EQ(idle.x, commanded.x);
+    EXPECT_EQ(idle.x_subcell, commanded.x_subcell);
+}
+
+TEST(GameServerFlightTest, ExplicitHighAltitudeSpawnIsReplicatedWithTerrainCoverageClipped)
+{
+    static constexpr int32_t HIGH_ALTITUDE = 1'080;
+    shared::WorldConfiguration const world_configuration = shared::World::canonicalConfiguration();
+    std::shared_ptr<server::WorldPreparation> const preparation = quickPreparedFlightWorld();
+    ASSERT_TRUE(waitUntilPrepared(preparation));
+    server::GameServer server{
+        0,
+        {{ .character = '@', .x = 32'768, .y = 32'768, .z = HIGH_ALTITUDE }},
+        shared::WorldMode::Flight,
+        world_configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS,
+        nullptr,
+        preparation,
+    };
+    ProtocolClient client;
+    client.enablePreparedProtocol();
+    ASSERT_TRUE(joinPreparedManually(server, client, '@', world_configuration,
+        std::chrono::seconds{ 15 })) << client.preparedStateSummary('@');
+    ASSERT_TRUE(pumpUntil(server, client, [&client] { return client.preparedWorldStarted(); }));
+
+    ASSERT_TRUE(client.waitFor([&client] {
+        return std::ranges::any_of(client.messages, [](shared::Message const& message) {
+            auto const* const coverage = std::get_if<shared::ServerChunkCoverageMessage>(&message);
+            return coverage != nullptr && coverage->center.z == HIGH_ALTITUDE;
+        });
+    }));
+    shared::ServerPlayerPositionMessage const position = client.positions('@').back();
+    EXPECT_EQ(position.z, HIGH_ALTITUDE);
+    auto const coverage = std::ranges::find_if(client.messages, [](shared::Message const& message) {
+        auto const* const value = std::get_if<shared::ServerChunkCoverageMessage>(&message);
+        return value != nullptr && value->center.z == HIGH_ALTITUDE;
+    });
+    ASSERT_NE(coverage, client.messages.end());
+    EXPECT_EQ(std::get<shared::ServerChunkCoverageMessage>(*coverage).actual_radius_blocks,
+        shared::ACTUAL_TERRAIN_RADIUS_BLOCKS);
+    EXPECT_EQ(std::get<shared::ServerChunkCoverageMessage>(*coverage).visual_lod_radius_blocks,
+        shared::FULL_WORLD_VISUAL_LOD_RADIUS_BLOCKS);
+    EXPECT_FALSE(shared::requiredTerrainColumns(
+        std::get<shared::ServerChunkCoverageMessage>(*coverage).center,
+        shared::ACTUAL_TERRAIN_RADIUS_BLOCKS
+    ).empty());
+    EXPECT_TRUE(shared::requiredChunkKeys(
+        std::get<shared::ServerChunkCoverageMessage>(*coverage).center,
+        shared::NEAR_TERRAIN_RADIUS_BLOCKS
+    ).empty());
+    EXPECT_FALSE(shared::requiredChunkKeys(
+        std::get<shared::ServerChunkCoverageMessage>(*coverage).center,
+        shared::FULL_WORLD_VISUAL_LOD_RADIUS_BLOCKS
+    ).empty());
+    EXPECT_FALSE(shared::materializedInterestChunkKeys(
+        std::get<shared::ServerChunkCoverageMessage>(*coverage).center
+    ).empty());
+}
+
+TEST(GameServerFlightTest, InputCrossesTerrainCeilingAndReturnsThroughEmptyCoverage)
+{
+    static constexpr int32_t HIGH_ALTITUDE = 1'352;
+    static constexpr int32_t TANGENT_ALTITUDE = 1'072;
+    static constexpr uint32_t NEAR_RADIUS_BLOCKS = shared::NEAR_TERRAIN_RADIUS_BLOCKS;
+    shared::WorldConfiguration const world_configuration = shared::World::canonicalConfiguration();
+    std::shared_ptr<server::WorldPreparation> const preparation = quickPreparedFlightWorld();
+    ASSERT_TRUE(waitUntilPrepared(preparation));
+    server::GameServer server{
+        0,
+        {{ .character = '@', .x = 32'768, .y = 32'768, .z = HIGH_ALTITUDE }},
+        shared::WorldMode::Flight,
+        world_configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS,
+        nullptr,
+        preparation,
+    };
+    ProtocolClient client;
+    client.enablePreparedProtocol();
+    ASSERT_TRUE(joinPreparedManually(server, client, '@', world_configuration,
+        std::chrono::seconds{ 15 })) << client.preparedStateSummary('@');
+    ASSERT_TRUE(pumpUntil(server, client, [&client] { return client.preparedWorldStarted(); },
+        std::chrono::seconds{ 15 }));
+
+    auto coverageMessages = [&client] {
+        std::vector<shared::ServerChunkCoverageMessage> result;
+        for (shared::Message const& message : client.messages) {
+            if (auto const* coverage = std::get_if<shared::ServerChunkCoverageMessage>(&message)) {
+                result.push_back(*coverage);
+            }
+        }
+        return result;
+    };
+    auto initial_coverage = coverageMessages();
+    ASSERT_FALSE(initial_coverage.empty());
+    EXPECT_EQ(initial_coverage.back().center.z, HIGH_ALTITUDE);
+    EXPECT_TRUE(shared::requiredChunkKeys(
+        initial_coverage.back().center,
+        shared::NEAR_TERRAIN_RADIUS_BLOCKS
+    ).empty());
+    EXPECT_TRUE(shared::materializedInterestChunkKeys(initial_coverage.back().center).empty());
+    uint64_t empty_coverage_epoch = initial_coverage.back().coverage_epoch;
+
+    uint32_t sequence = 0U;
+    auto sendVerticalInput = [&](int8_t const vertical, bool const accelerated) {
+        ++sequence;
+        if (!client.sendMessage(shared::ClientInputMessage{
+                .direction = {
+                    .x = 0U,
+                    .y = 0U,
+                    .z = static_cast<uint8_t>(vertical),
+                    .accelerated = accelerated,
+                    .speedup = 500U,
+                },
+                .sequence = sequence,
+            })) {
+            return false;
+        }
+        try {
+            return pumpUntil(server, client, [&client, sequence] {
+                auto const positions = client.positions('@');
+                return !positions.empty() && positions.back().acknowledged_input_sequence == sequence;
+            });
+        } catch (std::exception const& error) {
+            int32_t const previous_z = client.positions('@').back().z;
+            throw std::runtime_error{
+                "vertical input sequence " + std::to_string(sequence) + " after z="
+                + std::to_string(previous_z) + " threw: " + error.what()
+            };
+        }
+    };
+
+    ASSERT_TRUE(sendVerticalInput(-127, true));
+    shared::ServerPlayerPositionMessage const between_terrain_and_height = client.positions('@').back();
+    EXPECT_GT(between_terrain_and_height.z, 1'023);
+    EXPECT_LT(between_terrain_and_height.z, HIGH_ALTITUDE);
+    EXPECT_EQ(between_terrain_and_height.z, TANGENT_ALTITUDE);
+    shared::PlayerPosition const tangent_center{
+        .x = between_terrain_and_height.x,
+        .y = between_terrain_and_height.y,
+        .z = between_terrain_and_height.z,
+        .x_subcell = between_terrain_and_height.x_subcell,
+        .y_subcell = between_terrain_and_height.y_subcell,
+        .z_subcell = between_terrain_and_height.z_subcell,
+    };
+    std::vector<shared::ChunkCoordinate> const tangent_near_keys = shared::requiredChunkKeys(
+        tangent_center,
+        NEAR_RADIUS_BLOCKS
+    );
+    EXPECT_EQ(tangent_near_keys.size(), 4U);
+    EXPECT_FALSE(shared::materializedInterestChunkKeys(tangent_center).empty());
+    EXPECT_FALSE(shared::requiredChunkKeys(
+        tangent_center,
+        shared::NEAR_TERRAIN_RADIUS_BLOCKS
+    ).empty());
+
+    ASSERT_TRUE(sendVerticalInput(-127, true));
+    shared::ServerPlayerPositionMessage const below_terrain = client.positions('@').back();
+    EXPECT_LT(below_terrain.z, 1'023);
+    auto const lower_coverage = coverageMessages();
+    ASSERT_GE(lower_coverage.size(), 3U);
+    EXPECT_EQ(lower_coverage.back().center.z, below_terrain.z);
+    EXPECT_FALSE(shared::requiredChunkKeys(
+        lower_coverage.back().center,
+        shared::NEAR_TERRAIN_RADIUS_BLOCKS
+    ).empty());
+    EXPECT_GT(lower_coverage.back().coverage_epoch, empty_coverage_epoch);
+
+    ASSERT_TRUE(sendVerticalInput(127, true));
+    shared::ServerPlayerPositionMessage const above_terrain = client.positions('@').back();
+    EXPECT_GT(above_terrain.z, 1'023);
+    auto const returning_coverage = coverageMessages();
+    ASSERT_GE(returning_coverage.size(), 4U);
+    EXPECT_EQ(returning_coverage.back().center.z, above_terrain.z);
+    EXPECT_GT(returning_coverage.back().coverage_epoch, lower_coverage.back().coverage_epoch);
+
+    ASSERT_TRUE(sendVerticalInput(127, true));
+    shared::ServerPlayerPositionMessage const returned_high = client.positions('@').back();
+    EXPECT_EQ(returned_high.z, HIGH_ALTITUDE);
+    auto const high_again = coverageMessages();
+    ASSERT_GE(high_again.size(), 5U);
+    EXPECT_EQ(high_again.back().center.z, returned_high.z);
+    EXPECT_GT(high_again.back().coverage_epoch, returning_coverage.back().coverage_epoch);
+    EXPECT_TRUE(shared::requiredChunkKeys(
+        high_again.back().center,
+        shared::NEAR_TERRAIN_RADIUS_BLOCKS
+    ).empty());
 }
 
 TEST(GameServerFlightTest, DefersUnknownTerrainAndRevalidatesPermissionsBeforeApplyingInput)
@@ -473,6 +867,7 @@ TEST(GameServerFlightTest, DefersMixedJumpUntilAdjacentHorizontalChunkMaterializ
 
 TEST(GameServerFlightTest, CyclesOnlyTheThreeServerValidatedMovementCapabilityStates)
 {
+    static constexpr std::array<uint8_t, 3U> EXPECTED_CAPABILITIES{1U, 0U, 3U};
     server::GameServer server{ 0, {}, shared::WorldMode::Flight };
     ProtocolClient client;
     ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
@@ -488,13 +883,8 @@ TEST(GameServerFlightTest, CyclesOnlyTheThreeServerValidatedMovementCapabilitySt
             auto const positions = client.positions('@');
             return !positions.empty() && positions.back().acknowledged_input_sequence == sequence;
         }));
+        EXPECT_EQ(client.positions('@').back().movement_capabilities.bits, EXPECTED_CAPABILITIES[sequence - 1U]);
     }
-
-    std::vector<shared::ServerPlayerPositionMessage> const positions = client.positions('@');
-    ASSERT_GE(positions.size(), 4U);
-    EXPECT_EQ(positions[positions.size() - 3U].movement_capabilities.bits, 1U);
-    EXPECT_EQ(positions[positions.size() - 2U].movement_capabilities.bits, 0U);
-    EXPECT_EQ(positions.back().movement_capabilities.bits, 3U);
 }
 
 TEST(GameServerFlightTest, PublishedHardPermissionsOverrideAndReplicateMovementCapabilities)

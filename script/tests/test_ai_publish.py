@@ -18,6 +18,7 @@ from script import ai_check
 
 sys.path.insert(0, str(REPOSITORY / "script"))
 import ai_history
+import ai_publish
 
 SCRIPT_NAMES = ("ai_publish.py", "ai_commit.py", "ai_history.py", "ai_tasks.py")
 
@@ -25,7 +26,7 @@ SCRIPT_NAMES = ("ai_publish.py", "ai_commit.py", "ai_history.py", "ai_tasks.py")
 def task(task_id: str, level: str, parent: str = "", status: str = "active", **changes: object) -> dict[str, object]:
     record: dict[str, object] = {
         "id": task_id,
-        "title": task_id,
+        "title": "EarlyDev 0.1.0:3 — Rendering snapshot" if level == "snapshot" else task_id,
         "kind": "chore",
         "status": status,
         "priority": "P1",
@@ -108,6 +109,14 @@ class AiPublishTests(unittest.TestCase):
         source.parent.mkdir(parents=True)
         source.write_text("baseline\n", encoding="utf-8")
         (self.root / "src" / "conflict.txt").write_text("base\n", encoding="utf-8")
+        project_info = self.root / "src" / "shared" / "include" / "shared" / "ProjectInfo.hpp"
+        project_info.parent.mkdir(parents=True)
+        project_info.write_text(
+            'constexpr std::string_view MAJOR_VERSION_NAME{ "EarlyDev" };\n'
+            'constexpr std::string_view MINOR_VERSION_NAME{ "Initiation" };\n'
+            'constexpr core::Version PROJECT_VERSION{ .epoch = 0, .major = 1, .minor = 0, .patch = 3 };\n',
+            encoding="utf-8",
+        )
         self.git("init", "-q")
         self.git("config", "user.name", "Test")
         self.git("config", "user.email", "test@example.com")
@@ -230,6 +239,11 @@ class AiPublishTests(unittest.TestCase):
         timestamp = int(self.git_output("show", "-s", "--format=%ct", promoted))
         date = datetime.fromtimestamp(timestamp, timezone.utc).astimezone(ZoneInfo("Europe/Belgrade"))
         return f"ai/EarlyDev/0.1.0/3_{date:%y.%m.%d}"
+
+    def expected_promotion_subject(self) -> str:
+        timestamp = int(self.git_output("show", "-s", "--format=%ct", self.source))
+        date = datetime.fromtimestamp(timestamp, timezone.utc).astimezone(ZoneInfo("Europe/Belgrade"))
+        return f"EarlyDev 0.1.0:3({date:%y.%m.%d})"
 
     def test_snapshot_flow_requires_candidate_receipt_and_creates_immutable_tag(self) -> None:
         snapshot = json.loads((self.root / "docs" / "ai" / "backlog.json").read_text())[2]
@@ -488,9 +502,53 @@ class AiPublishTests(unittest.TestCase):
         self.prepare()
         self.finish()
         promoted = self.git_output("rev-parse", "HEAD")
+        self.assertEqual(
+            self.git_output("show", "-s", "--format=%s", promoted),
+            self.expected_promotion_subject(),
+        )
+        self.assertEqual(
+            self.git_output("show", "-s", "--format=%B", promoted),
+            f"{self.expected_promotion_subject()}\n\nTask-ID: MC-AI-0032",
+        )
+        self.assertEqual(ai_publish.promotion_source_for_date_check(self.root), self.source)
         verified = self.run_publish("verify-promotion-bootstrap", promoted, self.baseline)
         self.assertEqual(verified.returncode, 0, verified.stderr)
         self.assertIn("Validated exact snapshot promotion", verified.stdout)
+
+    def test_bootstrap_verification_rejects_generic_or_mismatched_full_version_title(self) -> None:
+        self.prepare()
+        self.finish()
+        promoted = self.git_output("rev-parse", "HEAD")
+        tree = self.git_output("rev-parse", f"{promoted}^{{tree}}")
+        parents = self.git_output("show", "-s", "--format=%P", promoted).split()
+        expected = self.expected_promotion_subject()
+        for wrong_subject in (
+            "Promote MC-AI-0032 to ai-main",
+            expected.replace("0.1.0:3", "0.1.0:4"),
+        ):
+            replacement = subprocess.run(
+                [
+                    "git", "commit-tree", tree,
+                    "-p", parents[0], "-p", parents[1],
+                    "-m", wrong_subject, "-m", "Task-ID: MC-AI-0032",
+                ],
+                cwd=self.root,
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+            self.git("reset", "--hard", replacement)
+            rejected = self.run_publish("verify-promotion-bootstrap", replacement, self.baseline)
+            self.assertNotEqual(rejected.returncode, 0, wrong_subject)
+            self.assertIn("full canonical version identity", rejected.stderr)
+            with self.assertRaisesRegex(
+                ai_publish.PublishError, "full canonical version identity"
+            ):
+                ai_publish.promotion_source_for_date_check(self.root)
+            untagged = self.run_publish("tag", "MC-AI-0032")
+            self.assertNotEqual(untagged.returncode, 0, wrong_subject)
+            self.assertIn("full canonical version identity", untagged.stderr)
+        self.git("reset", "--hard", promoted)
 
     def test_bootstrap_verification_rejects_a_nonpromotion_commit(self) -> None:
         rejected = self.run_publish(

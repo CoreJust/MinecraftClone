@@ -1,12 +1,16 @@
 #pragma once
 
+#include <server/HeightTileWorkerPool.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/policy/Policy.hpp>
+#include <shared/world/Chunk.hpp>
 #include <shared/world/HeightTileInterest.hpp>
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/TerrainWorld.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
 #include <shared/world/WorldGenerationScheduler.hpp>
+#include <generation/Generation.hpp>
 #include <core/net/Event.hpp>
 #include <core/net/Server.hpp>
 
@@ -28,33 +32,54 @@
 
 namespace server {
 
+class WorldPreparation;
+
 class GameServer final : public core::Server {
 public:
-    struct WorkerMetrics final {
-        uint32_t pending_jobs = 0U;
-        uint32_t executor_queued_jobs = 0U;
-        uint32_t running_jobs = 0U;
-        uint32_t completed_uncollected_jobs = 0U;
-        uint64_t enqueued_total = 0U;
-        uint64_t submitted_total = 0U;
-        uint64_t started_total = 0U;
-        uint64_t finished_total = 0U;
-        uint64_t collected_total = 0U;
-        std::chrono::nanoseconds enqueue_to_submit_total{};
-        std::chrono::nanoseconds enqueue_to_submit_max{};
-        std::chrono::nanoseconds enqueue_to_start_total{};
-        std::chrono::nanoseconds enqueue_to_start_max{};
-        std::chrono::nanoseconds executor_queue_total{};
-        std::chrono::nanoseconds executor_queue_max{};
-        std::chrono::nanoseconds execution_total{};
-        std::chrono::nanoseconds execution_max{};
-        std::chrono::nanoseconds completion_to_collection_total{};
-        std::chrono::nanoseconds completion_to_collection_max{};
+    using WorkerMetrics = HeightTileWorkerMetrics;
+
+    enum class BindMode : uint8_t {
+        AnyHost,
+        Loopback,
     };
 
     struct PreviewStreamMetrics final {
+        struct PhaseMetrics final {
+            uint64_t calls = 0U;
+            std::chrono::nanoseconds duration{};
+        };
+
         WorkerMetrics height_tile_jobs;
         WorkerMetrics world_generation_jobs;
+        // Phase totals are accumulated between on_preview_metrics callbacks.
+        PhaseMetrics coverage_refresh;
+        PhaseMetrics worker_result_publication;
+        PhaseMetrics queue_refill;
+        PhaseMetrics delivery;
+        PhaseMetrics worker_dispatch;
+        uint64_t materialization_candidate_keys_examined = 0U;
+        uint64_t materialization_resident_chunk_lookups = 0U;
+        uint64_t materialization_admission_attempts = 0U;
+        uint64_t materialization_admissions = 0U;
+        // Forecast keys visited by the reporting player's queue refill since its previous callback.
+        uint32_t forecast_materialization_candidates_examined = 0U;
+        uint64_t materialization_duplicate_requests = 0U;
+        uint64_t chunk_delivery_candidate_keys_examined = 0U;
+        uint64_t chunk_delivery_resident_chunk_lookups = 0U;
+        uint64_t chunk_delivery_batches_sent = 0U;
+        uint64_t chunk_delivery_chunks_sent = 0U;
+        uint64_t chunk_delivery_credits_consumed = 0U;
+        uint64_t world_generation_jobs_dispatched = 0U;
+        uint64_t height_tile_jobs_dispatched = 0U;
+        // This count covers the server's entire SparseWorld, not just the active sphere.
+        uint64_t server_world_resident_chunks = 0U;
+        uint32_t required_near_chunk_keys = 0U;
+        uint32_t required_full_chunk_keys = 0U;
+        uint32_t acknowledged_chunk_keys = 0U;
+        uint32_t inflight_chunk_batches = 0U;
+        uint32_t inflight_chunk_keys = 0U;
+        uint32_t chunk_delivery_credits = 0U;
+        bool near_required_chunks_all_resident = false;
         bool terrain_center_valid = false;
         int32_t terrain_center_x = 0;
         int32_t terrain_center_y = 0;
@@ -86,6 +111,12 @@ public:
         uint32_t acknowledged_input_sequence = 0U;
         uint32_t unacknowledged_input_count = 0U;
         uint32_t pending_input_count = 0U;
+        uint32_t authoritative_generation_cursor = 0U;
+        uint32_t authoritative_delivery_cursor = 0U;
+        uint32_t authoritative_pending_jobs = 0U;
+        uint32_t authoritative_inflight_batches = 0U;
+        uint32_t acknowledged_authoritative_columns = 0U;
+        uint64_t regional_artifact_bytes = 0U;
         uint32_t materialization_admission_failures = 0U;
         uint64_t delivery_credit_samples = 0U;
         std::chrono::nanoseconds delivery_credit_total{};
@@ -114,7 +145,10 @@ public:
         std::vector<SpawnPoint> spawn_points = { },
         shared::WorldMode world_mode = shared::WorldMode::Flat,
         shared::WorldConfiguration configuration = shared::World::canonicalConfiguration(),
-        uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS
+        uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS,
+        std::shared_ptr<shared::TerrainWorld const> terrain_world = nullptr,
+        std::shared_ptr<WorldPreparation> world_preparation = nullptr,
+        BindMode bind_mode = BindMode::AnyHost
     );
 
     ~GameServer() override;
@@ -137,19 +171,35 @@ public:
     [[nodiscard]]
     uint64_t tick(std::chrono::milliseconds timeout = std::chrono::milliseconds::zero());
 
+    [[nodiscard]] bool rerootPlayerCoverage(shared::PlayerId player_id, shared::PlayerPosition position);
+
     [[nodiscard]]
     std::expected<uint64_t, shared::PolicyDiagnostic> publishPermissions(
         shared::PolicyCompilation compilation,
         shared::PolicyCapabilityRegistry registry
     );
 private:
-    struct HeightTileWorkerPool;
+    static constexpr uint32_t MAX_TERRAIN_INFLIGHT_BYTES = 49'152U;
+    static constexpr uint32_t MAX_PREPARED_STREAM_INFLIGHT_BYTES = 16'384U;
+
     struct PreviewStream;
     void populateNearWindowMetrics(PreviewStream const& stream, PreviewStreamMetrics& metrics) const;
 
     struct PlayerReplication final {
         static constexpr uint32_t MAX_PENDING_INPUTS = 64;
         static constexpr uint32_t MAX_MATERIALIZATION_ADMISSION_FAILURES = 8;
+
+        struct ChunkCoordinateHash final {
+            [[nodiscard]] size_t operator()(shared::ChunkCoordinate coordinate) const noexcept;
+        };
+
+        using ChunkKeySet = std::unordered_set<shared::ChunkCoordinate, ChunkCoordinateHash>;
+
+        struct TerrainDelivery final {
+            std::vector<shared::ChunkCoordinate> coordinates;
+            uint32_t encoded_bytes = 0U;
+            uint64_t coverage_epoch = 0U;
+        };
 
         shared::PlayerId id;
         uint32_t latest_received_sequence = 0;
@@ -159,6 +209,76 @@ private:
         bool has_received_sequence = false;
         bool action_consumed_this_tick = false;
         uint32_t materialization_admission_failures = 0U;
+        uint32_t forecast_materialization_candidates_since_metrics = 0U;
+        std::optional<shared::Direction> last_accepted_direction;
+        std::optional<shared::TerrainSessionIdentity> terrain_session;
+        uint64_t coverage_epoch = 0U;
+        bool wants_previews = false;
+        bool has_chunk_coverage = false;
+        shared::PlayerPosition coverage_center{};
+        bool chunk_credit_grant_received = false;
+        uint8_t chunk_delivery_credits = 0U;
+        bool benchmark_near_chunks_all_resident = false;
+        bool world_started = false;
+        uint64_t next_chunk_delivery_token = 1U;
+        size_t next_chunk_materialization_index = 0U;
+        std::vector<shared::ChunkCoordinate>::size_type next_prefetch_materialization_index = 0U;
+        std::optional<shared::Direction> ordered_chunk_direction;
+        std::vector<shared::ChunkCoordinate> ordered_chunk_keys;
+        std::vector<shared::ChunkCoordinate> ordered_prefetch_chunk_keys;
+        ChunkKeySet required_near_chunks;
+        ChunkKeySet required_chunks;
+        ChunkKeySet required_interest_chunks;
+        ChunkKeySet forecast_lead_chunks;
+        std::vector<shared::ChunkCoordinate> ordered_authoritative_columns;
+        ChunkKeySet required_authoritative_columns;
+        ChunkKeySet authoritative_interest_columns;
+        ChunkKeySet acknowledged_authoritative_columns;
+        ChunkKeySet inflight_authoritative_columns;
+        ChunkKeySet scheduled_authoritative_columns;
+        std::unordered_map<uint64_t, shared::ChunkCoordinate> authoritative_jobs;
+        std::unordered_map<uint64_t, TerrainDelivery> authoritative_deliveries;
+        uint64_t next_authoritative_delivery_token = 1U;
+        uint32_t next_authoritative_generation_index = 0U;
+        uint32_t next_authoritative_delivery_index = 0U;
+        std::deque<uint32_t> authoritative_delivery_frontier;
+        uint64_t authoritative_publication_failures = 0U;
+        ChunkKeySet acknowledged_chunks;
+        // Ready keys occupy one priority queue; waiting keys are nonresident interest candidates.
+        ChunkKeySet ready_delivery_frontier_keys;
+        std::deque<shared::ChunkCoordinate> current_delivery_frontier;
+        ChunkKeySet current_delivery_queue_keys;
+        std::deque<shared::ChunkCoordinate> near_delivery_frontier;
+        ChunkKeySet near_delivery_queue_keys;
+        std::deque<shared::ChunkCoordinate> prefetch_delivery_frontier;
+        ChunkKeySet prefetch_delivery_queue_keys;
+        ChunkKeySet waiting_delivery_frontier;
+        ChunkKeySet inflight_delivery_keys;
+        ChunkKeySet scheduled_chunks;
+        std::unordered_map<uint64_t, TerrainDelivery> inflight_chunk_deliveries;
+
+        [[nodiscard]]
+        bool hasAuthoritativeTerrainWork() const noexcept
+        {
+            return terrain_session && has_chunk_coverage
+                && (next_authoritative_generation_index < ordered_authoritative_columns.size()
+                    || !authoritative_delivery_frontier.empty()
+                    || !authoritative_jobs.empty() || !authoritative_deliveries.empty());
+        }
+    };
+
+    struct PendingTerrainJoin final {
+        core::ClientId client_id = 0U;
+        char character = '@';
+        shared::TerrainSessionIdentity session;
+        bool wants_previews = false;
+        uint64_t last_progress_source_sequence = 0U;
+        uint64_t next_message_sequence = 1U;
+        uint32_t next_default_spawn_candidate = 0U;
+        std::optional<shared::HeightTileKey> requested_surface_key;
+        std::optional<shared::HeightTileKey> surface_key;
+        std::optional<shared::SurfaceTile> surface_tile;
+        std::vector<shared::ChunkCoordinate> generation_requests;
     };
 
     void onConnected(core::ServerConnectEvent const event) override;
@@ -167,6 +287,8 @@ private:
 
     void send(shared::Message message);
     void sendTo(std::optional<core::ClientId> const client_id, shared::Message message);
+    [[nodiscard]]
+    uint32_t remainingTerrainDeliveryBytes(core::ClientId client_id) const noexcept;
     void sendHeightTileTo(std::optional<core::ClientId> const client_id, shared::Message message);
     void startHeightTileStream(core::ClientId client_id);
     [[nodiscard]]
@@ -185,12 +307,75 @@ private:
     );
     void refreshHeightTileInterest(PreviewStream& stream, shared::Player const& player);
     void fillHeightTileQueue(PreviewStream& stream);
+    void processAuthoritativeTerrain();
+    bool publishAuthoritativeTerrainResult(HeightTileWorkerPool::Result const& result);
+    void acknowledgeAuthoritativeTerrain(
+        core::ClientId client_id, shared::ClientAuthoritativeTerrainAckMessage const& acknowledgement
+    );
     void processHeightTileStreams();
     void dispatchHeightTileWork();
     void publishHeightTileResults();
     void dispatchWorldMaterialization();
+    void processWorldPreparation();
+    void initializePreparedWorld(std::shared_ptr<shared::TerrainWorld const> terrain_world);
+    void activatePreparedJoin(PendingTerrainJoin join, shared::PlayerPosition spawn);
+    [[nodiscard]] std::expected<std::optional<shared::PlayerPosition>, std::string> safeSpawnFor(
+        PendingTerrainJoin& join
+    );
+    [[nodiscard]] shared::GenerationAdmission requestPendingJoinPlan(
+        PendingTerrainJoin& join,
+        shared::ChunkCoordinate coordinate,
+        shared::WorldGenerationPlan plan
+    );
+    void cancelPendingTerrainJoinWork(PendingTerrainJoin const& join) noexcept;
+    void publishWorldPreparation(
+        PendingTerrainJoin& join,
+        generation::GenerationProgress const* progress,
+        std::shared_ptr<generation::GenerationSnapshot const> snapshot,
+        bool final_atlas_complete,
+        std::optional<shared::PlayerPosition> safe_spawn = std::nullopt,
+        std::string failure = {}
+    );
+    void refreshMaterializedCoverage();
+    void fillMaterializedChunkQueue();
+    void pumpMaterializedChunkDeliveries();
+    void acknowledgeMaterializedChunkDelivery(
+        core::ClientId client_id,
+        shared::ClientChunkDeliveryAckMessage const& acknowledgement
+    );
+    void enqueueMaterializedDeliveryCandidate(
+        PlayerReplication& replication,
+        shared::ChunkCoordinate coordinate
+    );
+    void enqueueMaterializedDeliveryNeighbors(
+        PlayerReplication& replication,
+        shared::ChunkCoordinate coordinate
+    );
+    void refreshMaterializedDeliveryFrontier(PlayerReplication& replication, bool seed_connected);
+    [[nodiscard]]
+    PlayerReplication::ChunkKeySet connectedMaterializedDeliveryKeys(
+        PlayerReplication const& replication
+    ) const;
+    void startPreparedWorld(
+        core::ClientId client_id,
+        shared::ClientStartWorldMessage const& start
+    );
+    void resetChunkCoverage(PlayerReplication& replication, shared::PlayerPosition center, bool force_new_epoch);
+    void rebuildMaterializedChunkOrders(
+        PlayerReplication& replication,
+        shared::PlayerPosition center,
+        std::optional<shared::Direction> direction
+    );
+    [[nodiscard]]
+    std::optional<shared::Direction> materializedInterestDirection(PlayerReplication const& replication) const noexcept;
+    [[nodiscard]] bool nearChunksAreReady(PlayerReplication const& replication) const noexcept;
+    void updateProtectedChunkUnion();
     [[nodiscard]] uint32_t admitHeightTileDeliveries(PreviewStream& stream, uint32_t maximum_batches);
-    [[nodiscard]] bool processInput(PlayerReplication& replication, shared::ClientInputMessage input);
+    [[nodiscard]] bool processInput(
+        PlayerReplication& replication,
+        shared::ClientInputMessage input,
+        bool acknowledge_input = true
+    );
     [[nodiscard]] std::vector<shared::PolicySubject> permissionSubjects() const;
     [[nodiscard]]
     bool canApplyPublishedPermissions(
@@ -215,14 +400,34 @@ private:
         shared::WorldMode world_mode
     );
 private:
+    struct StreamingMetricsAccumulator final {
+        PreviewStreamMetrics::PhaseMetrics coverage_refresh;
+        PreviewStreamMetrics::PhaseMetrics worker_result_publication;
+        PreviewStreamMetrics::PhaseMetrics queue_refill;
+        PreviewStreamMetrics::PhaseMetrics delivery;
+        PreviewStreamMetrics::PhaseMetrics worker_dispatch;
+        uint64_t materialization_candidate_keys_examined = 0U;
+        uint64_t materialization_resident_chunk_lookups = 0U;
+        uint64_t materialization_admission_attempts = 0U;
+        uint64_t materialization_admissions = 0U;
+        uint64_t materialization_duplicate_requests = 0U;
+        uint64_t chunk_delivery_candidate_keys_examined = 0U;
+        uint64_t chunk_delivery_resident_chunk_lookups = 0U;
+        uint64_t chunk_delivery_batches_sent = 0U;
+        uint64_t chunk_delivery_chunks_sent = 0U;
+        uint64_t chunk_delivery_credits_consumed = 0U;
+        uint64_t world_generation_jobs_dispatched = 0U;
+        uint64_t height_tile_jobs_dispatched = 0U;
+    };
+
     shared::World m_world;
-    shared::SparseWorld m_physics_world;
+    std::shared_ptr<shared::TerrainWorld const> m_terrain_world;
+    std::shared_ptr<WorldPreparation> m_world_preparation;
+    std::unique_ptr<shared::SparseWorld> m_physics_world;
+    bool m_prepared_world_initialized = false;
     shared::WorldGenerationCoordinator m_world_generation;
     std::shared_ptr<shared::TerrainGenerator const> m_terrain_generator;
-    shared::WorldGenerationPlan m_generation_plan{
-        .refinement_extents = {},
-        .chunk_stages = {shared::GenerationStage::Materialize},
-    };
+    shared::WorldGenerationPlan m_generation_plan;
     shared::PolicyHost m_permission_host;
     shared::PolicyCapabilityRegistry m_permission_registry;
     std::optional<shared::PolicyCapabilityKeyId> m_flight_permission;
@@ -230,6 +435,7 @@ private:
     bool m_permissions_published{false};
     std::vector<SpawnPoint> m_spawn_points;
     std::vector<PlayerReplication> m_player_replications;
+    std::vector<PendingTerrainJoin> m_pending_terrain_joins;
     struct PreviewStream final {
         struct HeightTileKeyHash final {
             [[nodiscard]] size_t operator()(shared::HeightTileKey const key) const noexcept
@@ -241,7 +447,8 @@ private:
         static constexpr uint32_t MAX_QUEUED_TILES = 128U;
         static constexpr uint32_t MAX_BUFFERED_TILES = 128U;
         static constexpr uint32_t MAX_INFLIGHT_DELIVERIES = shared::HEIGHT_TILE_DELIVERY_WINDOW;
-        static constexpr uint32_t MAX_DELIVERY_BYTES = 8'589U;
+        // 13-byte batch framing plus the largest surface and 16-bit height-delta payload.
+        static constexpr uint32_t MAX_DELIVERY_BYTES = 10'118U;
         static constexpr uint32_t MAX_INFLIGHT_DELIVERY_BYTES = 34'356U;
         static constexpr uint32_t MAX_URGENT_CANDIDATES_PER_PUMP = 512U;
         static constexpr uint32_t MAX_PRIORITY_CANDIDATES_PER_PUMP = 256U;
@@ -312,13 +519,16 @@ private:
             std::chrono::steady_clock::now() + std::chrono::milliseconds{250};
     };
     std::vector<PreviewStream> m_preview_streams;
+    std::vector<PlayerReplication>::size_type m_next_materialization_admission = 0U;
     size_t m_next_preview_admission = 0U;
     size_t m_next_preview_dispatch = 0U;
     std::shared_ptr<shared::HeightTileInterestOrders const> m_height_tile_interest_orders;
+    uint64_t m_next_authoritative_job_id = uint64_t{1U} << 63U;
     std::unique_ptr<HeightTileWorkerPool> m_height_tile_workers;
     uint64_t m_next_height_tile_token = 1;
     bool m_benchmark_metrics_enabled = false;
     std::chrono::nanoseconds m_last_stream_pump_duration{};
+    StreamingMetricsAccumulator m_streaming_metrics;
 };
 
 } // namespace server

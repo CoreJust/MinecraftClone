@@ -1,3 +1,4 @@
+#include <shared/world/Chunk.hpp>
 #include <shared/world/TerrainWorld.hpp>
 
 #include <generation/Generation.hpp>
@@ -19,16 +20,20 @@
 #include <charconv>
 #include <chrono>
 #include <cmath>
+#include <compare>
 #include <cstdint>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <ratio>
 #include <span>
 #include <sstream>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -40,7 +45,7 @@ namespace {
 constexpr uint32_t MAX_ATLAS_RESOLUTION = 512U;
 constexpr uint32_t MIN_ATLAS_RESOLUTION = 256U;
 constexpr uint32_t MAX_SEEDS = 6U;
-constexpr uint64_t MAX_OUTPUT_BYTES = 512U * 1024U * 1024U;
+constexpr uint64_t MAX_OUTPUT_BYTES = uint64_t{512U} * 1024U * 1024U;
 constexpr uint64_t WORLD_SIZE_BLOCKS = generation::WORLD_SIZE_BLOCKS;
 
 using Clock = std::chrono::steady_clock;
@@ -97,6 +102,34 @@ struct RunTiming final {
     double serialization_ms = 0.0;
 };
 
+struct UnsignedParseInput final {
+    std::string_view text;
+    std::string_view name;
+};
+
+struct ImageLayout final {
+    uint32_t width;
+    uint32_t height;
+    uint32_t channels;
+};
+
+struct HeightColorInput final {
+    float value;
+    float sea_level;
+    float minimum;
+    float maximum;
+};
+
+struct AtlasMemoryUsage final {
+    uint64_t atlas_bytes;
+    uint64_t peak_resident_bytes;
+};
+
+struct ManifestOutcome final {
+    std::string_view status;
+    std::string_view failure;
+};
+
 [[nodiscard]]
 std::string_view usage() noexcept
 {
@@ -105,12 +138,16 @@ std::string_view usage() noexcept
 }
 
 [[nodiscard]]
-uint64_t parseUnsigned(std::string_view const text, std::string_view const name)
+uint64_t parseUnsigned(UnsignedParseInput const& input)
 {
     uint64_t parsed = 0U;
-    auto const [end, error] = std::from_chars(text.data(), text.data() + text.size(), parsed);
-    if (error != std::errc{} || end != text.data() + text.size()) {
-        throw std::runtime_error(std::string{name} + " must be an unsigned integer");
+    auto const [end, error] = std::from_chars(
+        input.text.data(),
+        input.text.data() + input.text.size(),
+        parsed
+    );
+    if (error != std::errc{} || end != input.text.data() + input.text.size()) {
+        throw std::runtime_error(std::string{input.name} + " must be an unsigned integer");
     }
     return parsed;
 }
@@ -126,10 +163,13 @@ std::vector<uint64_t> parseSeedList(std::string_view const text)
         if (end == offset) {
             throw std::runtime_error("seed list contains an empty entry");
         }
-        seeds.push_back(parseUnsigned(text.substr(
-            static_cast<std::string_view::size_type>(offset),
-            static_cast<std::string_view::size_type>(end - offset)
-        ), "seed"));
+        seeds.push_back(parseUnsigned(UnsignedParseInput{
+            .text = text.substr(
+                static_cast<std::string_view::size_type>(offset),
+                static_cast<std::string_view::size_type>(end - offset)
+            ),
+            .name = "seed",
+        }));
         if (seeds.size() > MAX_SEEDS) {
             throw std::runtime_error("seed list exceeds the six-seed output bound");
         }
@@ -197,10 +237,13 @@ RegionOptions parseRegion(std::string_view const text)
         if ((index + 1U < static_cast<uint32_t>(values.size())) == (separator == std::string_view::npos)) {
             throw std::runtime_error("region must be X,Y,EXTENT");
         }
-        values[index] = parseUnsigned(text.substr(
-            static_cast<std::string_view::size_type>(offset),
-            static_cast<std::string_view::size_type>(end - offset)
-        ), "region coordinate");
+        values[index] = parseUnsigned(UnsignedParseInput{
+            .text = text.substr(
+                static_cast<std::string_view::size_type>(offset),
+                static_cast<std::string_view::size_type>(end - offset)
+            ),
+            .name = "region coordinate",
+        });
         offset = end + 1U;
     }
     if (std::any_of(values.begin(), values.end(), [](uint64_t const value) {
@@ -236,7 +279,7 @@ Options parseArguments(int const argc, char const* const* const argv)
                 if (has_seed || has_seed_list) {
                     throw std::runtime_error("choose exactly one of --seed and --seed-list");
                 }
-                options.seeds = {parseUnsigned(value, "seed")};
+                options.seeds = {parseUnsigned(UnsignedParseInput{.text = value, .name = "seed"})};
                 has_seed = true;
             } else if (option == "--seed-list") {
                 if (has_seed || has_seed_list) {
@@ -248,7 +291,9 @@ Options parseArguments(int const argc, char const* const* const argv)
                 if (has_atlas_size) {
                     throw std::runtime_error("--atlas-size may be specified only once");
                 }
-                uint64_t const size = parseUnsigned(value, "atlas size");
+                uint64_t const size = parseUnsigned(
+                    UnsignedParseInput{.text = value, .name = "atlas size"}
+                );
                 if (size > std::numeric_limits<uint32_t>::max()) {
                     throw std::runtime_error("atlas size exceeds the supported range");
                 }
@@ -339,13 +384,13 @@ std::string_view layerName(Layer const layer) noexcept
 }
 
 [[nodiscard]]
-uint64_t checkedByteCount(uint32_t const width, uint32_t const height, uint32_t const channels)
+uint64_t checkedByteCount(ImageLayout const& layout)
 {
-    uint64_t const pixels = static_cast<uint64_t>(width) * height;
-    if (pixels > std::numeric_limits<uint64_t>::max() / channels) {
+    uint64_t const pixels = static_cast<uint64_t>(layout.width) * layout.height;
+    if (pixels > std::numeric_limits<uint64_t>::max() / layout.channels) {
         throw std::runtime_error("requested output dimensions overflow the byte-size counter");
     }
-    uint64_t const bytes = pixels * channels;
+    uint64_t const bytes = pixels * layout.channels;
     if (bytes > MAX_OUTPUT_BYTES) {
         throw std::runtime_error("requested output exceeds the 512 MiB file-size bound");
     }
@@ -480,13 +525,13 @@ Rgb mix(Rgb const first, Rgb const second, float const amount) noexcept
 }
 
 [[nodiscard]]
-Rgb heightColor(float const value, float const sea_level, float const minimum, float const maximum) noexcept
+Rgb heightColor(HeightColorInput const& input) noexcept
 {
-    if (value < sea_level) {
-        float const depth = normalize(value, minimum, sea_level);
+    if (input.value < input.sea_level) {
+        float const depth = normalize(input.value, input.minimum, input.sea_level);
         return mix({8U, 34U, 70U}, {62U, 146U, 177U}, depth);
     }
-    float const elevation = normalize(value, sea_level, maximum);
+    float const elevation = normalize(input.value, input.sea_level, input.maximum);
     if (elevation < 0.7F) {
         return mix({43U, 91U, 52U}, {155U, 139U, 88U}, elevation / 0.7F);
     }
@@ -562,7 +607,7 @@ void writePpm(
     std::span<Rgb const> pixels
 )
 {
-    uint64_t const bytes = checkedByteCount(width, height, 3U);
+    uint64_t const bytes = checkedByteCount(ImageLayout{.width = width, .height = height, .channels = 3U});
     if (pixels.size() != static_cast<uint64_t>(width) * height) {
         throw std::runtime_error("PPM pixel count does not match its dimensions");
     }
@@ -573,9 +618,11 @@ void writePpm(
     file << "P6\n" << width << ' ' << height << "\n255\n";
     std::vector<uint8_t> packed_pixels(static_cast<uint32_t>(bytes));
     for (uint32_t index = 0U; index < static_cast<uint32_t>(pixels.size()); ++index) {
-        packed_pixels[index * 3U] = pixels[index].red;
-        packed_pixels[index * 3U + 1U] = pixels[index].green;
-        packed_pixels[index * 3U + 2U] = pixels[index].blue;
+        std::vector<uint8_t>::size_type const packed_index =
+            static_cast<std::vector<uint8_t>::size_type>(index) * 3U;
+        packed_pixels[packed_index] = pixels[index].red;
+        packed_pixels[packed_index + 1U] = pixels[index].green;
+        packed_pixels[packed_index + 2U] = pixels[index].blue;
     }
     file.write(
         reinterpret_cast<char const*>(packed_pixels.data()),
@@ -597,7 +644,8 @@ std::vector<uint8_t> encodeFloat32(std::span<float const> values)
     std::vector<uint8_t> bytes(static_cast<uint32_t>(byte_count));
     for (uint32_t index = 0U; index < static_cast<uint32_t>(values.size()); ++index) {
         uint32_t const bits = std::bit_cast<uint32_t>(values[index]);
-        uint32_t const offset = index * static_cast<uint32_t>(sizeof(float));
+        std::vector<uint8_t>::size_type const offset =
+            static_cast<std::vector<uint8_t>::size_type>(index) * sizeof(float);
         bytes[offset] = static_cast<uint8_t>(bits);
         bytes[offset + 1U] = static_cast<uint8_t>(bits >> 8U);
         bytes[offset + 2U] = static_cast<uint8_t>(bits >> 16U);
@@ -615,8 +663,10 @@ std::vector<uint8_t> encodeUint16(std::span<uint16_t const> values)
     }
     std::vector<uint8_t> bytes(static_cast<uint32_t>(byte_count));
     for (uint32_t index = 0U; index < static_cast<uint32_t>(values.size()); ++index) {
-        bytes[index * 2U] = static_cast<uint8_t>(values[index]);
-        bytes[index * 2U + 1U] = static_cast<uint8_t>(values[index] >> 8U);
+        std::vector<uint8_t>::size_type const offset =
+            static_cast<std::vector<uint8_t>::size_type>(index) * sizeof(uint16_t);
+        bytes[offset] = static_cast<uint8_t>(values[index]);
+        bytes[offset + 1U] = static_cast<uint8_t>(values[index] >> 8U);
     }
     return bytes;
 }
@@ -758,6 +808,7 @@ LayerRecord exportAtlasLayer(
             : layer == Layer::Temperature ? "temperature diagnostic gradient"
             : "ocean, lake, river, and land diagnostic classes",
         .ppm_path = std::string{layerName(layer)} + ".ppm",
+        .raw_fields = {},
         .width = resolution,
         .height = resolution,
     };
@@ -773,7 +824,12 @@ LayerRecord exportAtlasLayer(
         record.display_max = maximum;
         Clock::time_point const started = Clock::now();
         for (float const value : atlas.elevation) {
-            pixels.push_back(heightColor(value, atlas.sea_level, minimum, maximum));
+            pixels.push_back(heightColor(HeightColorInput{
+                .value = value,
+                .sea_level = atlas.sea_level,
+                .minimum = minimum,
+                .maximum = maximum,
+            }));
         }
         timing.rasterization_ms += milliseconds(Clock::now() - started);
         writeLayerPpm(output, record, pixels, output_bytes, timing);
@@ -851,7 +907,9 @@ LayerRecord exportTopMaterialLayer(
     RunTiming& timing
 )
 {
-    uint64_t const expected = checkedByteCount(side_length, side_length, 1U);
+    uint64_t const expected = checkedByteCount(
+        ImageLayout{.width = side_length, .height = side_length, .channels = 1U}
+    );
     if (samples.size() != expected) {
         throw std::runtime_error("regional sample count does not match its dimensions");
     }
@@ -860,6 +918,7 @@ LayerRecord exportTopMaterialLayer(
         .source = "TerrainWorld::sampleRegion().top_material",
         .color_mapping = "material_palette RGB",
         .ppm_path = "top-material.ppm",
+        .raw_fields = {},
         .width = side_length,
         .height = side_length,
     };
@@ -919,8 +978,7 @@ void writeMetadata(
     std::optional<RegionOptions> const& region,
     RunTiming const& timing,
     float const sea_level,
-    uint64_t const atlas_bytes,
-    uint64_t const peak_resident_bytes,
+    AtlasMemoryUsage const& memory_usage,
     uint64_t& output_bytes
 )
 {
@@ -1004,8 +1062,8 @@ void writeMetadata(
         << "  },\n"
         << "  \"timing_scope\": \"serialization includes PPM/raw fields and excludes this metadata file\",\n"
         << "  \"memory_bytes\": {\n"
-        << "    \"atlas_storage\": " << atlas_bytes << ",\n"
-        << "    \"peak_resident\": " << peak_resident_bytes << "\n"
+        << "    \"atlas_storage\": " << memory_usage.atlas_bytes << ",\n"
+        << "    \"peak_resident\": " << memory_usage.peak_resident_bytes << "\n"
         << "  },\n"
         << "  \"checks\": {\n"
         << "    \"configuration_valid\": true,\n"
@@ -1037,8 +1095,7 @@ void writeManifest(
     std::filesystem::path const& output,
     std::span<uint64_t const> requested,
     std::span<uint64_t const> completed,
-    std::string_view const status,
-    std::string_view const failure,
+    ManifestOutcome const& outcome,
     uint32_t const atlas_size,
     std::span<Layer const> layers,
     uint64_t& output_bytes
@@ -1046,7 +1103,7 @@ void writeManifest(
 {
     std::ostringstream json;
     json << "{\n  \"schema\": \"mc-world-map/1\",\n"
-        << "  \"status\": \"" << jsonEscape(status) << "\",\n"
+        << "  \"status\": \"" << jsonEscape(outcome.status) << "\",\n"
         << "  \"atlas_size\": " << atlas_size << ",\n"
         << "  \"seeds\": [";
     for (uint32_t index = 0U; index < static_cast<uint32_t>(requested.size()); ++index) {
@@ -1070,10 +1127,10 @@ void writeManifest(
         json << '"' << layerName(layers[index]) << '"';
     }
     json << "],\n  \"failure\": ";
-    if (failure.empty()) {
+    if (outcome.failure.empty()) {
         json << "null\n";
     } else {
-        json << '"' << jsonEscape(failure) << "\"\n";
+        json << '"' << jsonEscape(outcome.failure) << "\"\n";
     }
     json << "}\n";
     std::string const text = json.str();
@@ -1200,8 +1257,7 @@ void processSeed(
         options.region,
         timing,
         atlas->sea_level,
-        atlasStorageBytes(*atlas),
-        peak_rss,
+        AtlasMemoryUsage{.atlas_bytes = atlasStorageBytes(*atlas), .peak_resident_bytes = peak_rss},
         output_bytes
     );
 }
@@ -1211,7 +1267,8 @@ void processSeed(
 int main(int const argc, char const* const* const argv)
 {
     if (argc == 2 && std::string_view{argv[1]} == "--help") {
-        std::fprintf(stdout, "%s", usage().data());
+        std::string_view const help = usage();
+        std::fwrite(help.data(), sizeof(char), help.size(), stdout);
         return 0;
     }
     Options options{};
@@ -1236,8 +1293,7 @@ int main(int const argc, char const* const* const argv)
             options.output,
             options.seeds,
             completed,
-            "running",
-            {},
+            ManifestOutcome{.status = "running", .failure = {}},
             options.atlas_size,
             options.layers,
             output_bytes
@@ -1250,8 +1306,7 @@ int main(int const argc, char const* const* const argv)
                     options.output,
                     options.seeds,
                     completed,
-                    "running",
-                    {},
+                    ManifestOutcome{.status = "running", .failure = {}},
                     options.atlas_size,
                     options.layers,
                     output_bytes
@@ -1261,8 +1316,7 @@ int main(int const argc, char const* const* const argv)
                     options.output,
                     options.seeds,
                     completed,
-                    "failed",
-                    exception.what(),
+                    ManifestOutcome{.status = "failed", .failure = exception.what()},
                     options.atlas_size,
                     options.layers,
                     output_bytes
@@ -1274,8 +1328,7 @@ int main(int const argc, char const* const* const argv)
             options.output,
             options.seeds,
             completed,
-            "complete",
-            {},
+            ManifestOutcome{.status = "complete", .failure = {}},
             options.atlas_size,
             options.layers,
             output_bytes
@@ -1284,7 +1337,8 @@ int main(int const argc, char const* const* const argv)
         return 0;
     } catch (std::exception const& exception) {
         std::fprintf(stderr, "mc_world_map: %s\n", exception.what());
-        std::fprintf(stderr, "%s", usage().data());
+        std::string_view const help = usage();
+        std::fwrite(help.data(), sizeof(char), help.size(), stderr);
         return 1;
     }
 }

@@ -42,12 +42,15 @@ def requiredShaderAssets = [
     'text.vert.spv',
     'grid.vert.spv',
     'player.vert.spv',
+    'player.frag.spv',
     'stone.vert.spv',
     'stone_indexed_block.vert.spv',
     'stone.frag.spv',
     'stone_solid.frag.spv',
     'sky.vert.spv',
     'sky.frag.spv',
+    'map.vert.spv',
+    'map.frag.spv',
     'trivial.frag.spv',
 ]
 def hudLicenseAssets = file("${buildDir}/generated/hud-licenses")
@@ -60,9 +63,12 @@ def stageFallbackShaders = tasks.register('stageFallbackShaders', Sync) {
     from('../../src/client/render/shaders') {
         include 'grid.vert'
         include 'player.vert'
+        include 'player.frag'
         include 'stone.vert'
         include 'stone_indexed_block.vert'
         include 'stone_geometry.glsl'
+        include 'terrain_texture_sampling.glsl'
+        include 'world_curvature.glsl'
         include 'stone.frag'
         include 'trivial.frag'
         include 'text.vert'
@@ -70,6 +76,8 @@ def stageFallbackShaders = tasks.register('stageFallbackShaders', Sync) {
         include 'stone_solid.frag'
         include 'sky.vert'
         include 'sky.frag'
+        include 'map.vert'
+        include 'map.frag'
     }
     into(fallbackShaderSources)
 }

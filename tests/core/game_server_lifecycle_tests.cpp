@@ -1,12 +1,24 @@
 #include <server/GameServer.hpp>
+#include <shared/net/Message.hpp>
 #include <shared/world/World.hpp>
 
+#include <core/common/Defer.hpp>
+
+#include <enet/enet.h>
+#if !defined(_WIN32)
+#include <enet/unix.h>
+#else
+#include <enet/win32.h>
+#endif
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <expected>
+#include <functional>
+#include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -115,6 +127,46 @@ TEST(GameServerLifecycle, RunStopsAfterTheCurrentProductionTick)
     thread.join();
 
     EXPECT_LT(std::chrono::steady_clock::now() - start, MAXIMUM_STOP_TIME);
+}
+
+TEST(GameServerLifecycle, LocalGameListenerAcceptsOnlyLoopbackAddresses)
+{
+    server::GameServer server{
+        0U, {}, shared::WorldMode::Flat, shared::World::canonicalConfiguration(),
+        shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, nullptr, server::GameServer::BindMode::Loopback,
+    };
+    ASSERT_TRUE(server.isValid());
+    EXPECT_EQ(server.ip(), "127.0.0.1");
+    EXPECT_NE(server.port(), 0U);
+}
+
+TEST(GameServerLifecycle, InvalidListenerFailsBeforeEnteringSimulation)
+{
+    ENetSocket const occupied = enet_socket_create(ENET_SOCKET_TYPE_DATAGRAM);
+    ASSERT_NE(occupied, ENET_SOCKET_NULL);
+    defer { enet_socket_destroy(occupied); };
+    ENetAddress address{};
+    ASSERT_EQ(enet_address_set_host_ip(&address, "127.0.0.1"), 0);
+    ASSERT_EQ(enet_socket_bind(occupied, &address), 0);
+    ASSERT_EQ(enet_socket_get_address(occupied, &address), 0);
+    server::GameServer server{
+        address.port, {}, shared::WorldMode::Flat, shared::World::canonicalConfiguration(),
+        shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, nullptr, server::GameServer::BindMode::Loopback,
+    };
+    ASSERT_FALSE(server.isValid());
+    std::atomic_bool stop{false};
+    uint32_t ticks = 0U;
+    server::GameServer::BenchmarkHooks hooks{
+        .on_tick = [&](std::chrono::nanoseconds, uint64_t) {
+            ++ticks;
+            stop.store(true, std::memory_order_relaxed);
+        },
+        .on_preview_buffered = {},
+        .on_preview_metrics = {},
+        .before_height_tile_completion = {},
+    };
+    EXPECT_THROW(server.run(stop, &hooks), std::runtime_error);
+    EXPECT_EQ(ticks, 0U);
 }
 
 TEST(GameServerLifecycle, FixedCadenceIsIndependentOfPresentationWork)

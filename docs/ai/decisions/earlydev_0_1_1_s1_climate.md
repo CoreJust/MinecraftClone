@@ -53,21 +53,26 @@ on a controlled ridge rather than inferring it from a colourful map.
 
 ## Materials and future consumers
 
-The canonical column sampler bilinearly samples final climate and uses:
+The canonical column sampler bilinearly samples final climate and uses the
+revision-6 material rule:
 
 | Condition | Land top / ground |
 |---|---|
 | Temperature ≤ −2 °C | Snow / Ice |
-| Warmer, integrated precipitation > 0.20 | Grass / Dirt |
-| Warmer, drier | Dirt / Dirt |
+| Warmer than −2 °C | Grass / Dirt, regardless of precipitation |
 
-The dry Dirt top is the finalized Terrain-v2 material choice within the existing
-S1 palette. It introduces no sand or new biome content. Cold ground is Ice,
-including the permitted shallow-seabed band. No snow cap is placed on
-submerged columns. All cases keep the [exact soil/bedrock rules](earlydev_0_1_1_s1.md).
+The earlier revision-5 dry Dirt top is superseded by the owner's feedback that
+warm exposed terrain should remain grassy. Revision 6 changes top-material
+classification only; it introduces no sand, new biome content, or climate
+changes. Cold ground is Ice, including the permitted shallow-seabed band. No
+snow cap is placed on submerged columns. All cases keep the [exact
+soil/bedrock rules](earlydev_0_1_1_s1_materials.md).
 Snow and Ice are full solid blocks; melting, thin snow and friction are not
-implied. The separate snow/climate-zone diagnostic may use moisture too;
-the canonical material table above controls actual voxels.
+implied. The diagnostic snow_mask/climate-zone uses the separate land predicate
+temperature < −2 °C and precipitation > 0.025; it does not control canonical
+material. The map's land snow overlay follows the table's inclusive −2 °C
+cutoff regardless of precipitation. Its ocean tint requires temperature < −2 °C
+and is visual only; it adds no ocean-ice voxels.
 
 Store temperature, precipitation/moisture, winds, currents and zones for
 future decorations, flora/fauna and seasons. S1 adds those fields and their

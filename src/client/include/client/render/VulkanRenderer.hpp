@@ -2,6 +2,7 @@
 
 #include <client/Camera.hpp>
 #include <client/render/DebugHud.hpp>
+#include <client/render/PresentationFrameProgress.hpp>
 #include <client/render/ShaderAssets.hpp>
 #include <client/render/StoneFaceCapacity.hpp>
 #include <client/render/TextRenderer.hpp>
@@ -11,6 +12,8 @@
 #include <core/common/Version.hpp>
 
 #include <core/graphics/vulkan/Vulkan.hpp>
+
+#include <vulkan/vulkan_core.h>
 
 #include <array>
 #include <chrono>
@@ -36,6 +39,8 @@ struct HeightTileSurfaceMesh;
 
 namespace client {
 
+struct TerrainLodScene;
+
 struct PlayerRenderData final {
     float x = 0.0F;
     float y = 0.0F;
@@ -53,6 +58,21 @@ struct VulkanRendererOptions final {
 };
 
 namespace detail {
+
+void recordTextGlyphUpload(
+    VkCommandBuffer command,
+    VkBuffer buffer,
+    std::span<TextGlyph const> glyphs,
+    PFN_vkCmdPipelineBarrier pipeline_barrier,
+    PFN_vkCmdUpdateBuffer update_buffer
+);
+
+void recordDepthAttachmentBarrier(
+    VkCommandBuffer command,
+    VkImage image,
+    bool initialized,
+    PFN_vkCmdPipelineBarrier pipeline_barrier
+);
 
 [[nodiscard]]
 inline bool diagnosticTerrainRangeVisible(
@@ -113,6 +133,7 @@ struct RendererRuntimeInfo final {
     uint64_t successful_presentation_swapchain_generation = 0U;
     std::chrono::nanoseconds cpu_acquire_wait_duration{ 0 };
     core::graphics::vulkan::PresentationAcquireDiagnostics diagnostic_presentation_acquire;
+    std::vector<RendererRetiredFrameCompletion> retired_frame_completions;
     std::chrono::nanoseconds cpu_presentation_recreation_duration{ 0 };
     bool presentation_recreation_attempted = false;
     bool presentation_recreation_deferred = false;
@@ -129,12 +150,20 @@ struct RendererRuntimeInfo final {
     std::chrono::nanoseconds cpu_frame_duration{ 0 };
     std::optional<std::chrono::nanoseconds> gpu_frame_duration;
     uint64_t submitted_frame_count{ 0 };
+    bool debug_hud_enabled = false;
     uint32_t debug_hud_draw_count{ 0 };
     uint32_t chunk_face_count{ 0 };
     uint32_t chunk_draw_count{ 0 };
     uint32_t chunk_draw_face_count{ 0 };
     uint64_t chunk_mesh_upload_count{ 0 };
     uint32_t height_tile_mesh_count{ 0 };
+    std::shared_ptr<TerrainLodScene const> terrain_lod_scene;
+    bool terrain_lod_active = false;
+    uint32_t terrain_lod_leaf_count = 0U;
+    uint32_t terrain_lod_actual_column_count = 0U;
+    uint64_t terrain_lod_uploaded_face_count = 0U;
+    uint32_t terrain_lod_reused_group_count = 0U;
+    bool terrain_lod_upload_pending = false;
     RendererHeightTileRemovalDiagnostics diagnostic_height_tile_removal;
     uint32_t stone_face_capacity{ 0 };
     StoneFaceGrowthDiagnostics stone_face_growth;
@@ -171,6 +200,7 @@ struct RendererHeightTileUpsertDiagnostics final {
 struct RendererFrameCapture final {
     uint32_t width = 0;
     uint32_t height = 0;
+    // Describes the captured pixel transfer, independent of the render-target format.
     bool srgb_encoded = false;
     std::vector<uint8_t> rgba8;
 };
@@ -210,9 +240,25 @@ public:
     );
     void setDebugHudEnabled(bool enabled) noexcept;
     void toggleDebugHud() noexcept;
+    void setFallbackSceneEnabled(bool enabled) noexcept;
     void setGuiText(std::string_view text, TextColor color = {});
     void addGuiText(std::string_view text, TextPlacement placement, TextColor color = {});
     void clearGuiText() noexcept;
+    // On the renderer's owning thread, copies one opaque row-major RGBA8 image
+    // up to 512-by-512 pixels; render() uploads changes, not identical images.
+    [[nodiscard]]
+    bool setMapImage(
+        uint32_t width,
+        uint32_t height,
+        std::span<std::array<uint8_t, 4> const> rgba8
+    );
+    void clearMapImage() noexcept;
+    // Completion tracking is opt-in for loading screens. Toggling clears the
+    // progress snapshot; while enabled, IDs advance after successful submits.
+    void setFrameCompletionTracking(bool enabled) noexcept;
+    // Fence-confirmed progress, identified by renderer sequence and swapchain
+    // generation. A false render() result leaves the submitted ID unchanged.
+    [[nodiscard]] RendererFrameProgress frameProgress() const noexcept;
     void setWorldText(std::string_view text, TextPlacement placement, TextColor color = {});
     void addWorldText(std::string_view text, TextPlacement placement, TextColor color = {});
     void clearWorldText() noexcept;
@@ -220,6 +266,12 @@ public:
     void setCamera(CameraPose pose, CameraProjection projection) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
     void setChunkMeshes(std::span<shared::ChunkMesh const> meshes);
+    [[nodiscard]]
+    bool upsertTerrainLodScene(
+        std::shared_ptr<TerrainLodScene const> scene,
+        std::chrono::steady_clock::time_point deadline
+    );
+    void clearTerrainLodScene();
     [[nodiscard]]
     bool upsertHeightTileMesh(
         shared::HeightTileSurfaceMesh const& mesh,
@@ -271,6 +323,7 @@ public:
     );
     void setCamera(CameraPose pose) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
+    void setTerrainLodScene(std::shared_ptr<TerrainLodScene const> scene);
     void setDebugHudEnabled(bool enabled) noexcept;
     [[nodiscard]] bool validationEnabled() const noexcept;
     [[nodiscard]] uint32_t validationErrorCount() const noexcept;

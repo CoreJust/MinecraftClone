@@ -1,13 +1,13 @@
 # Scenario language reference
 
-The `minecraft` ruleset has two versioned scenario frontends: `0.1.2` for
-`flight3d-v1` multiplayer scenarios and `0.1.3` for bounded `sparse-world-v1`
-observations.
+The `minecraft` ruleset has one supported scenario frontend, selected by the
+bare `@version(0.1.5)` header. It supports the `flight3d-v1` multiplayer and
+`sparse-world-v1` terrain-observation profiles.
 
 The source must have this shape:
 
 ```text
-@version("0.1.2")
+@version(0.1.5)
 @use minecraft
 
 pub fn scenario() { /* typed host calls and CoreLang control flow */ }
@@ -44,17 +44,21 @@ flight only, or both disabled. `flightXYZ` and `phaseXYZ` check the correspondin
 published capability before sending input. `jump` lasts one tick, and the
 physics expectations observe authoritative replicated state.
 
-Functions, `if`, and `for` are supported by CoreLang and are useful for
-reusable scenario composition. There is no generic Minecraft instruction fuel
-or arbitrary host access in this integration. Keep control flow finite.
+Functions and `if` conditions are accepted when the bounded analyzer proves
+their call and control-flow graph fits the configured static instruction
+limit. A `for` range must use matching nonnegative integer literals and an
+immutable induction variable that is not changed, aliased, or captured. Dynamic
+loops, recursive or indirect calls, static initialization, and cycles outside
+a proven finite `for` range are rejected. Scripts cannot access unregistered
+host operations.
 
-## Sparse-world scenario (`0.1.3`)
+## Sparse-world profile
 
 This profile has no players or tick operations. Configure the generator and
 resident-chunk bound before observing generated blocks or current residency:
 
 ```text
-@version("0.1.3")
+@version(0.1.5)
 @use minecraft
 
 pub fn scenario() {

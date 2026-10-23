@@ -1,16 +1,18 @@
-target_sources(mc
+target_sources(mc_game_core
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
             ProjectInfo.hpp
+            corelang/Backend.hpp
+            corelang/Execution.hpp
+            corelang/ExecutionTypes.hpp
             net/Message.hpp
             policy/Policy.hpp
             scenario/Scenario.hpp
             world/CanonicalWorld.hpp
             world/ScriptedWorld.hpp
             world/Chunk.hpp
-            world/TerrainWorld.hpp
             world/ChunkMesher.hpp
             world/ChunkMeshLod.hpp
             world/HeightTileInterest.hpp
@@ -18,6 +20,8 @@ target_sources(mc
             world/WorldGeneration.hpp
             world/WorldGenerationScheduler.hpp
             world/SparseWorld.hpp
-            world/WorldCoverage.hpp
             world/World.hpp
+            world/TerrainWorld.hpp
+            world/TerrainLod.hpp
+            world/WorldCoverage.hpp
 )

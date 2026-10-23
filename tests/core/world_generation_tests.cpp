@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -27,7 +28,7 @@ Value const& requiredValue(std::optional<Value> const& optional)
 } // namespace
 
 static constexpr std::string_view LEGACY_WORLD_SCRIPT = R"corelang(
-@version("0.1.2")
+@version(0.1.5)
 @use minecraft
 
 pub fn base_height() -> f64 { 6.0f64 }
@@ -36,7 +37,7 @@ pub fn crest_amplitude() -> f64 { 800.0f64 }
 )corelang";
 
 static constexpr std::string_view OMITTED_PRIORITY_WORLD_SCRIPT = R"corelang(
-@version("0.1.2")
+@version(0.1.5)
 @use minecraft
 
 pub fn configure_generation() {
@@ -51,7 +52,7 @@ pub fn crest_amplitude() -> f64 { 800.0f64 }
 )corelang";
 
 static constexpr std::string_view UNSUPPORTED_VERSION_WORLD_SCRIPT = R"corelang(
-@version("0.1.2")
+@version(0.1.5)
 @use minecraft
 
 pub fn configure_generation() {
@@ -65,7 +66,7 @@ pub fn crest_amplitude() -> f64 { 800.0f64 }
 )corelang";
 
 static constexpr std::string_view UNREGISTERED_EXTENT_WORLD_SCRIPT = R"corelang(
-@version("0.1.2")
+@version(0.1.5)
 @use minecraft
 
 pub fn configure_generation() {
@@ -80,7 +81,7 @@ pub fn crest_amplitude() -> f64 { 800.0f64 }
 )corelang";
 
 static constexpr std::string_view WRONG_SIGNATURE_WORLD_SCRIPT = R"corelang(
-@version("0.1.2")
+@version(0.1.5)
 @use minecraft
 
 pub fn configure_generation() -> u8 { 1u8 }
@@ -111,11 +112,13 @@ TEST(WorldGenerationTest, HeightTileIsDeterministicAndUsesCoreLangScript)
 
     shared::TerrainGenerator generator;
     shared::HeightTile const first = generator.generateHeightTile(TILE);
-    shared::HeightTile const repeated = generator.generateHeightTile(TILE);
+    std::unique_ptr<shared::HeightTile const> const repeated{
+        new shared::HeightTile{generator.generateHeightTile(TILE)}
+    };
 
     ASSERT_TRUE(generator.usingCoreLang());
     EXPECT_EQ(first.coordinate, TILE);
-    EXPECT_EQ(first.heights, repeated.heights);
+    EXPECT_EQ(first.heights, repeated->heights);
     ASSERT_TRUE(first.heightAt(SAMPLE).has_value());
     EXPECT_EQ(requiredValue(first.heightAt(SAMPLE)), generator.heightAt(32'771, 32'775));
 }

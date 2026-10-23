@@ -1,7 +1,10 @@
 #include <shared/world/HeightTileSurfaceMesher.hpp>
 
+#include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/TerrainWorld.hpp>
 #include <shared/world/WorldGeneration.hpp>
+#include <generation/Generation.hpp>
 
 #include <algorithm>
 #include <array>
@@ -90,6 +93,8 @@ shared::Block surfaceMaterialAt(
     shared::SurfaceTile const* const surface,
     shared::HeightTileSurfaceMesh const& mesh,
     shared::HeightTileSurfaceDirection const edge,
+    // Edge position, column top and sample height are distinct geometric coordinates.
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     uint32_t const along,
     int32_t const top_height,
     int32_t const z
@@ -153,6 +158,8 @@ shared::Block materialAt(
 [[nodiscard]]
 MaterialProfile materialProfile(
     shared::HeightTile const& tile,
+    // The column index precedes the half-open vertical interval [lower, upper).
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     uint32_t const column_index,
     int32_t const lower,
     int32_t const upper,
@@ -377,7 +384,7 @@ shared::HeightTile reduceTile(shared::HeightTile const& tile, uint32_t const cel
                 && static_cast<uint32_t>(reduced_column.highest_solid_z) + 1U == tile.heights[representative_index]
                 && height != 0U) {
                 reduced_column = columnAtReducedHeight(
-                    std::move(reduced_column),
+                    reduced_column,
                     static_cast<uint16_t>(height - 1U),
                     tile.surface.block_sea_level
                 );

@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <string>
@@ -34,7 +35,7 @@ TEST(CoreLangSparseWorldScenario, LowersVersionedOptionsAndBoundedObservations)
         .max_operations = 32U,
         .max_evidence = 8U,
     };
-    static constexpr std::string_view SOURCE = R"(@version("0.1.3")
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("sparse-world-v1")
@@ -76,6 +77,77 @@ pub fn scenario() {
     EXPECT_EQ(resident_chunks->count, 1U);
 }
 
+TEST(CoreLangSparseWorldScenario, LowersEveryStableBlockId)
+{
+    static constexpr shared::ScenarioLimits SCENARIO_LIMITS{
+        .max_source_bytes = 8'192U,
+        .max_statements = 64U,
+        .max_actors = 4U,
+        .max_total_ticks = 100U,
+        .max_operations = 32U,
+        .max_evidence = 8U,
+    };
+    static constexpr std::array<shared::Block, 7> BLOCKS{
+        shared::Block::Air,
+        shared::Block::Stone,
+        shared::Block::Grass,
+        shared::Block::Dirt,
+        shared::Block::Bedrock,
+        shared::Block::Snow,
+        shared::Block::Ice,
+    };
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
+@use minecraft
+pub fn scenario() {
+    profile("sparse-world-v1")
+    seed(42u64)
+    sparseWorldOptions(1u32, 1u64)
+    expectBlockXYZ(0i64, 0i64, 0i64, 0u8)
+    expectBlockXYZ(0i64, 0i64, 1i64, 1u8)
+    expectBlockXYZ(0i64, 0i64, 2i64, 2u8)
+    expectBlockXYZ(0i64, 0i64, 3i64, 3u8)
+    expectBlockXYZ(0i64, 0i64, 4i64, 4u8)
+    expectBlockXYZ(0i64, 0i64, 5i64, 5u8)
+    expectBlockXYZ(0i64, 0i64, 6i64, 6u8)
+}
+)";
+
+    auto const parsed = shared::parseScenarioSource("all-materials.core", SOURCE, SCENARIO_LIMITS);
+
+    ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+    ASSERT_EQ(parsed->operations().size(), 8U);
+    for (uint32_t index = 0U; index < 7U; ++index) {
+        auto const* const block = std::get_if<shared::ScenarioExpectBlockOperation>(
+            &parsed->operations()[index + 1U].data
+        );
+        ASSERT_NE(block, nullptr);
+        EXPECT_EQ(block->block, BLOCKS[index]);
+    }
+}
+
+TEST(CoreLangSparseWorldScenario, RejectsUnknownBlockId)
+{
+    static constexpr shared::ScenarioLimits SCENARIO_LIMITS{
+        .max_source_bytes = 8'192U,
+        .max_statements = 64U,
+        .max_actors = 4U,
+        .max_total_ticks = 100U,
+        .max_operations = 32U,
+        .max_evidence = 8U,
+    };
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
+@use minecraft
+pub fn scenario() {
+    profile("sparse-world-v1")
+    seed(42u64)
+    sparseWorldOptions(1u32, 1u64)
+    expectBlockXYZ(0i64, 0i64, 0i64, 7u8)
+}
+)";
+
+    expectRuntimeFailure("unknown-block.core", SOURCE, SCENARIO_LIMITS);
+}
+
 TEST(CoreLangSparseWorldScenario, RejectsZeroResidentChunkLimit)
 {
     static constexpr shared::ScenarioLimits SCENARIO_LIMITS{
@@ -87,7 +159,7 @@ TEST(CoreLangSparseWorldScenario, RejectsZeroResidentChunkLimit)
         .max_evidence = 8U,
         .max_sparse_world_resident_chunks = 4U,
     };
-    static constexpr std::string_view ZERO_RESIDENT_LIMIT = R"(@version("0.1.3")
+    static constexpr std::string_view ZERO_RESIDENT_LIMIT = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("sparse-world-v1")
@@ -108,7 +180,7 @@ TEST(CoreLangSparseWorldScenario, RejectsUnsupportedGeneratorVersion)
         .max_operations = 32U,
         .max_evidence = 8U,
     };
-    static constexpr std::string_view SOURCE = R"(@version("0.1.3")
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("sparse-world-v1")
@@ -131,7 +203,7 @@ TEST(CoreLangSparseWorldScenario, RejectsResidentLimitAboveHostConfiguration)
         .max_evidence = 8U,
         .max_sparse_world_resident_chunks = 4U,
     };
-    static constexpr std::string_view SOURCE = R"(@version("0.1.3")
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("sparse-world-v1")
@@ -153,7 +225,7 @@ TEST(CoreLangSparseWorldScenario, RejectsObservationsBeyondTheEvidenceLimit)
         .max_operations = 32U,
         .max_evidence = 1U,
     };
-    static constexpr std::string_view SOURCE = R"(@version("0.1.3")
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("sparse-world-v1")
@@ -177,7 +249,7 @@ TEST(CoreLangSparseWorldScenario, RejectsObservationsBeyondTheOperationLimit)
         .max_operations = 2U,
         .max_evidence = 8U,
     };
-    static constexpr std::string_view SOURCE = R"(@version("0.1.3")
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("sparse-world-v1")
@@ -191,7 +263,7 @@ pub fn scenario() {
     expectRuntimeFailure("sparse-world-operation-limit.core", SOURCE, SCENARIO_LIMITS);
 }
 
-TEST(CoreLangSparseWorldScenario, KeepsSparseWorldHostCallsOutOfVersion012)
+TEST(CoreLangSparseWorldScenario, RejectsSparseWorldOptionsOutsideSparseWorldProfile)
 {
     static constexpr shared::ScenarioLimits SCENARIO_LIMITS{
         .max_source_bytes = 8'192U,
@@ -201,7 +273,7 @@ TEST(CoreLangSparseWorldScenario, KeepsSparseWorldHostCallsOutOfVersion012)
         .max_operations = 32U,
         .max_evidence = 8U,
     };
-    static constexpr std::string_view SOURCE = R"(@version("0.1.2")
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("flight3d-v1")
@@ -213,7 +285,7 @@ pub fn scenario() {
     auto const parsed = shared::parseScenarioSource("legacy-sparse-world.core", SOURCE, SCENARIO_LIMITS);
 
     ASSERT_FALSE(parsed.has_value());
-    EXPECT_EQ(parsed.error().code, shared::ScenarioDiagnosticCode::CoreLangCompileFailure);
+    EXPECT_EQ(parsed.error().code, shared::ScenarioDiagnosticCode::CoreLangRuntimeFailure);
 }
 
 TEST(CoreLangSparseWorldScenario, RejectsTickOperationsAfterSparseProfile)
@@ -226,7 +298,7 @@ TEST(CoreLangSparseWorldScenario, RejectsTickOperationsAfterSparseProfile)
         .max_operations = 32U,
         .max_evidence = 8U,
     };
-    static constexpr std::string_view SOURCE = R"(@version("0.1.3")
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     profile("sparse-world-v1")
@@ -249,7 +321,7 @@ TEST(CoreLangSparseWorldScenario, RejectsTickOperationsBeforeSparseProfile)
         .max_operations = 32U,
         .max_evidence = 8U,
     };
-    static constexpr std::string_view SOURCE = R"(@version("0.1.3")
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
 @use minecraft
 pub fn scenario() {
     wait(1u64)

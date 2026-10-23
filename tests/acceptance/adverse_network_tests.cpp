@@ -1,8 +1,12 @@
 #include <client/ClientAudio.hpp>
 #include <client/GameClient.hpp>
+#include <client/WorldLoading.hpp>
 #include <server/GameServer.hpp>
+#include <server/WorldPreparation.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/world/World.hpp>
+
+#include <generation/Generation.hpp>
 
 #include <core/net/Address.hpp>
 #include <core/net/Client.hpp>
@@ -28,7 +32,6 @@
 #include <span>
 #include <string>
 #include <thread>
-#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -51,9 +54,50 @@ public:
     }
 };
 
-[[nodiscard]] std::optional<shared::Message> decode(testsupport::AdversePacket const& packet)
+struct DecodedClientInput final {
+    bool decoded = false;
+    bool is_client_input = false;
+    uint32_t sequence = 0U;
+};
+
+[[nodiscard]] std::vector<uint8_t> encodeClientInput(uint32_t const sequence)
 {
-    return shared::decodeMessage(packet.bytes);
+    return shared::encodeMessage(shared::ClientInputMessage{
+        .direction = { .x = 127U, .y = 0U, .view_y = 127 },
+        .sequence = sequence,
+    });
+}
+
+[[nodiscard]] DecodedClientInput decodeClientInput(testsupport::AdversePacket const& packet)
+{
+    std::optional<shared::Message> const decoded = shared::decodeMessage(packet.bytes);
+    if (!decoded.has_value()) {
+        return {};
+    }
+    auto const* const input = std::get_if<shared::ClientInputMessage>(&*decoded);
+    if (input == nullptr) {
+        return { .decoded = true };
+    }
+    return {
+        .decoded = true,
+        .is_client_input = true,
+        .sequence = input->sequence,
+    };
+}
+
+std::shared_ptr<server::WorldPreparation> boundedNetworkPreparation(
+    shared::WorldConfiguration const& world_configuration
+)
+{
+    generation::GenerationConfiguration configuration;
+    configuration.seed = world_configuration.seed;
+    configuration.epochs = 1U;
+    configuration.erosion_steps = 0U;
+    configuration.initial_climate_iterations = 1U;
+    configuration.climate_iterations = 1U;
+    configuration.currents = false;
+    configuration.coastal_elaboration = false;
+    return std::make_shared<server::WorldPreparation>(configuration, world_configuration.algorithm_version);
 }
 
 class AdverseGameClient final : public client::GameClient {
@@ -136,6 +180,9 @@ private:
 
     void render() override
     {
+        if (worldLoadingStatus().state == client::WorldLoadingState::ReadyForStart) {
+            markLoadingPromptRendered(std::chrono::steady_clock::now());
+        }
         bool const joined = m_accepted && m_world.playerByCharacter(m_local_character).has_value();
         if (joined && !m_was_joined) {
             m_joined_count.fetch_add(1U, std::memory_order_release);
@@ -589,14 +636,10 @@ TEST(AdverseNetworkTest, SyntheticTransportCoversLossLatencyJitterFreezeReorderi
     std::vector<uint32_t> delivered_sequences;
 
     for (uint32_t tick = 0U; tick < INPUT_COUNT; ++tick) {
-        shared::Message const message = shared::ClientInputMessage{
-            .direction = { .x = 127U, .y = 0U, .view_y = 127 },
-            .sequence = tick + 1U,
-        };
         static_cast<void>(link.send(
             AdverseDirection::ClientToServer,
             tick,
-            shared::encodeMessage(message)
+            encodeClientInput(tick + 1U)
         ));
         std::vector<testsupport::AdversePacket> const received = link.receive(
             AdverseDirection::ClientToServer,
@@ -607,18 +650,18 @@ TEST(AdverseNetworkTest, SyntheticTransportCoversLossLatencyJitterFreezeReorderi
             EXPECT_TRUE(received.empty());
         }
         for (testsupport::AdversePacket const& packet : received) {
-            std::optional<shared::Message> const decoded_message = decode(packet);
-            ASSERT_TRUE(decoded_message.has_value());
-            ASSERT_TRUE(std::holds_alternative<shared::ClientInputMessage>(*decoded_message));
-            delivered_sequences.push_back(std::get<shared::ClientInputMessage>(*decoded_message).sequence);
+            DecodedClientInput const decoded_message = decodeClientInput(packet);
+            ASSERT_TRUE(decoded_message.decoded);
+            ASSERT_TRUE(decoded_message.is_client_input);
+            delivered_sequences.push_back(decoded_message.sequence);
         }
     }
     for (uint32_t tick = INPUT_COUNT; tick <= SETTLE_TICK; ++tick) {
         for (testsupport::AdversePacket const& packet : link.receive(AdverseDirection::ClientToServer, tick)) {
-            std::optional<shared::Message> const received = decode(packet);
-            ASSERT_TRUE(received.has_value());
-            ASSERT_TRUE(std::holds_alternative<shared::ClientInputMessage>(*received));
-            delivered_sequences.push_back(std::get<shared::ClientInputMessage>(*received).sequence);
+            DecodedClientInput const received = decodeClientInput(packet);
+            ASSERT_TRUE(received.decoded);
+            ASSERT_TRUE(received.is_client_input);
+            delivered_sequences.push_back(received.sequence);
         }
     }
 
@@ -636,14 +679,10 @@ TEST(AdverseNetworkTest, SyntheticTransportCoversLossLatencyJitterFreezeReorderi
 
     AdverseTransport replay{ SEED, CONFIG, CONFIG };
     for (uint32_t tick = 0U; tick < INPUT_COUNT; ++tick) {
-        shared::Message const message = shared::ClientInputMessage{
-            .direction = { .x = 127U, .y = 0U, .view_y = 127 },
-            .sequence = tick + 1U,
-        };
         static_cast<void>(replay.send(
             AdverseDirection::ClientToServer,
             tick,
-            shared::encodeMessage(message)
+            encodeClientInput(tick + 1U)
         ));
         static_cast<void>(replay.receive(AdverseDirection::ClientToServer, tick));
     }
@@ -720,7 +759,11 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
     static constexpr std::chrono::seconds RUN_DURATION{ 7 };
     static constexpr shared::Direction MOVEMENT{ .x = 127U, .y = 0U, .view_y = 127 };
 
-    server::GameServer game_server{ 0U, {}, shared::WorldMode::Flight };
+    shared::WorldConfiguration const world_configuration = shared::World::canonicalConfiguration();
+    server::GameServer game_server{
+        0U, {}, shared::WorldMode::Flight, world_configuration, 2U, nullptr,
+        boundedNetworkPreparation(world_configuration),
+    };
     AdverseNetworkRelay relay{ game_server.port(), { .value = INITIAL_RELAY_TICK } };
     std::atomic_bool stop_server{ false };
     std::atomic_bool stop_relay{ false };
@@ -742,6 +785,11 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
     ) {
         facts.pre_ready_started_at = std::chrono::steady_clock::now();
         hooks.deadline = facts.pre_ready_started_at + PRE_READY_SAFETY_DEADLINE;
+        hooks.start_input_override = [&game_client](uint64_t) {
+            client::WorldLoadingStatus const status = game_client.worldLoadingStatus();
+            return status.state == client::WorldLoadingState::ReadyForStart
+                && status.ready_prompt_frame_rendered_at.has_value();
+        };
         hooks.input_override = [&game_client, &hooks, &facts](uint64_t) -> std::optional<shared::Direction> {
             auto const now = std::chrono::steady_clock::now();
             if (facts.first_input_ready_at == std::chrono::steady_clock::time_point{}
@@ -1084,12 +1132,18 @@ TEST(AdverseNetworkTest, ProductionDelayedReadinessPreservesBothFreezePhasesAndR
 {
     static constexpr uint32_t INITIAL_RELAY_TICK = 500U;
     static constexpr uint32_t MINIMUM_DELAYED_EPOCH_TICKS = 100U;
-    static constexpr std::chrono::seconds PRE_READY_SAFETY_DEADLINE{ 10 };
+    // World preparation and production authority streaming precede the timed impairment phase.
+    // Allow Debug setup to finish without shortening either freeze or recovery coverage.
+    static constexpr std::chrono::seconds PRE_READY_SAFETY_DEADLINE{ 60 };
     static constexpr std::chrono::seconds ACTIVE_DURATION{ 3 };
     static constexpr std::chrono::seconds READINESS_DELAY{ 2 };
     static constexpr shared::Direction MOVEMENT{ .x = 127U, .y = 0U, .view_y = 127 };
 
-    server::GameServer game_server{ 0U, {}, shared::WorldMode::Flight };
+    shared::WorldConfiguration const world_configuration = shared::World::canonicalConfiguration();
+    server::GameServer game_server{
+        0U, {}, shared::WorldMode::Flight, world_configuration, 2U, nullptr,
+        boundedNetworkPreparation(world_configuration),
+    };
     AdverseNetworkRelay relay{ game_server.port(), { .value = INITIAL_RELAY_TICK } };
     std::atomic_bool stop_server{ false };
     std::atomic_bool stop_relay{ false };
@@ -1105,6 +1159,11 @@ TEST(AdverseNetworkTest, ProductionDelayedReadinessPreservesBothFreezePhasesAndR
     facts.pre_ready_started_at = std::chrono::steady_clock::now();
     client::GameClientBenchmarkHooks hooks;
     hooks.deadline = facts.pre_ready_started_at + PRE_READY_SAFETY_DEADLINE;
+    hooks.start_input_override = [&game_client](uint64_t) {
+        client::WorldLoadingStatus const status = game_client.worldLoadingStatus();
+        return status.state == client::WorldLoadingState::ReadyForStart
+            && status.ready_prompt_frame_rendered_at.has_value();
+    };
     bool readiness_delay_applied = false;
     hooks.input_override = [&game_client, &hooks, &facts, &readiness_delay_applied](uint64_t)
         -> std::optional<shared::Direction> {

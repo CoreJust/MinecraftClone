@@ -1,3 +1,6 @@
+get_filename_component(MC_WORLD_MAP_SOURCE ../tools/world_map.cpp ABSOLUTE)
+set(MC_WORLD_MAP_SOURCE "${MC_WORLD_MAP_SOURCE}" PARENT_SCOPE)
+
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     cmake_minimum_required(VERSION 3.25)
     project(MinecraftGeneration LANGUAGES CXX)
@@ -68,8 +71,10 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     )
     target_link_libraries(mc_world_sampling PUBLIC mc_generation)
     target_include_directories(mc_world_sampling
-        PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../shared/include"
-        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+        PUBLIC
+            "${CMAKE_CURRENT_SOURCE_DIR}/../shared/include"
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/.."
     )
     target_compile_features(mc_world_sampling PUBLIC cxx_std_23)
     if(MSVC)
@@ -78,7 +83,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         target_compile_options(mc_world_sampling PRIVATE -ffp-contract=off)
     endif()
 
-    add_executable(mc_world_map ../tools/world_map.cpp)
+    add_executable(mc_world_map "${MC_WORLD_MAP_SOURCE}")
     target_link_libraries(mc_world_map PRIVATE mc_world_sampling)
     target_compile_features(mc_world_map PRIVATE cxx_std_23)
     if(WIN32)
@@ -86,43 +91,44 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     endif()
 
     if(BUILD_TESTING)
-        find_package(Python3 COMPONENTS Interpreter REQUIRED)
-        add_test(
-            NAME TerrainWorldMap.Cli
-            COMMAND ${Python3_EXECUTABLE}
-                "${CMAKE_CURRENT_SOURCE_DIR}/../../script/tests/test_world_map_cli.py"
-                --executable $<TARGET_FILE:mc_world_map>
-        )
-        set_tests_properties(TerrainWorldMap.Cli PROPERTIES
-            TIMEOUT 180
-            LABELS "generation;tools"
-        )
+        find_package(Python3 COMPONENTS Interpreter QUIET)
+        if(Python3_Interpreter_FOUND)
+            add_test(
+                NAME TerrainWorldMap.Cli
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../../script/tests/test_world_map_cli.py"
+                    --executable $<TARGET_FILE:mc_world_map>
+            )
+            set_tests_properties(TerrainWorldMap.Cli PROPERTIES
+                TIMEOUT 180
+                LABELS "generation;tools"
+            )
+        endif()
     endif()
 endif()
 
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    if(MC_GENERATION_BUILD_TESTS)
-        find_package(GTest CONFIG REQUIRED)
-        set(MC_REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
-        add_executable(mc_generation_tests
-            "${MC_REPOSITORY_ROOT}/tests/generation/coastal_tests.cpp"
-            "${MC_REPOSITORY_ROOT}/tests/generation/climate_tests.cpp"
-            "${MC_REPOSITORY_ROOT}/tests/generation/generation_tests.cpp"
-            "${MC_REPOSITORY_ROOT}/tests/generation/geology_tests.cpp"
-            "${MC_REPOSITORY_ROOT}/tests/generation/hydrology_tests.cpp"
-            "${MC_REPOSITORY_ROOT}/tests/generation/numpy_random_tests.cpp"
-            "${MC_REPOSITORY_ROOT}/tests/generation/reference_tests.cpp"
-        )
-        target_link_libraries(mc_generation_tests PRIVATE mc_generation GTest::gtest_main)
-        target_include_directories(mc_generation_tests PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/..
-        )
-        target_compile_definitions(mc_generation_tests PRIVATE
-            MC_TERRAIN_REFERENCE_FIXTURE_DIR="${MC_REPOSITORY_ROOT}/tests/fixtures/terrain_v2"
-        )
-        target_compile_features(mc_generation_tests PRIVATE cxx_std_23)
-        include(GoogleTest)
-        gtest_discover_tests(mc_generation_tests)
-    endif()
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND MC_GENERATION_BUILD_TESTS)
+    find_package(GTest CONFIG REQUIRED)
+
+    set(MC_REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+    add_executable(mc_generation_tests
+        "${MC_REPOSITORY_ROOT}/tests/generation/coastal_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/climate_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/generation_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/geology_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/hydrology_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/numpy_random_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/reference_tests.cpp"
+    )
+    target_link_libraries(mc_generation_tests PRIVATE mc_generation GTest::gtest_main)
+    target_include_directories(mc_generation_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+    )
+    target_compile_definitions(mc_generation_tests PRIVATE
+        MC_TERRAIN_REFERENCE_FIXTURE_DIR="${MC_REPOSITORY_ROOT}/tests/fixtures/terrain_v2"
+    )
+    target_compile_features(mc_generation_tests PRIVATE cxx_std_23)
+    include(GoogleTest)
+    gtest_discover_tests(mc_generation_tests)
 endif()

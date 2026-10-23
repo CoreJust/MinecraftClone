@@ -2,17 +2,29 @@
 
 #include "NumpyRandom.hpp"
 
+#include <generation/Generation.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <numbers>
+#include <span>
 #include <stdexcept>
+#include <stop_token>
+#include <utility>
+#include <vector>
 
 namespace generation::detail
 {
 namespace
 {
+
+struct GridResolution final
+{
+    uint32_t value;
+};
 
 size_t fieldSize(uint32_t resolution)
 {
@@ -31,9 +43,9 @@ void validateFieldSize(size_t actual, uint32_t resolution)
     }
 }
 
-int64_t wrappedIndex(int64_t index, uint32_t resolution)
+int64_t wrappedIndex(int64_t index, GridResolution resolution)
 {
-    int64_t const extent = static_cast<int64_t>(resolution);
+    int64_t const extent = static_cast<int64_t>(resolution.value);
     int64_t const remainder = index % extent;
     return remainder < 0 ? remainder + extent : remainder;
 }
@@ -99,14 +111,14 @@ std::vector<double> gaussianWeights(double sigma)
     }
 
     constexpr double TRUNCATE = 4.0;
-    int const radius = static_cast<int>(TRUNCATE * sigma + 0.5);
-    std::vector<double> weights(static_cast<size_t>(radius * 2 + 1));
+    int const radius = static_cast<int>(std::floor(TRUNCATE * sigma + 0.5));
+    std::vector<double> weights(static_cast<size_t>(radius) * 2U + 1U);
     double const sigma_squared = sigma * sigma;
     for (int offset = -radius; offset <= radius; ++offset)
     {
         double const exponent = (-0.5 / sigma_squared) * static_cast<double>(offset * offset);
         double const weight = std::exp(exponent);
-        weights[static_cast<size_t>(offset + radius)] = weight;
+        weights[static_cast<size_t>(static_cast<int64_t>(offset) + radius)] = weight;
     }
     double const total = numpyPairwiseSum(weights);
     for (double& weight : weights)
@@ -122,7 +134,7 @@ std::vector<T> gaussianAxis(
     uint32_t resolution,
     std::span<double const> weights,
     bool rows,
-    std::stop_token cancellation
+    std::stop_token const& cancellation
 )
 {
     int const radius = static_cast<int>(weights.size() / 2U);
@@ -144,18 +156,20 @@ std::vector<T> gaussianAxis(
                 {
                     sample_y = static_cast<uint32_t>(wrappedIndex(
                         static_cast<int64_t>(y) + offset,
-                        resolution
+                        GridResolution{.value = resolution}
                     ));
                 }
                 else
                 {
                     sample_x = static_cast<uint32_t>(wrappedIndex(
                         static_cast<int64_t>(x) + offset,
-                        resolution
+                        GridResolution{.value = resolution}
                     ));
                 }
                 size_t const index = static_cast<size_t>(sample_y) * resolution + sample_x;
-                double const weight = weights[static_cast<size_t>(offset + radius)];
+                double const weight = weights[
+                    static_cast<size_t>(offset) + static_cast<size_t>(radius)
+                ];
                 sum += static_cast<double>(values[index]) * weight;
             }
             output[static_cast<size_t>(y) * resolution + x] = static_cast<T>(sum);
@@ -164,39 +178,50 @@ std::vector<T> gaussianAxis(
     return output;
 }
 
+struct AxisFilterParameters final
+{
+    uint32_t resolution;
+    uint32_t filter_size;
+    bool rows;
+};
+
 DoubleField uniformAxis(
     std::span<double const> values,
-    uint32_t resolution,
-    uint32_t filter_size,
-    bool rows,
-    std::stop_token cancellation
+    AxisFilterParameters const& parameters,
+    std::stop_token const& cancellation
 )
 {
     std::vector<double> output(values.size());
-    int const first_offset = filterStart(filter_size);
-    int const last_offset = filterEnd(filter_size);
-    double const divisor = static_cast<double>(filter_size);
+    int const first_offset = filterStart(parameters.filter_size);
+    int const last_offset = filterEnd(parameters.filter_size);
+    double const divisor = static_cast<double>(parameters.filter_size);
 
-    for (uint32_t y = 0U; y < resolution; ++y)
+    for (uint32_t y = 0U; y < parameters.resolution; ++y)
     {
         if ((y & 15U) == 0U)
         {
             checkCancellation(cancellation);
         }
-        for (uint32_t x = 0U; x < resolution; ++x)
+        for (uint32_t x = 0U; x < parameters.resolution; ++x)
         {
             double sum = 0.0;
             for (int offset = first_offset; offset <= last_offset; ++offset)
             {
-                uint32_t const sample_x = rows
+                uint32_t const sample_x = parameters.rows
                     ? x
-                    : static_cast<uint32_t>(wrappedIndex(static_cast<int64_t>(x) + offset, resolution));
-                uint32_t const sample_y = rows
-                    ? static_cast<uint32_t>(wrappedIndex(static_cast<int64_t>(y) + offset, resolution))
+                    : static_cast<uint32_t>(wrappedIndex(
+                        static_cast<int64_t>(x) + offset,
+                        GridResolution{.value = parameters.resolution}
+                    ));
+                uint32_t const sample_y = parameters.rows
+                    ? static_cast<uint32_t>(wrappedIndex(
+                        static_cast<int64_t>(y) + offset,
+                        GridResolution{.value = parameters.resolution}
+                    ))
                     : y;
-                sum += values[static_cast<size_t>(sample_y) * resolution + sample_x];
+                sum += values[static_cast<size_t>(sample_y) * parameters.resolution + sample_x];
             }
-            output[static_cast<size_t>(y) * resolution + x] = sum / divisor;
+            output[static_cast<size_t>(y) * parameters.resolution + x] = sum / divisor;
         }
     }
     return output;
@@ -204,36 +229,43 @@ DoubleField uniformAxis(
 
 ByteField maximumAxis(
     std::span<uint8_t const> values,
-    uint32_t resolution,
-    uint32_t filter_size,
-    bool rows,
-    std::stop_token cancellation
+    AxisFilterParameters const& parameters,
+    std::stop_token const& cancellation
 )
 {
     std::vector<uint8_t> output(values.size());
-    int const first_offset = filterStart(filter_size);
-    int const last_offset = filterEnd(filter_size);
+    int const first_offset = filterStart(parameters.filter_size);
+    int const last_offset = filterEnd(parameters.filter_size);
 
-    for (uint32_t y = 0U; y < resolution; ++y)
+    for (uint32_t y = 0U; y < parameters.resolution; ++y)
     {
         if ((y & 15U) == 0U)
         {
             checkCancellation(cancellation);
         }
-        for (uint32_t x = 0U; x < resolution; ++x)
+        for (uint32_t x = 0U; x < parameters.resolution; ++x)
         {
             uint8_t maximum = 0U;
             for (int offset = first_offset; offset <= last_offset; ++offset)
             {
-                uint32_t const sample_x = rows
+                uint32_t const sample_x = parameters.rows
                     ? x
-                    : static_cast<uint32_t>(wrappedIndex(static_cast<int64_t>(x) + offset, resolution));
-                uint32_t const sample_y = rows
-                    ? static_cast<uint32_t>(wrappedIndex(static_cast<int64_t>(y) + offset, resolution))
+                    : static_cast<uint32_t>(wrappedIndex(
+                        static_cast<int64_t>(x) + offset,
+                        GridResolution{.value = parameters.resolution}
+                    ));
+                uint32_t const sample_y = parameters.rows
+                    ? static_cast<uint32_t>(wrappedIndex(
+                        static_cast<int64_t>(y) + offset,
+                        GridResolution{.value = parameters.resolution}
+                    ))
                     : y;
-                maximum = std::max(maximum, values[static_cast<size_t>(sample_y) * resolution + sample_x]);
+                maximum = std::max(
+                    maximum,
+                    values[static_cast<size_t>(sample_y) * parameters.resolution + sample_x]
+                );
             }
-            output[static_cast<size_t>(y) * resolution + x] = maximum;
+            output[static_cast<size_t>(y) * parameters.resolution + x] = maximum;
         }
     }
     return output;
@@ -241,7 +273,7 @@ ByteField maximumAxis(
 
 } // namespace
 
-void checkCancellation(std::stop_token cancellation)
+void checkCancellation(std::stop_token const& cancellation)
 {
     if (cancellation.stop_requested())
     {
@@ -265,24 +297,22 @@ void reportProgress(
 
 FloatField periodicFbm(
     uint64_t seed,
-    uint32_t resolution,
-    uint32_t octaves,
-    uint32_t start_frequency,
-    std::stop_token cancellation
+    FbmParameters const& parameters,
+    std::stop_token const& cancellation
 )
 {
-    size_t const count = fieldSize(resolution);
-    if (octaves == 0U || start_frequency == 0U)
+    size_t const count = fieldSize(parameters.resolution);
+    if (parameters.octaves == 0U || parameters.start_frequency == 0U)
     {
         throw std::invalid_argument("periodic fBm requires positive octave and frequency counts");
     }
 
-    std::vector<double> unit_x(resolution);
-    std::vector<double> unit_y(resolution);
-    for (uint32_t coordinate = 0U; coordinate < resolution; ++coordinate)
+    std::vector<double> unit_x(parameters.resolution);
+    std::vector<double> unit_y(parameters.resolution);
+    for (uint32_t coordinate = 0U; coordinate < parameters.resolution; ++coordinate)
     {
         double const world_coordinate = static_cast<double>(coordinate) * WORLD_SIZE_BLOCKS
-            / resolution;
+            / parameters.resolution;
         unit_x[coordinate] = world_coordinate / WORLD_SIZE_BLOCKS;
         unit_y[coordinate] = world_coordinate / WORLD_SIZE_BLOCKS;
     }
@@ -290,10 +320,10 @@ FloatField periodicFbm(
     DoubleField result(count, 0.0);
     double weight_total = 0.0;
     NumpyRandom random(seed);
-    for (uint32_t octave = 0U; octave < octaves; ++octave)
+    for (uint32_t octave = 0U; octave < parameters.octaves; ++octave)
     {
         checkCancellation(cancellation);
-        uint32_t const frequency = start_frequency * (1U << octave);
+        uint32_t const frequency = parameters.start_frequency * (1U << octave);
         double const amplitude = std::ldexp(1.0, -static_cast<int>(octave));
         for (uint32_t mode = 0U; mode < 3U; ++mode)
         {
@@ -311,15 +341,15 @@ FloatField periodicFbm(
                 corrected_kx = frequency;
             }
             double const phase = random.uniform(0.0, 2.0 * std::numbers::pi_v<double>);
-            for (uint32_t y = 0U; y < resolution; ++y)
+            for (uint32_t y = 0U; y < parameters.resolution; ++y)
             {
                 if ((y & 15U) == 0U)
                 {
                     checkCancellation(cancellation);
                 }
-                for (uint32_t x = 0U; x < resolution; ++x)
+                for (uint32_t x = 0U; x < parameters.resolution; ++x)
                 {
-                    size_t const index = static_cast<size_t>(y) * resolution + x;
+                    size_t const index = static_cast<size_t>(y) * parameters.resolution + x;
                     double const cycles = static_cast<double>(corrected_kx) * unit_x[x]
                         + static_cast<double>(ky) * unit_y[y];
                     double const angle = 2.0 * std::numbers::pi_v<double> * cycles + phase;
@@ -340,39 +370,49 @@ FloatField periodicFbm(
 
 DoubleField gaussianFilterWrap(
     std::span<double const> values,
-    uint32_t resolution,
-    double sigma,
-    std::stop_token cancellation
+    GaussianFilterParameters const& parameters,
+    std::stop_token const& cancellation
 )
 {
-    validateFieldSize(values.size(), resolution);
-    std::vector<double> const weights = gaussianWeights(sigma);
+    validateFieldSize(values.size(), parameters.resolution);
+    std::vector<double> const weights = gaussianWeights(parameters.sigma);
     checkCancellation(cancellation);
-    DoubleField const rows = gaussianAxis<double>(values, resolution, weights, true, cancellation);
+    DoubleField const rows = gaussianAxis<double>(
+        values,
+        parameters.resolution,
+        weights,
+        true,
+        cancellation
+    );
     checkCancellation(cancellation);
-    return gaussianAxis<double>(rows, resolution, weights, false, cancellation);
+    return gaussianAxis<double>(rows, parameters.resolution, weights, false, cancellation);
 }
 
 FloatField gaussianFilterWrap(
     std::span<float const> values,
-    uint32_t resolution,
-    double sigma,
-    std::stop_token cancellation
+    GaussianFilterParameters const& parameters,
+    std::stop_token const& cancellation
 )
 {
-    validateFieldSize(values.size(), resolution);
-    std::vector<double> const weights = gaussianWeights(sigma);
+    validateFieldSize(values.size(), parameters.resolution);
+    std::vector<double> const weights = gaussianWeights(parameters.sigma);
     checkCancellation(cancellation);
-    FloatField const rows = gaussianAxis<float>(values, resolution, weights, true, cancellation);
+    FloatField const rows = gaussianAxis<float>(
+        values,
+        parameters.resolution,
+        weights,
+        true,
+        cancellation
+    );
     checkCancellation(cancellation);
-    return gaussianAxis<float>(rows, resolution, weights, false, cancellation);
+    return gaussianAxis<float>(rows, parameters.resolution, weights, false, cancellation);
 }
 
 DoubleField uniformFilterWrap(
     std::span<double const> values,
     uint32_t resolution,
     uint32_t filter_size,
-    std::stop_token cancellation
+    std::stop_token const& cancellation
 )
 {
     validateFieldSize(values.size(), resolution);
@@ -381,16 +421,24 @@ DoubleField uniformFilterWrap(
         throw std::invalid_argument("uniform filter size must be positive");
     }
     checkCancellation(cancellation);
-    DoubleField const rows = uniformAxis(values, resolution, filter_size, true, cancellation);
+    DoubleField const rows = uniformAxis(
+        values,
+        AxisFilterParameters{.resolution = resolution, .filter_size = filter_size, .rows = true},
+        cancellation
+    );
     checkCancellation(cancellation);
-    return uniformAxis(rows, resolution, filter_size, false, cancellation);
+    return uniformAxis(
+        rows,
+        AxisFilterParameters{.resolution = resolution, .filter_size = filter_size, .rows = false},
+        cancellation
+    );
 }
 
 ByteField maximumFilterWrap(
     std::span<uint8_t const> values,
     uint32_t resolution,
     uint32_t filter_size,
-    std::stop_token cancellation
+    std::stop_token const& cancellation
 )
 {
     validateFieldSize(values.size(), resolution);
@@ -399,9 +447,17 @@ ByteField maximumFilterWrap(
         throw std::invalid_argument("maximum filter size must be positive");
     }
     checkCancellation(cancellation);
-    ByteField const rows = maximumAxis(values, resolution, filter_size, true, cancellation);
+    ByteField const rows = maximumAxis(
+        values,
+        AxisFilterParameters{.resolution = resolution, .filter_size = filter_size, .rows = true},
+        cancellation
+    );
     checkCancellation(cancellation);
-    return maximumAxis(rows, resolution, filter_size, false, cancellation);
+    return maximumAxis(
+        rows,
+        AxisFilterParameters{.resolution = resolution, .filter_size = filter_size, .rows = false},
+        cancellation
+    );
 }
 
 std::pair<DoubleField, DoubleField> gradientPeriodic(std::span<double const> values, uint32_t resolution)
@@ -427,21 +483,21 @@ std::pair<DoubleField, DoubleField> gradientPeriodic(std::span<double const> val
     return {std::move(x_gradient), std::move(y_gradient)};
 }
 
-double bilinearPeriodic(std::span<float const> values, uint32_t resolution, double x, double y)
+double bilinearPeriodic(std::span<float const> values, uint32_t resolution, WorldPoint position)
 {
     validateFieldSize(values.size(), resolution);
-    double const x_remainder = std::fmod(x, static_cast<double>(WORLD_SIZE_BLOCKS));
-    double const y_remainder = std::fmod(y, static_cast<double>(WORLD_SIZE_BLOCKS));
+    double const x_remainder = std::fmod(position.x, static_cast<double>(WORLD_SIZE_BLOCKS));
+    double const y_remainder = std::fmod(position.y, static_cast<double>(WORLD_SIZE_BLOCKS));
     double const wrapped_x = x_remainder < 0.0 ? x_remainder + WORLD_SIZE_BLOCKS : x_remainder;
     double const wrapped_y = y_remainder < 0.0 ? y_remainder + WORLD_SIZE_BLOCKS : y_remainder;
     double const sample_x = wrapped_x * resolution / WORLD_SIZE_BLOCKS;
     double const sample_y = wrapped_y * resolution / WORLD_SIZE_BLOCKS;
     int64_t const floor_x = static_cast<int64_t>(std::floor(sample_x));
     int64_t const floor_y = static_cast<int64_t>(std::floor(sample_y));
-    double const fraction_x = sample_x - floor_x;
-    double const fraction_y = sample_y - floor_y;
-    uint32_t const x0 = static_cast<uint32_t>(wrappedIndex(floor_x, resolution));
-    uint32_t const y0 = static_cast<uint32_t>(wrappedIndex(floor_y, resolution));
+    double const fraction_x = sample_x - static_cast<double>(floor_x);
+    double const fraction_y = sample_y - static_cast<double>(floor_y);
+    uint32_t const x0 = static_cast<uint32_t>(wrappedIndex(floor_x, GridResolution{.value = resolution}));
+    uint32_t const y0 = static_cast<uint32_t>(wrappedIndex(floor_y, GridResolution{.value = resolution}));
     uint32_t const x1 = (x0 + 1U) % resolution;
     uint32_t const y1 = (y0 + 1U) % resolution;
     double const top_left = values[static_cast<size_t>(y0) * resolution + x0];
@@ -454,21 +510,21 @@ double bilinearPeriodic(std::span<float const> values, uint32_t resolution, doub
         + fraction_x * fraction_y * bottom_right;
 }
 
-double bilinearPeriodic(std::span<double const> values, uint32_t resolution, double x, double y)
+double bilinearPeriodic(std::span<double const> values, uint32_t resolution, WorldPoint position)
 {
     validateFieldSize(values.size(), resolution);
-    double const x_remainder = std::fmod(x, static_cast<double>(WORLD_SIZE_BLOCKS));
-    double const y_remainder = std::fmod(y, static_cast<double>(WORLD_SIZE_BLOCKS));
+    double const x_remainder = std::fmod(position.x, static_cast<double>(WORLD_SIZE_BLOCKS));
+    double const y_remainder = std::fmod(position.y, static_cast<double>(WORLD_SIZE_BLOCKS));
     double const wrapped_x = x_remainder < 0.0 ? x_remainder + WORLD_SIZE_BLOCKS : x_remainder;
     double const wrapped_y = y_remainder < 0.0 ? y_remainder + WORLD_SIZE_BLOCKS : y_remainder;
     double const sample_x = wrapped_x * resolution / WORLD_SIZE_BLOCKS;
     double const sample_y = wrapped_y * resolution / WORLD_SIZE_BLOCKS;
     int64_t const floor_x = static_cast<int64_t>(std::floor(sample_x));
     int64_t const floor_y = static_cast<int64_t>(std::floor(sample_y));
-    double const fraction_x = sample_x - floor_x;
-    double const fraction_y = sample_y - floor_y;
-    uint32_t const x0 = static_cast<uint32_t>(wrappedIndex(floor_x, resolution));
-    uint32_t const y0 = static_cast<uint32_t>(wrappedIndex(floor_y, resolution));
+    double const fraction_x = sample_x - static_cast<double>(floor_x);
+    double const fraction_y = sample_y - static_cast<double>(floor_y);
+    uint32_t const x0 = static_cast<uint32_t>(wrappedIndex(floor_x, GridResolution{.value = resolution}));
+    uint32_t const y0 = static_cast<uint32_t>(wrappedIndex(floor_y, GridResolution{.value = resolution}));
     uint32_t const x1 = (x0 + 1U) % resolution;
     uint32_t const y1 = (y0 + 1U) % resolution;
     double const top_left = values[static_cast<size_t>(y0) * resolution + x0];

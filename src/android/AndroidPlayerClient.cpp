@@ -2,17 +2,22 @@
 
 #include <client/CameraController.hpp>
 #include <client/CameraObstruction.hpp>
+#include <client/GenerationMapPresentation.hpp>
 #include <client/PlayerPresentation.hpp>
 #include <client/PreviewMeshing.hpp>
 
-#include <shared/world/CanonicalWorld.hpp>
+#include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
 
 #include <core/IO/Log.hpp>
 
 #include <android/configuration.h>
+#include <android/input.h>
+#include <android/log.h>
 #include <android/looper.h>
 #include <android/native_window.h>
+
+#include <glm/ext/vector_double3.hpp>
 
 #include <algorithm>
 #include <array>
@@ -22,6 +27,8 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace game_android {
@@ -61,9 +68,6 @@ AndroidPlayerClient::AndroidPlayerClient(android_app& app, shared::WorldMode con
     , m_app(app)
     , m_shader_assets(app.activity->assetManager)
 {
-    if (mode == shared::WorldMode::Flight) {
-        m_chunk_mesh = &m_chunk_mesher.update(shared::canonicalWorld().chunk());
-    }
     m_app.userData = this;
     m_app.onAppCmd = &AndroidPlayerClient::handleAppCommand;
     m_app.onInputEvent = &AndroidPlayerClient::handleInputEvent;
@@ -88,6 +92,9 @@ AndroidPlayerClient::~AndroidPlayerClient()
 
 shared::Direction AndroidPlayerClient::input()
 {
+    if (worldLoadingStatus().state != client::WorldLoadingState::Playing) {
+        return {};
+    }
     if (m_input.consumeStopRequest()) {
         stop();
     }
@@ -100,16 +107,26 @@ shared::Direction AndroidPlayerClient::input()
         },
         m_look_camera.pose().angles.yaw_degrees
     );
-    bool const ascend_requested = m_ascend_input.consumePress()
-        || m_input.consumeFlightAscendRequest();
+    bool const ascend_requested = m_ascend_input.consumePress();
+    bool const touch_ascend_requested = m_input.consumeFlightAscendRequest();
+    m_input_actions.observeJump(ascend_requested || touch_ascend_requested);
+    glm::dvec3 const view = m_look_camera.forward();
     return {
         .x = static_cast<uint8_t>(movement.x),
         .y = static_cast<uint8_t>(movement.y),
         .z = static_cast<uint8_t>(client::CameraController::verticalMovement(
-            m_ascend_input.isPressed() || touch_flight_direction > 0 || ascend_requested,
+            m_input_actions.jumpRequested(m_ascend_input.isPressed() || touch_flight_direction > 0),
             m_descend_pressed || touch_flight_direction < 0
         )),
+        .cycle_movement_capabilities = m_input_actions.cycleRequested(),
+        .view_x = client::CameraController::quantize(view.x),
+        .view_y = client::CameraController::quantize(view.y),
     };
+}
+
+void AndroidPlayerClient::onInputSubmitted(shared::Direction const& direction)
+{
+    m_input_actions.submitted(direction);
 }
 
 void AndroidPlayerClient::servicePlatformEvents()
@@ -126,9 +143,10 @@ void AndroidPlayerClient::servicePlatformEvents()
 
 void AndroidPlayerClient::render()
 {
+    m_presentation_succeeded = false;
     servicePlatformEvents();
-    while (m_running && !m_app.destroyRequested && !canRender()) {
-        pollOneEvent(-1);
+    if (m_running && !m_app.destroyRequested && !canRender()) {
+        return;
     }
     if (m_app.destroyRequested || m_input.consumeStopRequest()) {
         stop();
@@ -142,20 +160,33 @@ void AndroidPlayerClient::render()
 
 void AndroidPlayerClient::presentFrame()
 {
-    float look_horizontal = 0.0F;
-    float look_vertical = 0.0F;
-    if (m_input.consumeLookDelta(look_horizontal, look_vertical)) {
-        static_cast<void>(m_look_camera.rotate(
-            static_cast<double>(look_horizontal) * 0.15,
-            static_cast<double>(-look_vertical) * 0.15
-        ));
+    client::WorldLoadingStatus const loading_status = worldLoadingStatus();
+    bool const loading = loading_status.state != client::WorldLoadingState::Playing;
+    if (m_frame_completion_tracking_enabled != loading) {
+        m_renderer->setFrameCompletionTracking(loading);
+        m_frame_completion_tracking_enabled = loading;
     }
-    if (m_input.consumeCameraPerspectiveCycleRequest()) {
-        m_camera_perspective = client::nextCameraPerspective(m_camera_perspective);
+    if (!loading) {
+        m_loading_prompt_frame_target.reset();
+        m_loading_prompt_frame_completed = false;
     }
+    if (loading_status.state == client::WorldLoadingState::Playing) {
+        float look_horizontal = 0.0F;
+        float look_vertical = 0.0F;
+        if (m_input.consumeLookDelta(look_horizontal, look_vertical)) {
+            static_cast<void>(m_look_camera.rotate(
+                static_cast<double>(look_horizontal) * 0.15,
+                static_cast<double>(-look_vertical) * 0.15
+            ));
+        }
+        if (m_input.consumeCameraPerspectiveCycleRequest()) {
+            m_camera_perspective = client::nextCameraPerspective(m_camera_perspective);
+        }
+    }
+    updateLoadingPresentation(loading_status);
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
     std::optional<client::PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
-    if (local_position) {
+    if (local_position && !terrainLodWorld()) {
         refreshPreviewTerrain(*local_position);
     }
     double camera_distance = client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
@@ -196,6 +227,10 @@ void AndroidPlayerClient::presentFrame()
             input.player_x = static_cast<float>(shared::playerPositionX(*player));
             input.player_y = static_cast<float>(shared::playerPositionY(*player));
             input.player_z = static_cast<float>(shared::playerPositionZ(*player));
+            input.flight_enabled = player->movement_capabilities.allows(shared::MovementCapability::Flight);
+            input.collision_bypass_enabled = player->movement_capabilities.allows(
+                shared::MovementCapability::CollisionBypass
+            );
         }
         client::CameraAngles const angles = m_camera.pose().angles;
         input.camera_yaw_degrees = static_cast<float>(angles.yaw_degrees);
@@ -203,31 +238,199 @@ void AndroidPlayerClient::presentFrame()
         input.camera_roll_degrees = static_cast<float>(angles.roll_degrees);
         return input;
     }();
-    if (m_input.consumeDebugHudToggleRequest()) {
-        m_renderer->toggleDebugHud();
+    if (loading_status.state == client::WorldLoadingState::Playing
+        && m_input.consumeDebugHudToggleRequest()) {
+        m_debug_hud_enabled = !m_debug_hud_enabled;
+        m_renderer->setDebugHudEnabled(m_debug_hud_enabled);
     }
-    m_renderer->setCamera(m_camera.pose(), m_camera.projection());
-    processPreviewTerrain();
-    static_cast<void>(m_renderer->render(
+    m_terrain_lod.update(
+        terrainLodWorld(), authoritativeWorld(), predictedLocalPlayer(), *m_renderer,
+        std::chrono::steady_clock::now() + ANDROID_PREVIEW_UPLOAD_TIME_BUDGET
+    );
+    client::CameraProjection terrain_projection = m_camera.projection();
+    if (m_terrain_lod.active()) {
+        terrain_projection.far_plane = 50'000.0;
+        clearPreviewTerrain(true);
+    } else if (!terrainLodWorld()) {
+        processPreviewTerrain();
+    }
+    m_renderer->setCamera(m_camera.pose(), terrain_projection);
+    bool const presentation_succeeded = m_renderer->render(
         players,
         debug_hud_input,
         m_density_scale,
         std::chrono::steady_clock::now() + ANDROID_PRESENT_WAIT_BUDGET
-    ));
+    );
+    m_presentation_succeeded = presentation_succeeded;
+    client::RendererRuntimeInfo const runtime = m_renderer->runtimeInfo();
+    reportTerrainPhase(runtime);
+    if (presentation_succeeded && runtime.terrain_lod_active
+        && m_terrain_lod_reported_columns != runtime.terrain_lod_actual_column_count) {
+        __android_log_print(
+            ANDROID_LOG_INFO, "MinecraftCloneLOD",
+            "presented model=%s leaves=%u actual_columns=%u faces=%u submitted=%llu",
+            shared::TERRAIN_LOD_MODEL.data(), runtime.terrain_lod_leaf_count,
+            runtime.terrain_lod_actual_column_count, runtime.chunk_draw_face_count,
+            static_cast<unsigned long long>(runtime.submitted_frame_count)
+        );
+        if (auto const* actual = authoritativeWorld()) {
+            __android_log_print(
+                ANDROID_LOG_INFO, "MinecraftCloneLOD", "source chunks=%llu surface_tiles=%llu",
+                static_cast<unsigned long long>(actual->residentChunkCount()),
+                static_cast<unsigned long long>(actual->surfaceMetadataTileCount())
+            );
+
+        }
+        m_terrain_lod_reported_columns = runtime.terrain_lod_actual_column_count;
+    }
+    if (loading_status.state == client::WorldLoadingState::ReadyForStart) {
+        client::RendererFrameProgress const frame_progress = m_renderer->frameProgress();
+        if (m_loading_prompt_frame_target.has_value()
+            && frame_progress.submitted.has_value()
+            && frame_progress.submitted->swapchain_generation
+                != m_loading_prompt_frame_target->swapchain_generation) {
+            m_loading_prompt_frame_target.reset();
+            m_loading_prompt_frame_completed = false;
+        }
+        if (!m_loading_prompt_frame_target.has_value()
+            && presentation_succeeded
+            && frame_progress.submitted.has_value()) {
+            m_loading_prompt_frame_target = frame_progress.submitted;
+        }
+        if (!m_loading_prompt_frame_completed
+            && m_loading_prompt_frame_target.has_value()
+            && frame_progress.completed.has_value()
+            && frame_progress.completed->swapchain_generation
+                == m_loading_prompt_frame_target->swapchain_generation
+            && frame_progress.completed->sequence >= m_loading_prompt_frame_target->sequence) {
+            static_cast<void>(markLoadingPromptRendered(std::chrono::steady_clock::now()));
+            m_loading_prompt_frame_completed = true;
+        }
+    } else {
+        m_loading_prompt_frame_target.reset();
+        m_loading_prompt_frame_completed = false;
+    }
     if (m_input.consumeReloadRequest()) {
         m_renderer->hotReload();
     }
+}
+
+void AndroidPlayerClient::reportTerrainPhase(client::RendererRuntimeInfo const& runtime)
+{
+    static constexpr std::chrono::seconds LOG_INTERVAL{1};
+    static constexpr uint32_t MAXIMUM_RECORDS = 96U;
+    auto const now = std::chrono::steady_clock::now();
+    if (m_terrain_phase_log_records >= MAXIMUM_RECORDS
+        || now - m_terrain_phase_last_logged < LOG_INTERVAL) {
+        return;
+    }
+    m_terrain_phase_last_logged = now;
+    ++m_terrain_phase_log_records;
+    auto const identity = activeTerrainIdentity();
+    auto const epoch = activeCoverageEpoch();
+    auto const status = worldLoadingStatus();
+    __android_log_print(
+        ANDROID_LOG_INFO, "MinecraftClonePhase",
+        "record=%u steady_ns=%lld renderer_generation=%llu source_ready=%d root_ready=%d "
+        "session_identity_available=%d join_epoch_observable=0 coverage_epoch=%llu "
+        "terrain_version=%u revision=%llu seed=%llu loading_state=%u full_ready=%d "
+        "profiles=%u required=%u runtime_active=%d runtime_job_observable=0 runtime_capture_observable=0 "
+        "renderer_active=%d upload_pending=%d uploaded_faces=%llu actual_columns=%u leaves=%u "
+        "faces=%u draw_faces=%u preview_meshes=%u submitted=%llu presented=%d",
+        m_terrain_phase_log_records,
+        static_cast<long long>(std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count()),
+        static_cast<unsigned long long>(m_renderer_generation),
+        terrainLodWorld() != nullptr, terrainLodRoot() != nullptr, identity.has_value(),
+        static_cast<unsigned long long>(epoch.value_or(0U)),
+        identity ? identity->terrain_version : 0U,
+        static_cast<unsigned long long>(identity ? identity->revision : 0U),
+        static_cast<unsigned long long>(identity ? identity->seed : 0U),
+        static_cast<uint32_t>(status.state), status.playable_sphere_ready,
+        status.resident_authoritative_columns, status.required_authoritative_columns,
+        m_terrain_lod.active(), runtime.terrain_lod_active, runtime.terrain_lod_upload_pending,
+        static_cast<unsigned long long>(runtime.terrain_lod_uploaded_face_count),
+        runtime.terrain_lod_actual_column_count, runtime.terrain_lod_leaf_count,
+        runtime.chunk_face_count, runtime.chunk_draw_face_count, runtime.height_tile_mesh_count,
+        static_cast<unsigned long long>(runtime.submitted_frame_count), m_presentation_succeeded
+    );
+}
+
+void AndroidPlayerClient::updateLoadingPresentation(client::WorldLoadingStatus const& status)
+{
+    if (status.state == client::WorldLoadingState::Playing) {
+        if (m_loading_overlay_active) {
+            m_renderer->clearMapImage();
+            m_renderer->clearGuiText();
+            m_renderer->setDebugHudEnabled(m_debug_hud_enabled);
+            m_loading_map_snapshot.reset();
+            m_loading_overlay_active = false;
+        }
+        return;
+    }
+
+    m_loading_overlay_active = true;
+    m_renderer->setDebugHudEnabled(false);
+    if (status.map_snapshot != m_loading_map_snapshot) {
+        m_loading_map_snapshot = status.map_snapshot;
+        auto const image = status.map_snapshot
+            ? client::rasterizeGenerationMap(*status.map_snapshot)
+            : std::nullopt;
+        if (image) {
+            static_cast<void>(m_renderer->setMapImage(image->width, image->height, image->rgba));
+        } else {
+            m_renderer->clearMapImage();
+        }
+    }
+
+    static constexpr std::array<std::string_view, 8U> STAGE_LABELS{
+        "Tectonics", "Coasts", "Initial drainage", "Provisional climate",
+        "Terrain erosion", "Final climate", "Final drainage", "Atlas complete",
+    };
+    std::string text;
+    if (status.state == client::WorldLoadingState::Failed) {
+        text = "World preparation failed: " + status.error;
+    } else if (status.state == client::WorldLoadingState::Cancelled) {
+        text = "World preparation cancelled";
+    } else if (status.state == client::WorldLoadingState::ReadyForStart) {
+        text = "Press any key to start";
+    } else if (status.state == client::WorldLoadingState::Starting) {
+        text = "Starting...";
+    } else if (status.atlas_ready) {
+        text = "Preparing safe spawn and generated neighborhood";
+    } else {
+        uint32_t const stage = std::min(
+            static_cast<uint32_t>(status.generation_stage),
+            static_cast<uint32_t>(STAGE_LABELS.size() - 1U)
+        );
+        text = std::string{ STAGE_LABELS[stage] } + " " + std::to_string(status.generation_completed)
+            + "/" + std::to_string(status.generation_total);
+        if (!status.map_snapshot) {
+            text += "\nWorld map pending its first generated stage";
+        }
+    }
+    if (status.request_accepted_at != std::chrono::steady_clock::time_point{}) {
+        auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - status.request_accepted_at
+        );
+        text += "\nElapsed " + std::to_string(elapsed.count() / 1'000) + "."
+            + std::to_string((elapsed.count() / 100) % 10) + "s";
+    }
+    text += "\nInitial sphere " + std::to_string(status.initial_sphere_ready_chunks)
+        + "/" + std::to_string(status.initial_sphere_required_chunks)
+        + "  Playable sphere " + std::to_string(status.playable_sphere_ready_chunks)
+        + "/" + std::to_string(status.playable_sphere_required_chunks);
+    m_renderer->setGuiText(text);
 }
 
 double AndroidPlayerClient::maximumUnobstructedCameraDistance(
     client::PlayerPresentationPosition const& local_position
 ) const noexcept
 {
-    if (m_camera_perspective == client::CameraPerspective::FirstPerson || !m_chunk_mesh) {
+    shared::SparseWorld const* const world = authoritativeWorld();
+    if (m_camera_perspective == client::CameraPerspective::FirstPerson || world == nullptr) {
         return client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
     }
 
-    shared::Chunk const& chunk = shared::canonicalWorld().chunk();
     glm::dvec3 const eye = client::localPlayerEyePosition(local_position);
     client::PlayerCameraView const intended_camera = client::resolveLocalPlayerCamera(
         local_position,
@@ -245,10 +448,19 @@ double AndroidPlayerClient::maximumUnobstructedCameraDistance(
             .z = static_cast<int64_t>(std::floor(probe.z)),
         };
         std::optional<shared::WorldCoordinate> const normalized = shared::WorldBounds::normalize(coordinate);
-        if (!normalized || shared::WorldBounds::chunkCoordinate(*normalized) != chunk.coordinate()) {
+        if (!normalized) {
             return false;
         }
-        if (chunk.blockAt(shared::WorldBounds::blockCoordinate(*normalized)) == shared::Block::Stone) {
+        shared::Chunk const* const chunk = world->residentChunk(
+            shared::WorldBounds::chunkCoordinate(*normalized)
+        );
+        if (chunk == nullptr) {
+            return false;
+        }
+        std::optional<shared::Block> const block = chunk->blockAt(
+            shared::WorldBounds::blockCoordinate(*normalized)
+        );
+        if (block && shared::isSolidBlock(*block)) {
             return true;
         }
         return false;
@@ -293,8 +505,116 @@ int32_t AndroidPlayerClient::handleInputEvent(android_app* const app, AInputEven
     if (self == nullptr) {
         return 0;
     }
-    bool const vertical_handled = self->updateVerticalInput(event);
-    return self->m_input.handle(event) != 0 || vertical_handled ? 1 : 0;
+    try {
+        return self->handleGameInputEvent(event);
+    } catch (std::exception const& error) {
+        try {
+            CORE_ERROR("Android input event failed: {}", error.what());
+        } catch (...) {
+        }
+        self->stop();
+    } catch (...) {
+        try {
+            CORE_ERROR("Android input event failed with an unknown exception");
+        } catch (...) {
+        }
+        self->stop();
+    }
+    return 1;
+}
+
+int32_t AndroidPlayerClient::handleGameInputEvent(AInputEvent const* const event)
+{
+    client::WorldLoadingStatus const loading_status = worldLoadingStatus();
+    bool const playing = loading_status.state == client::WorldLoadingState::Playing;
+    int32_t const event_type = AInputEvent_getType(event);
+    if (event_type == AINPUT_EVENT_TYPE_KEY) {
+        int32_t const action = AKeyEvent_getAction(event);
+        int32_t const key_code = AKeyEvent_getKeyCode(event);
+        bool const key_is_trackable = key_code >= 0
+            && key_code < static_cast<int32_t>(m_loading_transition_keys.size());
+        if (key_is_trackable) {
+            uint32_t const key_index = static_cast<uint32_t>(key_code);
+            if (m_loading_transition_keys.test(key_index)) {
+                if (action == AKEY_EVENT_ACTION_UP) {
+                    m_loading_transition_keys.reset(key_index);
+                }
+                return 1;
+            }
+        }
+        if (!playing) {
+            if (key_code == AKEYCODE_BACK || key_code == AKEYCODE_ESCAPE) {
+                return m_input.handle(event) != 0 ? 1 : 0;
+            }
+            if (action == AKEY_EVENT_ACTION_DOWN) {
+                if (key_is_trackable) {
+                    m_loading_transition_keys.set(static_cast<uint32_t>(key_code));
+                }
+                if (loading_status.state == client::WorldLoadingState::ReadyForStart) {
+                    static_cast<void>(acceptLoadingStartInput(std::chrono::steady_clock::now()));
+                }
+            }
+            return 1;
+        }
+        if (key_code == AKEYCODE_F6 || key_code == AKEYCODE_6) {
+            if (action == AKEY_EVENT_ACTION_DOWN || action == AKEY_EVENT_ACTION_UP) {
+                m_input_actions.observeCycle(action == AKEY_EVENT_ACTION_DOWN);
+            }
+            return 1;
+        }
+        bool const vertical_handled = updateVerticalInput(event);
+        return m_input.handle(event) != 0 || vertical_handled ? 1 : 0;
+    }
+
+    bool const is_touch_event = event_type == AINPUT_EVENT_TYPE_MOTION
+        && (static_cast<uint32_t>(AInputEvent_getSource(event))
+            & static_cast<uint32_t>(AINPUT_SOURCE_TOUCHSCREEN)) != 0U;
+    if (is_touch_event && (!playing || m_loading_touch_pointer_mask != 0U)) {
+        int32_t const action = AMotionEvent_getAction(event);
+        int32_t const action_mask = action & AMOTION_EVENT_ACTION_MASK;
+        if (!playing
+            && loading_status.state == client::WorldLoadingState::ReadyForStart
+            && (action_mask == AMOTION_EVENT_ACTION_DOWN
+                || action_mask == AMOTION_EVENT_ACTION_POINTER_DOWN)) {
+            static_cast<void>(acceptLoadingStartInput(std::chrono::steady_clock::now()));
+        }
+        consumeLoadingTouch(event);
+        return 1;
+    }
+    if (!playing) {
+        return 1;
+    }
+    return m_input.handle(event) != 0 ? 1 : 0;
+}
+
+void AndroidPlayerClient::consumeLoadingTouch(AInputEvent const* const event)
+{
+    int32_t const action = AMotionEvent_getAction(event);
+    int32_t const action_mask = action & AMOTION_EVENT_ACTION_MASK;
+    if (action_mask == AMOTION_EVENT_ACTION_CANCEL) {
+        m_loading_touch_pointer_mask = 0U;
+        return;
+    }
+    if (action_mask != AMOTION_EVENT_ACTION_DOWN
+        && action_mask != AMOTION_EVENT_ACTION_POINTER_DOWN
+        && action_mask != AMOTION_EVENT_ACTION_UP
+        && action_mask != AMOTION_EVENT_ACTION_POINTER_UP) {
+        return;
+    }
+
+    uint32_t const action_index = static_cast<uint32_t>(
+        (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT
+    );
+    int32_t const pointer_id = AMotionEvent_getPointerId(event, action_index);
+    if (pointer_id < 0 || pointer_id >= 32) {
+        return;
+    }
+    uint32_t const pointer_mask = 1U << static_cast<uint32_t>(pointer_id);
+    if (action_mask == AMOTION_EVENT_ACTION_DOWN || action_mask == AMOTION_EVENT_ACTION_POINTER_DOWN) {
+        m_loading_touch_pointer_mask |= pointer_mask;
+    } else {
+        m_loading_touch_pointer_mask &= ~pointer_mask;
+    }
 }
 
 bool AndroidPlayerClient::updateVerticalInput(AInputEvent const* const event) noexcept
@@ -351,12 +671,15 @@ void AndroidPlayerClient::onAppCommand(int32_t const command)
         break;
     case APP_CMD_PAUSE:
     case APP_CMD_STOP:
+        m_resumed = false;
+        [[fallthrough]];
     case APP_CMD_LOST_FOCUS:
         CORE_INFO("Android rendering paused by app command {}", command);
-        m_resumed = false;
         m_has_focus = false;
         m_input.clear();
+        m_loading_touch_pointer_mask = 0U;
         m_ascend_input.clear();
+        m_input_actions.reset();
         m_descend_pressed = false;
         break;
     case APP_CMD_GAINED_FOCUS:
@@ -373,9 +696,16 @@ void AndroidPlayerClient::onAppCommand(int32_t const command)
 void AndroidPlayerClient::onConnectionStateReset()
 {
     m_input.clear();
+    m_loading_transition_keys.reset();
+    m_loading_touch_pointer_mask = 0U;
+    m_loading_prompt_frame_target.reset();
+    m_loading_prompt_frame_completed = false;
     m_ascend_input.clear();
+    m_input_actions.reset();
     m_descend_pressed = false;
     clearPreviewTerrain(true);
+    m_terrain_lod.reset(m_renderer.get());
+    m_terrain_lod_reported_columns.reset();
 }
 
 void AndroidPlayerClient::refreshPreviewTerrain(
@@ -525,7 +855,7 @@ void AndroidPlayerClient::processPreviewTerrain()
             shared::HeightTileSurfaceDetail::Fine,
             shared::HeightTileSurfaceDetail::Fine,
         };
-        for (size_t index = 0U; index < neighbors.size(); ++index) {
+        for (uint32_t index = 0U; index < static_cast<uint32_t>(neighbors.size()); ++index) {
             neighbors[index] = heightTileResidency().resident(adjacent_keys[index]);
             if (neighbors[index]) {
                 neighbor_details[index] = m_preview_lod.detail(adjacent_keys[index]).value_or(
@@ -546,7 +876,7 @@ void AndroidPlayerClient::processPreviewTerrain()
             center_bridges = bridges->second;
         }
         std::array<client::PreviewMeshSeamNeighborSnapshot, 4> seam_neighbors;
-        for (size_t index = 0U; index < adjacent_keys.size(); ++index) {
+        for (uint32_t index = 0U; index < static_cast<uint32_t>(adjacent_keys.size()); ++index) {
             auto const base = m_visible_preview_mesh_bases.find(adjacent_keys[index]);
             if (base == m_visible_preview_mesh_bases.end()) {
                 continue;
@@ -555,10 +885,11 @@ void AndroidPlayerClient::processPreviewTerrain()
             seam_neighbors[index] = {
                 .mesh = &base->second,
                 .bridges = bridges == m_visible_preview_mesh_seam_bridges.end() ? nullptr : &bridges->second,
+                .surface = neighbors[index] ? &neighbors[index]->surface() : nullptr,
             };
         }
         client::PreviewMeshSeamPublicationPlan plan = client::planPreviewMeshSeamPublication(
-            mesh, center_bridges, seam_neighbors
+            mesh, center_bridges, seam_neighbors, &tile->surface()
         );
         client::PreviewMeshSeamPublicationBatch const batch = client::buildPreviewMeshSeamPublicationBatch(
             plan, seam_neighbors
@@ -576,7 +907,7 @@ void AndroidPlayerClient::processPreviewTerrain()
         bool const first_mesh = m_visible_preview_mesh_bases.empty();
         m_visible_preview_mesh_bases.insert_or_assign(key, std::move(mesh));
         m_visible_preview_mesh_seam_bridges.insert_or_assign(key, std::move(plan.center_bridges));
-        for (size_t index = 0U; index < adjacent_keys.size(); ++index) {
+        for (uint32_t index = 0U; index < static_cast<uint32_t>(adjacent_keys.size()); ++index) {
             if (plan.changed_neighbors[index]) {
                 m_visible_preview_mesh_seam_bridges.insert_or_assign(
                     adjacent_keys[index], std::move(plan.neighbor_bridges[index])
@@ -647,10 +978,13 @@ void AndroidPlayerClient::createWindowResources()
             .prefer_mesh_shaders = false,
         }
     );
-    m_renderer->setDebugHudEnabled(true);
-    if (m_chunk_mesh != nullptr) {
-        m_renderer->setChunkMesh(*m_chunk_mesh);
-    }
+    ++m_renderer_generation;
+    m_renderer->setDebugHudEnabled(m_debug_hud_enabled);
+    m_loading_map_snapshot.reset();
+    m_loading_overlay_active = false;
+    m_loading_prompt_frame_target.reset();
+    m_loading_prompt_frame_completed = false;
+    m_frame_completion_tracking_enabled = false;
     m_visible_preview_mesh_bases.clear();
     m_visible_preview_mesh_seam_bridges.clear();
     m_preview_lod.clear();
@@ -663,9 +997,17 @@ void AndroidPlayerClient::createWindowResources()
 
 void AndroidPlayerClient::destroyWindowResources()
 {
+    m_terrain_lod.reset(m_renderer.get());
+    m_terrain_lod_reported_columns.reset();
     if (m_renderer != nullptr) {
         CORE_INFO("Destroying Android renderer before releasing its native window");
+        if (m_frame_completion_tracking_enabled) {
+            m_renderer->setFrameCompletionTracking(false);
+        }
     }
+    m_frame_completion_tracking_enabled = false;
+    m_loading_prompt_frame_target.reset();
+    m_loading_prompt_frame_completed = false;
     for (auto const& [key, mesh] : m_visible_preview_mesh_bases) {
         static_cast<void>(mesh);
         m_preview_mesh_work.enqueue(key);
@@ -675,21 +1017,7 @@ void AndroidPlayerClient::destroyWindowResources()
     m_preview_lod.clear();
     m_renderer.reset();
     m_input.clear();
-}
-
-void AndroidPlayerClient::pollOneEvent(int32_t const timeout_millis)
-{
-    void* data = nullptr;
-    int32_t const result = ALooper_pollOnce(
-        timeout_millis,
-        nullptr,
-        nullptr,
-        &data
-    );
-    if (result >= 0 && data != nullptr) {
-        auto* const source = static_cast<android_poll_source*>(data);
-        source->process(&m_app, source);
-    }
+    m_loading_touch_pointer_mask = 0U;
 }
 
 void AndroidPlayerClient::drainEvents()
@@ -713,7 +1041,10 @@ void AndroidPlayerClient::stop() noexcept
     m_resumed = false;
     m_has_focus = false;
     m_ascend_input.clear();
+    m_input_actions.reset();
     m_descend_pressed = false;
+    m_loading_transition_keys.reset();
+    m_loading_touch_pointer_mask = 0U;
     try {
         destroyWindowResources();
     } catch (...) {

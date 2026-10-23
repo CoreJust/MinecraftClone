@@ -6,6 +6,7 @@
 #include <bit>
 #include <cstdint>
 #include <numbers>
+#include <string>
 
 namespace
 {
@@ -85,7 +86,10 @@ TEST(NumpyRandomTests, ScalarTransformsMatchOneNumPySeed42Stream)
     for (uint64_t expected : EXPECTED_VONMISES_BITS)
     {
         EXPECT_EQ(
-            std::bit_cast<uint64_t>(random.vonmises(VONMISES_MEAN, VONMISES_CONCENTRATION)),
+            std::bit_cast<uint64_t>(random.vonmises(generation::detail::VonMisesParameters{
+                .mean = VONMISES_MEAN,
+                .concentration = VONMISES_CONCENTRATION,
+            })),
             expected
         );
     }

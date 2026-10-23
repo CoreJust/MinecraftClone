@@ -26,6 +26,30 @@ WrappedBounds boundsNearestToCamera(
     glm::dvec3 camera_position
 ) noexcept;
 
+inline constexpr float WORLD_CURVATURE_RADIUS = 131'072.0F;
+inline constexpr float MIN_WORLD_VISIBILITY_RADIUS = 16'384.0F;
+inline constexpr float MAX_WORLD_VISIBILITY_RADIUS = 32'768.0F;
+inline constexpr double WORLD_VISIBILITY_SEA_LEVEL = 384.0;
+
+[[nodiscard]]
+float worldVisibilityRadius(double camera_world_z) noexcept;
+
+[[nodiscard]]
+double curvedWorldFarPlane(double camera_altitude, double current_far_plane) noexcept;
+
+[[nodiscard]]
+glm::vec3 curvedWorldPosition(glm::vec3 camera_relative_position) noexcept;
+
+[[nodiscard]]
+WrappedBounds curvedBoundsNearestToCamera(
+    glm::vec3 minimum,
+    glm::vec3 maximum,
+    glm::dvec3 camera_position
+) noexcept;
+
+[[nodiscard]]
+bool insideWorldVisibility(WrappedBounds const& camera_relative_bounds, float visibility_radius) noexcept;
+
 class VulkanFrustum final {
 public:
     static constexpr uint8_t ALL_PLANES = 63U;

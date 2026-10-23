@@ -1,10 +1,12 @@
 #pragma once
 
+#include <shared/corelang/ExecutionTypes.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/World.hpp>
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -227,6 +229,13 @@ public:
     [[nodiscard]]
     uint64_t evidenceCount() const noexcept;
 
+    // Empty for the legacy text frontend; CoreLang plans retain the selected backend receipt.
+    [[nodiscard]]
+    std::optional<corelang::BackendReceipt> const& executionReceipt() const noexcept
+    {
+        return m_execution_receipt;
+    }
+
 private:
     struct Counts final {
         uint64_t total_ticks;
@@ -250,10 +259,16 @@ private:
     std::vector<ScenarioOperation> m_operations;
     uint64_t m_total_ticks;
     uint64_t m_evidence_count;
+    std::optional<corelang::BackendReceipt> m_execution_receipt;
 
     friend class scenario_detail::ScenarioParser;
     friend class scenario_detail::CoreLangScenarioLowerer;
     friend class scenario_detail::ScenarioPlanCollector;
+};
+
+struct ScenarioExecutionOptions final {
+    corelang::Backend backend{corelang::Backend::Interpreter};
+    corelang::ExecutionLimits limits{};
 };
 
 [[nodiscard]]
@@ -263,13 +278,21 @@ std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenario(
     ScenarioLimits const& limits
 );
 
-// Selects the finite legacy frontend or the CoreLang frontend from its explicit
-// source header. Both frontends lower to the same immutable ScenarioPlan.
+// Compiles an explicitly versioned CoreLang source into an immutable ScenarioPlan.
 [[nodiscard]]
 std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenarioSource(
     std::string_view filename,
     std::string_view source,
     ScenarioLimits const& limits,
+    ScenarioCancellation const* cancellation = nullptr
+);
+
+[[nodiscard]]
+std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenarioSource(
+    std::string_view filename,
+    std::string_view source,
+    ScenarioLimits const& limits,
+    ScenarioExecutionOptions const& execution,
     ScenarioCancellation const* cancellation = nullptr
 );
 

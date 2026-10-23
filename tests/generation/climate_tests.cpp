@@ -1,26 +1,36 @@
+#include "Numerics.hpp"
+
+#include <generation/Generation.hpp>
 #include <generation/GenerationStages.hpp>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <vector>
 
 namespace
 {
 
-generation::GenerationConfiguration configurationFor(uint32_t resolution, uint64_t seed = 42U)
+struct ConfigurationInput final {
+    uint32_t resolution;
+    std::optional<uint64_t> seed = std::nullopt;
+};
+
+generation::GenerationConfiguration configurationFor(ConfigurationInput const input)
 {
     generation::GenerationConfiguration configuration;
-    configuration.resolution = resolution;
-    configuration.seed = seed;
+    configuration.resolution = input.resolution;
+    configuration.seed = input.seed.value_or(42U);
     return configuration;
 }
 
@@ -35,8 +45,10 @@ generation::detail::ClimateFields simulate(
     return generation::detail::simulateClimate(
         configuration,
         elevation,
-        iterations,
-        0.0F,
+        generation::detail::ClimateParameters{
+            .iterations = iterations,
+            .sea_level = 0.0F,
+        },
         ocean,
         lakes,
         generation::GenerationStage::ProvisionalClimate,
@@ -47,7 +59,7 @@ generation::detail::ClimateFields simulate(
 
 std::vector<float> ridgeTerrain(uint32_t resolution)
 {
-    std::vector<float> elevation(resolution * resolution);
+    std::vector<float> elevation(static_cast<std::vector<float>::size_type>(resolution) * resolution);
     for (uint32_t y = 0U; y < resolution; ++y)
     {
         for (uint32_t x = 0U; x < resolution; ++x)
@@ -73,7 +85,7 @@ std::vector<float> ridgeTerrain(uint32_t resolution)
 void expectFixtureSamples(std::string const& name, std::span<float const> values)
 {
     std::vector<float> samples;
-    samples.reserve(16U * 16U);
+    samples.reserve(static_cast<std::vector<float>::size_type>(16U) * 16U);
     for (uint32_t y = 0U; y < 256U; y += 16U) {
         for (uint32_t x = 0U; x < 256U; x += 16U) {
             samples.push_back(values[static_cast<size_t>(y) * 256U + x]);
@@ -105,8 +117,11 @@ generation::detail::CoastalFields seed42Coast(generation::GenerationConfiguratio
 TEST(ClimateTests, ToroidalInsolationAppliesLapseAndProducesRepeatableFields)
 {
     constexpr uint32_t RESOLUTION = 16U;
-    generation::GenerationConfiguration const configuration = configurationFor(RESOLUTION);
-    std::vector<float> elevation(RESOLUTION * RESOLUTION, 1.0F);
+    generation::GenerationConfiguration const configuration = configurationFor({ .resolution = RESOLUTION });
+    std::vector<float> elevation(
+        static_cast<std::vector<float>::size_type>(RESOLUTION) * RESOLUTION,
+        1.0F
+    );
 
     generation::detail::ClimateFields const first = simulate(configuration, elevation, 24U);
     generation::detail::ClimateFields const second = simulate(configuration, elevation, 24U);
@@ -117,7 +132,7 @@ TEST(ClimateTests, ToroidalInsolationAppliesLapseAndProducesRepeatableFields)
 
     ASSERT_EQ(first.temperature.size(), elevation.size());
     EXPECT_FLOAT_EQ(first.temperature[0], -24.5F);
-    EXPECT_FLOAT_EQ(first.temperature[8U * RESOLUTION], 23.5F);
+    EXPECT_FLOAT_EQ(first.temperature[static_cast<std::vector<float>::size_type>(8U) * RESOLUTION], 23.5F);
     for (size_t index = 0U; index < elevation.size(); ++index)
     {
         EXPECT_FLOAT_EQ(first.temperature[index] - higher.temperature[index], 6.5F);
@@ -134,7 +149,10 @@ TEST(ClimateTests, ToroidalInsolationAppliesLapseAndProducesRepeatableFields)
 TEST(ClimateTests, ReversingWindMovesRidgeRainfallToTheOppositeSlope)
 {
     constexpr uint32_t RESOLUTION = 96U;
-    generation::GenerationConfiguration east_configuration = configurationFor(RESOLUTION, 7U);
+    generation::GenerationConfiguration east_configuration = configurationFor({
+        .resolution = RESOLUTION,
+        .seed = 7U,
+    });
     generation::GenerationConfiguration west_configuration = east_configuration;
     west_configuration.wind_sign = -1;
     std::vector<float> const elevation = ridgeTerrain(RESOLUTION);
@@ -183,10 +201,16 @@ TEST(ClimateTests, Seed42ProvisionalAndFinalFieldsMatchRetainedStageBytes)
     configuration.resolution = 256U;
     generation::detail::CoastalFields const coast = seed42Coast(configuration);
     generation::detail::HydrologyFields const initial = generation::detail::buildHydrology(
-        configuration, coast.elevation, {}, {}, 0U, 0.0F,
-        generation::GenerationStage::InitialDrainage, {}, {});
+        configuration, coast.elevation, {}, {},
+        generation::detail::HydrologyParameters{
+            .erosion_steps = 0U,
+            .sea_level = 0.0F,
+            .stage = generation::GenerationStage::InitialDrainage,
+        },
+        {}, {});
     generation::detail::ClimateFields const provisional = generation::detail::simulateClimate(
-        configuration, coast.elevation, 24U, 0.0F,
+        configuration, coast.elevation,
+        generation::detail::ClimateParameters{.iterations = 24U, .sea_level = 0.0F},
         initial.ocean_mask, initial.lake_mask,
         generation::GenerationStage::ProvisionalClimate, {}, {});
     expectFixtureSamples("stage__provisional_climate_temperature", provisional.temperature);
@@ -195,9 +219,15 @@ TEST(ClimateTests, Seed42ProvisionalAndFinalFieldsMatchRetainedStageBytes)
 
     generation::detail::HydrologyFields const eroded = generation::detail::buildHydrology(
         configuration, coast.elevation, provisional.precipitation, provisional.temperature,
-        3U, 0.0F, generation::GenerationStage::TerrainErosion, {}, {});
+        generation::detail::HydrologyParameters{
+            .erosion_steps = 3U,
+            .sea_level = 0.0F,
+            .stage = generation::GenerationStage::TerrainErosion,
+        },
+        {}, {});
     generation::detail::ClimateFields const final = generation::detail::simulateClimate(
-        configuration, eroded.elevation, 80U, 0.0F,
+        configuration, eroded.elevation,
+        generation::detail::ClimateParameters{.iterations = 80U, .sea_level = 0.0F},
         eroded.ocean_mask, eroded.lake_mask,
         generation::GenerationStage::FinalClimate, {}, {});
     expectFixtureSamples("stage__final_climate_temperature", final.temperature);

@@ -1,3 +1,6 @@
+#include "Numerics.hpp"
+
+#include <generation/Generation.hpp>
 #include <generation/GenerationStages.hpp>
 
 #include <gtest/gtest.h>
@@ -7,10 +10,12 @@
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <span>
 #include <stdexcept>
 #include <stop_token>
+#include <string>
 #include <vector>
 
 namespace

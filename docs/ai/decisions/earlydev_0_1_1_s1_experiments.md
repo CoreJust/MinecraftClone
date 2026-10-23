@@ -15,6 +15,8 @@ parameter variants and figure sources are retained separately at
 The stage-capture rerun matches every frozen final atlas array exactly.
 [Selection rationale](earlydev_0_1_1_s1_rationale.md) explains alternatives,
 ordering and parameter sensitivity without claiming an optimized physical model.
+The PDF predates the added loading-map, 0.1.5, platform-performance and shared
+2D testing requirements; current S1 contract notes supersede those older limits.
 
 ## Measured results
 
@@ -82,8 +84,10 @@ Earlier results remain visible for comparison:
 ## Production bounds and limits
 
 Measured host thresholds, declared before final qualification, were <5 s and
-<128 MiB process RSS at 256²; all passed. Proposed native preparation targets
-are 5 s desktop/10 s Android, off the gameplay tick. Reserve 16 MiB for default
+<128 MiB process RSS at 256²; all passed. The later owner
+[loading/performance contract](earlydev_0_1_1_s1_performance.md) supersedes the
+provisional 5 s desktop/10 s Android preparation targets; the 4 s desktop
+initial load includes more than atlas computation. Reserve 16 MiB for default
 pinned atlas, 96 MiB build scratch and 32 MiB regional retention, separately from
 in-flight/preview/chunk budgets; explicit 512² mode reserves 32 MiB atlas and
 192 MiB scratch. These are admission defaults to verify on the native port,

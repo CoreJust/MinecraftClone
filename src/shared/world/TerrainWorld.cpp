@@ -1,5 +1,7 @@
 #include <shared/world/TerrainWorld.hpp>
 
+#include <shared/world/Chunk.hpp>
+
 #include <generation/Generation.hpp>
 
 #include <algorithm>
@@ -7,13 +9,17 @@
 #include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
+#include <iterator>
 #include <limits>
 #include <numbers>
 #include <stdexcept>
 #include <stop_token>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -45,7 +51,7 @@ uint32_t regionLevelIndex(shared::TerrainRegionKey const key)
     return static_cast<uint32_t>(std::distance(shared::TERRAIN_REGION_EXTENTS.begin(), target));
 }
 
-void throwIfCancelled(std::stop_token const cancellation)
+void throwIfCancelled(std::stop_token const& cancellation)
 {
     if (cancellation.stop_requested()) {
         throw generation::GenerationCancelled{};
@@ -79,6 +85,27 @@ struct FieldValues final {
     double water_level;
     double lake_mask;
     double river_mask;
+};
+
+struct TerrainWorldPosition final {
+    double x;
+    double y;
+};
+
+struct TerrainDetailState final {
+    double accumulated_detail;
+    double previous_contribution;
+};
+
+struct TerrainLevelContributionStep final {
+    uint32_t level_index;
+    double previous_contribution;
+};
+
+struct TerrainRegionAxisSample final {
+    double world_coordinate;
+    uint32_t origin;
+    uint32_t extent;
 };
 
 [[nodiscard]]
@@ -305,15 +332,13 @@ double levelContribution(
     generation::GlobalAtlas const& atlas,
     FieldValues const& fields,
     uint64_t const seed,
-    double world_x,
-    double world_y,
-    uint32_t const level_index,
-    double const previous_contribution
+    TerrainWorldPosition const& position,
+    TerrainLevelContributionStep const& step
 ) noexcept
 {
-    uint32_t const level = shared::TERRAIN_REGION_EXTENTS[level_index];
-    double const ux = world_x / level;
-    double const uy = world_y / level;
+    uint32_t const level = shared::TERRAIN_REGION_EXTENTS[step.level_index];
+    double const ux = position.x / level;
+    double const uy = position.y / level;
     int64_t const ix = static_cast<int64_t>(std::floor(ux));
     int64_t const iy = static_cast<int64_t>(std::floor(uy));
     double fx = ux - static_cast<double>(ix);
@@ -332,17 +357,17 @@ double levelContribution(
         + fx * fy * d
     );
 
-    double const amplitude = DETAIL_AMPLITUDES_KM[level_index];
-    double ancestry = 0.75 + 0.25 * std::tanh(std::abs(previous_contribution) / std::max(amplitude, 1e-12));
-    if (level_index != 0U) {
-        uint32_t const parent_level = shared::TERRAIN_REGION_EXTENTS[level_index - 1U];
-        double const parent_x = std::fmod(world_x / parent_level, 1.0);
-        double const parent_y = std::fmod(world_y / parent_level, 1.0);
+    double const amplitude = DETAIL_AMPLITUDES_KM[step.level_index];
+    double ancestry = 0.75 + 0.25 * std::tanh(std::abs(step.previous_contribution) / std::max(amplitude, 1e-12));
+    if (step.level_index != 0U) {
+        uint32_t const parent_level = shared::TERRAIN_REGION_EXTENTS[step.level_index - 1U];
+        double const parent_x = std::fmod(position.x / parent_level, 1.0);
+        double const parent_y = std::fmod(position.y / parent_level, 1.0);
         double const cosine_product = std::cos(std::numbers::pi * parent_x)
             * std::cos(std::numbers::pi * parent_y);
         ancestry *= 1.0 - cosine_product * cosine_product;
     }
-    return amplitude * detailInfluence(atlas, fields, world_x, world_y) * ancestry * node_value;
+    return amplitude * detailInfluence(atlas, fields, position.x, position.y) * ancestry * node_value;
 }
 
 [[nodiscard]]
@@ -350,14 +375,13 @@ double finalSurfaceDetailContribution(
     generation::GlobalAtlas const& atlas,
     FieldValues const& fields,
     uint64_t const seed,
-    double const world_x,
-    double const world_y,
+    TerrainWorldPosition const& position,
     double const previous_contribution
 ) noexcept
 {
     constexpr uint32_t LEVEL = FINAL_SURFACE_DETAIL_EXTENT;
-    double const ux = world_x / LEVEL;
-    double const uy = world_y / LEVEL;
+    double const ux = position.x / LEVEL;
+    double const uy = position.y / LEVEL;
     int64_t const ix = static_cast<int64_t>(std::floor(ux));
     int64_t const iy = static_cast<int64_t>(std::floor(uy));
     double fx = ux - static_cast<double>(ix);
@@ -380,13 +404,13 @@ double finalSurfaceDetailContribution(
         std::abs(previous_contribution)
             / std::max(FINAL_SURFACE_DETAIL_AMPLITUDE_KM, 1e-12)
     );
-    double const parent_x = std::fmod(world_x / FINAL_SURFACE_DETAIL_PARENT_EXTENT, 1.0);
-    double const parent_y = std::fmod(world_y / FINAL_SURFACE_DETAIL_PARENT_EXTENT, 1.0);
+    double const parent_x = std::fmod(position.x / FINAL_SURFACE_DETAIL_PARENT_EXTENT, 1.0);
+    double const parent_y = std::fmod(position.y / FINAL_SURFACE_DETAIL_PARENT_EXTENT, 1.0);
     double const cosine_product = std::cos(std::numbers::pi * parent_x)
         * std::cos(std::numbers::pi * parent_y);
     ancestry *= 1.0 - cosine_product * cosine_product;
     return FINAL_SURFACE_DETAIL_AMPLITUDE_KM
-        * detailInfluence(atlas, fields, world_x, world_y)
+        * detailInfluence(atlas, fields, position.x, position.y)
         * ancestry
         * node_value;
 }
@@ -396,21 +420,18 @@ double finalSurfaceElevation(
     generation::GlobalAtlas const& atlas,
     FieldValues const& fields,
     uint64_t const seed,
-    double const world_x,
-    double const world_y,
-    double const accumulated_detail,
-    double const previous_contribution
+    TerrainWorldPosition const& position,
+    TerrainDetailState const& detail_state
 ) noexcept
 {
     double const contribution = finalSurfaceDetailContribution(
         atlas,
         fields,
         seed,
-        world_x,
-        world_y,
-        previous_contribution
+        position,
+        detail_state.previous_contribution
     );
-    double const updated_detail = accumulated_detail + contribution;
+    double const updated_detail = detail_state.accumulated_detail + contribution;
     double refined_elevation = fields.elevation + updated_detail;
     double const sea_level = static_cast<double>(atlas.sea_level);
     if (fields.elevation > sea_level) {
@@ -456,21 +477,19 @@ uint16_t mappedWaterHeight(double water_level, generation::GlobalAtlas const& at
 
 [[nodiscard]]
 bool regionAxisPosition(
-    double world_coordinate,
-    uint32_t origin,
-    uint32_t extent,
+    TerrainRegionAxisSample const& sample,
     double& position
 ) noexcept
 {
-    if (!std::isfinite(world_coordinate)) {
+    if (!std::isfinite(sample.world_coordinate)) {
         return false;
     }
-    position = wrapCoordinate(world_coordinate);
-    if (position == 0.0 && origin + extent == generation::WORLD_SIZE_BLOCKS) {
+    position = wrapCoordinate(sample.world_coordinate);
+    if (position == 0.0 && sample.origin + sample.extent == generation::WORLD_SIZE_BLOCKS) {
         position = WORLD_SIZE;
     }
-    return position >= static_cast<double>(origin)
-        && position <= static_cast<double>(origin + extent);
+    return position >= static_cast<double>(sample.origin)
+        && position <= static_cast<double>(sample.origin + sample.extent);
 }
 
 void validateAtlas(generation::GlobalAtlas const& atlas)
@@ -541,7 +560,8 @@ bool parseUnsignedField(
     if (!field.starts_with(name)) {
         return false;
     }
-    std::string_view const digits = field.substr(name.size());
+    std::string_view digits = field;
+    digits.remove_prefix(name.size());
     if (digits.empty() || (digits.size() > 1U && digits.front() == '0')) {
         return false;
     }
@@ -574,13 +594,20 @@ bool hasCanonicalConfigurationIdentity(
             if (separator == std::string_view::npos) {
                 return false;
             }
-            fields[index] = remaining.substr(0U, separator);
+            fields[index] = remaining;
+            fields[index].remove_suffix(remaining.size() - separator);
             remaining.remove_prefix(separator + 1U);
         }
     }
 
-    uint64_t model_revision = 0U;
     constexpr std::string_view SOURCE_PREFIX = "source-map-sha256=";
+    std::string_view source_map_hash = fields[2];
+    if (!source_map_hash.starts_with(SOURCE_PREFIX)) {
+        return false;
+    }
+    source_map_hash.remove_prefix(SOURCE_PREFIX.size());
+
+    uint64_t model_revision = 0U;
     if (fields[0] != "terrain-v2"
         || !parseUnsignedField(
             fields[1],
@@ -589,8 +616,7 @@ bool hasCanonicalConfigurationIdentity(
             generation::MODEL_REVISION,
             model_revision
         )
-        || !fields[2].starts_with(SOURCE_PREFIX)
-        || fields[2].substr(SOURCE_PREFIX.size()) != generation::MODEL_SOURCE_MAP_SHA256) {
+        || source_map_hash != generation::MODEL_SOURCE_MAP_SHA256) {
         return false;
     }
 
@@ -624,28 +650,24 @@ bool hasCanonicalConfigurationIdentity(
 
 [[nodiscard]]
 shared::TerrainColumn makeColumn(
-    double elevation,
-    double temperature,
-    double precipitation,
-    double water_level,
-    bool water_present,
+    double const elevation,
+    FieldValues const& fields,
+    bool const water_present,
     generation::GlobalAtlas const& atlas
 ) noexcept
 {
     shared::TerrainColumn column;
     column.highest_solid_z = mappedHeight(elevation, atlas);
-    column.water_height_z = mappedWaterHeight(water_level, atlas);
+    column.water_height_z = mappedWaterHeight(fields.water_level, atlas);
     column.water_present = water_present;
     column.submerged = column.highest_solid_z < atlas.block_sea_level;
     column.geological_elevation_km = elevation;
-    column.temperature_celsius = temperature;
-    column.precipitation = precipitation;
+    column.temperature_celsius = fields.temperature;
+    column.precipitation = fields.precipitation;
     column.top_material = column.submerged
         ? shared::Block::Dirt
-        : (temperature <= -2.0
-            ? shared::Block::Snow
-            : (precipitation > 0.20 ? shared::Block::Grass : shared::Block::Dirt));
-    column.ground_material = temperature <= -2.0 ? shared::Block::Ice : shared::Block::Dirt;
+        : (fields.temperature <= -2.0 ? shared::Block::Snow : shared::Block::Grass);
+    column.ground_material = fields.temperature <= -2.0 ? shared::Block::Ice : shared::Block::Dirt;
     column.ground_first_z = groundFirst(column.highest_solid_z, atlas.block_sea_level, column.submerged);
     column.ground_end_z = groundEnd(column.highest_solid_z, atlas.block_sea_level, column.submerged);
     return column;
@@ -672,12 +694,12 @@ Block TerrainColumn::materialAt(uint16_t const z, uint32_t const block_sea_level
     return Block::Stone;
 }
 
-TerrainColumn const* SurfaceTile::columnAt(BlockCoordinate const coordinate) const noexcept
+TerrainColumn const* SurfaceTile::columnAt(BlockCoordinate const block_coordinate) const noexcept
 {
-    if (!Chunk::isValid(coordinate)) {
+    if (!Chunk::isValid(block_coordinate)) {
         return nullptr;
     }
-    return &columns[static_cast<size_t>(coordinate.y) * Chunk::SIDE_LENGTH + coordinate.x];
+    return &columns[static_cast<size_t>(block_coordinate.y) * Chunk::SIDE_LENGTH + block_coordinate.x];
 }
 
 bool isValidTerrainIdentity(TerrainIdentity const& identity) noexcept
@@ -717,9 +739,7 @@ bool isValidTerrainColumn(
 
     Block const expected_top = column.submerged
         ? Block::Dirt
-        : (column.temperature_celsius <= -2.0
-            ? Block::Snow
-            : (column.precipitation > 0.20 ? Block::Grass : Block::Dirt));
+        : (column.temperature_celsius <= -2.0 ? Block::Snow : Block::Grass);
     Block const expected_ground = column.temperature_celsius <= -2.0 ? Block::Ice : Block::Dirt;
     return column.top_material == expected_top
         && column.ground_material == expected_ground
@@ -796,10 +816,11 @@ RegionalArtifact::Node RegionalArtifact::evaluate(double world_x, double world_y
         *m_atlas,
         fields,
         m_identity.seed,
-        world_x,
-        world_y,
-        m_level_index,
-        previous_contribution
+        TerrainWorldPosition{.x = world_x, .y = world_y},
+        TerrainLevelContributionStep{
+            .level_index = m_level_index,
+            .previous_contribution = previous_contribution,
+        }
     );
     accumulated_detail += contribution;
     double refined_elevation = base_elevation + accumulated_detail;
@@ -821,9 +842,7 @@ RegionalArtifact::Node RegionalArtifact::evaluate(double world_x, double world_y
     result.last_contribution = contribution;
     static_cast<TerrainColumn&>(result.sample) = makeColumn(
         refined_elevation,
-        fields.temperature,
-        fields.precipitation,
-        fields.water_level,
+        fields,
         water_present,
         *m_atlas
     );
@@ -840,8 +859,17 @@ bool RegionalArtifact::sampleIndex(
 {
     double position_x = 0.0;
     double position_y = 0.0;
-    if (!regionAxisPosition(world_x, m_key.origin_x, m_key.extent, position_x)
-        || !regionAxisPosition(world_y, m_key.origin_y, m_key.extent, position_y)) {
+    TerrainRegionAxisSample const x_sample{
+        .world_coordinate = world_x,
+        .origin = m_key.origin_x,
+        .extent = m_key.extent,
+    };
+    TerrainRegionAxisSample const y_sample{
+        .world_coordinate = world_y,
+        .origin = m_key.origin_y,
+        .extent = m_key.extent,
+    };
+    if (!regionAxisPosition(x_sample, position_x) || !regionAxisPosition(y_sample, position_y)) {
         return false;
     }
 
@@ -883,9 +911,56 @@ TerrainWorld::TerrainWorld(
     m_region_cache.reserve(64U);
 }
 
+TerrainClimateSample TerrainWorld::sampleClimate(double const world_x, double const world_y) const
+{
+    if (!std::isfinite(world_x) || !std::isfinite(world_y)) {
+        throw std::invalid_argument{ "terrain climate sampling requires finite world XY" };
+    }
+    FieldCoordinate const coordinate = fieldCoordinate(*m_atlas, world_x, world_y);
+    uint32_t const resolution = m_atlas->configuration.resolution;
+    return {
+        .temperature_celsius = bilinear(m_atlas->temperature, resolution, coordinate),
+        .precipitation = bilinear(m_atlas->precipitation, resolution, coordinate),
+    };
+}
+
+uint16_t TerrainWorld::sampleSurfaceHeight(uint32_t const world_x, uint32_t const world_y) const
+{
+    double const sample_x = world_x % generation::WORLD_SIZE_BLOCKS;
+    double const sample_y = world_y % generation::WORLD_SIZE_BLOCKS;
+    FieldValues const fields = fieldsAt(*m_atlas, sample_x, sample_y);
+    double accumulated_detail = 0.0;
+    double previous_contribution = 0.0;
+    for (uint32_t level_index = 0U; level_index < TERRAIN_REGION_EXTENTS.size(); ++level_index) {
+        double const contribution = levelContribution(
+            *m_atlas,
+            fields,
+            m_identity.seed,
+            TerrainWorldPosition{.x = sample_x, .y = sample_y},
+            TerrainLevelContributionStep{
+                .level_index = level_index,
+                .previous_contribution = previous_contribution,
+            }
+        );
+        accumulated_detail += contribution;
+        previous_contribution = contribution;
+    }
+    double const elevation = finalSurfaceElevation(
+        *m_atlas,
+        fields,
+        m_identity.seed,
+        TerrainWorldPosition{.x = sample_x, .y = sample_y},
+        TerrainDetailState{
+            .accumulated_detail = accumulated_detail,
+            .previous_contribution = previous_contribution,
+        }
+    );
+    return mappedHeight(elevation, *m_atlas);
+}
+
 std::shared_ptr<RegionalArtifact const> TerrainWorld::prepareRegion(
     TerrainRegionKey const key,
-    std::stop_token const cancellation
+    std::stop_token const& cancellation
 ) const
 {
     uint32_t const target_index = regionLevelIndex(key);
@@ -918,7 +993,7 @@ std::shared_ptr<RegionalArtifact const> TerrainWorld::prepareRegion(
 std::shared_ptr<RegionalArtifact const> TerrainWorld::refineRegion(
     TerrainRegionKey const key,
     std::shared_ptr<RegionalArtifact const> exact_parent,
-    std::stop_token const cancellation
+    std::stop_token const& cancellation
 ) const
 {
     uint32_t const level_index = regionLevelIndex(key);
@@ -948,15 +1023,25 @@ RegionalSample TerrainWorld::sampleRegion(
     RegionalArtifact const& region,
     double const world_x,
     double const world_y,
-    std::stop_token const cancellation
+    std::stop_token const& cancellation
 ) const
 {
     double position_x = 0.0;
     double position_y = 0.0;
+    TerrainRegionAxisSample const x_sample{
+        .world_coordinate = world_x,
+        .origin = region.m_key.origin_x,
+        .extent = region.m_key.extent,
+    };
+    TerrainRegionAxisSample const y_sample{
+        .world_coordinate = world_y,
+        .origin = region.m_key.origin_y,
+        .extent = region.m_key.extent,
+    };
     if (region.m_atlas.get() != m_atlas.get()
         || region.m_identity != m_identity
-        || !regionAxisPosition(world_x, region.m_key.origin_x, region.m_key.extent, position_x)
-        || !regionAxisPosition(world_y, region.m_key.origin_y, region.m_key.extent, position_y)) {
+        || !regionAxisPosition(x_sample, position_x)
+        || !regionAxisPosition(y_sample, position_y)) {
         throw std::invalid_argument{ "terrain sample is outside its exact regional dependency" };
     }
     throwIfCancelled(cancellation);
@@ -966,7 +1051,7 @@ RegionalSample TerrainWorld::sampleRegion(
 SurfaceTile TerrainWorld::sampleSurface(
     RegionalArtifact const& leaf,
     ChunkCoordinate const coordinate,
-    std::stop_token const cancellation
+    std::stop_token const& cancellation
 ) const
 {
     if (leaf.m_atlas.get() != m_atlas.get()
@@ -1013,16 +1098,15 @@ SurfaceTile TerrainWorld::sampleSurface(
                 *m_atlas,
                 fields,
                 m_identity.seed,
-                sample_x,
-                sample_y,
-                node.accumulated_detail,
-                node.last_contribution
+                TerrainWorldPosition{.x = sample_x, .y = sample_y},
+                TerrainDetailState{
+                    .accumulated_detail = node.accumulated_detail,
+                    .previous_contribution = node.last_contribution,
+                }
             );
             tile.columns[index] = makeColumn(
                 refined_elevation,
-                fields.temperature,
-                fields.precipitation,
-                fields.water_level,
+                fields,
                 node.sample.water_present,
                 *m_atlas
             );
@@ -1037,7 +1121,7 @@ SurfaceTile TerrainWorld::sampleSurface(
 
 SurfaceTile TerrainWorld::sampleSurface(
     ChunkCoordinate const coordinate,
-    std::stop_token const cancellation
+    std::stop_token const& cancellation
 ) const
 {
     if (coordinate.z != 0
@@ -1061,7 +1145,7 @@ SurfaceTile TerrainWorld::sampleSurface(
 Chunk TerrainWorld::materializeChunk(
     SurfaceTile const& tile,
     ChunkCoordinate const coordinate,
-    std::stop_token const cancellation
+    std::stop_token const& cancellation
 ) const
 {
     if (!isValidSurfaceTile(tile)
@@ -1138,7 +1222,7 @@ std::shared_ptr<RegionalArtifact const> TerrainWorld::buildRegion(
     TerrainRegionKey const key,
     uint32_t const level_index,
     std::shared_ptr<RegionalArtifact const> parent,
-    std::stop_token const cancellation
+    std::stop_token const& cancellation
 ) const
 {
     throwIfCancelled(cancellation);

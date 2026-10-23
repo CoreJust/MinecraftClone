@@ -2,6 +2,8 @@
 
 #include "Numerics.hpp"
 
+#include <generation/Generation.hpp>
+
 #include <span>
 #include <stop_token>
 
@@ -64,10 +66,23 @@ struct ClimateFields
     ByteField snow_mask;
 };
 
+struct HydrologyParameters final
+{
+    uint32_t erosion_steps;
+    float sea_level;
+    GenerationStage stage;
+};
+
+struct ClimateParameters final
+{
+    uint32_t iterations;
+    float sea_level;
+};
+
 [[nodiscard]]
 TectonicsFields generateTectonics(
     GenerationConfiguration const& configuration,
-    std::stop_token cancellation,
+    std::stop_token const& cancellation,
     ProgressCallback const& progress
 );
 
@@ -76,7 +91,7 @@ CoastalFields elaborateCoasts(
     GenerationConfiguration const& configuration,
     std::span<float const> elevation,
     std::span<float const> activity,
-    std::stop_token cancellation,
+    std::stop_token const& cancellation,
     ProgressCallback const& progress
 );
 
@@ -86,10 +101,8 @@ HydrologyFields buildHydrology(
     std::span<float const> elevation,
     std::span<float const> precipitation,
     std::span<float const> temperature,
-    uint32_t erosion_steps,
-    float sea_level,
-    GenerationStage stage,
-    std::stop_token cancellation,
+    HydrologyParameters const& parameters,
+    std::stop_token const& cancellation,
     ProgressCallback const& progress
 );
 
@@ -97,12 +110,11 @@ HydrologyFields buildHydrology(
 ClimateFields simulateClimate(
     GenerationConfiguration const& configuration,
     std::span<float const> elevation,
-    uint32_t iterations,
-    float sea_level,
+    ClimateParameters const& parameters,
     std::span<uint8_t const> ocean_mask,
     std::span<uint8_t const> lake_mask,
     GenerationStage stage,
-    std::stop_token cancellation,
+    std::stop_token const& cancellation,
     ProgressCallback const& progress
 );
 

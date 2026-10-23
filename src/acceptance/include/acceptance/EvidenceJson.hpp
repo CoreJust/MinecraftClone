@@ -1,6 +1,12 @@
 #pragma once
 
 #include <client/render/StoneFaceCapacity.hpp>
+#include <shared/corelang/ExecutionTypes.hpp>
+#include <shared/world/TerrainWorld.hpp>
+#include <shared/world/World.hpp>
+#include <shared/world/WorldCoverage.hpp>
+
+#include <acceptance/ReplayInput.hpp>
 
 #include <array>
 #include <chrono>
@@ -27,12 +33,27 @@ struct FrameTimingSummary final {
 
 struct GameBenchmarkFrameBudgetEvidence final {
     uint64_t target_frame_duration_ns = 0U;
-    uint32_t required_in_budget_time_permille = 998U;
+    uint32_t required_in_budget_time_permille = 990U;
+    uint64_t measurement_window_start_offset_ns = 0U;
+    uint64_t measurement_window_end_offset_ns = 0U;
+    uint64_t required_window_duration_ns = 0U;
     uint64_t measured_time_ns = 0U;
     uint64_t in_budget_time_ns = 0U;
     uint64_t sample_count = 0U;
+    uint64_t fence_confirmed_frame_count = 0U;
+    bool measurement_window_complete = false;
     bool passed = false;
     bool required_for_benchmark_pass = false;
+};
+
+struct GameBenchmarkFrameCompletion final {
+    uint64_t sequence_id = 0U;
+    uint64_t swapchain_generation = 0U;
+    uint32_t frame_slot = 0U;
+    uint64_t submitted_offset_ns = 0U;
+    uint64_t completion_observed_offset_ns = 0U;
+    std::optional<uint32_t> application_present_id = std::nullopt;
+    std::string submission_phase;
 };
 
 enum class GameBenchmarkPresentationAcquireStage : uint8_t {
@@ -181,6 +202,10 @@ struct GameBenchmarkFrameSample final {
     bool presentation_succeeded = false;
     std::optional<uint64_t> swapchain_generation = std::nullopt;
     std::optional<uint32_t> application_present_id = std::nullopt;
+    std::optional<uint64_t> submitted_frame_sequence_id = std::nullopt;
+    std::optional<uint32_t> submitted_frame_slot = std::nullopt;
+    uint64_t submitted_frame_offset_ns = 0U;
+    std::string submitted_frame_phase;
     uint64_t started_offset_ns = 0U;
     uint64_t loop_duration_ns = 0U;
     uint64_t render_duration_ns = 0U;
@@ -212,6 +237,55 @@ struct GameBenchmarkFrameSample final {
         GameBenchmarkMeshStageSummary mesh_work_stages;
         GameBenchmarkMeshResultDrainSummary mesh_result_drain;
     };
+    struct PlayableSphere final {
+        uint32_t radius_blocks = 320U;
+        std::optional<uint64_t> active_coverage_epoch;
+        std::optional<shared::PlayerPosition> active_coverage_center;
+        std::optional<shared::PlayerPosition> world_loading_center;
+        uint32_t ready_chunks = 0U;
+        uint32_t required_chunks = 0U;
+        bool ready = false;
+        std::string coverage_scope;
+        uint32_t required_authoritative_columns = 0U;
+        uint32_t resident_authoritative_columns = 0U;
+        uint32_t vertical_chunk_count = 0U;
+        std::optional<shared::PlayerPosition> authoritative_columns_center;
+    };
+    std::optional<PlayableSphere> playable_sphere = std::nullopt;
+    struct VisualLod final {
+        uint32_t radius_blocks = shared::FULL_WORLD_VISUAL_LOD_RADIUS_BLOCKS;
+        bool scene_active = false;
+        uint32_t leaf_count = 0U;
+        uint32_t actual_column_count = 0U;
+        std::optional<shared::TerrainIdentity> terrain_identity;
+        uint64_t session_join_epoch = 0U;
+        uint64_t coverage_epoch = 0U;
+        uint64_t submitted_frame_count = 0U;
+        uint32_t scene_center_x = 0U;
+        uint32_t scene_center_y = 0U;
+        uint32_t actual_radius_blocks = 0U;
+        uint32_t required_actual_columns = 0U;
+        uint32_t presented_current_actual_columns = 0U;
+        std::optional<shared::PlayerPosition> coverage_center;
+        bool sources_current = false;
+    };
+    std::optional<VisualLod> visual_lod = std::nullopt;
+    struct QualificationSettings final {
+        uint32_t framebuffer_width = 0U;
+        uint32_t framebuffer_height = 0U;
+        uint32_t render_distance = 0U;
+        bool debug_hud_enabled = false;
+        std::string terrain_model;
+        std::string camera_perspective;
+        std::string world_mode;
+    };
+    std::optional<QualificationSettings> qualification_settings = std::nullopt;
+    struct PresentedPlayer final {
+        std::array<double, 3U> body{};
+        uint64_t submitted_frame_count = 0U;
+        uint64_t sampled_offset_ns = 0U;
+    };
+    std::optional<PresentedPlayer> presented_player = std::nullopt;
     std::optional<TerrainNearSample> terrain_near = std::nullopt;
     struct TerrainRadialBand final {
         uint32_t desired_count = 0U;
@@ -365,6 +439,11 @@ struct GameBenchmarkFullTerrainSnapshot final {
     bool scan_performed = false;
     bool potentially_ready = false;
     std::optional<bool> exact_current_coverage;
+    std::string world_loading_state;
+    uint32_t playable_sphere_radius_blocks = 320U;
+    uint32_t playable_sphere_ready_chunks = 0U;
+    uint32_t playable_sphere_required_chunks = 0U;
+    bool playable_sphere_ready = false;
     bool center_valid = false;
     int32_t center_x = 0;
     int32_t center_y = 0;
@@ -422,16 +501,74 @@ struct GameBenchmarkFullRadiusEvidence final {
     FrameTimingSummary baseline_successful_present_request_intervals;
     FrameTimingSummary recovered_successful_present_request_intervals;
     uint64_t movement_center_change_count = 0U;
+    std::string movement_playable_sphere_sample_scope =
+        "per-movement-loop-and-every-authoritative-position-update";
     bool movement_start_center_valid = false;
     int32_t movement_start_center_x = 0;
     int32_t movement_start_center_y = 0;
     bool movement_end_center_valid = false;
     int32_t movement_end_center_x = 0;
     int32_t movement_end_center_y = 0;
+    struct AuthoritativePlayableSphereUpdate final {
+        uint64_t update_ordinal = 0U;
+        uint64_t offset_ns = 0U;
+        uint32_t state_revision = 0U;
+        uint32_t acknowledged_input_sequence = 0U;
+        shared::PlayerPosition authoritative_position{};
+        uint8_t movement_capabilities = 0U;
+        int32_t vertical_velocity_subcells = 0;
+        GameBenchmarkFrameSample::PlayableSphere playable_sphere;
+        std::optional<GameBenchmarkFrameSample::VisualLod> visual_lod = std::nullopt;
+    };
+    uint64_t movement_authoritative_update_count = 0U;
+    std::optional<AuthoritativePlayableSphereUpdate> movement_trajectory_anchor = std::nullopt;
+    bool movement_playable_sphere_complete = false;
+    std::vector<AuthoritativePlayableSphereUpdate> movement_authoritative_sphere_updates;
     bool complete = false;
 };
 
+struct GameBenchmarkS1TerrainPerformanceEvidence final {
+    uint32_t actual_radius_blocks = shared::ACTUAL_TERRAIN_RADIUS_BLOCKS;
+    uint32_t visual_lod_radius_blocks = shared::FULL_WORLD_VISUAL_LOD_RADIUS_BLOCKS;
+    std::optional<uint64_t> ready_prompt_frame_offset_ns = std::nullopt;
+    std::optional<uint64_t> playable_sphere_first_ready_offset_ns = std::nullopt;
+    bool initial_deadline_missed = false;
+    bool playable_deadline_missed = false;
+    bool movement_started_after_current_sphere_ready = false;
+    bool movement_input_during_fill = false;
+    uint64_t movement_start_offset_ns = 0U;
+    uint64_t movement_end_offset_ns = 0U;
+    uint64_t movement_authoritative_update_count = 0U;
+    std::optional<GameBenchmarkFullRadiusEvidence::AuthoritativePlayableSphereUpdate>
+        movement_trajectory_anchor = std::nullopt;
+    // First-loop-relative time of the fresh sphere sample; the anchor keeps its original ACK time.
+    std::optional<uint64_t> movement_trajectory_anchor_sphere_sample_offset_ns = std::nullopt;
+    bool movement_boundary_authoritative_updates_complete = false;
+    // Accepted pre-window inputs whose authoritative ACK arrives after movement begins.
+    std::vector<GameBenchmarkFullRadiusEvidence::AuthoritativePlayableSphereUpdate>
+        movement_boundary_authoritative_updates;
+    std::vector<GameBenchmarkFullRadiusEvidence::AuthoritativePlayableSphereUpdate>
+        movement_authoritative_sphere_updates;
+    bool movement_playable_sphere_complete = false;
+    bool movement_visual_lod_samples_complete = false;
+    bool complete = false;
+};
+
+struct GameBenchmarkRawInputEvidence final {
+    uint64_t input_ordinal = 0U;
+    uint32_t sequence = 0U;
+    uint64_t sent_offset_ns = 0U;
+    int64_t scheduled_offset_ns = 0;
+    GameBenchmarkMovementRouteSample movement_intent{};
+    shared::Direction direction{};
+};
+
 struct GameBenchmarkServerStreamSample final {
+    struct PhaseMetrics final {
+        uint64_t calls = 0U;
+        uint64_t duration_ns = 0U;
+    };
+
     uint64_t started_offset_ns = 0U;
     int32_t center_x = 0;
     int32_t center_y = 0;
@@ -457,16 +594,49 @@ struct GameBenchmarkServerStreamSample final {
     uint32_t worker_queued_count = 0U;
     uint32_t worker_running_count = 0U;
     uint32_t worker_completed_uncollected_count = 0U;
+    uint32_t world_generation_worker_queued_count = 0U;
+    uint32_t world_generation_worker_running_count = 0U;
+    uint32_t world_generation_worker_completed_uncollected_count = 0U;
+    PhaseMetrics coverage_refresh;
+    PhaseMetrics worker_result_publication;
+    PhaseMetrics queue_refill;
+    PhaseMetrics delivery;
+    PhaseMetrics worker_dispatch;
+    uint64_t materialization_candidate_keys_examined = 0U;
+    uint64_t materialization_resident_chunk_lookups = 0U;
+    uint64_t materialization_admission_attempts = 0U;
+    uint64_t materialization_admissions = 0U;
+    uint64_t materialization_duplicate_requests = 0U;
+    uint64_t chunk_delivery_candidate_keys_examined = 0U;
+    uint64_t chunk_delivery_resident_chunk_lookups = 0U;
+    uint64_t chunk_delivery_batches_sent = 0U;
+    uint64_t chunk_delivery_chunks_sent = 0U;
+    uint64_t chunk_delivery_credits_consumed = 0U;
+    uint64_t world_generation_jobs_dispatched = 0U;
+    uint64_t height_tile_jobs_dispatched = 0U;
+    uint64_t global_server_world_resident_chunks = 0U;
+    uint32_t required_near_chunk_keys = 0U;
+    uint32_t required_full_chunk_keys = 0U;
+    uint32_t acknowledged_chunk_keys = 0U;
+    uint32_t inflight_chunk_batches = 0U;
+    uint32_t inflight_chunk_keys = 0U;
+    uint32_t chunk_delivery_credits = 0U;
+    bool near_required_chunks_all_resident = false;
 };
 
 struct GameBenchmarkEvidence final {
     std::string workload;
     std::string qualification_proof;
+    std::string movement_trajectory_contract;
+    std::optional<shared::corelang::BackendReceipt> terrain_backend_receipt = std::nullopt;
     std::string package_id;
     std::string hardware;
     std::optional<std::string> gpu;
     std::string present_mode;
     std::string build_mode;
+    std::string qualification_settings_manifest;
+    std::optional<shared::TerrainIdentity> terrain_identity;
+    uint64_t session_join_epoch = 0U;
     bool diagnostic_overrides_present = false;
     uint64_t cold_duration_ms = 0U;
     uint64_t warm_duration_ms = 0U;
@@ -494,8 +664,12 @@ struct GameBenchmarkEvidence final {
     std::optional<GameBenchmarkFrameBudgetEvidence> frame_budget = std::nullopt;
     std::optional<GameBenchmarkTerrainReadinessEvidence> terrain_readiness = std::nullopt;
     std::optional<GameBenchmarkFullRadiusEvidence> full_radius_terrain = std::nullopt;
+    std::optional<GameBenchmarkS1TerrainPerformanceEvidence> s1_terrain_performance = std::nullopt;
     std::optional<GameBenchmarkPresentationTimingEvidence> presentation_timing = std::nullopt;
+    std::optional<GameBenchmarkStartActionEvidence> controlled_start = std::nullopt;
+    std::vector<GameBenchmarkRawInputEvidence> raw_gameplay_inputs;
     std::vector<GameBenchmarkFrameSample> raw_frames;
+    std::vector<GameBenchmarkFrameCompletion> raw_fence_confirmed_frames;
     std::vector<GameBenchmarkServerStreamSample> raw_server_stream_samples;
     std::vector<uint64_t> raw_server_tick_durations_ns;
     std::vector<uint64_t> raw_permission_publish_durations_ns;
