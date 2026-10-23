@@ -2,13 +2,15 @@
 
 Future checks for the [S2 design](earlydev_0_1_1_s2.md), not executed results.
 The owner accepted UI prototype232eae68; native S2 stays unfinalized and S1 current.
+The [review register](earlydev_0_1_1_s2_review.md) accounts for all 28 follow-ups.
 
 ## Ordered work packages
 
-Packages include tests, integration and docs. [Native presentation](earlydev_0_1_1_s2_presentation.md), [generation](earlydev_0_1_1_s2_generation_ui.md) and [map pipeline](earlydev_0_1_1_s2_map_pipeline.md) define W1/W5/W7 contracts. Work remains unscheduled.
+Packages include tests, integration and docs; [presentation](earlydev_0_1_1_s2_presentation.md), [generation](earlydev_0_1_1_s2_generation_ui.md) and [map](earlydev_0_1_1_s2_map_pipeline.md) contracts govern W1/W5/W7.
 
 | Package | Deliverable and ownership | Prerequisites |
 |---|---|---|
+| W0 Review/performance | [Baseline, instrumentation, confirmed work and decisions](earlydev_0_1_1_s2_review_performance.md). | Final S1; parallel W1. |
 | W1 Shared contracts | Mode/policy/targeting/timing plus UI frame, input, preview/map identity and measured telemetry/climate ports. Shared contracts and focused tests. | Reconcile final S1 APIs and design defaults. |
 | W2 Canonical edit state | Sparse override storage independent of dense residency; versioned reads/materialization, collision and neighbor identities in `SparseWorld`/`Chunk`. | W1 world identities. |
 | W3 Authoritative actions | Server aim/rights/timing checks, hold cancellation, placement transaction and mode requests; shared wire types and `GameServer`. | W1–W2. |
@@ -17,11 +19,13 @@ Packages include tests, integration and docs. [Native presentation](earlydev_0_1
 | W6 Adaptive overlays | Sampleable scene/composite route, shared fixed/adaptive HUD and capture lifecycle; existing MC-AI-0484. | W5 frame/HUD data; may develop independently with fixtures. |
 | W7 Minimap/world map | MC-AI-0515 source/view/composition, bounded jobs/uploads, navigation and edit invalidation; client/renderer. | W2/W4 canonical edit state; W6 overlay route. |
 | W8 Replacement model | Integrate the accepted research handoff with canonical sampling, edits and native generation/streaming. | Owner-selected qualified model; W2 contract. |
+| W9 Scripting contracts | [Execution bounds and complete public API](earlydev_0_1_1_s2_review_scripting.md). | Final S1; W1/W8 contracts. |
+| W10 Environment | [Setup, preflight, onboarding and packaging](earlydev_0_1_1_s2_review_actions.md). | Final source/version identity. |
 
-W1–W7 can establish editing and maps against the existing canonical world while the
-separate model decision proceeds. That does not close W8 or authorize a
-permanent substitute for it. Cross-package APIs and proposed file splits are
-settled before parallel code writers start; metadata has one writer.
+W1–W7 may use the current canonical world while model selection proceeds;
+W8 remains required. Set cross-package APIs before parallel writers; one writer
+owns metadata. W9 bounds precede nontrusted scripts. W0 measurements guide
+replacements without delaying independent documentation repairs.
 
 ## Deterministic acceptance
 
@@ -59,18 +63,16 @@ Carry final S1 loading, actual-volume, streaming and movement gates unchanged.
 Targets include at least 99% of moving time at 120 fresh FPS on Mac
 and 300 on Windows at the agreed settings. Measure matched baseline/fixed/
 adaptive workloads, CPU/GPU frame-time percentiles, edit-to-visible delay,
-peak edit/queue storage and scene-target memory. An initial engineering target
-is visible mesh correction within 100 ms of receiving an edit; this is a
-proposal to validate, not a measured result or a replacement for the FPS gates.
+peak edit/queue storage and scene-target memory. Visible mesh correction within
+100 ms of edit receipt is an unmeasured engineering proposal; FPS gates remain.
 
 ## Remaining decision register
 
 - External: owner-selected terrain model/references/cost remain required.
 - W1: canonical humidity producer/units, RSS adapters and preview-field transport; accepted sample values do not satisfy them.
-- Proposed: reach, placement palette, mode-access defaults, hold expiry and
-  cosmetic limits are listed explicitly in the design; they remain editable.
+- Proposed: reach, palette, mode access, hold expiry and cosmetic limits remain editable assistant defaults.
 - Implementation evidence: prove camera/curvature agreement and the selected
   sampleable attachment format against the final pinned dependencies.
 
-Publication remains separately authorized. The implementation chat initializes
-its required reporting lifecycle; this design request starts no scheduler.
+Implementation initializes required reporting; planning starts no scheduler.
+Publication remains separately authorized.

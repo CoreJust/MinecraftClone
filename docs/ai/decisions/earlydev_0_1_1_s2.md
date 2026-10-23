@@ -22,6 +22,8 @@ world-model study has no accepted production candidate. Its adoption is an
 explicit dependency, not something editing or renderer tests can substitute for.
 The [S1 carryover targets](earlydev_0_1_1_s2_delivery_targets.md) record the
 known performance, coverage, rendering and platform gaps to close in S2.
+The [broad-review follow-up](earlydev_0_1_1_s2_review.md) adds source-linked
+correctness, performance, responsibility, environment and scripting work.
 
 ## Requirements and authority
 
@@ -47,6 +49,7 @@ model boundary and inherited acceptance requirements.
 | S2-10 | Add minimap/world map with independent P/H/T/B/W/C/O/Q layers, translucent T/O/Q and full-viewport navigation. | Owner addition and accepted UI |
 | S2-11 | Deliver accepted pre-connect, dynamic generation, game and map views using text/background/map primitives; no widget toolkit. Preserve authoritative readiness. | Owner UI acceptance |
 | S2-12 | Preserve FPS/uptime/speed/movement/XYZ/YPR and controls; omit camera-view readout per latest owner feedback. Add chunks, measured memory and local climate. Local L1/L2 map uses game colors and prominent N/E/S/W. Hide inapplicable fields. | Owner UI request and refinement |
+| S2-13 | Close all review dispositions with fixes, final-S1 revalidation or evidence-based optimization decisions; document the public CoreLang API completely. | Owner: add the broad S1 review to S2 |
 
 ## Architecture
 
@@ -101,6 +104,7 @@ base preset and actual rights; no preset overrides a hard restriction.
 - [Native presentation](earlydev_0_1_1_s2_presentation.md): typed snapshots, screen/input ownership, telemetry and bounded image uploads.
 - [Generation presentation](earlydev_0_1_1_s2_generation_ui.md): producer checkpoints, six visual stages, persistent ice and authoritative readiness.
 - [Verification and work packages](earlydev_0_1_1_s2_verification.md): implementation boundaries and observable acceptance.
+- [Review follow-up](earlydev_0_1_1_s2_review.md): all 28 items, W0 performance evidence, W9 scripting and W10 environment acceptance.
 
 Physical water remains S3; player models/hand animation and bot recovery remain
 S4. Menus, inventory and disk save/open remain 0.1.2. The observed S1 source is

@@ -1,0 +1,1260 @@
+{
+  "schema": 1,
+  "status": "review-baseline-not-current-implementation",
+  "task": "MC-AI-0524",
+  "source_review": "earlydev_0_1_1_s2_review_findings.json",
+  "corelang": {
+    "repository": "CoreJust/CoreProject2026",
+    "revision": "23f81441c10a44896b87865a9b8ae7d4b51687db",
+    "scope": "Runtime API and interpreter loop inspected narrowly; no broader CoreLang audit"
+  },
+  "counts": {
+    "registered_host_bindings": 39,
+    "scenario": 16,
+    "policy": 5,
+    "scripted_world": 3,
+    "world_generation_plan": 5,
+    "private_terrain_v2_manifest": 10,
+    "non_host_worldgen_parameter_exports": 3,
+    "generic_cpp_bounded_bridge_functions": 3
+  },
+  "coverage_definition": "Each binding carries doc_field_coverage statuses for name, argument_types, return_type, profile, entrypoint, units, defaults, limits, order, errors, and version. yes/partial/no/wrong/n/a have their literal meanings.",
+  "families": [
+    {
+      "id": "scenario",
+      "count": 16,
+      "provider_prefix": "minecraft.scenario.",
+      "host_abi_major": 1,
+      "ruleset": {
+        "id": "minecraft",
+        "version": 1
+      },
+      "source_version": "0.1.5 bare @version header",
+      "entrypoint": "pub fn scenario() -> unit",
+      "profiles": [
+        "flight3d-v1",
+        "sparse-world-v1"
+      ],
+      "common_result": "unit",
+      "default_backend": "Interpreter",
+      "default_execution_limits": {
+        "source_bytes": "scenario limit; 4 KiB generic default is overridden by parser to max_source_bytes",
+        "bytecode_bytes": 65536,
+        "native_image_bytes": 4194304,
+        "static_instructions": 65536,
+        "max_execution_count": 2
+      },
+      "application_limits": {
+        "source_bytes": 65536,
+        "accepted_host_call_statements": 256,
+        "actors": 4,
+        "total_ticks": 10000,
+        "operations": 512,
+        "evidence": 128,
+        "sparse_resident_chunks": 128,
+        "watchdog_seconds": 30
+      },
+      "errors": "ScenarioDiagnosticCode names; host-call failures are surfaced as CoreLangRuntimeFailure with message; see api.md for all names.",
+      "source_files": [
+        "src/shared/scenario/CoreLangScenario.cpp",
+        "src/shared/scenario/Scenario.cpp",
+        "src/shared/include/shared/scenario/Scenario.hpp",
+        "src/main.cpp"
+      ],
+      "documentation_files": [
+        "docs/scripting/REFERENCE.md",
+        "docs/scripting/EXECUTION.md",
+        "docs/scripting/DIAGNOSTICS.md",
+        "scenarios/README.md"
+      ],
+      "bindings": [
+        {
+          "name": "profile",
+          "signature": "profile(str) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "770-770"
+          },
+          "contract": "Exactly once; values flight3d-v1 or sparse-world-v1; precedes seed.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "wrong",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "seed",
+          "signature": "seed(u64) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "771-771"
+          },
+          "contract": "Exactly once after profile; full u64 accepted.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "yes",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "playerXYZ",
+          "signature": "playerXYZ(str, c8, i32, i32, i32, i16, i16, i16) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "772-775"
+          },
+          "contract": "After seed; flight only; ASCII identifier name and allowed unique char; yaw 0..359, pitch -89..89, roll -180..180; app actor cap 4; x/y/z have no collector range and unit is unspecified.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "wrong",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "moveXYZ",
+          "signature": "moveXYZ(str, i8, i8, i8) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "776-778"
+          },
+          "contract": "Flight only; existing actor; each direction component -1..1; direct XYZ input effective at next boundary.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "flightXYZ",
+          "signature": "flightXYZ(str, i8, i8, i8) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "779-781"
+          },
+          "contract": "Flight only; existing actor; each component -1..1; records flight intent; runner enforces server flight permission.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "no",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "phaseXYZ",
+          "signature": "phaseXYZ(str, i8, i8, i8) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "782-784"
+          },
+          "contract": "Flight only; existing actor; each component -1..1; records phase intent; runner enforces collision-bypass permission.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "no",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "cameraInputXYZ",
+          "signature": "cameraInputXYZ(str, i8, i8, i8) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "785-787"
+          },
+          "contract": "Flight only; existing actor; strafe/forward/vertical each -1..1; next boundary; direction resolves using yaw.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "movementPermissions",
+          "signature": "movementPermissions(bool, bool) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "788-790"
+          },
+          "contract": "Flight only; (flight, collision_bypass); bypass requires flight; appends operation at current boundary without advancing ticks.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "jump",
+          "signature": "jump(str) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "791-791"
+          },
+          "contract": "Existing actor; appends one jump input and consumes one total tick.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "wait",
+          "signature": "wait(u64) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "792-792"
+          },
+          "contract": "Flight only; positive ticks; cumulative waits plus jumps <= app 10,000 tick limit; advances exactly N boundaries.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "wrong",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "expectXYZ",
+          "signature": "expectXYZ(str, i32, i32, i32) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "793-795"
+          },
+          "contract": "Existing actor; records position evidence at current boundary; evidence cap 128; coordinate unit not declared by binding.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "expectMovementPermissions",
+          "signature": "expectMovementPermissions(str, bool, bool) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "796-798"
+          },
+          "contract": "Existing actor; bypass implies flight; replicated-state evidence; evidence cap 128.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "expectVerticalVelocity",
+          "signature": "expectVerticalVelocity(str, i32) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "799-801"
+          },
+          "contract": "Existing actor; replicated velocity in subcells/tick; evidence cap 128.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "sparseWorldOptions",
+          "signature": "sparseWorldOptions(u32, u64) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "804-806"
+          },
+          "contract": "Sparse only; exactly once after profile and seed; generator version 1; positive resident bound <= configured host limit (app default 128).",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "yes",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "expectBlockXYZ",
+          "signature": "expectBlockXYZ(i64, i64, i64, u8) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "807-809"
+          },
+          "contract": "Sparse options required; signed 64-bit world coordinates; Air=0 or Stone=1 only; consumes operation and evidence.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        },
+        {
+          "name": "expectResidentChunks",
+          "signature": "expectResidentChunks(u64) -> unit",
+          "source": {
+            "file": "src/shared/scenario/CoreLangScenario.cpp",
+            "lines": "810-812"
+          },
+          "contract": "Sparse options required; expected count <= selected resident bound; consumes operation and evidence.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "yes",
+            "return_type": "partial",
+            "profile": "partial",
+            "entrypoint": "yes",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "yes"
+          }
+        }
+      ]
+    },
+    {
+      "id": "policy",
+      "count": 5,
+      "provider_prefix": "minecraft.policy.",
+      "host_abi_major": 1,
+      "ruleset": {
+        "id": "minecraft",
+        "version": 1
+      },
+      "source_version": "Test fixtures use bare @version(0.1.5); adapter does not itself verify header, pinned parser owns acceptance.",
+      "entrypoint": "pub fn policy() -> unit (test-fixture shape)",
+      "common_result": "unit",
+      "default_options": {
+        "backend": "Interpreter",
+        "require_interpreter_parity": true
+      },
+      "default_limits": {
+        "source_bytes": 65536,
+        "bytecode_bytes": 1048576,
+        "native_image_bytes": 4194304,
+        "preflight_instructions": 16384,
+        "statements": 256,
+        "groups": 64,
+        "members_per_group": 256,
+        "selectors": 64,
+        "presets": 64,
+        "rules_per_preset": 64,
+        "assignments": 256,
+        "subjects": 4096,
+        "capabilities": 64,
+        "max_execution_count": 2
+      },
+      "errors": "24 PolicyDiagnosticCode names; stable names are implementation-derived and absent from docs/code/POLICY.md.",
+      "source_files": [
+        "src/shared/policy/CoreLangPolicy.cpp",
+        "src/shared/include/shared/policy/Policy.hpp"
+      ],
+      "documentation_files": [
+        "docs/code/POLICY.md"
+      ],
+      "bindings": [
+        {
+          "name": "policyGroup",
+          "signature": "policyGroup(str, u8, str) -> unit",
+          "source": {
+            "file": "src/shared/policy/CoreLangPolicy.cpp",
+            "lines": "332-334"
+          },
+          "contract": "(name, kind, scope); kind discriminants 0 All, 1 Players, 2 Mobs, 3 TechnicalEntities, 4 EntityKind, 5 Explicit, 6 Selector; declarations accept only 4/5/6; scope only for kind/selector groups; duplicate/reserved/built-in names rejected; max 64 groups.",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "no",
+            "version": "partial"
+          }
+        },
+        {
+          "name": "policyMember",
+          "signature": "policyMember(str, u64) -> unit",
+          "source": {
+            "file": "src/shared/policy/CoreLangPolicy.cpp",
+            "lines": "335-337"
+          },
+          "contract": "(explicit_group, entity_id); group must already exist and be Explicit; duplicate IDs rejected; max 256 members/group.",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "no",
+            "version": "partial"
+          }
+        },
+        {
+          "name": "policySelector",
+          "signature": "policySelector(str, str, u64, u64, u64) -> unit",
+          "source": {
+            "file": "src/shared/policy/CoreLangPolicy.cpp",
+            "lines": "338-341"
+          },
+          "contract": "(selector_name, entity_kind, first_id, last_id, max_results); inclusive range; first<=last and max_results>0; max 64 selectors; membership materializes against current subjects and cannot exceed max_results.",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "no",
+            "version": "partial"
+          }
+        },
+        {
+          "name": "policyRule",
+          "signature": "policyRule(str, str, i64, u8) -> unit",
+          "source": {
+            "file": "src/shared/policy/CoreLangPolicy.cpp",
+            "lines": "342-344"
+          },
+          "contract": "(preset, capability_key, value, hard); hard 0/1; first rule creates preset; key and value validated against host capability registry; unique keys/preset; max 64 presets and 64 rules/preset.",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "no",
+            "version": "partial"
+          }
+        },
+        {
+          "name": "policyAssign",
+          "signature": "policyAssign(str, str, u8) -> unit",
+          "source": {
+            "file": "src/shared/policy/CoreLangPolicy.cpp",
+            "lines": "345-347"
+          },
+          "contract": "(target, preset, hard); hard 0/1; preset must have been created by a prior policyRule; target unique and not reserved world namespace; max 256 assignments; target resolves at materialization.",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "no",
+            "version": "partial"
+          }
+        }
+      ]
+    },
+    {
+      "id": "scripted_world",
+      "count": 3,
+      "provider_keys": [
+        "minecraft/terrain_random",
+        "minecraft/set_block",
+        "minecraft/publish"
+      ],
+      "host_abi_major": 1,
+      "ruleset": {
+        "id": "minecraft",
+        "version": 1
+      },
+      "source_version": "Packaged fixture uses @version(0.1.5); adapter does not perform its own header comparison.",
+      "entrypoint": "module canonical_world; generate(seed:u64); result type is not explicitly checked by adapter",
+      "common_result": "per binding",
+      "options_defaults": {
+        "seed": "WorldConfiguration::SEED",
+        "chunk_coordinate": "origin",
+        "chunk_dimensions": [
+          16,
+          16,
+          16
+        ],
+        "max_source_bytes": 8192,
+        "max_host_calls": 8193
+      },
+      "limits": {
+        "dimensions": "exactly 16x16x16",
+        "source_bytes": "positive and <= configured max",
+        "host_calls": "combined across all 3 callbacks; positive and <= configured max"
+      },
+      "errors": [
+        "InvalidOptions",
+        "SourceTooLarge",
+        "CompilationFailed",
+        "RuntimeFailed",
+        "HostCallLimitExceeded",
+        "InvalidHostCall (declared, not emitted)",
+        "IncompletePublication"
+      ],
+      "execution": "ordinary core::lang::compile + Runtime::execute; no adapter execution cap/cancellation; exact pinned runtime RuntimeOptions has no fuel field and interpreter loop runs until completion or external flush.",
+      "source_files": [
+        "src/shared/world/ScriptedWorld.cpp",
+        "src/shared/include/shared/world/ScriptedWorld.hpp"
+      ],
+      "documentation_files": [
+        "docs/scripting/REFERENCE.md",
+        "docs/scripting/EXECUTION.md",
+        "docs/scripting/DIAGNOSTICS.md",
+        "scenarios/README.md"
+      ],
+      "bindings": [
+        {
+          "name": "terrain_random",
+          "signature": "terrain_random(u64, i32, i32, i32) -> i32",
+          "source": {
+            "file": "src/shared/world/ScriptedWorld.cpp",
+            "lines": "185-190"
+          },
+          "contract": "(seed, local_x, local_y, local_z); seed equals options seed; coordinates each 0..15; returns deterministic fixture-noise i8 widened to i32; combined host callback cap applies.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "partial",
+            "return_type": "partial",
+            "profile": "n/a",
+            "entrypoint": "partial",
+            "units": "partial",
+            "defaults": "no",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "no",
+            "version": "partial"
+          }
+        },
+        {
+          "name": "set_block",
+          "signature": "set_block(i32, i32, i32, i32) -> unit",
+          "source": {
+            "file": "src/shared/world/ScriptedWorld.cpp",
+            "lines": "191-196"
+          },
+          "contract": "(local_x, local_y, local_z, block_id); coordinates each 0..15; IDs Air=0 or Stone=1; candidate starts all Air; forbidden after publication; explicit writes to all cells are not required.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "partial",
+            "return_type": "partial",
+            "profile": "n/a",
+            "entrypoint": "partial",
+            "units": "partial",
+            "defaults": "no",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "no",
+            "version": "partial"
+          }
+        },
+        {
+          "name": "publish",
+          "signature": "publish() -> unit",
+          "source": {
+            "file": "src/shared/world/ScriptedWorld.cpp",
+            "lines": "197-197"
+          },
+          "contract": "No args; exactly once; successful generate entry must publish; publication does not require all candidate cells explicitly written.",
+          "doc_field_coverage": {
+            "name": "yes",
+            "argument_types": "partial",
+            "return_type": "partial",
+            "profile": "n/a",
+            "entrypoint": "partial",
+            "units": "partial",
+            "defaults": "no",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "no",
+            "version": "partial"
+          }
+        }
+      ]
+    },
+    {
+      "id": "world_generation_plan",
+      "count": 5,
+      "provider_prefix": "minecraft.worldgen.",
+      "host_abi_major": 1,
+      "ruleset": {
+        "id": "minecraft",
+        "version": 1
+      },
+      "source_version": "Packaged height_tile.core uses @version(0.1.5); adapter compiler registry is minecraft v1.",
+      "entrypoint": "Optional configure_generation() -> unit; if present exactly one exported function; absent defaults to direct materialization.",
+      "common_result": "unit",
+      "defaults": {
+        "absent_configure_generation": {
+          "pre_generate": false,
+          "refinement_extents": [],
+          "chunk_stages": [
+            "Materialize"
+          ]
+        },
+        "priority_order": [
+          0,
+          1,
+          2
+        ],
+        "priority_names": [
+          "Distance",
+          "View",
+          "Movement"
+        ]
+      },
+      "limits": {
+        "declaration_calls": 16,
+        "refinement_extents": {
+          "registered_blocks": [
+            16384,
+            4096,
+            1024,
+            256,
+            64
+          ],
+          "max": 5,
+          "strictly_descending": true,
+          "no_duplicates": true
+        },
+        "virtual_stages": {
+          "max": 2,
+          "1": "HeightTile",
+          "2": "Materialize",
+          "materialize_last": true
+        },
+        "priorities": {
+          "max": 3,
+          "unique": true
+        },
+        "stage_output_bytes": 4096,
+        "output_budget_bytes": 1048576,
+        "regional_result_bytes": 33554432,
+        "regional_retention_bytes": 33554432
+      },
+      "errors": "Invalid declarations throw/reject plan before generation; no dedicated stable public diagnostic enum for these script collector strings.",
+      "execution": "ordinary core::lang::compile + Runtime::execute for declaration and getters; callback-count cap 16; no adapter instruction/fuel limit or cancellation.",
+      "parameter_exports": [
+        {
+          "name": "base_height",
+          "signature": "base_height() -> f64",
+          "default": 6.0,
+          "valid": "finite and >=0",
+          "unit": "inferred block height"
+        },
+        {
+          "name": "crest_spacing",
+          "signature": "crest_spacing() -> f64",
+          "default": 128.0,
+          "valid": "finite and >0",
+          "unit": "inferred horizontal block distance"
+        },
+        {
+          "name": "crest_amplitude",
+          "signature": "crest_amplitude() -> f64",
+          "default": 800.0,
+          "valid": "finite and >=0",
+          "unit": "inferred block height"
+        }
+      ],
+      "source_files": [
+        "src/shared/world/WorldGeneration.cpp",
+        "src/shared/world/WorldGenerationPlan.cpp",
+        "src/shared/include/shared/world/WorldGenerationScheduler.hpp",
+        "scenarios/world/height_tile.core"
+      ],
+      "documentation_files": [
+        "docs/scripting/README.md",
+        "scenarios/README.md"
+      ],
+      "bindings": [
+        {
+          "name": "generation_plan_version",
+          "signature": "generation_plan_version(u8) -> unit",
+          "source": {
+            "file": "src/shared/world/WorldGeneration.cpp",
+            "lines": "123-123"
+          },
+          "contract": "Must be first and exactly once; only manifest version 1 accepted.",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "partial",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "partial"
+          }
+        },
+        {
+          "name": "generation_pregen",
+          "signature": "generation_pregen() -> unit",
+          "source": {
+            "file": "src/shared/world/WorldGeneration.cpp",
+            "lines": "124-124"
+          },
+          "contract": "No args; at most once; sets pregen. If enabled, refinement extents must strictly descend from 16,384 and cannot start at 16,384.",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "partial",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "partial"
+          }
+        },
+        {
+          "name": "generation_refinement",
+          "signature": "generation_refinement(u64) -> unit",
+          "source": {
+            "file": "src/shared/world/WorldGeneration.cpp",
+            "lines": "125-125"
+          },
+          "contract": "Value is one of 16,384/4,096/1,024/256/64 blocks; strict descending order, no duplicates; max five, or four when pregen is on.",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "partial",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "partial"
+          }
+        },
+        {
+          "name": "generation_virtual_stage",
+          "signature": "generation_virtual_stage(u8) -> unit",
+          "source": {
+            "file": "src/shared/world/WorldGeneration.cpp",
+            "lines": "126-126"
+          },
+          "contract": "Value 1 HeightTile or 2 Materialize; max two; HeightTile at most once; Materialize at most once and last.",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "partial",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "partial"
+          }
+        },
+        {
+          "name": "generation_priority",
+          "signature": "generation_priority(u8) -> unit",
+          "source": {
+            "file": "src/shared/world/WorldGeneration.cpp",
+            "lines": "127-127"
+          },
+          "contract": "Value 0 Distance, 1 View, 2 Movement; unique, max three; if omitted default is Distance, View, Movement.",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "partial",
+            "units": "partial",
+            "defaults": "partial",
+            "limits": "partial",
+            "order": "partial",
+            "errors": "partial",
+            "version": "partial"
+          }
+        }
+      ]
+    },
+    {
+      "id": "terrain_v2_private",
+      "count": 10,
+      "provider_prefix": "minecraft.terrain_v2.",
+      "host_abi_major": 1,
+      "ruleset": {
+        "id": "minecraft",
+        "version": 2
+      },
+      "source_version": "Embedded @version(0.1.5); private generated manifest has PLAN_MANIFEST_VERSION=2.",
+      "entrypoint": "private module terrain_v2_plan; configure_terrain() -> u8",
+      "common_result": "Getter-specific or u8 for terrain_plan",
+      "embedded_manifest": {
+        "plan_version": 2,
+        "pregen": true,
+        "extents": [
+          4096,
+          1024,
+          256,
+          64
+        ],
+        "stage_marker": 3,
+        "host_calls": 10,
+        "static_instructions": 64
+      },
+      "limits": {
+        "source_bytes": 4096,
+        "bytecode_bytes": 65536,
+        "native_image_bytes": 4194304,
+        "instruction_limit": 64,
+        "execution_count": 1,
+        "host_calls": 10
+      },
+      "execution": "compileBounded + boundedInstructionCount + executeBounded; manifest restricted to bounded non-looping source. This is private, not a general script API.",
+      "source_files": [
+        "src/shared/corelang/Backend.cpp",
+        "src/shared/include/shared/corelang/Backend.hpp"
+      ],
+      "documentation_files": [
+        "docs/code/CORE.md",
+        "docs/code/GENERATION.md"
+      ],
+      "bindings": [
+        {
+          "name": "terrain_seed",
+          "signature": "terrain_seed() -> u64",
+          "source": {
+            "file": "src/shared/corelang/Backend.cpp",
+            "lines": "86-88; 113-114"
+          },
+          "contract": "Returns GenerationConfiguration.seed (default 42).",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "no",
+            "order": "no",
+            "errors": "no",
+            "version": "no"
+          }
+        },
+        {
+          "name": "terrain_resolution",
+          "signature": "terrain_resolution() -> u32",
+          "source": {
+            "file": "src/shared/corelang/Backend.cpp",
+            "lines": "88-89; 115-115"
+          },
+          "contract": "Returns resolution (default 256).",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "no",
+            "order": "no",
+            "errors": "no",
+            "version": "no"
+          }
+        },
+        {
+          "name": "terrain_epochs",
+          "signature": "terrain_epochs() -> u32",
+          "source": {
+            "file": "src/shared/corelang/Backend.cpp",
+            "lines": "89-90; 116-116"
+          },
+          "contract": "Returns epochs (default 12).",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "no",
+            "order": "no",
+            "errors": "no",
+            "version": "no"
+          }
+        },
+        {
+          "name": "terrain_erosion_steps",
+          "signature": "terrain_erosion_steps() -> u32",
+          "source": {
+            "file": "src/shared/corelang/Backend.cpp",
+            "lines": "90-90; 117-117"
+          },
+          "contract": "Returns erosion_steps (default 3).",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "no",
+            "order": "no",
+            "errors": "no",
+            "version": "no"
+          }
+        },
+        {
+          "name": "terrain_initial_climate_iterations",
+          "signature": "terrain_initial_climate_iterations() -> u32",
+          "source": {
+            "file": "src/shared/corelang/Backend.cpp",
+            "lines": "91-96; 118-118"
+          },
+          "contract": "Returns initial_climate_iterations (default 24).",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "no",
+            "order": "no",
+            "errors": "no",
+            "version": "no"
+          }
+        },
+        {
+          "name": "terrain_climate_iterations",
+          "signature": "terrain_climate_iterations() -> u32",
+          "source": {
+            "file": "src/shared/corelang/Backend.cpp",
+            "lines": "97-97; 119-119"
+          },
+          "contract": "Returns climate_iterations (default 80).",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "no",
+            "order": "no",
+            "errors": "no",
+            "version": "no"
+          }
+        },
+        {
+          "name": "terrain_currents",
+          "signature": "terrain_currents() -> bool",
+          "source": {
+            "file": "src/shared/corelang/Backend.cpp",
+            "lines": "98-98; 120-120"
+          },
+          "contract": "Returns currents flag (default true).",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "no",
+            "order": "no",
+            "errors": "no",
+            "version": "no"
+          }
+        },
+        {
+          "name": "terrain_wind_sign",
+          "signature": "terrain_wind_sign() -> i8",
+          "source": {
+            "file": "src/shared/corelang/Backend.cpp",
+            "lines": "99-99; 121-121"
+          },
+          "contract": "Returns wind_sign (default +1; accepted range comes from validateConfiguration).",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "no",
+            "order": "no",
+            "errors": "no",
+            "version": "no"
+          }
+        },
+        {
+          "name": "terrain_coastal_elaboration",
+          "signature": "terrain_coastal_elaboration() -> bool",
+          "source": {
+            "file": "src/shared/corelang/Backend.cpp",
+            "lines": "100-104; 122-122"
+          },
+          "contract": "Returns coastal_elaboration flag (default true).",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "no",
+            "order": "no",
+            "errors": "no",
+            "version": "no"
+          }
+        },
+        {
+          "name": "terrain_plan",
+          "signature": "terrain_plan(u8, u64, u32, u32, u32, u32, u32, bool, i8, bool, bool, u32, u32, u32, u32, u8) -> u8",
+          "source": {
+            "file": "src/shared/corelang/Backend.cpp",
+            "lines": "43-66; 241-265"
+          },
+          "contract": "Arguments: manifest version; seed/resolution/epochs/erosion/initial-climate/climate/currents/wind/coastal fields; pregen flag; four extents; stage acknowledgement. Version 2; exactly one plan call in fixed source; source has ten total host calls and 64-instruction cap; returned marker must equal captured stage plan.",
+          "doc_field_coverage": {
+            "name": "no",
+            "argument_types": "no",
+            "return_type": "no",
+            "profile": "n/a",
+            "entrypoint": "no",
+            "units": "no",
+            "defaults": "no",
+            "limits": "no",
+            "order": "no",
+            "errors": "no",
+            "version": "no"
+          }
+        }
+      ]
+    }
+  ],
+  "non_host_surfaces": [
+    {
+      "name": "base_height",
+      "signature": "base_height() -> f64",
+      "family": "world_generation_plan",
+      "source": {
+        "file": "scenarios/world/height_tile.core",
+        "lines": "16-16"
+      },
+      "contract": "Default 6.0; finite >=0; inferred block-height units.",
+      "doc_field_coverage": {
+        "name": "no",
+        "signature": "no",
+        "units": "no",
+        "defaults": "no",
+        "limits": "no"
+      }
+    },
+    {
+      "name": "crest_spacing",
+      "signature": "crest_spacing() -> f64",
+      "family": "world_generation_plan",
+      "source": {
+        "file": "scenarios/world/height_tile.core",
+        "lines": "17-17"
+      },
+      "contract": "Default 128.0; finite >0; inferred horizontal block-distance units.",
+      "doc_field_coverage": {
+        "name": "no",
+        "signature": "no",
+        "units": "no",
+        "defaults": "no",
+        "limits": "no"
+      }
+    },
+    {
+      "name": "crest_amplitude",
+      "signature": "crest_amplitude() -> f64",
+      "family": "world_generation_plan",
+      "source": {
+        "file": "scenarios/world/height_tile.core",
+        "lines": "18-18"
+      },
+      "contract": "Default 800.0; finite >=0; inferred block-height units.",
+      "doc_field_coverage": {
+        "name": "no",
+        "signature": "no",
+        "units": "no",
+        "defaults": "no",
+        "limits": "no"
+      }
+    }
+  ],
+  "generic_cpp_bounded_bridge": [
+    {
+      "name": "compileBounded",
+      "signature": "compileBounded(Source, Registry, ExecutionLimits, stop_token, CancellationCheck) -> expected<CompiledProgram, BackendError>",
+      "source": {
+        "file": "src/shared/include/shared/corelang/Execution.hpp",
+        "lines": "85-92"
+      }
+    },
+    {
+      "name": "boundedInstructionCount",
+      "signature": "boundedInstructionCount(Artifact|CompiledProgram, module_id, entry, ExecutionLimits, execution_count) -> expected<u64, BackendError>",
+      "source": {
+        "file": "src/shared/include/shared/corelang/Execution.hpp",
+        "lines": "94-110"
+      }
+    },
+    {
+      "name": "executeBounded",
+      "signature": "executeBounded(ExecutionRequest) -> expected<ExecutionResult, BackendError>",
+      "source": {
+        "file": "src/shared/include/shared/corelang/Execution.hpp",
+        "lines": "112-113"
+      }
+    }
+  ],
+  "execution_limits_default": {
+    "source_bytes": 4096,
+    "bytecode_bytes": 65536,
+    "native_image_bytes": 4194304,
+    "static_instructions": 65536,
+    "max_execution_count": 2
+  },
+  "limits": "Fields and documentation coverage describe the audited working S1 source. Verify all against final S1; publish complete public contracts through W9, keep private manifest bindings private, and label inferred units."
+}
