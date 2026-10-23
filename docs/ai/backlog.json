@@ -18327,5 +18327,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0510",
+    "title": "S1 layered distant terrain and atomic chunk handoff scaffold",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "sol",
+    "milestone": "ED-011-S1",
+    "depends_on": [],
+    "acceptance": "Satisfy ordered owner-authorized scaffold and budgets in docs/ai/decisions/earlydev_0_1_1_s1_lod_scaffold.md. Replace coarse center-height terraces with continuous linear terrain triangles, canonical shared edge chains and closed authoritative L3 handoff; retain fallback on incomplete vertical capture. Preserve canonical terrain references and collision. Qualify ordinary remote rendering, owner-view holes/surface alignment, both atlas resolutions, draw-path parity and Mac/Android runtime; unit metadata coverage alone is insufficient. Preserve actual detail through movement across640-block horizontal full-volume interest; eliminate observed detail/LOD flicker and join walls/height jumps. Height-only640 coverage over40 actual is insufficient.",
+    "evidence": "Current native CTest passed all 13 `TerrainLodTest`, 13 `TerrainLodRuntimeTest`, and 5 `TerrainLodUploadPlanTest` cases. Owner playtest 11 reported detail/LOD flicker, coarse-only terrain at x15, and walls/height jumps at joins. Historical full RendererSmokeTest timed out under sandbox at 45.01 seconds; the authorized elevated full run completed in 19.84 seconds with 67 passed, 1 skipped, and 3 failed (`PlayerClientFocusTest.TerrainPromptRequiresNonemptyActiveSceneThenMatchingFence`, `RendererSmokeTest.MaterialPaletteFixtureCarriesCanonicalMaterialsIntoFaceInstances`, and `RendererSmokeTest.HeightTileBatchKeepsBothOldMeshesWhenDeadlinePreventsArenaGrowth`; log SHA-256 `426bca4de04c0b65ee1d5143e618d4bf55e866993849a05acea86dafa9fc5dfe`). After test-only fixture corrections, those exact three focused tests passed 3/3 in 0.426 seconds; the build and green logs are retained under `/Users/core-just/.codex/task-evidence/mc-s1-20261023/release-reconciliation-01/renderer-fixtures/` (green log SHA-256 `bcf51c4f2f0afc80c53aa6637c54c4965c18ee12588421efb184e3fadb0eb0ff`). The full renderer suite was not rerun, and no full visual/platform qualification pass is claimed. Owner accepted normal S1 release with known issues on 2026-10-23 per `/Users/core-just/.codex/task-evidence/mc-s1-20261023/owner-release-acceptance/request.md`; this does not convert failed or unqualified proof into a pass.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0482",
+    "motivation": "Owner authorized LOD integration now to provide coherent distant terrain while actual nearby chunks remain authoritative.",
+    "context": "Owner accepted the layered scaffold on 21 October, then reported occasional holes, irregular meshes and flight below the apparent surface. The owner permits smooth linear/quadratic terrain or coherent block surfaces; this implementation selects linear triangles. These presentation changes do not revise canonical terrain identity or reset S1 deadlines. Visual curvature is separately tracked by MC-AI-0511. Latest owner scope retains this existing S1 implementation while deferring the other-chat research terrain-model replacement to S2. Required tests, performance and owner-playtest gates remain open; CoreLang0.1.5 exact ai-dev is allowed for snapshot delivery. Owner correction: normal actual generation/preservation is40chunks=640blocks horizontally with full-volume authoritative column profiles. Prior40/72-block evidence is superseded invalid-unit interpretation, preserved as history. Playtest11 failed four gameplay/LOD cases; no Ready or playtest pass.",
+    "complexity": "high",
+    "created_at": "2026-10-21",
+    "resolved_at": "2026-10-23",
+    "resolution_changes": "Delivered the layered LOD scaffold and atomic current-column publication with seam/runtime contract tests in the owner-approved S1 source candidate; aggregate integration remains pending. Focused rerun fixed only three deterministic test fixtures; the full suite was not rerun. Owner-reported visual defects and incomplete platform/visual qualification remain accepted S1 limitations and explicit S2 targets.",
+    "plan": [
+      "Use continuous linear triangle surfaces and canonical shared edges at equal, mixed, periodic and actual boundaries.",
+      "Retain coarse coverage until authoritative visible-volume capture or explicit boundary closure is complete.",
+      "Verify geometric boundaries and shader layout before qualifying owner-view and platform rendering."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
