@@ -28,9 +28,13 @@ The [release policy](RELEASES.md) requires local qualification, not hosted CI.
 At aggregate start, initialize the [release report lifecycle](RELEASE_REPORTS.md)
 with its accepted, ordered feature list and delivery gates. Maintain the
 three-hour PDF cadence throughout execution, consolidate every four periods,
-and include a short user-facing report at each checkpoint. At genuine full
-delivery, verify the evidence receipt and remove only that managed report
-folder. This applies to future snapshots and versions, not only S7.
+and include a short user-facing report at each checkpoint. New checkpoint
+drafts use the documented six-stage lifecycle with test platform/scope and
+structured test results; blockers are reported separately and historical
+reports keep their original format.
+At genuine full delivery, verify the evidence receipt and remove only that
+managed report folder. This applies to future snapshots and versions, not only
+S7.
 
 1. Resolve the explicitly selected aggregate and inspect its plan, children and dependencies. A snapshot implementation requires an in-development snapshot. Block on unresolved product decisions; implement all already-authorized independent work first.
 2. Expand uncovered product scope into basic tasks before implementing it. Assign work to the snapshot that will deliver it. Complete dependency-ready tasks through the `implement` skill. Follow [model routing](MODELS.md); use one coordinator, short worker packets and focused checks during iteration.

@@ -35,11 +35,29 @@ Conclusions (investigated causes and corrections); Next goals; Summary. A draft
 may include an `overview` list of up to six plain-language lines. The PDF shows
 those lines at the start of State of release, before the feature statuses; when
 the field is absent, the existing report layout is unchanged. State contains
-exactly one feature line per manifest entry, in manifest order. Lines use
-`<name> [<ID>] - Done`, `<name> [<ID>] - in progress: <detail>`, or
-`<name> [<ID>] - planned`. The PDF orders features by Done, In progress, then
-Planned, preserving manifest order within each status and showing each ID and
-name; status words are bold and colored.
+exactly one feature line per manifest entry, in manifest order. Unmarked drafts
+keep the historical `Done`, `In progress`, and `Planned` statuses and their
+existing PDF order. A new checkpoint can opt into the more specific lifecycle
+by setting `progress_format` to `development-stages-v2`. Its ordered statuses
+are `Planned`, `Implementing`, `Implemented`, `Testing`, `Tested`, and
+`Committed`. `Planned` has no detail; each later stage needs a short, concrete
+detail about the artifact or evidence. For `Testing` and `Tested`, add a
+`test_evidence` object with exactly `platform`, `scope`, and `result` fields.
+Platform and scope are nonempty single lines; result is `passed`, `failed`, or
+`incomplete`. The PDF prints these fields separately from the stage detail.
+`Committed` requires the full 40-character commit SHA in its detail; identify
+any platform or runtime acceptance that remains open. That stage records a
+source commit and does not claim aggregate qualification. Existing saved
+`development-stages-v1` drafts remain readable with their original free-text
+test details; new drafts use v2.
+
+The stage order describes each feature's current lifecycle position, not a
+release-wide in-progress flag. An item may move back to `Implementing` or
+`Testing` when new work or a correction requires it. Keep blockers separate
+from stage by adding an optional `blockers` list of plain-language lines. The
+PDF preserves manifest order within each stage and displays blockers in a
+separate `Blockers` subsection. Existing unmarked reports and PDFs retain the
+historical three-status validation and layout.
 
 Limits are: 16 expected-progress lines; one or two lines per changed feature;
 10 other-progress lines; 30 each for issues and conclusions; feature count

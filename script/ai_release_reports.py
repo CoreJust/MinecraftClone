@@ -35,6 +35,13 @@ SECTION_TITLES = (
 )
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_GIT_COMMIT = re.compile(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])", re.IGNORECASE)
+DEVELOPMENT_PROGRESS_FORMAT = "development-stages-v1"
+DEVELOPMENT_PROGRESS_FORMAT_V2 = "development-stages-v2"
+_DEVELOPMENT_PROGRESS_FORMATS = {
+    DEVELOPMENT_PROGRESS_FORMAT,
+    DEVELOPMENT_PROGRESS_FORMAT_V2,
+}
 _DRAFT_KEYS = {
     "period",
     "feature_state",
@@ -47,11 +54,35 @@ _DRAFT_KEYS = {
     "next_goals",
     "summary",
 }
-_OPTIONAL_DRAFT_KEYS = {"overview"}
+_OPTIONAL_DRAFT_KEYS = {"overview", "progress_format", "blockers"}
 _MAJOR_DRAFT_KEYS = {"product_results", "screenshots", "measurements", "analysis"}
 _TIME_KEYS = {"allocations", "parallel_note"}
 _STATUS_ORDER = {"Done": 0, "In progress": 1, "Planned": 2}
 _STATUS_COLORS = {"Done": "#188038", "In progress": "#1a73e8", "Planned": "#5f6368"}
+_DEVELOPMENT_STATUS_ORDER = {
+    "Planned": 0,
+    "Implementing": 1,
+    "Implemented": 2,
+    "Testing": 3,
+    "Tested": 4,
+    "Committed": 5,
+}
+_DEVELOPMENT_STATUS_TEXT = {
+    "Planned": "planned",
+    "Implementing": "implementation in progress",
+    "Implemented": "implemented",
+    "Testing": "testing in progress",
+    "Tested": "tested",
+    "Committed": "committed",
+}
+_DEVELOPMENT_STATUS_COLORS = {
+    "Planned": "#5f6368",
+    "Implementing": "#1a73e8",
+    "Implemented": "#00796b",
+    "Testing": "#b06000",
+    "Tested": "#188038",
+    "Committed": "#6a1b9a",
+}
 
 
 class ReportError(ValueError):
@@ -193,6 +224,15 @@ def validate_draft(
     allowed_keys = required_keys | _OPTIONAL_DRAFT_KEYS
     if not required_keys.issubset(draft) or not set(draft).issubset(allowed_keys):
         raise ReportError("draft fields do not match the required report format")
+    progress_format = draft.get("progress_format")
+    if "progress_format" in draft and (
+        not isinstance(progress_format, str) or progress_format not in _DEVELOPMENT_PROGRESS_FORMATS
+    ):
+        raise ReportError("progress_format must be development-stages-v1 or development-stages-v2")
+    if "blockers" in draft:
+        if progress_format not in _DEVELOPMENT_PROGRESS_FORMATS:
+            raise ReportError("blockers require a development-stages progress_format")
+        _line_list(draft["blockers"], "blockers", 10)
     if "overview" in draft:
         _line_list(draft["overview"], "overview", 6)
     manifest = _features_by_id(features)
@@ -220,17 +260,52 @@ def validate_draft(
         raise ReportError("feature state must include every manifest feature in feature order")
     state_ids: list[str] = []
     for state in states:
-        if not isinstance(state, dict) or set(state) != {"id", "status", "detail"}:
+        if not isinstance(state, dict) or not {"id", "status", "detail"}.issubset(state):
             raise ReportError("each feature state must contain id, status, and detail")
         feature_id = _single_line(state["id"], "feature state ID")
         status = _single_line(state["status"], "feature status")
+        expected_state_keys = {"id", "status", "detail"}
+        if progress_format == DEVELOPMENT_PROGRESS_FORMAT_V2 and status in {"Testing", "Tested"}:
+            if "test_evidence" not in state:
+                raise ReportError(
+                    f"{status} status for {feature_id} requires structured test_evidence with platform, scope, and result"
+                )
+            expected_state_keys.add("test_evidence")
+        if set(state) != expected_state_keys:
+            raise ReportError("feature state fields do not match the selected progress format and status")
         detail = _single_line(state["detail"], f"feature detail for {feature_id}")
-        if status not in {"Done", "In progress", "Planned"}:
-            raise ReportError(f"invalid status for feature {feature_id}; use Done, In progress, or Planned")
-        if status == "In progress" and not detail:
-            raise ReportError(f"In progress status for {feature_id} needs a short detail")
-        if status != "In progress" and detail:
-            raise ReportError(f"{status} status for {feature_id} must not include detail")
+        if progress_format in _DEVELOPMENT_PROGRESS_FORMATS:
+            if status not in _DEVELOPMENT_STATUS_ORDER:
+                raise ReportError(
+                    f"invalid status for feature {feature_id}; use Planned, Implementing, Implemented, "
+                    "Testing, Tested, or Committed"
+                )
+            if status == "Planned" and detail:
+                raise ReportError(f"Planned status for {feature_id} must not include detail")
+            if status != "Planned" and not detail:
+                raise ReportError(f"{status} status for {feature_id} needs a short detail")
+            if status == "Committed" and not _GIT_COMMIT.search(detail):
+                raise ReportError(f"Committed status for {feature_id} must include a full 40-character commit SHA")
+            if progress_format == DEVELOPMENT_PROGRESS_FORMAT_V2 and status in {"Testing", "Tested"}:
+                evidence = state["test_evidence"]
+                if not isinstance(evidence, dict) or set(evidence) != {"platform", "scope", "result"}:
+                    raise ReportError(
+                        f"{status} status for {feature_id} requires structured test_evidence with platform, scope, and result"
+                    )
+                for key in ("platform", "scope"):
+                    value = _single_line(evidence[key], f"test evidence {key} for {feature_id}")
+                    if not value:
+                        raise ReportError(f"test evidence {key} for {feature_id} must not be empty")
+                result = _single_line(evidence["result"], f"test evidence result for {feature_id}")
+                if result not in {"passed", "failed", "incomplete"}:
+                    raise ReportError("test evidence result must be passed, failed, or incomplete")
+        else:
+            if status not in _STATUS_ORDER:
+                raise ReportError(f"invalid status for feature {feature_id}; use Done, In progress, or Planned")
+            if status == "In progress" and not detail:
+                raise ReportError(f"In progress status for {feature_id} needs a short detail")
+            if status != "In progress" and detail:
+                raise ReportError(f"{status} status for {feature_id} must not include detail")
         state_ids.append(feature_id)
     if state_ids != [feature["id"] for feature in features]:
         raise ReportError("feature state must follow feature order")
@@ -748,8 +823,27 @@ def append_report(
     return [aggregate_path]
 
 
-def _feature_status_text(feature_state: dict[str, Any]) -> str:
+def _progress_status_order(draft: dict[str, Any]) -> dict[str, int]:
+    if draft.get("progress_format") in _DEVELOPMENT_PROGRESS_FORMATS:
+        return _DEVELOPMENT_STATUS_ORDER
+    return _STATUS_ORDER
+
+
+def _feature_status_text(feature_state: dict[str, Any], progress_format: str | None = None) -> str:
     status = feature_state["status"]
+    if progress_format in _DEVELOPMENT_PROGRESS_FORMATS:
+        if status not in _DEVELOPMENT_STATUS_TEXT:
+            raise ReportError(f"unsupported feature status: {status}")
+        if status == "Planned":
+            return _DEVELOPMENT_STATUS_TEXT[status]
+        status_text = f"{_DEVELOPMENT_STATUS_TEXT[status]}: {feature_state['detail']}"
+        if progress_format == DEVELOPMENT_PROGRESS_FORMAT_V2 and status in {"Testing", "Tested"}:
+            evidence = feature_state["test_evidence"]
+            status_text += (
+                f" [platform: {evidence['platform']}; scope: {evidence['scope']}; "
+                f"result: {evidence['result']}]"
+            )
+        return status_text
     if status == "Done":
         return "Done"
     if status == "In progress":
@@ -759,9 +853,13 @@ def _feature_status_text(feature_state: dict[str, Any]) -> str:
     raise ReportError(f"unsupported feature status: {status}")
 
 
-def _feature_status_line(feature_name: str, feature_state: dict[str, Any]) -> str:
+def _feature_status_line(
+    feature_name: str,
+    feature_state: dict[str, Any],
+    progress_format: str | None = None,
+) -> str:
     identity = f" [{feature_state['id']}]" if "id" in feature_state else ""
-    return f"{feature_name}{identity} - {_feature_status_text(feature_state)}"
+    return f"{feature_name}{identity} - {_feature_status_text(feature_state, progress_format)}"
 
 
 def _time_share_labels(allocations: list[dict[str, Any]], period_hours: float) -> list[str]:
@@ -839,8 +937,14 @@ def _report_story(payload: dict[str, Any]):
 
     def status_paragraph(feature_name: str, state: dict[str, Any]):
         identity = f" [{state['id']}]" if "id" in state else ""
-        status = _feature_status_text(state)
-        color = _STATUS_COLORS[state["status"]]
+        progress_format = report.get("progress_format")
+        status = _feature_status_text(state, progress_format)
+        colors_by_status = (
+            _DEVELOPMENT_STATUS_COLORS
+            if progress_format in _DEVELOPMENT_PROGRESS_FORMATS
+            else _STATUS_COLORS
+        )
+        color = colors_by_status[state["status"]]
         escaped_name = feature_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         escaped_status = status.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         return Paragraph(
@@ -864,7 +968,7 @@ def _report_story(payload: dict[str, Any]):
     feature_names = {feature["id"]: feature["name"] for feature in features}
     display_states = sorted(
         enumerate(report["feature_state"]),
-        key=lambda item: (_STATUS_ORDER[item[1]["status"]], item[0]),
+        key=lambda item: (_progress_status_order(report)[item[1]["status"]], item[0]),
     )
     story.append(Paragraph(SECTION_TITLES[1], styles["ReportSection"]))
     for line in report.get("overview", []):
@@ -873,6 +977,10 @@ def _report_story(payload: dict[str, Any]):
         story.append(paragraph_text("None recorded."))
     for _, state in display_states:
         story.append(status_paragraph(feature_names[state["id"]], state))
+    if report.get("blockers"):
+        story.append(Paragraph("Blockers", styles["Heading3"]))
+        for blocker in report["blockers"]:
+            story.append(paragraph_text(blocker))
     add_section(SECTION_TITLES[2], report["expected_progress"])
     progress_lines = []
     for item in report["feature_progress"]:
@@ -1035,11 +1143,12 @@ def verify_pdf(path: Path, payload: dict[str, Any]) -> None:
         feature_names = {feature["id"]: feature["name"] for feature in payload["features"]}
         display_states = sorted(
             enumerate(payload["draft"]["feature_state"]),
-            key=lambda item: (_STATUS_ORDER[item[1]["status"]], item[0]),
+            key=lambda item: (_progress_status_order(payload["draft"])[item[1]["status"]], item[0]),
         )
         previous_position = -1
+        progress_format = payload["draft"].get("progress_format")
         for _, state in display_states:
-            status_line = _feature_status_line(feature_names[state["id"]], state)
+            status_line = _feature_status_line(feature_names[state["id"]], state, progress_format)
             position = text.find(status_line)
             if position < 0:
                 raise ReportError("rendered PDF has an incorrect feature status")
@@ -1047,6 +1156,9 @@ def verify_pdf(path: Path, payload: dict[str, Any]) -> None:
                 raise ReportError("rendered PDF feature statuses are not in stable status order")
             previous_position = position
         report = payload["draft"]
+        if report.get("blockers"):
+            if "Blockers" not in text or any(" ".join(blocker.split()) not in text for blocker in report["blockers"]):
+                raise ReportError("rendered PDF is missing separate blocker details")
         overview_positions = [text.find(" ".join(line.split())) for line in report.get("overview", [])]
         if any(position < 0 for position in overview_positions):
             raise ReportError("rendered PDF is missing release overview text")
