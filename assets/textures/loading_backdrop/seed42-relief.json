@@ -1,0 +1,53 @@
+{
+  "purpose": "Native opening-loading backdrop captured from the current prepared seed-42 world; art source, not runtime acceptance.",
+  "asset": "assets/textures/loading_backdrop/seed42-relief.png",
+  "asset_sha256": "4cd964a6231cb754a85fda69708a2e2686182c5485f3957a3bece3ea7256ce50",
+  "asset_rgb_pixel_sha256": "cde10048beaba60d179af40d42aa0c55d6c76f278837c60a40fc3ca3e33681ea",
+  "source_capture": {
+    "evidence_name": "task-0549-backdrop/relief-06.ppm",
+    "dimensions": [
+      2560,
+      1440
+    ],
+    "ppm_sha256": "733c154c538c2e28bc74e12227a2c4cd158872a75e975b0926708be4b4d58799",
+    "build": {
+      "source_revision_base_head": "bc76c4c13ffab2fac9ca3fe99fe7b4ce699a4606",
+      "working_tree_state": "dirty_candidate",
+      "compiled_input_manifest_sha256": "9f0ff21aeae1b01052aa59a2601278ebdcf8256617ce2af13efc2981d85e2f44",
+      "binary_sha256": "a184201498490d5e456a0d4515698dafa7e47eab64fa1267d9e367681f0f2ef4"
+    },
+    "terrain_identity": {
+      "terrain_version": 2,
+      "revision": 1,
+      "seed": 42,
+      "configuration_identity": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=42;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1"
+    },
+    "scene_gate": {
+      "playable_sphere_ready": true,
+      "resident_authoritative_columns": 6561,
+      "required_authoritative_columns": 6561,
+      "near_meshes": [
+        225,
+        225
+      ]
+    },
+    "camera": {
+      "perspective": "first_person",
+      "position": [
+        39808.3125,
+        16768.3125,
+        466.625
+      ],
+      "yaw_degrees": 135,
+      "pitch_degrees": 14.042250738468832
+    }
+  },
+  "embedded_derivation": {
+    "source_asset_sha256": "4cd964a6231cb754a85fda69708a2e2686182c5485f3957a3bece3ea7256ce50",
+    "dimensions": [
+      512,
+      288
+    ],
+    "processing": "Existing loading shade stops, then 256-color indexed embedding; no scene pixels were edited."
+  }
+}

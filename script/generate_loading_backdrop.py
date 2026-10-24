@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Embed the accepted S2 loading-scene capture as a compact native image."""
+"""Embed the captured current S2 terrain scene as a compact native image."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_PATH = ROOT / "docs/ai/prototypes/s2-ui/assets/terrain.png"
+SOURCE_PATH = ROOT / "assets/textures/loading_backdrop/seed42-relief.png"
 OUTPUT_PATH = ROOT / "src/client/include/client/LoadingBackdrop.hpp"
-SOURCE_SHA256 = "d8d97e3480a8b193d953057bf4b1b1bb266c33289327ef5c9d54f465994232fc"
+SOURCE_SHA256 = "4cd964a6231cb754a85fda69708a2e2686182c5485f3957a3bece3ea7256ce50"
 WIDTH = 512
 HEIGHT = 288
 PALETTE_SIZE = 256
@@ -36,11 +36,11 @@ def prepare_pixels(source_bytes: bytes) -> tuple[list[tuple[int, int, int, int]]
 
     actual_hash = hashlib.sha256(source_bytes).hexdigest()
     if actual_hash != SOURCE_SHA256:
-        raise ValueError(f"accepted prototype asset hash mismatch: {actual_hash}")
+        raise ValueError(f"loading backdrop source asset hash mismatch: {actual_hash}")
 
     with Image.open(BytesIO(source_bytes)) as source:
         if source.size != (2_560, 1_440):
-            raise ValueError(f"unexpected accepted prototype dimensions: {source.size}")
+            raise ValueError(f"unexpected loading backdrop dimensions: {source.size}")
         resized = source.convert("RGB").resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
 
     shaded_pixels: list[tuple[int, int, int]] = []
@@ -92,10 +92,10 @@ def render_header(source_bytes: bytes) -> str:
         for offset in range(0, len(encoded_indices), INDEX_CHUNK_LENGTH)
     ]
     index_lines = "\n".join(f'    "{chunk}",' for chunk in index_chunks)
-    return f"""// Generated from docs/ai/prototypes/s2-ui/assets/terrain.png.
+    return f"""// Generated from assets/textures/loading_backdrop/seed42-relief.png.
 // SHA-256 {SOURCE_SHA256}.
-// Accepted unchanged native S1 work-in-progress capture; not synthetic scene art.
-// The 512x288 downsample applies the accepted loading-view shade stops before 256-color quantization.
+// Captured from the current prepared seed-42 terrain; see the adjacent provenance JSON.
+// The {WIDTH}x{HEIGHT} downsample applies the existing loading-view shade stops before 256-color quantization.
 #pragma once
 
 #include "GenerationMapPresentation.hpp"

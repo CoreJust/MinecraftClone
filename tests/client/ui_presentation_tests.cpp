@@ -116,9 +116,9 @@ TEST(UiPresentationTest, SynchronizingAndStartingKeepTheSameMapViewportAndRealSe
     };
     client::WorldLoadingStatus synchronizing_status{
         .state = client::WorldLoadingState::PreparingSpawn,
-        .initial_sphere_ready = true,
         .playable_sphere_ready_chunks = 3U,
         .playable_sphere_required_chunks = 7U,
+        .initial_sphere_ready = true,
     };
     client::UiFrame const synchronizing = client::buildUiFrame(
         9U, synchronizing_status, true, false, {}, animation, "localhost:4242", 17U);
