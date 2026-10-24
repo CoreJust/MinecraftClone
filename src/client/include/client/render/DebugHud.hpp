@@ -1,36 +1,41 @@
 #pragma once
 
+#include <client/render/PresentationFrameProgress.hpp>
 #include <client/render/TextRenderer.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 namespace client {
 
-inline constexpr size_t DEBUG_HUD_LINE_COUNT = 7U;
+inline constexpr size_t DEBUG_HUD_LINE_COUNT = 8U;
 inline constexpr std::array<size_t, DEBUG_HUD_LINE_COUNT> DEBUG_HUD_LINE_BYTES{
-    32U,
-    32U,
+    40U,
     32U,
     32U,
     40U,
     64U,
+    64U,
+    48U,
     64U,
 };
 inline constexpr std::array<size_t, DEBUG_HUD_LINE_COUNT> DEBUG_HUD_LINE_WORD_OFFSETS{
     0U,
-    8U,
-    16U,
-    24U,
-    32U,
-    40U,
-    56U,
+    10U,
+    18U,
+    26U,
+    36U,
+    52U,
+    68U,
+    80U,
 };
-inline constexpr size_t DEBUG_HUD_MAX_TEXT_BYTES = 292U;
-inline constexpr size_t DEBUG_HUD_MAX_INSTANCES = 72U;
-inline constexpr size_t DEBUG_HUD_MAX_PRESENTED_SAMPLES = 256;
+inline constexpr size_t DEBUG_HUD_MAX_TEXT_BYTES = 392U;
+inline constexpr size_t DEBUG_HUD_MAX_INSTANCES = 98U;
+inline constexpr size_t DEBUG_HUD_MAX_PRESENTED_SAMPLES = 512U;
 inline constexpr double DEBUG_HUD_FPS_WINDOW_SECONDS = 1.0;
 inline constexpr float DEBUG_HUD_BITMAP_GLYPH_WIDTH_PIXELS = 8.0F;
 inline constexpr float DEBUG_HUD_BITMAP_GLYPH_HEIGHT_PIXELS = 16.0F;
@@ -63,6 +68,10 @@ struct DebugHudNumberFormatter {
 };
 
 struct DebugHudInput {
+    TextStyle text_style = TextStyle::Fixed;
+    bool gameplay_ui = true;
+    bool compact_window = false;
+    // The renderer writes this legacy status for other diagnostics; FPS does not consume it.
     bool presented = false;
     bool touch_flight_help = false;
     float player_x = 0.0F;
@@ -77,6 +86,13 @@ struct DebugHudInput {
     uint8_t view_index = 0U;
     bool flight_enabled = false;
     bool collision_bypass_enabled = false;
+    std::optional<RendererFrameIdentity> completed_frame;
+    // Missing or expired fence observations do not contribute to FPS.
+    std::optional<std::chrono::steady_clock::time_point> completed_frame_observed_at;
+    bool loaded_dense_chunks_available = false;
+    uint64_t loaded_dense_chunks = 0U;
+    std::optional<uint64_t> client_memory_rss_bytes;
+    std::optional<float> temperature_celsius;
 };
 
 using DebugHudText = TextDocument;
@@ -98,6 +114,56 @@ struct DebugHudSnapshot {
     float dpi_scale = 1.0F;
     bool enabled = false;
 };
+
+struct DebugHudRect final {
+    float x = 0.0F;
+    float y = 0.0F;
+    float width = 0.0F;
+    float height = 0.0F;
+};
+
+struct DebugHudPoint final {
+    float x = 0.0F;
+    float y = 0.0F;
+};
+
+struct DebugHudLayout final {
+    bool compact = false;
+    float dpi_scale = 1.0F;
+    float framebuffer_width_pixels = 0.0F;
+    float framebuffer_height_pixels = 0.0F;
+    float glyph_scale = 1.0F;
+    float small_glyph_scale = 0.5F;
+    float outline_offset_pixels = 1.0F;
+    float margin_pixels = 0.0F;
+    float gap_pixels = 0.0F;
+    float left_column_x = 0.0F;
+    float right_column_x = 0.0F;
+    float column_width_pixels = 0.0F;
+    float selected_block_y = 0.0F;
+    float controls_y = 0.0F;
+    float control_line_advance_pixels = 0.0F;
+    DebugHudRect minimap{};
+    DebugHudRect minimap_interactive{};
+    DebugHudPoint north{};
+    DebugHudPoint east{};
+    DebugHudPoint south{};
+    DebugHudPoint west{};
+    DebugHudPoint heading{};
+};
+
+[[nodiscard]] DebugHudLayout layoutDebugHud(
+    uint32_t framebuffer_width,
+    uint32_t framebuffer_height,
+    float dpi_scale,
+    bool force_compact = false
+) noexcept;
+
+void buildDebugHudPresentation(
+    DebugHudSnapshot const& snapshot,
+    DebugHudLayout const& layout,
+    TextRenderer& output
+);
 
 // Shared edge detector for the shipped performance-toggle input. Keeping the
 // latch in the HUD boundary makes desktop and Android debounce the same key
@@ -170,7 +236,11 @@ private:
         int decimals,
         TextColor color
     ) const;
-    void recordPresentation(double monotonic_seconds, bool presented) noexcept;
+    void recordPresentation(
+        double monotonic_seconds,
+        std::optional<RendererFrameIdentity> const& completed_frame,
+        std::optional<std::chrono::steady_clock::time_point> const& observed_at
+    ) noexcept;
 
     DebugHudClock clock_{};
     DebugHudNumberFormatter formatter_{};
@@ -180,6 +250,7 @@ private:
     double start_time_ = 0.0;
     double now_ = 0.0;
     DebugHudInput input_{};
+    std::optional<RendererFrameIdentity> last_completed_frame_;
     float dpi_scale_ = 1.0F;
     bool enabled_ = false;
     bool has_time_ = false;

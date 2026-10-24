@@ -23,7 +23,7 @@ class SinglePlayerBundleTest(unittest.TestCase):
         for name in (
             "grid.mesh", "player.mesh", "grid.vert", "player.vert", "player.frag", "stone.vert",
             "stone_indexed_block.vert", "stone.frag", "stone_solid.frag", "sky.vert", "sky.frag",
-            "trivial.frag", "text.vert", "text.frag", "map.vert", "map.frag",
+            "trivial.frag", "text.vert", "text.frag", "adaptive_text.frag", "map.vert", "map.frag",
         ):
             (runtime / "shaders" / f"{name}.spv").write_bytes(struct.pack("<I", 0x07230203))
         assets = root / "assets"
@@ -82,14 +82,14 @@ class SinglePlayerBundleTest(unittest.TestCase):
             self.assertEqual(first["maximum_build_extra_bytes"], len(data) * 3 + 4_194_304)
 
     def test_missing_game_or_runtime_or_shader_cannot_be_silently_packaged(self):
-        for removed in ["mc_main.exe", "runtime.dll", "shaders/map.vert.spv"]:
+        for removed in ["mc_main.exe", "runtime.dll", "shaders/map.vert.spv", "shaders/adaptive_text.frag.spv"]:
             with self.subTest(removed=removed), tempfile.TemporaryDirectory() as directory:
                 inputs = self.fixture(Path(directory))
                 (inputs[0] / removed).unlink()
                 with self.assertRaises(ValueError):
                     builder.collect_entries(*inputs)
 
-    def test_renamed_required_shader_is_rejected_with_sixteen_valid_magic_files(self):
+    def test_renamed_required_shader_is_rejected_with_otherwise_valid_magic_files(self):
         with tempfile.TemporaryDirectory() as directory:
             inputs = self.fixture(Path(directory))
             shader = inputs[0] / "shaders/map.vert.spv"

@@ -52,23 +52,22 @@ snapshots. `HeightTileWorkerPool` shares it across previews/chunks, bounded to 1
 queued/submitted jobs. Cancellation/drain preserve result ownership; `GameServer`
 owns scheduling, stale-result rejection and publication.
 
-Prepared joins retain original T0. Dense 48 permits prompt/start; first public
-full Ready requires all 768 startup-reserve profiles. Status
-`startup_prefetch_primed_at` records priming; afterward readiness and counters track
-current 640 only. Begin/restart/cancel and complete profile clear rearm priming.
-Partial reserve loss preserves complete current 640 coverage.
-Session/epoch and identity validate before publication. Dense 48/80 delivery
-and ACK-gated lead promotion stay separate. Earlier 40/72 was an assistant unit
-error. [Generation](GENERATION.md#bounded-materialized-prefetch) documents capacity.
+Prepared joins keep T0. Dense 48 permits prompt/start; first public full Ready
+requires 768 startup-reserve profiles. `startup_prefetch_primed_at` records priming;
+readiness then tracks current 640. Begin/restart/cancel or complete-profile clear
+rearms it; partial reserve loss preserves current complete coverage. Session/epoch/
+identity gate publication. Dense 48/80 delivery and ACK-gated promotion stay
+separate. See [Generation](GENERATION.md#bounded-materialized-prefetch).
 
-Preview meshes grow from the near-camera connected component and publish after a
-cardinal neighbor is ready. Interest changes and bridge removals rebuild it; detached renderer
-meshes retire while canonical resident data remains available for remeshing.
+Preview meshes grow from near-camera connected coverage and publish after a
+cardinal neighbor is ready. Interest changes/removals rebuild them; retired meshes
+leave canonical resident data available for remeshing.
 
-Loading shows stage data with a stable elevation palette and centered outlined
-Ready prompt. Fresh input starts after its fence; held input stays consumed until
-release. Gameplay waits for server ACK; focus loss releases capture. Map pixels
-require validated metadata and authoritative highest-solid coverage; otherwise Unknown.
+Preparing/Connecting show a backdrop. Generation pairs truthful status/counters
+with a square map; six captions are illustrative. Ready shows final map/prompt;
+fresh input starts after its frame. Held keys stay consumed until release; gameplay
+waits for ACK; focus loss releases capture. Pixels need matching metadata and
+authoritative highest-solid coverage; otherwise Unknown.
 
 ## Client and qualification
 
@@ -87,10 +86,11 @@ Hooks bind deadlines, inputs, accepted poses and camera.
 full 640 profile route from generic 320 geometry and x200 stress. T0 never resets. Legacy
 180-second warmup is non-gating.
 
-[PlayerClient](../../src/client/PlayerClient.cpp) uses GLFW/Vulkan. Cursor controls
-yaw/pitch; WASD is camera-relative. F5 cycles first/rear/front without changing input/interest;
-first-person hides the body. HUD shows view/F5/5 (macOS may reserve F5/F6).
-Camera is distance-bounded and collision-clipped; R reloads renderer.
+[PlayerClient](../../src/client/PlayerClient.cpp) uses GLFW/Vulkan. Cursor aims;
+camera-relative WASD. LMB breaks while held; RMB places once; B cycles blocks, G
+requests mode.
+F5 cycles views without changing input/interest; first-person hides the body.
+Camera collision-clips; R reloads rendering.
 
 ## Canonical chunks and mesh
 
@@ -100,9 +100,8 @@ fence missing affected Z sections. Collision/support queries share authoritative
 columns and retained edits. Dense-cache churn leaves unedited tile identity
 stable; edits/deletion/profile replacement invalidate it.
 
-Changed voxels advance cell/chunk versions. Receipt-gated deltas and atomic
-snapshots retain Air/base-reset overrides across eviction and base arrival;
-stale updates fail and bounded resync repairs gaps. The 65,536-unit cap counts
-stored cells, minimum one/chunk; admission is atomic. `ChunkMesher` suppresses
-seams. Terrain LOD composes effective edited chunks with base profiles and
-invalidates captures on local/boundary-neighbor revisions.
+Voxels advance cell/chunk versions. Receipt-gated deltas/snapshots retain
+Air/base-reset overrides across eviction/base arrival; stale updates fail and
+bounded resync repairs gaps. The atomic 65,536-unit cap counts stored cells
+(minimum one/chunk). `ChunkMesher` suppresses seams. Terrain LOD combines edits
+with base profiles; local/boundary-neighbor revisions invalidate captures.

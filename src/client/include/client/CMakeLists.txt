@@ -3,6 +3,7 @@ target_sources(mc
         FILE_SET HEADERS
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
+            BlockActionPresentation.hpp
             BotClient.hpp
             Camera.hpp
             CameraController.hpp
@@ -13,10 +14,13 @@ target_sources(mc
             detail/ScreenshotPng.hpp
             FrameScheduler.hpp
             GameClient.hpp
+            UiPresentation.hpp
+            S2MapPresentation.hpp
             TerrainLodSelection.hpp
             TerrainLodPresentation.hpp
             TerrainLodRuntime.hpp
             GenerationMapPresentation.hpp
+            LoadingBackdrop.hpp
             HeightTileInterestRegion.hpp
             PlayerClient.hpp
             PlayerClientInputState.hpp
@@ -27,6 +31,7 @@ target_sources(mc
             PreviewMeshing.hpp
             PreviewResidency.hpp
             WorldLoading.hpp
+            render/BlockInteractionEffects.hpp
             render/DebugHud.hpp
             render/DepthFormat.hpp
             render/GuiRenderer.hpp
@@ -40,6 +45,7 @@ target_sources(mc
             render/TerrainLodUploadPlan.hpp
             render/TextRenderer.hpp
             render/MapImageData.hpp
+            render/MapImageDraw.hpp
             render/PresentationFrameProgress.hpp
             render/VulkanRenderer.hpp
             render/VulkanFrustum.hpp

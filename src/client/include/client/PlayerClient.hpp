@@ -1,7 +1,9 @@
 #pragma once
 
+#include "BlockActionPresentation.hpp"
 #include "Camera.hpp"
 #include "GameClient.hpp"
+#include "GenerationMapPresentation.hpp"
 #include "HeightTileInterestRegion.hpp"
 #include "PlayerClientInputState.hpp"
 #include "PlayerPresentation.hpp"
@@ -9,6 +11,7 @@
 #include "PreviewMeshConnectivity.hpp"
 #include "PreviewMeshing.hpp"
 #include "PreviewResidency.hpp"
+#include "S2MapPresentation.hpp"
 #include "TerrainLodRuntime.hpp"
 #include "WorldLoading.hpp"
 #include "render/DebugHud.hpp"
@@ -18,6 +21,7 @@
 
 #include <shared/ProjectInfo.hpp>
 #include <shared/net/Message.hpp>
+#include <shared/world/BlockInteraction.hpp>
 #include <shared/world/HeightTileInterest.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
 #include <shared/world/World.hpp>
@@ -62,6 +66,7 @@ bool playerClientLoadingStartInputEligible(
 ) noexcept;
 
 [[nodiscard]] bool playerClientMovementInputEnabled(bool system_shortcut_modifier_pressed) noexcept;
+
 
 enum class PlayerClientCapturePreset : uint8_t {
     CentralSpike,
@@ -596,6 +601,7 @@ private:
     friend struct PlayerClientFocusTestAccess;
     class PreviewMeshWorkerPool;
     class PreviewCacheRetirementReaper;
+    class S2MinimapLodWorker;
     struct PreviewMeshPendingAge final {
         shared::HeightTileKey key{};
         std::chrono::steady_clock::time_point started_at{};
@@ -637,6 +643,41 @@ private:
         std::span<int const> pressed_keys,
         std::span<int const> pressed_mouse_buttons
     );
+    [[nodiscard]] bool updatePlatformInputSnapshot(
+        std::span<int const> pressed_keys,
+        std::span<int const> pressed_mouse_buttons,
+        double cursor_x,
+        double cursor_y
+    );
+    void setWorldMapOpen(bool open, double player_x, double player_y);
+    void updatePlayingMapPresentation();
+    [[nodiscard]] std::optional<shared::VoxelRay> interactionEyeRay() const;
+    [[nodiscard]] std::optional<shared::BlockTarget> resolveInteractionTarget() const;
+    [[nodiscard]] shared::ServerBlockActionResultMessage const* currentBlockActionStatus() const noexcept;
+    void updateBlockInteractionPresentation(std::chrono::steady_clock::time_point now);
+    void updateBlockActionInput(
+        bool left_pressed,
+        bool left_was_pressed,
+        bool right_pressed,
+        bool right_was_pressed,
+        bool cycle_block_pressed,
+        bool change_mode_pressed,
+        bool cycle_block_was_pressed,
+        bool change_mode_was_pressed,
+        std::chrono::steady_clock::time_point now
+    );
+    [[nodiscard]] bool submitTrackedBlockAction(
+        shared::BlockActionKind kind,
+        shared::VoxelRay const& aim,
+        std::optional<shared::WorldCoordinate> target_hint,
+        shared::Block selected
+    );
+    [[nodiscard]] bool submitTrackedGameMode(shared::GameMode mode);
+    void clearPendingBlockActions() noexcept;
+    void rememberBlockAction(uint32_t sequence, shared::BlockActionKind kind,
+        std::optional<shared::WorldCoordinate> target, shared::Block material);
+    void resetWorldMapSource();
+    void releaseActiveBreakAction();
     void setScreenshotFeedback(std::string message, bool successful = false);
     void captureStartTransitionInputs();
     [[nodiscard]] bool hasStartTransitionInputs() const noexcept;
@@ -716,6 +757,8 @@ private:
     TerrainLodRuntime m_terrain_lod;
     std::vector<PlayerRenderData> m_render_data;
     DebugHudToggleLatch m_debug_hud_toggle;
+    DebugHudToggleLatch m_hud_style_toggle;
+    TextStyle m_hud_text_style = TextStyle::Fixed;
     DebugHudToggleLatch m_speedup_increase_latch;
     DebugHudToggleLatch m_speedup_decrease_latch;
     DebugHudToggleLatch m_acceleration_toggle_latch;
@@ -742,9 +785,35 @@ private:
     std::unordered_set<int> m_pressed_loading_mouse_buttons;
     std::unordered_set<int> m_start_transition_keys;
     std::unordered_set<int> m_start_transition_mouse_buttons;
+    struct PendingBlockActionPresentation final {
+        uint32_t sequence = 0U;
+        uint64_t join_epoch = 0U;
+        shared::BlockActionKind kind = shared::BlockActionKind::BreakRelease;
+        std::optional<shared::WorldCoordinate> target;
+        shared::Block material = shared::Block::Stone;
+    };
+    static constexpr size_t PENDING_BLOCK_ACTION_PRESENTATIONS = 64U;
+    std::array<PendingBlockActionPresentation, PENDING_BLOCK_ACTION_PRESENTATIONS> m_pending_block_actions{};
+    detail::BlockBreakInputState m_block_break_input;
+    shared::Block m_selected_block = shared::Block::Stone;
+    std::optional<shared::BlockTarget> m_interaction_target;
+    uint32_t m_client_block_action_sequence = 1U;
+    std::optional<std::pair<uint32_t, shared::GameMode>> m_pending_game_mode;
+    bool m_initial_block_action_status_requested = false;
     bool m_loading_overlay_active = false;
     std::optional<RendererFrameIdentity> m_loading_prompt_frame;
     std::shared_ptr<generation::GenerationSnapshot const> m_loading_map_snapshot;
+    GenerationMapAnimator m_generation_map_animator;
+    std::shared_ptr<generation::GlobalAtlas const> m_loading_final_atlas;
+    GenerationMapImageHandle m_loading_final_map_image;
+    GenerationMapDisplayIceMaskHandle m_loading_final_ice_mask;
+    bool m_loading_final_map_attempted = false;
+    std::optional<uint64_t> m_loading_map_join_epoch;
+    std::chrono::milliseconds m_generation_map_visible_elapsed{};
+    std::chrono::steady_clock::time_point m_generation_map_last_update{};
+    bool m_generation_map_was_visible = false;
+    std::optional<uint64_t> m_client_memory_rss_bytes;
+    std::chrono::steady_clock::time_point m_client_memory_rss_sampled_at{};
     bool m_acceleration_enabled = false;
     double m_last_cursor_x = 0.0;
     double m_last_cursor_y = 0.0;
@@ -794,6 +863,18 @@ private:
         m_preview_tile_elevations;
     shared::HeightTileSurfaceProjection m_preview_mesh_projection{};
     std::unique_ptr<PreviewMeshWorkerPool> m_preview_mesh_workers;
+    std::unique_ptr<S2MinimapLodWorker> m_s2_minimap_lod_worker;
+    S2WorldMapState m_s2_world_map_state{};
+    std::optional<shared::TerrainIdentity> m_s2_map_identity;
+    uint64_t m_s2_map_join_epoch = 0U;
+    std::optional<S2MapImage> m_s2_world_map_image;
+    std::optional<S2MapImage> m_s2_minimap_image;
+    std::shared_ptr<shared::TerrainLodArtifact const> m_s2_minimap_lod;
+    std::array<float, 4U> m_s2_minimap_bounds{};
+    bool m_s2_world_map_dirty = true;
+    bool m_s2_world_map_open = false;
+    bool m_s2_map_view_in_slot_one = false;
+    bool m_debug_hud_enabled = true;
     uint64_t m_benchmark_accepted_near_admissions = 0U;
     uint64_t m_benchmark_accepted_far_admissions = 0U;
     uint64_t m_benchmark_far_admissions_while_near_pending = 0U;

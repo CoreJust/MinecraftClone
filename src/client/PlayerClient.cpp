@@ -1,19 +1,25 @@
 #include <client/PlayerClient.hpp>
 
+#include <client/BlockActionPresentation.hpp>
+
 #include <client/Camera.hpp>
 #include <client/CameraController.hpp>
 #include <client/CameraObstruction.hpp>
 #include <client/GenerationMapPresentation.hpp>
+#include <client/LoadingBackdrop.hpp>
 #include <client/PlayerPresentation.hpp>
 #include <client/PreviewMeshing.hpp>
 #include <client/PreviewMeshWorkQueue.hpp>
+#include <client/S2MapPresentation.hpp>
 #include <client/TerrainLodPresentation.hpp>
+#include <client/UiPresentation.hpp>
 #include <client/detail/ScreenshotPng.hpp>
 #include <client/render/HeightTileInstanceReaper.hpp>
 #include <client/render/TextRenderer.hpp>
 #include <client/render/VulkanRenderer.hpp>
 #include <shared/ProjectInfo.hpp>
 #include <shared/net/Message.hpp>
+#include <shared/world/BlockInteraction.hpp>
 #include <shared/world/HeightTileInterest.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
 #include <shared/world/SparseWorld.hpp>
@@ -75,6 +81,7 @@ bool playerClientMovementInputEnabled(bool const system_shortcut_modifier_presse
 {
     return !system_shortcut_modifier_pressed;
 }
+
 
 std::optional<PlayerClientCapturePreset> parsePlayerClientCapturePreset(std::string_view const value) noexcept
 {
@@ -446,6 +453,53 @@ struct CurrentNearProbe final {
         return "could not publish framebuffer capture";
     }
     return std::nullopt;
+}
+
+[[nodiscard]] std::string_view blockDisplayName(shared::Block const block) noexcept
+{
+    switch (block) {
+    case shared::Block::Air: return "Air";
+    case shared::Block::Stone: return "Stone";
+    case shared::Block::Grass: return "Grass";
+    case shared::Block::Dirt: return "Dirt";
+    case shared::Block::Bedrock: return "Bedrock";
+    case shared::Block::Snow: return "Snow";
+    case shared::Block::Ice: return "Ice";
+    }
+    return "Unknown";
+}
+
+[[nodiscard]] std::string_view gameModeDisplayName(shared::GameMode const mode) noexcept
+{
+    switch (mode) {
+    case shared::GameMode::Spectator: return "Spectator";
+    case shared::GameMode::Creative: return "Creative";
+    case shared::GameMode::Survival: return "Survival";
+    }
+    return "Unknown";
+}
+
+[[nodiscard]] std::string materialMaskDisplayName(uint8_t const mask)
+{
+    std::string result;
+    for (shared::Block const block : {
+             shared::Block::Stone,
+             shared::Block::Grass,
+             shared::Block::Dirt,
+             shared::Block::Bedrock,
+             shared::Block::Snow,
+             shared::Block::Ice,
+         }) {
+        if (!detail::interactionMaterialAllowed(mask, block)) {
+            continue;
+        }
+        if (!result.empty()) {
+            result += ',';
+            result += ' ';
+        }
+        result += blockDisplayName(block);
+    }
+    return result.empty() ? "none" : result;
 }
 
 } // namespace
@@ -1162,6 +1216,162 @@ private:
     bool m_stopping = false;
 };
 
+class PlayerClient::S2MinimapLodWorker final {
+public:
+    struct Result final {
+        uint64_t join_epoch = 0U;
+        std::shared_ptr<shared::TerrainLodArtifact const> artifact;
+    };
+
+    S2MinimapLodWorker()
+        : m_worker([this] { run(); })
+    {}
+
+    ~S2MinimapLodWorker()
+    {
+        {
+            std::lock_guard lock{m_mutex};
+            m_stopping = true;
+            if (m_active_cancellation) {
+                m_active_cancellation->request_stop();
+            }
+            if (m_pending) {
+                m_pending->cancellation.request_stop();
+            }
+        }
+        m_work_available.notify_all();
+        if (m_worker.joinable()) {
+            m_worker.join();
+        }
+    }
+
+    void request(
+        std::shared_ptr<shared::TerrainWorld const> world,
+        double const player_x,
+        double const player_y,
+        uint64_t const join_epoch
+    )
+    {
+        if (!world) {
+            return;
+        }
+        std::lock_guard lock{m_mutex};
+        if (m_stopping) {
+            return;
+        }
+        constexpr double REQUEST_REUSE_DISTANCE = static_cast<double>(S2_MINIMAP_WORLD_EXTENT) * 0.25;
+        bool const same_request_area = m_latest_identity == world->identity() && m_latest_join_epoch == join_epoch
+            && std::abs(player_x - m_latest_center_x) < REQUEST_REUSE_DISTANCE
+            && std::abs(player_y - m_latest_center_y) < REQUEST_REUSE_DISTANCE;
+        if (same_request_area) {
+            return;
+        }
+        if (m_active_cancellation) {
+            m_active_cancellation->request_stop();
+        }
+        if (m_pending) {
+            m_pending->cancellation.request_stop();
+        }
+        ++m_latest_request_id;
+        m_latest_identity = world->identity();
+        m_latest_join_epoch = join_epoch;
+        m_latest_center_x = player_x;
+        m_latest_center_y = player_y;
+        m_result.reset();
+        m_pending = Request{
+            .join_epoch = join_epoch,
+            .request_id = m_latest_request_id,
+            .world = std::move(world),
+            .player_x = player_x,
+            .player_y = player_y,
+        };
+        m_work_available.notify_one();
+    }
+
+    void invalidate() noexcept
+    {
+        std::lock_guard lock{m_mutex};
+        ++m_latest_request_id;
+        m_latest_identity.reset();
+        m_latest_join_epoch = 0U;
+        if (m_active_cancellation) {
+            m_active_cancellation->request_stop();
+            m_active_cancellation.reset();
+        }
+        if (m_pending) {
+            m_pending->cancellation.request_stop();
+            m_pending.reset();
+        }
+        m_result.reset();
+    }
+
+    [[nodiscard]] std::optional<Result> takeResult()
+    {
+        std::lock_guard lock{m_mutex};
+        std::optional<Result> result = std::move(m_result);
+        m_result.reset();
+        return result;
+    }
+
+private:
+    struct Request final {
+        uint64_t join_epoch = 0U;
+        uint64_t request_id = 0U;
+        std::shared_ptr<shared::TerrainWorld const> world;
+        double player_x = 0.0;
+        double player_y = 0.0;
+        std::stop_source cancellation;
+    };
+
+    void run()
+    {
+        while (true) {
+            Request request;
+            {
+                std::unique_lock lock{m_mutex};
+                m_work_available.wait(lock, [this] { return m_stopping || m_pending.has_value(); });
+                if (m_stopping) {
+                    return;
+                }
+                request = std::move(*m_pending);
+                m_pending.reset();
+                m_active_cancellation = request.cancellation;
+            }
+
+            auto artifact = buildS2MinimapLod(
+                *request.world,
+                request.player_x,
+                request.player_y,
+                request.cancellation.get_token()
+            );
+
+            {
+                std::lock_guard lock{m_mutex};
+                if (!m_stopping && !request.cancellation.stop_requested()
+                    && request.request_id == m_latest_request_id && artifact) {
+                    m_result = Result{ .join_epoch = request.join_epoch, .artifact = std::move(artifact) };
+                }
+                if (m_active_cancellation && m_active_cancellation->stop_requested()) {
+                    m_active_cancellation.reset();
+                }
+            }
+        }
+    }
+
+    std::mutex m_mutex;
+    std::condition_variable m_work_available;
+    std::optional<Request> m_pending;
+    std::optional<std::stop_source> m_active_cancellation;
+    std::optional<Result> m_result;
+    std::optional<shared::TerrainIdentity> m_latest_identity;
+    uint64_t m_latest_join_epoch = 0U;
+    double m_latest_center_x = 0.0;
+    double m_latest_center_y = 0.0;
+    uint64_t m_latest_request_id = 0U;
+    bool m_stopping = false;
+    std::thread m_worker;
+};
+
 PlayerClient::~PlayerClient()
 {
     m_terrain_lod.reset(&m_renderer);
@@ -1175,15 +1385,30 @@ PlayerClient::~PlayerClient()
 
 void PlayerClient::onConnectionStateReset()
 {
+    clearPendingBlockActions();
+    m_block_break_input = {};
+    m_selected_block = shared::Block::Stone;
+    m_interaction_target.reset();
+    m_renderer.clearBlockInteractionEffects();
+    resetWorldMapSource();
     m_continuous_look_active = false;
     m_has_cursor_position = false;
     m_start_transition_keys.clear();
     m_start_transition_mouse_buttons.clear();
     m_loading_map_snapshot.reset();
+    m_loading_final_atlas.reset();
+    m_loading_final_map_image.reset();
+    m_loading_final_ice_mask.reset();
+    m_loading_final_map_attempted = false;
+    m_loading_map_join_epoch.reset();
+    m_generation_map_visible_elapsed = std::chrono::milliseconds{};
+    m_generation_map_last_update = {};
+    m_generation_map_was_visible = false;
     m_loading_prompt_frame.reset();
     m_renderer.setFrameCompletionTracking(false);
     m_loading_overlay_active = false;
     m_renderer.clearMapImage();
+    static_cast<void>(m_renderer.setMapDraws({}));
     m_renderer.clearGuiText();
     glfwSetInputMode(m_window.nativeHandle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     if (m_benchmark && m_benchmark->enable_mesh_stage_diagnostics) {
@@ -1333,8 +1558,10 @@ PlayerClient::PlayerClient(
             + shared::WorldExtent::DEPTH,
     }));
     m_renderer.setDebugHudEnabled(true);
+    m_debug_hud_enabled = true;
     if (m_benchmark) {
-        m_renderer.setDebugHudEnabled(m_benchmark->show_debug_hud);
+        m_debug_hud_enabled = m_benchmark->show_debug_hud;
+        m_renderer.setDebugHudEnabled(m_debug_hud_enabled);
     }
     if (m_capture.has_value()) {
         static constexpr uint32_t CAPTURE_WIDTH = 2560U;
@@ -3801,11 +4028,17 @@ void PlayerClient::synchronizeContinuousLook() noexcept
 {
     GLFWwindow* const window = m_window.nativeHandle();
     bool const focused = glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE;
-    bool const capture = playerClientContinuousLookEnabled(
+    bool const capture = !m_s2_world_map_open && playerClientContinuousLookEnabled(
         worldLoadingStatus().state,
         focused,
         systemShortcutModifierPressed(window)
     );
+    if (!capture) {
+        releaseActiveBreakAction();
+        m_pending_block_actions.fill({});
+        m_interaction_target.reset();
+        m_renderer.clearBlockInteractionEffects();
+    }
     int32_t const desired_mode = capture ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
     int32_t const current_mode = glfwGetInputMode(window, GLFW_CURSOR);
     if (m_window_focused == focused && m_continuous_look_active == capture && current_mode == desired_mode) {
@@ -3856,6 +4089,850 @@ bool PlayerClient::updateLoadingInputSnapshot(
     return new_input_edge;
 }
 
+bool PlayerClient::updatePlatformInputSnapshot(
+    std::span<int const> const pressed_keys,
+    std::span<int const> const pressed_mouse_buttons,
+    double const cursor_x,
+    double const cursor_y
+)
+{
+    std::array<bool, GLFW_KEY_LAST + 1U> key_was_pressed{};
+    for (int const key : m_pressed_loading_keys) {
+        if (key >= 0 && key <= GLFW_KEY_LAST) {
+            key_was_pressed[static_cast<size_t>(key)] = true;
+        }
+    }
+    auto const was_pressed = [&key_was_pressed](int const key) {
+        return key >= 0 && key <= GLFW_KEY_LAST && key_was_pressed[static_cast<size_t>(key)];
+    };
+    auto const was_mouse_pressed = [this](int const button) {
+        return m_pressed_loading_mouse_buttons.contains(button);
+    };
+    bool const map_key_was_pressed = was_pressed(GLFW_KEY_M);
+    bool const escape_was_pressed = was_pressed(GLFW_KEY_ESCAPE);
+    bool const minimap_click_was_pressed = was_mouse_pressed(GLFW_MOUSE_BUTTON_1);
+    bool const left_button_was_pressed = was_mouse_pressed(GLFW_MOUSE_BUTTON_1);
+    bool const right_button_was_pressed = was_mouse_pressed(GLFW_MOUSE_BUTTON_2);
+    bool const cycle_block_was_pressed = was_pressed(GLFW_KEY_B);
+    bool const change_mode_was_pressed = was_pressed(GLFW_KEY_G);
+    bool const new_input_edge = updateLoadingInputSnapshot(pressed_keys, pressed_mouse_buttons);
+    auto const is_pressed = [this](int const key) { return m_pressed_loading_keys.contains(key); };
+    auto const is_mouse_pressed = [this](int const button) {
+        return m_pressed_loading_mouse_buttons.contains(button);
+    };
+    bool const map_key_pressed = is_pressed(GLFW_KEY_M);
+    bool const escape_pressed = is_pressed(GLFW_KEY_ESCAPE);
+    bool const minimap_click_pressed = is_mouse_pressed(GLFW_MOUSE_BUTTON_1);
+    bool const map_key_edge = map_key_pressed && !map_key_was_pressed;
+    bool const escape_edge = escape_pressed && !escape_was_pressed;
+    bool const minimap_click_edge = minimap_click_pressed && !minimap_click_was_pressed;
+
+    WorldLoadingState const state = worldLoadingStatus().state;
+    if (state != WorldLoadingState::Playing || m_capture.has_value() || m_benchmark.has_value()) {
+        releaseActiveBreakAction();
+        return new_input_edge;
+    }
+
+    GLFWwindow* const window = m_window.nativeHandle();
+    bool const focused = glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE;
+    bool const focus_changed = m_window_focused.has_value() && *m_window_focused != focused;
+    if (focus_changed) {
+        if (!focused) {
+            releaseActiveBreakAction();
+        }
+        captureStartTransitionInputs();
+        return new_input_edge;
+    }
+    if (!focused || systemShortcutModifierPressed(window)) {
+        releaseActiveBreakAction();
+        return new_input_edge;
+    }
+
+    double player_x = 0.0;
+    double player_y = 0.0;
+    if (std::optional<shared::Player> const player = predictedLocalPlayer()) {
+        player_x = shared::playerPositionX(*player);
+        player_y = shared::playerPositionY(*player);
+    }
+
+    if (m_s2_world_map_open) {
+        if (map_key_edge || escape_edge) {
+            setWorldMapOpen(false, player_x, player_y);
+            return new_input_edge;
+        }
+
+        auto const apply_action = [this, player_x, player_y](S2WorldMapAction const action, bool const fast = false) {
+            if (applyS2WorldMapAction(m_s2_world_map_state, action, player_x, player_y, fast)
+                && static_cast<uint8_t>(action) < static_cast<uint8_t>(S2WorldMapAction::PanLeft)) {
+                m_s2_world_map_dirty = true;
+            }
+        };
+        static constexpr std::array<std::pair<int, S2WorldMapAction>, 8U> LAYER_KEYS{{
+            {GLFW_KEY_P, S2WorldMapAction::TogglePlates},
+            {GLFW_KEY_H, S2WorldMapAction::ToggleHeights},
+            {GLFW_KEY_T, S2WorldMapAction::ToggleTemperature},
+            {GLFW_KEY_B, S2WorldMapAction::ToggleBiomes},
+            {GLFW_KEY_W, S2WorldMapAction::ToggleWind},
+            {GLFW_KEY_C, S2WorldMapAction::ToggleCurrents},
+            {GLFW_KEY_O, S2WorldMapAction::ToggleMoisture},
+            {GLFW_KEY_Q, S2WorldMapAction::TogglePrecipitation},
+        }};
+        for (auto const [key, action] : LAYER_KEYS) {
+            if (is_pressed(key) && !was_pressed(key)) {
+                apply_action(action);
+            }
+        }
+        if (is_pressed(GLFW_KEY_UP)) {
+            apply_action(S2WorldMapAction::PanUp, is_pressed(GLFW_KEY_LEFT_SHIFT)
+                || is_pressed(GLFW_KEY_RIGHT_SHIFT));
+        }
+        if (is_pressed(GLFW_KEY_DOWN)) {
+            apply_action(S2WorldMapAction::PanDown, is_pressed(GLFW_KEY_LEFT_SHIFT)
+                || is_pressed(GLFW_KEY_RIGHT_SHIFT));
+        }
+        if (is_pressed(GLFW_KEY_LEFT)) {
+            apply_action(S2WorldMapAction::PanLeft, is_pressed(GLFW_KEY_LEFT_SHIFT)
+                || is_pressed(GLFW_KEY_RIGHT_SHIFT));
+        }
+        if (is_pressed(GLFW_KEY_RIGHT)) {
+            apply_action(S2WorldMapAction::PanRight, is_pressed(GLFW_KEY_LEFT_SHIFT)
+                || is_pressed(GLFW_KEY_RIGHT_SHIFT));
+        }
+        if (is_pressed(GLFW_KEY_EQUAL) && !was_pressed(GLFW_KEY_EQUAL)) {
+            apply_action(S2WorldMapAction::ZoomIn);
+        }
+        if (is_pressed(GLFW_KEY_KP_ADD) && !was_pressed(GLFW_KEY_KP_ADD)) {
+            apply_action(S2WorldMapAction::ZoomIn);
+        }
+        if (is_pressed(GLFW_KEY_MINUS) && !was_pressed(GLFW_KEY_MINUS)) {
+            apply_action(S2WorldMapAction::ZoomOut);
+        }
+        if (is_pressed(GLFW_KEY_KP_SUBTRACT) && !was_pressed(GLFW_KEY_KP_SUBTRACT)) {
+            apply_action(S2WorldMapAction::ZoomOut);
+        }
+        if (is_pressed(GLFW_KEY_0) && !was_pressed(GLFW_KEY_0)) {
+            apply_action(S2WorldMapAction::Overview);
+        }
+        if (is_pressed(GLFW_KEY_R) && !was_pressed(GLFW_KEY_R)) {
+            apply_action(S2WorldMapAction::Reset);
+        }
+        if (is_pressed(GLFW_KEY_L) && !was_pressed(GLFW_KEY_L)) {
+            apply_action(S2WorldMapAction::ToggleLegend);
+        }
+        return new_input_edge;
+    }
+    bool const minimap_contains_cursor = m_s2_minimap_image.has_value()
+        && m_s2_minimap_bounds[2] > 0.0F && m_s2_minimap_bounds[3] > 0.0F
+        && cursor_x >= m_s2_minimap_bounds[0]
+        && cursor_y >= m_s2_minimap_bounds[1]
+        && cursor_x < m_s2_minimap_bounds[0] + m_s2_minimap_bounds[2]
+        && cursor_y < m_s2_minimap_bounds[1] + m_s2_minimap_bounds[3];
+    if (map_key_edge || (minimap_click_edge && minimap_contains_cursor)) {
+        setWorldMapOpen(true, player_x, player_y);
+        return new_input_edge;
+    }
+    updateBlockActionInput(
+        minimap_click_pressed,
+        left_button_was_pressed,
+        is_mouse_pressed(GLFW_MOUSE_BUTTON_2),
+        right_button_was_pressed,
+        is_pressed(GLFW_KEY_B),
+        is_pressed(GLFW_KEY_G),
+        cycle_block_was_pressed,
+        change_mode_was_pressed,
+        std::chrono::steady_clock::now()
+    );
+    return new_input_edge;
+}
+
+std::optional<shared::VoxelRay> PlayerClient::interactionEyeRay() const
+{
+    std::optional<shared::Player> const player = m_world.playerByCharacter(m_local_character);
+    if (!player) {
+        return std::nullopt;
+    }
+    glm::dvec3 const eye = localPlayerEyePosition(*player);
+    glm::dvec3 const direction = m_look_camera.forward();
+    return shared::VoxelRay{
+        .origin_x = eye.x,
+        .origin_y = eye.y,
+        .origin_z = eye.z,
+        .direction_x = direction.x,
+        .direction_y = direction.y,
+        .direction_z = direction.z,
+    };
+}
+
+std::optional<shared::BlockTarget> PlayerClient::resolveInteractionTarget() const
+{
+    shared::SparseWorld const* const world = authoritativeWorld();
+    std::optional<shared::VoxelRay> const ray = interactionEyeRay();
+    if (!world || !ray) {
+        return std::nullopt;
+    }
+    double const direction_length = std::hypot(ray->direction_x, ray->direction_y, ray->direction_z);
+    if (!std::isfinite(direction_length) || direction_length <= 0.0) {
+        return std::nullopt;
+    }
+    shared::VoxelRay transmitted_ray = *ray;
+    transmitted_ray.direction_x = static_cast<double>(std::lround(ray->direction_x / direction_length * 32'767.0));
+    transmitted_ray.direction_y = static_cast<double>(std::lround(ray->direction_y / direction_length * 32'767.0));
+    transmitted_ray.direction_z = static_cast<double>(std::lround(ray->direction_z / direction_length * 32'767.0));
+    shared::BlockTargetResult const result = shared::resolveInteractionTarget(
+        *world,
+        transmitted_ray,
+        m_camera_perspective,
+        m_world.mode() == shared::WorldMode::Flight
+    );
+    return result.status == shared::BlockTargetStatus::Hit ? result.target : std::nullopt;
+}
+
+shared::ServerBlockActionResultMessage const* PlayerClient::currentBlockActionStatus() const noexcept
+{
+    std::optional<shared::TerrainSessionIdentity> const session = activeTerrainSession();
+    std::optional<shared::ServerBlockActionResultMessage> const& status = blockActionStatus();
+    if (!session || !status || status->session != *session) {
+        return nullptr;
+    }
+    return &*status;
+}
+
+void PlayerClient::clearPendingBlockActions() noexcept
+{
+    m_pending_block_actions.fill({});
+    m_client_block_action_sequence = 1U;
+    m_pending_game_mode.reset();
+    m_initial_block_action_status_requested = false;
+}
+
+void PlayerClient::rememberBlockAction(
+    uint32_t const sequence,
+    shared::BlockActionKind const kind,
+    std::optional<shared::WorldCoordinate> const target,
+    shared::Block const material
+)
+{
+    size_t const slot = static_cast<size_t>(sequence % PENDING_BLOCK_ACTION_PRESENTATIONS);
+    m_pending_block_actions[slot] = {
+        .sequence = sequence,
+        .join_epoch = worldLoadingJoinEpoch(),
+        .kind = kind,
+        .target = target,
+        .material = material,
+    };
+}
+
+bool PlayerClient::submitTrackedBlockAction(
+    shared::BlockActionKind const kind,
+    shared::VoxelRay const& aim,
+    std::optional<shared::WorldCoordinate> const target_hint,
+    shared::Block const selected
+)
+{
+    if (worldLoadingStatus().state != WorldLoadingState::Playing || !activeTerrainSession()) {
+        return false;
+    }
+    uint32_t const sequence = m_client_block_action_sequence;
+    bool const submitted = GameClient::submitBlockAction(kind, aim, target_hint, selected, m_camera_perspective);
+    ++m_client_block_action_sequence;
+    if (m_client_block_action_sequence == 0U) {
+        m_client_block_action_sequence = 1U;
+    }
+    if (submitted) {
+        rememberBlockAction(sequence, kind, target_hint, selected);
+    }
+    return submitted;
+}
+
+bool PlayerClient::submitTrackedGameMode(shared::GameMode const mode)
+{
+    if (worldLoadingStatus().state != WorldLoadingState::Playing || !activeTerrainSession()) {
+        return false;
+    }
+    uint32_t const sequence = m_client_block_action_sequence;
+    bool const submitted = GameClient::requestGameMode(mode);
+    ++m_client_block_action_sequence;
+    if (m_client_block_action_sequence == 0U) {
+        m_client_block_action_sequence = 1U;
+    }
+    if (submitted) {
+        rememberBlockAction(sequence, shared::BlockActionKind::RequestMode, std::nullopt, m_selected_block);
+        m_pending_game_mode = std::pair{sequence, mode};
+    }
+    return submitted;
+}
+
+void PlayerClient::updateBlockActionInput(
+    bool const left_pressed,
+    bool const left_was_pressed,
+    bool const right_pressed,
+    bool const right_was_pressed,
+    bool const cycle_block_pressed,
+    bool const change_mode_pressed,
+    bool const cycle_block_was_pressed,
+    bool const change_mode_was_pressed,
+    std::chrono::steady_clock::time_point const now
+)
+{
+    shared::ServerBlockActionResultMessage const* status = currentBlockActionStatus();
+    if (!status && !m_initial_block_action_status_requested && activeTerrainSession()) {
+        m_initial_block_action_status_requested = true;
+        static_cast<void>(submitTrackedBlockAction(
+            shared::BlockActionKind::BreakRelease,
+            {},
+            std::nullopt,
+            shared::Block::Stone
+        ));
+    }
+    if (status && m_pending_game_mode && status->sequence != 0U
+        && (status->sequence == m_pending_game_mode->first
+            || shared::isNewerSequence(status->sequence, m_pending_game_mode->first))) {
+        m_pending_game_mode.reset();
+    }
+
+    auto const action_allowed = [status](shared::InteractionAction const action) {
+        return status && detail::interactionActionAllowed(status->effective_actions, action);
+    };
+    auto const material_allowed = [](uint8_t const mask, shared::Block const material) {
+        return detail::interactionMaterialAllowed(mask, material);
+    };
+
+    if (cycle_block_pressed && !cycle_block_was_pressed && status) {
+        if (std::optional<shared::Block> const next = detail::nextPlaceableBlock(
+                status->place_materials,
+                m_selected_block
+            );
+            next) {
+            m_selected_block = *next;
+        }
+    }
+
+    bool const mode_change_edge = change_mode_pressed && !change_mode_was_pressed
+        && action_allowed(shared::InteractionAction::ChangeMode) && status && !m_pending_game_mode;
+    if (mode_change_edge) {
+        shared::GameMode const current_mode = status->mode;
+        shared::GameMode next_mode = shared::GameMode::Spectator;
+        switch (current_mode) {
+        case shared::GameMode::Spectator: next_mode = shared::GameMode::Creative; break;
+        case shared::GameMode::Creative: next_mode = shared::GameMode::Survival; break;
+        case shared::GameMode::Survival: next_mode = shared::GameMode::Spectator; break;
+        }
+        releaseActiveBreakAction();
+        static_cast<void>(submitTrackedGameMode(next_mode));
+        return;
+    }
+
+    std::optional<shared::VoxelRay> const ray = interactionEyeRay();
+    std::optional<shared::BlockTarget> const target = resolveInteractionTarget();
+    bool const place_pressed = right_pressed && !right_was_pressed;
+    if (place_pressed) {
+        releaseActiveBreakAction();
+        if (status && target && ray && action_allowed(shared::InteractionAction::Place)
+            && material_allowed(status->place_materials, m_selected_block)) {
+            static_cast<void>(submitTrackedBlockAction(
+                shared::BlockActionKind::PlacePress,
+                *ray,
+                target->cell,
+                m_selected_block
+            ));
+        }
+        return;
+    }
+
+    bool const can_break_target = status && target && action_allowed(shared::InteractionAction::Break)
+        && material_allowed(status->break_materials, target->block);
+    detail::BlockBreakInputActions const actions = detail::updateBlockBreakInput(m_block_break_input, {
+        .held = left_pressed,
+        .fresh_press = left_pressed && !left_was_pressed,
+        .permitted = can_break_target,
+        .target = target ? std::optional<shared::WorldCoordinate>{target->cell} : std::nullopt,
+        .now = now,
+    });
+    if (actions.submit_release) {
+        static_cast<void>(submitTrackedBlockAction(
+            shared::BlockActionKind::BreakRelease,
+            {},
+            std::nullopt,
+            shared::Block::Stone
+        ));
+    }
+    if (actions.submit_hold && target && ray) {
+        static_cast<void>(submitTrackedBlockAction(
+            shared::BlockActionKind::BreakHold,
+            *ray,
+            target->cell,
+            target->block
+        ));
+    }
+}
+
+void PlayerClient::updateBlockInteractionPresentation(std::chrono::steady_clock::time_point const now)
+{
+    bool const active = worldLoadingStatus().state == WorldLoadingState::Playing
+        && !m_s2_world_map_open && !m_capture && !m_benchmark && m_continuous_look_active
+        && glfwGetWindowAttrib(m_window.nativeHandle(), GLFW_FOCUSED) == GLFW_TRUE;
+    if (!active) {
+        releaseActiveBreakAction();
+        m_pending_block_actions.fill({});
+        m_interaction_target.reset();
+        m_renderer.clearBlockInteractionEffects();
+    }
+    while (std::optional<shared::ServerBlockActionResultMessage> const accepted =
+               consumeAcceptedBlockActionResult()) {
+        if (!active || accepted->status != shared::BlockActionStatus::Accepted || accepted->sequence == 0U
+            || accepted->session.join_epoch != worldLoadingJoinEpoch()) {
+            continue;
+        }
+        PendingBlockActionPresentation& pending = m_pending_block_actions[
+            static_cast<size_t>(accepted->sequence % PENDING_BLOCK_ACTION_PRESENTATIONS)
+        ];
+        if (pending.sequence != accepted->sequence || pending.join_epoch != accepted->session.join_epoch
+            || pending.kind != shared::BlockActionKind::BreakHold || !pending.target
+            || *pending.target != accepted->target) {
+            continue;
+        }
+        static_cast<void>(m_renderer.addAcceptedBlockBreak({
+            .join_epoch = accepted->session.join_epoch,
+            .server_tick = accepted->server_tick,
+            .sequence = accepted->sequence,
+            .cell_version = accepted->cell_version,
+        }, accepted->target, pending.material, now));
+        pending = {};
+    }
+
+    std::optional<shared::BlockTarget> target;
+    if (active) {
+        target = resolveInteractionTarget();
+    }
+    m_interaction_target = target;
+    float progress = 0.0F;
+    if (target) {
+        if (shared::ServerBlockActionResultMessage const* const status = currentBlockActionStatus();
+            m_block_break_input.active && m_block_break_input.target == target->cell
+            && status && status->status == shared::BlockActionStatus::Progress
+            && status->target == target->cell) {
+            PendingBlockActionPresentation const& pending = m_pending_block_actions[
+                static_cast<size_t>(status->sequence % PENDING_BLOCK_ACTION_PRESENTATIONS)
+            ];
+            if (pending.sequence == status->sequence && pending.join_epoch == status->session.join_epoch
+                && pending.kind == shared::BlockActionKind::BreakHold && pending.target == status->target
+                && std::none_of(
+                    m_pending_block_actions.begin(), m_pending_block_actions.end(),
+                    [&](PendingBlockActionPresentation const& action) {
+                        return action.sequence != 0U && action.join_epoch == status->session.join_epoch
+                            && action.kind != shared::BlockActionKind::BreakHold
+                            && shared::isNewerSequence(action.sequence, status->sequence);
+                    }
+                )) {
+                progress = detail::authoritativeBreakProgress(*status);
+            }
+        }
+    }
+    m_renderer.setBlockInteractionTarget(target, progress);
+
+    if (m_s2_world_map_open || m_capture || m_benchmark
+        || worldLoadingStatus().state != WorldLoadingState::Playing) {
+        return;
+    }
+
+    uint32_t framebuffer_width = 0U;
+    uint32_t framebuffer_height = 0U;
+    m_window.framebufferSize(framebuffer_width, framebuffer_height);
+    if (framebuffer_width == 0U || framebuffer_height == 0U) {
+        return;
+    }
+    std::array<std::string, 3U> lines;
+    shared::ServerBlockActionResultMessage const* const status = currentBlockActionStatus();
+    if (status) {
+        lines[0] = "Mode: ";
+        if (detail::hasCustomBlockActionGrants(*status)) {
+            lines[0] += "Custom (base=";
+            lines[0] += gameModeDisplayName(status->mode);
+            lines[0] += ')';
+        } else {
+            lines[0] += gameModeDisplayName(status->mode);
+        }
+        lines[0] += "  Block: ";
+        lines[0] += blockDisplayName(m_selected_block);
+        if (!detail::interactionMaterialAllowed(status->place_materials, m_selected_block)) {
+            lines[0] += " (not permitted)";
+        }
+        lines[0] += "  Target: ";
+        if (target) {
+            lines[0] += std::to_string(target->cell.x);
+            lines[0] += ',';
+            lines[0] += std::to_string(target->cell.y);
+            lines[0] += ',';
+            lines[0] += std::to_string(target->cell.z);
+        } else {
+            lines[0] += "none";
+        }
+        lines[1] = "Break: ";
+        lines[1] += detail::interactionActionAllowed(status->effective_actions, shared::InteractionAction::Break)
+            ? "yes" : "no";
+        lines[1] += " [";
+        lines[1] += materialMaskDisplayName(status->break_materials);
+        lines[1] += "]  Place: ";
+        lines[1] += detail::interactionActionAllowed(status->effective_actions, shared::InteractionAction::Place)
+            ? "yes" : "no";
+        lines[1] += " [";
+        lines[1] += materialMaskDisplayName(status->place_materials);
+        lines[1] += ']';
+        lines[2] = "Quick break: ";
+        lines[2] += detail::interactionActionAllowed(status->effective_actions, shared::InteractionAction::QuickBreak)
+            ? "yes" : "no";
+        lines[2] += "  Flight: ";
+        lines[2] += detail::interactionActionAllowed(status->effective_actions, shared::InteractionAction::Flight)
+            ? "yes" : "no";
+        lines[2] += "  Bypass: ";
+        lines[2] += detail::interactionActionAllowed(status->effective_actions, shared::InteractionAction::CollisionBypass)
+            ? "yes" : "no";
+        lines[2] += "  Mode change: ";
+        lines[2] += detail::interactionActionAllowed(status->effective_actions, shared::InteractionAction::ChangeMode)
+            ? "yes" : "no";
+    } else {
+        lines[0] = "Mode and block permissions: awaiting server status";
+        lines[1] = "Block: ";
+        lines[1] += blockDisplayName(m_selected_block);
+        lines[2] = "Block actions are disabled until server permissions arrive";
+    }
+    constexpr float TEXT_SCALE = 0.58F;
+    constexpr float LINE_ADVANCE = 22.0F;
+    size_t const max_characters = std::max<size_t>(1U, static_cast<size_t>(
+        std::max(1.0F, static_cast<float>(framebuffer_width) - 24.0F) / (16.0F * TEXT_SCALE)
+    ));
+    std::vector<std::string_view> wrapped_lines;
+    for (std::string const& line : lines) {
+        std::string_view remaining = line;
+        while (!remaining.empty()) {
+            size_t count = std::min(remaining.size(), max_characters);
+            if (count < remaining.size()) {
+                size_t const space = remaining.rfind(' ', count);
+                if (space != std::string_view::npos && space > 0U) {
+                    count = space;
+                }
+            }
+            wrapped_lines.push_back(remaining.substr(0U, count));
+            remaining.remove_prefix(count);
+            while (!remaining.empty() && remaining.front() == ' ') {
+                remaining.remove_prefix(1U);
+            }
+        }
+    }
+    float content_scale_x = 1.0F;
+    float content_scale_y = 1.0F;
+    glfwGetWindowContentScale(m_window.nativeHandle(), &content_scale_x, &content_scale_y);
+    DebugHudLayout const hud_layout = layoutDebugHud(
+        framebuffer_width, framebuffer_height, std::max(content_scale_x, content_scale_y),
+        glfwGetWindowAttrib(m_window.nativeHandle(), GLFW_MAXIMIZED) == GLFW_FALSE
+            && glfwGetWindowMonitor(m_window.nativeHandle()) == nullptr
+    );
+    float const top = std::max(8.0F,
+        hud_layout.controls_y - static_cast<float>(wrapped_lines.size()) * LINE_ADVANCE - 8.0F);
+    for (size_t index = 0U; index < wrapped_lines.size(); ++index) {
+        TextPlacement const placement{
+            .position = { 12.0F, top + static_cast<float>(index) * LINE_ADVANCE, 0.0F },
+            .scale = TEXT_SCALE,
+            .style = m_hud_text_style,
+        };
+        TextColor const color{ .red = 0.96F, .green = 0.98F, .blue = 1.0F, .alpha = 0.95F };
+        if (m_hud_text_style == TextStyle::Adaptive) {
+            m_renderer.addGuiText(wrapped_lines[index], placement, color);
+        } else {
+            addOutlinedGuiText(m_renderer, wrapped_lines[index], placement, color, 1.0F);
+        }
+    }
+}
+
+void PlayerClient::releaseActiveBreakAction()
+{
+    if (!m_block_break_input.active) {
+        return;
+    }
+    m_block_break_input.active = false;
+    m_block_break_input.target.reset();
+    if (worldLoadingStatus().state == WorldLoadingState::Playing) {
+        static_cast<void>(submitTrackedBlockAction(
+            shared::BlockActionKind::BreakRelease,
+            {},
+            std::nullopt,
+            shared::Block::Stone
+        ));
+    }
+}
+
+void PlayerClient::setWorldMapOpen(bool const open, double const player_x, double const player_y)
+{
+    if (m_s2_world_map_open == open) {
+        return;
+    }
+    if (open) {
+        releaseActiveBreakAction();
+        m_pending_block_actions.fill({});
+        m_interaction_target.reset();
+        m_renderer.clearBlockInteractionEffects();
+        m_s2_world_map_state.center_x = player_x;
+        m_s2_world_map_state.center_y = player_y;
+        m_s2_world_map_state.overview = false;
+    }
+    m_s2_world_map_open = open;
+    m_input_actions.reset();
+    m_has_cursor_position = false;
+    captureStartTransitionInputs();
+}
+
+void PlayerClient::resetWorldMapSource()
+{
+    if (m_s2_minimap_lod_worker) {
+        m_s2_minimap_lod_worker->invalidate();
+    }
+    m_s2_map_identity.reset();
+    m_s2_map_join_epoch = 0U;
+    m_s2_world_map_image.reset();
+    m_s2_minimap_image.reset();
+    m_s2_minimap_lod.reset();
+    m_s2_minimap_bounds = {};
+    m_s2_world_map_dirty = true;
+    m_s2_world_map_open = false;
+    m_s2_map_view_in_slot_one = false;
+    m_renderer.clearMapImage(0U);
+    m_renderer.clearMapImage(1U);
+    static_cast<void>(m_renderer.setMapDraws({}));
+}
+
+void PlayerClient::updatePlayingMapPresentation()
+{
+    bool const map_ui_enabled = !m_benchmark.has_value() && !m_capture.has_value();
+    auto const world = map_ui_enabled ? terrainLodWorld() : nullptr;
+    auto const root_lod = world ? terrainLodRoot() : nullptr;
+    std::optional<shared::Player> const player = predictedLocalPlayer();
+    double const player_x = player ? shared::playerPositionX(*player) : 0.0;
+    double const player_y = player ? shared::playerPositionY(*player) : 0.0;
+    glm::dvec3 const facing = m_look_camera.forward();
+    double heading = std::atan2(facing.x, -facing.y) * (180.0 / 3.141'592'653'589'793'238'46);
+    if (heading < 0.0) {
+        heading += 360.0;
+    }
+    uint64_t const join_epoch = worldLoadingJoinEpoch();
+
+    if (!map_ui_enabled) {
+        resetWorldMapSource();
+        static_cast<void>(m_renderer.setMapDraws({}));
+        return;
+    }
+
+    if (!world || !root_lod) {
+        if (m_s2_map_identity || m_s2_world_map_image || m_s2_minimap_image) {
+            resetWorldMapSource();
+        }
+    } else if (m_s2_map_identity != world->identity() || m_s2_map_join_epoch != join_epoch) {
+        resetWorldMapSource();
+        m_s2_map_identity = world->identity();
+        m_s2_map_join_epoch = join_epoch;
+        m_s2_world_map_state = {};
+        m_s2_world_map_state.center_x = player ? player_x : 32'768.0;
+        m_s2_world_map_state.center_y = player ? player_y : 32'768.0;
+    }
+
+    if (world && root_lod && (!m_s2_world_map_image || m_s2_world_map_dirty)) {
+        auto image = rasterizeS2WorldMap(*world, *root_lod, m_s2_world_map_state);
+        if (image && m_renderer.setMapImage(0U, image->width, image->height, image->rgba)) {
+            m_s2_world_map_image = std::move(image);
+            m_s2_world_map_dirty = false;
+        } else {
+            m_s2_world_map_image.reset();
+            m_s2_world_map_dirty = true;
+        }
+    }
+
+    bool const show_minimap = m_debug_hud_enabled && !m_s2_world_map_open && world;
+    if (show_minimap) {
+        if (!m_s2_minimap_lod_worker) {
+            m_s2_minimap_lod_worker = std::make_unique<S2MinimapLodWorker>();
+        }
+        if (auto result = m_s2_minimap_lod_worker->takeResult(); result
+            && result->join_epoch == join_epoch && result->artifact
+            && result->artifact->terrain_identity == world->identity()) {
+            auto image = rasterizeS2Minimap(*result->artifact);
+            if (image && m_renderer.setMapImage(1U, image->width, image->height, image->rgba)) {
+                m_s2_map_view_in_slot_one = false;
+                m_s2_minimap_lod = std::move(result->artifact);
+                m_s2_minimap_image = std::move(image);
+            }
+        }
+
+        bool request_local_lod = !m_s2_minimap_lod
+            || m_s2_minimap_lod->terrain_identity != world->identity();
+        if (m_s2_minimap_lod && m_s2_minimap_lod->terrain_identity == world->identity()) {
+            uint32_t const extent = m_s2_minimap_lod->extent;
+            constexpr double WORLD_PERIOD = static_cast<double>(generation::WORLD_SIZE_BLOCKS);
+            double const local_x = std::fmod(
+                std::fmod(player_x - m_s2_minimap_lod->origin_x, WORLD_PERIOD) + WORLD_PERIOD,
+                WORLD_PERIOD
+            );
+            double const local_y = std::fmod(
+                std::fmod(player_y - m_s2_minimap_lod->origin_y, WORLD_PERIOD) + WORLD_PERIOD,
+                WORLD_PERIOD
+            );
+            bool const covered = local_x <= extent && local_y <= extent;
+            constexpr double EDGE_MARGIN = static_cast<double>(S2_MINIMAP_WORLD_EXTENT) * 0.25;
+            bool const moving_outside_window = local_x < EDGE_MARGIN || local_x > extent - EDGE_MARGIN
+                || local_y < EDGE_MARGIN || local_y > extent - EDGE_MARGIN;
+            request_local_lod = !covered || moving_outside_window;
+        }
+        if (request_local_lod) {
+            m_s2_minimap_lod_worker->request(world, player_x, player_y, join_epoch);
+        }
+    } else if (m_s2_minimap_lod_worker) {
+        m_s2_minimap_lod_worker->invalidate();
+        m_s2_minimap_bounds = {};
+    }
+
+    uint32_t framebuffer_width = 0U;
+    uint32_t framebuffer_height = 0U;
+    m_window.framebufferSize(framebuffer_width, framebuffer_height);
+    float content_scale_x = 1.0F;
+    float content_scale_y = 1.0F;
+    glfwGetWindowContentScale(m_window.nativeHandle(), &content_scale_x, &content_scale_y);
+    float const dpi_scale = std::max(content_scale_x, content_scale_y);
+    S2MapLayout const layout = layoutS2Map(
+        m_s2_world_map_state,
+        framebuffer_width,
+        framebuffer_height,
+        m_s2_world_map_open,
+        show_minimap && m_s2_minimap_image.has_value(),
+        dpi_scale
+    );
+    std::array<MapImageDraw, 8U> draws{};
+    uint32_t draw_count = 0U;
+    TextRenderer world_map_text;
+    if (m_s2_world_map_open) {
+        S2MapOverlayLayout const overlay = buildS2WorldMapOverlay(
+            m_s2_world_map_state, m_s2_world_map_image ? &*m_s2_world_map_image : nullptr,
+            world.get(), player_x, player_y, framebuffer_width, framebuffer_height,
+            dpi_scale, world_map_text
+        );
+        auto const view = composeS2WorldMapView(
+            m_s2_world_map_image ? &*m_s2_world_map_image : nullptr,
+            layout, overlay, framebuffer_width, framebuffer_height
+        );
+        if (view && m_renderer.setMapImage(1U, view->width, view->height, view->rgba)) {
+            m_s2_map_view_in_slot_one = true;
+            draws[draw_count++] = MapImageDraw{
+                .image = 1U,
+                .destination = { 0.0F, 0.0F, static_cast<float>(framebuffer_width),
+                    static_cast<float>(framebuffer_height) },
+            };
+        }
+    }
+    if (!m_s2_world_map_open && m_s2_map_view_in_slot_one) {
+        if (layout.show_minimap && m_s2_minimap_image) {
+            static_cast<void>(m_renderer.setMapImage(
+                1U, m_s2_minimap_image->width, m_s2_minimap_image->height, m_s2_minimap_image->rgba));
+        } else {
+            m_renderer.clearMapImage(1U);
+        }
+        m_s2_map_view_in_slot_one = false;
+    }
+    if (layout.show_minimap) {
+        static constexpr std::array<std::array<uint8_t, 4>, 2> MINIMAP_CHROME{{
+            { 16U, 33U, 43U, 255U }, { 230U, 234U, 215U, 255U },
+        }};
+        static_cast<void>(m_renderer.setMapImage(0U, 2U, 1U, MINIMAP_CHROME));
+        auto const [map_x, map_y, map_width, map_height] = layout.minimap_bounds;
+        auto add_chrome = [&](float const color, std::array<float, 4> const bounds) {
+            draws[draw_count++] = MapImageDraw{
+                .image = 0U, .source = { color * 0.5F, 0.0F, 0.5F, 1.0F }, .destination = bounds,
+            };
+        };
+        add_chrome(0.0F, { map_x - 3.0F * dpi_scale, map_y - 3.0F * dpi_scale,
+            map_width + 6.0F * dpi_scale, map_height + 6.0F * dpi_scale });
+        add_chrome(1.0F, { map_x - dpi_scale, map_y - dpi_scale,
+            map_width + 2.0F * dpi_scale, map_height + 2.0F * dpi_scale });
+        draws[draw_count++] = layout.minimap_draw;
+        add_chrome(0.0F, { map_x, map_y + map_height - 20.0F * dpi_scale,
+            map_width, 20.0F * dpi_scale });
+        DebugHudRect const hit_area = layoutDebugHud(
+            framebuffer_width, framebuffer_height, dpi_scale
+        ).minimap_interactive;
+        m_s2_minimap_bounds = { hit_area.x, hit_area.y, hit_area.width, hit_area.height };
+    } else {
+        m_s2_minimap_bounds = {};
+    }
+    static_cast<void>(m_renderer.setMapDraws(std::span<MapImageDraw const>{draws.data(), draw_count}));
+    m_renderer.setDebugHudEnabled(m_debug_hud_enabled && !m_s2_world_map_open);
+
+    if (!m_s2_world_map_open && layout.show_minimap && m_s2_minimap_lod && player) {
+        static constexpr TextColor MARKER_COLOR{
+            .red = 1.0F,
+            .green = 0.80F,
+            .blue = 0.32F,
+            .alpha = 1.0F,
+        };
+        static constexpr TextColor CARDINAL_COLOR{
+            .red = 1.0F, .green = 0.89F, .blue = 0.60F, .alpha = 1.0F,
+        };
+        DebugHudLayout const hud_layout = layoutDebugHud(framebuffer_width, framebuffer_height, dpi_scale);
+        for (auto const& [label, point] : std::array<std::pair<std::string_view, DebugHudPoint>, 4U>{{
+                 { "N", hud_layout.north }, { "E", hud_layout.east },
+                 { "S", hud_layout.south }, { "W", hud_layout.west },
+             }}) {
+            addOutlinedGuiText(m_renderer, label, {
+                .position = { point.x, point.y, 0.0F },
+                .scale = dpi_scale,
+            }, label == "N" ? CARDINAL_COLOR : TextColor{
+                .red = 0.90F, .green = 0.92F, .blue = 0.84F, .alpha = 1.0F,
+            }, hud_layout.outline_offset_pixels);
+        }
+        S2MinimapMarker const marker = layoutS2MinimapMarker(
+            *m_s2_minimap_lod,
+            player_x,
+            player_y,
+            heading,
+            layout.minimap_bounds
+        );
+        static constexpr std::string_view MINIMAP_CAPTION = "Terrain L1";
+        m_renderer.addGuiText(MINIMAP_CAPTION, {
+            .position = { layout.minimap_bounds[0] + (layout.minimap_bounds[2]
+                - static_cast<float>(MINIMAP_CAPTION.size()) * 8.0F * dpi_scale) * 0.5F,
+                layout.minimap_bounds[1] + layout.minimap_bounds[3] - 18.0F * dpi_scale, 0.0F },
+            .scale = 0.5F * dpi_scale,
+        }, TextColor{ .red = 0.90F, .green = 0.92F, .blue = 0.84F, .alpha = 1.0F });
+        if (marker.visible) {
+            addOutlinedGuiText(m_renderer, std::string(1U, marker.direction_glyph), {
+                .position = { marker.x - 8.0F * hud_layout.glyph_scale,
+                    marker.y - 16.0F * hud_layout.glyph_scale, 0.0F },
+                .scale = hud_layout.glyph_scale,
+            }, MARKER_COLOR, hud_layout.outline_offset_pixels);
+            std::string heading_label = std::to_string(
+                static_cast<unsigned>(std::lround(marker.heading_degrees)) % 360U
+            );
+            heading_label.insert(0U, 3U - heading_label.size(), '0');
+            heading_label += "deg";
+            addOutlinedGuiText(m_renderer, heading_label, {
+                .position = { hud_layout.heading.x, hud_layout.heading.y, 0.0F },
+                .scale = hud_layout.small_glyph_scale,
+            }, CARDINAL_COLOR, hud_layout.outline_offset_pixels);
+        }
+    }
+
+    if (!m_s2_world_map_open && framebuffer_width != 0U && framebuffer_height != 0U) {
+        m_renderer.addGuiText("+", {
+            .position = {
+                static_cast<float>(framebuffer_width) * 0.5F - 8.0F,
+                static_cast<float>(framebuffer_height) * 0.5F - 16.0F,
+                0.0F,
+            },
+            .scale = 1.0F,
+            .style = m_hud_text_style,
+        }, TextColor{ .red = 0.94F, .green = 0.96F, .blue = 1.0F, .alpha = 0.95F });
+    }
+
+    for (TextLabel const& label : world_map_text.labels()) {
+        m_renderer.addGuiText(label.value, label.placement, label.color);
+    }
+}
+
 void PlayerClient::captureStartTransitionInputs()
 {
     m_start_transition_keys = m_pressed_loading_keys;
@@ -3895,175 +4972,196 @@ void PlayerClient::updateLoadingPresentation(WorldLoadingStatus const& status)
         m_loading_prompt_frame.reset();
         if (m_loading_overlay_active) {
             m_renderer.clearMapImage();
+            static_cast<void>(m_renderer.setMapDraws({}));
             m_renderer.clearGuiText();
-            m_renderer.setDebugHudEnabled(!m_benchmark || m_benchmark->show_debug_hud);
+            m_debug_hud_enabled = !m_benchmark || m_benchmark->show_debug_hud;
+            m_renderer.setDebugHudEnabled(m_debug_hud_enabled);
+            m_generation_map_animator.reset();
             m_loading_map_snapshot.reset();
+            m_loading_final_atlas.reset();
+            m_loading_final_map_image.reset();
+            m_loading_final_ice_mask.reset();
+            m_loading_final_map_attempted = false;
+            m_loading_map_join_epoch.reset();
+            m_generation_map_visible_elapsed = std::chrono::milliseconds{};
+            m_generation_map_last_update = {};
+            m_generation_map_was_visible = false;
             m_loading_overlay_active = false;
         }
         return;
     }
 
     m_loading_overlay_active = true;
+    m_s2_world_map_open = false;
     m_renderer.setFrameCompletionTracking(true);
+    m_debug_hud_enabled = false;
     m_renderer.setDebugHudEnabled(false);
-    if (status.map_snapshot != m_loading_map_snapshot) {
-        m_loading_map_snapshot = status.map_snapshot;
-        auto const image = status.map_snapshot ? rasterizeGenerationMap(*status.map_snapshot) : std::nullopt;
-        if (image) {
-            static_cast<void>(m_renderer.setMapImage(image->width, image->height, image->rgba));
-        } else {
-            m_renderer.clearMapImage();
+    auto const now = std::chrono::steady_clock::now();
+    uint64_t const join_epoch = worldLoadingJoinEpoch();
+    // Progress messages decode retained snapshots into fresh objects; their pointer
+    // changes must not restart the visible formation history for this join.
+    bool const new_map_session = m_loading_map_join_epoch != join_epoch;
+    m_loading_map_snapshot = status.map_snapshot;
+    if (new_map_session) {
+        m_generation_map_animator.reset();
+        m_loading_map_join_epoch = join_epoch;
+        m_generation_map_visible_elapsed = std::chrono::milliseconds{};
+        m_generation_map_last_update = now;
+        m_generation_map_was_visible = false;
+    }
+    std::shared_ptr<shared::TerrainWorld const> const terrain_world = terrainLodWorld();
+    std::shared_ptr<shared::TerrainLodArtifact const> const terrain_root = terrainLodRoot();
+    std::shared_ptr<generation::GlobalAtlas const> final_atlas;
+    if (terrain_world && terrain_root && m_terrain_session
+        && terrain_world->identity() == m_terrain_session->terrain
+        && terrain_world->atlas()->configuration == m_world_loading_identity.configuration) {
+        final_atlas = terrain_world->atlas();
+    } else if (status.atlas && status.atlas->configuration == m_world_loading_identity.configuration) {
+        final_atlas = status.atlas;
+    }
+    if (final_atlas != m_loading_final_atlas) {
+        m_loading_final_atlas = final_atlas;
+        m_loading_final_map_image.reset();
+        m_loading_final_ice_mask.reset();
+        m_loading_final_map_attempted = false;
+        if (final_atlas && final_atlas->configuration == m_world_loading_identity.configuration) {
+            std::optional<GenerationMapDisplayIceMask> const display_ice = makeGenerationMapDisplayIceMask(
+                final_atlas->climate_zone,
+                final_atlas->ocean_mask,
+                final_atlas->lake_mask,
+                final_atlas->temperature
+            );
+            if (display_ice) {
+                m_loading_final_ice_mask = std::make_shared<GenerationMapDisplayIceMask const>(
+                    std::move(*display_ice)
+                );
+            }
+        }
+    }
+    bool const final_s2_source_matches = terrain_world && terrain_root && m_terrain_session
+        && final_atlas == terrain_world->atlas()
+        && terrain_world->identity() == m_terrain_session->terrain
+        && terrain_root->terrain_identity == terrain_world->identity();
+    if (!m_loading_final_map_attempted && final_s2_source_matches) {
+        m_loading_final_map_attempted = true;
+        if (auto composed_map = rasterizeS2WorldMap(*terrain_world, *terrain_root, S2WorldMapState{});
+            composed_map && composed_map->source_identity == terrain_world->identity()
+            && composed_map->rgba.size() == static_cast<uint64_t>(composed_map->width) * composed_map->height) {
+            m_loading_final_map_image = std::make_shared<GenerationMapImage const>(GenerationMapImage{
+                .width = composed_map->width,
+                .height = composed_map->height,
+                .rgba = std::move(composed_map->rgba),
+            });
         }
     }
 
-    static constexpr float TEXT_MARGIN_PIXELS = 28.0F;
-    static constexpr TextColor TITLE_COLOR{ .red = 1.0F, .green = 0.78F, .blue = 0.42F, .alpha = 1.0F };
-    static constexpr TextColor SECONDARY_COLOR{ .red = 0.82F, .green = 0.87F, .blue = 0.94F, .alpha = 1.0F };
-    static constexpr TextColor PROGRESS_COLOR{ .red = 0.68F, .green = 0.76F, .blue = 0.85F, .alpha = 1.0F };
-    static constexpr TextColor FOOTER_COLOR{ .red = 0.56F, .green = 0.64F, .blue = 0.73F, .alpha = 1.0F };
+    bool const map_view_active = status.state == WorldLoadingState::PreparingAtlas
+        || status.state == WorldLoadingState::PreparingSpawn
+        || status.state == WorldLoadingState::ReadyForStart
+        || status.state == WorldLoadingState::Starting;
+    bool const map_view_visible = map_view_active && (status.map_snapshot || m_loading_final_map_image)
+        && glfwGetWindowAttrib(m_window.nativeHandle(), GLFW_VISIBLE) == GLFW_TRUE
+        && glfwGetWindowAttrib(m_window.nativeHandle(), GLFW_ICONIFIED) != GLFW_TRUE;
+    if (map_view_visible && m_generation_map_was_visible
+        && m_generation_map_last_update != std::chrono::steady_clock::time_point{}) {
+        m_generation_map_visible_elapsed += std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - m_generation_map_last_update
+        );
+    }
+    m_generation_map_was_visible = map_view_visible;
+    m_generation_map_last_update = now;
+    bool const start_ready = status.state == WorldLoadingState::ReadyForStart
+        || status.state == WorldLoadingState::Starting;
+    GenerationMapAnimationFrame const animation = m_generation_map_animator.update(
+        status.map_snapshot,
+        final_atlas,
+        m_loading_final_map_image,
+        m_loading_final_ice_mask,
+        GenerationMapAnimationClock{
+            .visible_elapsed = m_generation_map_visible_elapsed,
+            .reduced_motion = status.state == WorldLoadingState::Failed
+                || status.state == WorldLoadingState::Cancelled,
+            .ready = start_ready,
+        }
+    );
 
-    std::string_view title = "Preparing your world";
-    std::string phase;
-    std::string sphere_progress;
-    bool show_start_prompt = false;
-    if (status.state == WorldLoadingState::ReadyForStart) {
-        if (terrainStartSceneReady(m_terrain_session.has_value(), m_renderer.runtimeInfo())) {
-            title = "World ready";
-            phase = "Your starting area is ready";
-            show_start_prompt = true;
-        } else {
-            phase = "Preparing the terrain view";
-            m_loading_prompt_frame.reset();
-        }
-    } else if (status.state == WorldLoadingState::Starting) {
-        title = "Waiting for server";
-        phase = "Confirming your start";
-    } else if (status.state == WorldLoadingState::Failed) {
-        title = "World preparation failed";
-        phase = status.error.empty() ? "The world could not be prepared" : status.error;
-    } else if (status.state == WorldLoadingState::Cancelled) {
-        title = "World preparation cancelled";
-        phase = "World preparation was cancelled";
-    } else if (status.state == WorldLoadingState::Creating) {
-        phase = "Connecting to the world service";
-    } else if (status.atlas_ready) {
-        phase = status.initial_sphere_ready
-            ? "Expanding the playable area"
-            : "Preparing the starting area";
-    } else {
-        switch (status.generation_stage) {
-        case generation::GenerationStage::Tectonics:
-            phase = "Forming tectonic plates";
-            break;
-        case generation::GenerationStage::CoastalElaboration:
-            phase = "Shaping coasts and waterways";
-            break;
-        case generation::GenerationStage::InitialDrainage:
-            phase = "Mapping rivers and watersheds";
-            break;
-        case generation::GenerationStage::ProvisionalClimate:
-            phase = "Establishing early climate";
-            break;
-        case generation::GenerationStage::TerrainErosion:
-            phase = "Shaping terrain through erosion";
-            break;
-        case generation::GenerationStage::FinalClimate:
-            phase = "Refining the climate";
-            break;
-        case generation::GenerationStage::FinalDrainage:
-            phase = "Finalizing rivers and lakes";
-            break;
-        case generation::GenerationStage::Complete:
-            phase = "Preparing the starting area";
-            break;
-        }
+    bool const start_scene_ready = status.state == WorldLoadingState::ReadyForStart
+        && terrainStartSceneReady(m_terrain_session.has_value(), m_renderer.runtimeInfo());
+    if (status.state == WorldLoadingState::ReadyForStart && !start_scene_ready) {
+        m_loading_prompt_frame.reset();
     }
-    if (status.atlas_ready && !status.playable_sphere_ready) {
-        if (status.initial_sphere_ready) {
-            sphere_progress = "Playable area: " + std::to_string(status.playable_sphere_ready_chunks)
-                + " / " + std::to_string(status.playable_sphere_required_chunks) + " chunks";
-        } else {
-            sphere_progress = "Starting area: " + std::to_string(status.initial_sphere_ready_chunks)
-                + " / " + std::to_string(status.initial_sphere_required_chunks) + " chunks";
+    UiTelemetrySnapshot const telemetry = [&] {
+        if (shared::SparseWorld const* const world = authoritativeWorld()) {
+            return UiTelemetrySnapshot{
+                .loaded_dense_chunks = {
+                    .availability = UiAvailability::Available,
+                    .value = world->residentChunkCount(),
+                    .units = "dense chunks",
+                    .join_epoch = worldLoadingJoinEpoch(),
+                },
+            };
         }
-    }
+        return UiTelemetrySnapshot{};
+    }();
+    UiFrame const frame = buildUiFrame(
+        worldLoadingJoinEpoch(),
+        status,
+        connectionAttemptStarted(),
+        start_scene_ready,
+        telemetry,
+        animation.image ? std::optional{ animation } : std::nullopt,
+        serverAddress(),
+        m_world_loading_identity.configuration.seed
+    );
 
     m_renderer.clearGuiText();
     uint32_t framebuffer_width = 0U;
     uint32_t framebuffer_height = 0U;
     m_window.framebufferSize(framebuffer_width, framebuffer_height);
-    float const available_width = std::max(
-        1.0F,
-        static_cast<float>(framebuffer_width) - 2.0F * TEXT_MARGIN_PIXELS
+    if (framebuffer_width == 0U || framebuffer_height == 0U) {
+        static_cast<void>(m_renderer.setMapDraws({}));
+        return;
+    }
+    float content_scale_x = 1.0F;
+    float content_scale_y = 1.0F;
+    glfwGetWindowContentScale(m_window.nativeHandle(), &content_scale_x, &content_scale_y);
+    UiLoadingLayout const layout = layoutUiLoading(
+        frame, framebuffer_width, framebuffer_height, std::max(content_scale_x, content_scale_y)
     );
-    auto const fitScale = [available_width](std::string_view const text, float const maximum_scale) {
-        float const text_width = static_cast<float>(text.size()) * 16.0F;
-        return text.empty() ? maximum_scale : std::min(maximum_scale, available_width / text_width);
-    };
-
-    if (show_start_prompt) {
-        static constexpr std::string_view READY_TITLE = "WORLD READY";
-        static constexpr std::string_view START_PROMPT = "Press any key or click to start";
-        static constexpr float READY_LINE_GAP = 16.0F;
-        float const title_scale = fitScale(READY_TITLE, 2.0F);
-        float const prompt_scale = fitScale(START_PROMPT, 1.6F);
-        float const block_height = 32.0F * title_scale + READY_LINE_GAP + 32.0F * prompt_scale;
-        float const title_x = std::max(0.0F,
-            (static_cast<float>(framebuffer_width) - static_cast<float>(READY_TITLE.size()) * 16.0F * title_scale)
-                / 2.0F);
-        float const prompt_x = std::max(0.0F,
-            (static_cast<float>(framebuffer_width) - static_cast<float>(START_PROMPT.size()) * 16.0F * prompt_scale)
-                / 2.0F);
-        float const block_y = std::max(0.0F, (static_cast<float>(framebuffer_height) - block_height) / 2.0F);
-        addOutlinedGuiText(m_renderer, READY_TITLE, {
-            .position = { title_x, block_y, 0.0F },
-            .scale = title_scale,
-        }, TITLE_COLOR, 2.0F);
-        addOutlinedGuiText(m_renderer, START_PROMPT, {
-            .position = { prompt_x, block_y + 32.0F * title_scale + READY_LINE_GAP, 0.0F },
-            .scale = prompt_scale,
-        }, TextColor{ .red = 1.0F, .green = 1.0F, .blue = 1.0F, .alpha = 1.0F }, 2.0F);
+    if (animation.image && layout.map_viewport.width > 0.0F && layout.map_viewport.height > 0.0F) {
+        static constexpr std::array<std::array<uint8_t, 4>, 1> CANVAS_COLOR{{ { 21U, 39U, 47U, 255U } }};
+        static_cast<void>(m_renderer.setMapImage(1U, 1U, 1U, CANVAS_COLOR));
+        static_cast<void>(m_renderer.setMapImage(
+            0U, animation.image->width, animation.image->height, animation.image->rgba
+        ));
+        std::array<MapImageDraw, 2> const draws{{
+            { .image = 1U, .destination = { 0.0F, 0.0F,
+                static_cast<float>(framebuffer_width), static_cast<float>(framebuffer_height) } },
+            { .image = 0U, .destination = { layout.map_viewport.x, layout.map_viewport.y,
+                layout.map_viewport.width, layout.map_viewport.height } },
+        }};
+        static_cast<void>(m_renderer.setMapDraws(draws));
     } else {
-        float y = TEXT_MARGIN_PIXELS;
-        float const title_scale = fitScale(title, 1.45F);
-        m_renderer.addGuiText(title, {
-            .position = { TEXT_MARGIN_PIXELS, y, 0.0F },
-            .scale = title_scale,
-        }, TITLE_COLOR);
-        y += 40.0F * title_scale + 10.0F;
-
-        float const phase_scale = fitScale(phase, 0.95F);
-        m_renderer.addGuiText(phase, {
-            .position = { TEXT_MARGIN_PIXELS, y, 0.0F },
-            .scale = phase_scale,
-        }, SECONDARY_COLOR);
-        y += 40.0F * phase_scale + 6.0F;
-
-        if (!sphere_progress.empty()) {
-            float const progress_scale = fitScale(sphere_progress, 0.85F);
-            m_renderer.addGuiText(sphere_progress, {
-                .position = { TEXT_MARGIN_PIXELS, y, 0.0F },
-                .scale = progress_scale,
-            }, PROGRESS_COLOR);
-        }
-
-        if (status.request_accepted_at != std::chrono::steady_clock::time_point{}) {
-            auto const elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - status.request_accepted_at
-            );
-            if (elapsed >= std::chrono::seconds{ 3 }) {
-                std::string const footer = "Elapsed: " + std::to_string(elapsed.count()) + " seconds";
-                float const footer_scale = fitScale(footer, 0.8F);
-                float const footer_y = std::max(
-                    TEXT_MARGIN_PIXELS,
-                    static_cast<float>(framebuffer_height) - TEXT_MARGIN_PIXELS - 32.0F * footer_scale
-                );
-                m_renderer.addGuiText(footer, {
-                    .position = { TEXT_MARGIN_PIXELS, footer_y, 0.0F },
-                    .scale = footer_scale,
-                }, FOOTER_COLOR);
-            }
-        }
+        m_renderer.clearMapImage();
+        GenerationMapImageHandle const backdrop = loadingBackdropImage();
+        static_cast<void>(m_renderer.setMapImage(1U, backdrop->width, backdrop->height, backdrop->rgba));
+        float const scale = std::max(static_cast<float>(framebuffer_width) / backdrop->width,
+            static_cast<float>(framebuffer_height) / backdrop->height);
+        float const crop_width = static_cast<float>(framebuffer_width) / (backdrop->width * scale);
+        float const crop_height = static_cast<float>(framebuffer_height) / (backdrop->height * scale);
+        std::array<MapImageDraw, 1> const draws{{ {
+            .image = 1U,
+            .source = { (1.0F - crop_width) * 0.5F, (1.0F - crop_height) * 0.5F,
+                crop_width, crop_height },
+            .destination = { 0.0F, 0.0F, static_cast<float>(framebuffer_width),
+                static_cast<float>(framebuffer_height) },
+        } }};
+        static_cast<void>(m_renderer.setMapDraws(draws));
+    }
+    TextRenderer loading_text;
+    buildUiLoadingPresentation(frame, layout, loading_text);
+    for (TextLabel const& label : loading_text.labels()) {
+        m_renderer.addGuiText(label.value, label.placement, label.color);
     }
 }
 
@@ -4071,7 +5169,8 @@ shared::Direction PlayerClient::input() {
     ++m_movement_diagnostic_samples;
     m_movement_diagnostic_sampled_at = std::chrono::steady_clock::now();
     m_movement_diagnostic_direction = {};
-    if (worldLoadingStatus().state != WorldLoadingState::Playing || hasStartTransitionInputs()) {
+    if (worldLoadingStatus().state != WorldLoadingState::Playing || m_s2_world_map_open
+        || hasStartTransitionInputs()) {
         return {};
     }
     if (m_capture.has_value()) {
@@ -4300,11 +5399,20 @@ void PlayerClient::servicePlatformEvents() {
             pressed_mouse_buttons[pressed_mouse_button_count++] = button;
         }
     }
-    bool const new_input_edge = updateLoadingInputSnapshot(
+    bool const map_was_open = m_s2_world_map_open;
+    double cursor_x = 0.0;
+    double cursor_y = 0.0;
+    glfwGetCursorPos(window, &cursor_x, &cursor_y);
+    float content_scale_x = 1.0F;
+    float content_scale_y = 1.0F;
+    glfwGetWindowContentScale(window, &content_scale_x, &content_scale_y);
+    bool const new_input_edge = updatePlatformInputSnapshot(
         std::span<int const>{ pressed_keys.data(), pressed_key_count },
-        std::span<int const>{ pressed_mouse_buttons.data(), pressed_mouse_button_count }
+        std::span<int const>{ pressed_mouse_buttons.data(), pressed_mouse_button_count },
+        cursor_x * static_cast<double>(content_scale_x),
+        cursor_y * static_cast<double>(content_scale_y)
     );
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+    if (!map_was_open && !m_s2_world_map_open && glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         m_running = false;
     } else if (playerClientLoadingStartInputEligible(
         worldLoadingStatus().state,
@@ -4359,7 +5467,7 @@ void PlayerClient::render() {
         && !m_capture.has_value()) {
         m_renderer.clearGuiText();
     }
-    if (!m_benchmark.has_value() && !m_capture.has_value()
+    if (!m_benchmark.has_value() && !m_capture.has_value() && !m_s2_world_map_open
         && !m_screenshot_capture_pending && !m_screenshot_capture_requested) {
         static constexpr float SCREENSHOT_HUD_MARGIN = 24.0F;
         static constexpr float SCREENSHOT_HUD_SCALE = 0.72F;
@@ -4378,10 +5486,12 @@ void PlayerClient::render() {
             - static_cast<float>(SCREENSHOT_HINT.size()) * 16.0F * hint_scale);
         float const hint_y = std::max(0.0F, static_cast<float>(framebuffer_height) - SCREENSHOT_HUD_MARGIN
             - 32.0F * hint_scale);
-        addOutlinedGuiText(m_renderer, SCREENSHOT_HINT, {
-            .position = { hint_x, hint_y, 0.0F },
-            .scale = hint_scale,
-        }, TextColor{ .red = 0.90F, .green = 0.94F, .blue = 1.0F, .alpha = 1.0F }, 1.5F);
+        if (loading_status.state != WorldLoadingState::Playing) {
+            addOutlinedGuiText(m_renderer, SCREENSHOT_HINT, {
+                .position = { hint_x, hint_y, 0.0F },
+                .scale = hint_scale,
+            }, TextColor{ .red = 0.90F, .green = 0.94F, .blue = 1.0F, .alpha = 1.0F }, 1.5F);
+        }
         std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
         if (!m_screenshot_feedback.empty() && now < m_screenshot_feedback_until) {
             static constexpr float FEEDBACK_MARGIN_PIXELS = 24.0F;
@@ -4707,12 +5817,40 @@ void PlayerClient::render() {
             });
         }
     }
+    bool const hud_style_pressed = glfwGetKey(m_window.nativeHandle(), GLFW_KEY_F7) == GLFW_PRESS;
+    if (m_continuous_look_active && loading_status.state == WorldLoadingState::Playing
+        && !m_s2_world_map_open && !hasStartTransitionInputs()
+        && m_hud_style_toggle.update(hud_style_pressed)) {
+        m_hud_text_style = m_hud_text_style == TextStyle::Fixed ? TextStyle::Adaptive : TextStyle::Fixed;
+    }
     DebugHudInput const debug_hud_input = [&] {
         DebugHudInput input;
+        input.text_style = m_hud_text_style;
+        input.gameplay_ui = loading_status.state == WorldLoadingState::Playing && !m_s2_world_map_open;
+        input.compact_window = glfwGetWindowAttrib(m_window.nativeHandle(), GLFW_MAXIMIZED) != GLFW_TRUE
+            && glfwGetWindowMonitor(m_window.nativeHandle()) == nullptr;
+        RendererFrameProgress const frame_progress = m_renderer.frameProgress();
+        input.completed_frame = frame_progress.completed;
+        input.completed_frame_observed_at = frame_progress.completed_observed_at;
+        if (shared::SparseWorld const* const world = authoritativeWorld()) {
+            input.loaded_dense_chunks_available = true;
+            input.loaded_dense_chunks = world->residentChunkCount();
+        }
+        if (m_client_memory_rss_sampled_at == std::chrono::steady_clock::time_point{}
+            || now - m_client_memory_rss_sampled_at >= std::chrono::seconds{ 1 }) {
+            m_client_memory_rss_bytes = currentProcessResidentMemoryBytes();
+            m_client_memory_rss_sampled_at = now;
+        }
+        input.client_memory_rss_bytes = m_client_memory_rss_bytes;
         if (auto const player = m_world.playerByCharacter(m_local_character)) {
             input.player_x = static_cast<float>(shared::playerPositionX(*player));
             input.player_y = static_cast<float>(shared::playerPositionY(*player));
             input.player_z = static_cast<float>(shared::playerPositionZ(*player));
+            if (auto const terrain_world = terrainLodWorld()) {
+                input.temperature_celsius = static_cast<float>(
+                    terrain_world->sampleClimate(input.player_x, input.player_y).temperature_celsius
+                );
+            }
         }
         CameraAngles const angles = m_camera.pose().angles;
         input.camera_yaw_degrees = static_cast<float>(angles.yaw_degrees);
@@ -4739,7 +5877,12 @@ void PlayerClient::render() {
     if (m_continuous_look_active && !hasStartTransitionInputs()
         && m_debug_hud_toggle.update(debug_hud_pressed)) {
         m_renderer.toggleDebugHud();
+        m_debug_hud_enabled = !m_debug_hud_enabled;
     }
+    if (loading_status.state == WorldLoadingState::Playing) {
+        updatePlayingMapPresentation();
+    }
+    updateBlockInteractionPresentation(now);
     updateTerrainLod(presentation_deadline);
     bool const ready_prompt_visible = loading_status.state == WorldLoadingState::ReadyForStart
         && terrainStartSceneReady(m_terrain_session.has_value(), m_renderer.runtimeInfo());

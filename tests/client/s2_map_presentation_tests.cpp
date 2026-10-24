@@ -1,0 +1,311 @@
+#include <client/GenerationMapPresentation.hpp>
+#include <client/S2MapPresentation.hpp>
+
+#include <shared/world/TerrainLod.hpp>
+#include <shared/world/TerrainWorld.hpp>
+#include <generation/Generation.hpp>
+
+#include <gtest/gtest.h>
+
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <span>
+#include <vector>
+
+namespace {
+
+std::shared_ptr<shared::TerrainWorld const> mapWorld(bool const complete_layers = true)
+{
+    auto atlas = std::make_shared<generation::GlobalAtlas>();
+    atlas->configuration.resolution = 256U;
+    atlas->vertical_scale = 10.0;
+    uint32_t const count = 256U * 256U;
+    atlas->elevation.assign(count, 1.0F);
+    atlas->temperature.assign(count, 8.0F);
+    atlas->precipitation.assign(count, 0.25F);
+    atlas->water_level.assign(count, 0.0F);
+    atlas->ocean_mask.assign(count, 0U);
+    atlas->lake_mask.assign(count, 0U);
+    atlas->river_mask.assign(count, 0U);
+    if (complete_layers) {
+        atlas->moisture.assign(count, 0.4F);
+        atlas->wind_u.assign(count, 1.0F);
+        atlas->wind_v.assign(count, 0.5F);
+        atlas->current_u.assign(count, 0.25F);
+        atlas->current_v.assign(count, -0.25F);
+        atlas->climate_zone.assign(count, 3U);
+        atlas->plate_id.assign(count, 1);
+        atlas->plate_vx.assign(count, 0.1F);
+        atlas->plate_vy.assign(count, 0.2F);
+    }
+    return std::make_shared<shared::TerrainWorld const>(std::move(atlas));
+}
+
+shared::TerrainLodArtifact localLod()
+{
+    shared::TerrainLodArtifact artifact;
+    artifact.terrain_identity = shared::TerrainIdentity{
+        .terrain_version = generation::TERRAIN_VERSION,
+        .revision = 1U,
+        .seed = 42U,
+        .configuration_identity = generation::configurationIdentity(generation::GenerationConfiguration{}),
+    };
+    artifact.level = shared::TerrainLodLevel::L1;
+    artifact.spacing = 64U;
+    artifact.origin_x = 0U;
+    artifact.origin_y = 0U;
+    artifact.extent = client::S2_MINIMAP_WORLD_EXTENT;
+    artifact.side = artifact.extent / artifact.spacing + 1U;
+    artifact.nodes.reserve(static_cast<size_t>(artifact.side) * artifact.side);
+    for (uint32_t y = 0U; y < artifact.side; ++y) {
+        for (uint32_t x = 0U; x < artifact.side; ++x) {
+            shared::Block const material = x % 3U == 0U
+                ? shared::Block::Grass
+                : (x % 3U == 1U ? shared::Block::Stone : shared::Block::Snow);
+            artifact.nodes.push_back({
+                .key = {.x = x * artifact.spacing, .y = y * artifact.spacing},
+                .sample = {
+                    .height = 400.0 + static_cast<double>(x % 3U),
+                    .top_material = material,
+                },
+            });
+        }
+    }
+    return artifact;
+}
+
+} // namespace
+
+TEST(S2MapPresentationTest, WorldRasterUsesOnlyFieldsPresentInTheMatchingAtlas)
+{
+    auto const world = mapWorld();
+    auto const lod = shared::buildTerrainLod(*world, shared::TerrainLodLevel::L0);
+    client::S2WorldMapState state;
+    auto const image = client::rasterizeS2WorldMap(*world, *lod, state);
+
+    ASSERT_TRUE(image.has_value());
+    EXPECT_EQ(image->width, client::S2_WORLD_MAP_IMAGE_SIDE);
+    EXPECT_EQ(image->rgba.size(), client::S2_WORLD_MAP_IMAGE_SIDE * client::S2_WORLD_MAP_IMAGE_SIDE);
+    EXPECT_EQ(image->source_identity, world->identity());
+    EXPECT_EQ(image->source_model_identity, shared::TERRAIN_LOD_MODEL);
+    EXPECT_TRUE(image->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Plates)]);
+    EXPECT_TRUE(image->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Wind)]);
+    EXPECT_TRUE(image->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Currents)]);
+    EXPECT_TRUE(image->has_numeric_range[static_cast<size_t>(client::S2WorldMapLayer::Plates)]);
+    EXPECT_EQ(image->layer_ranges[static_cast<size_t>(client::S2WorldMapLayer::Plates)],
+        (std::array<float, 2U>{1.0F, 1.0F}));
+    EXPECT_TRUE(image->has_numeric_range[static_cast<size_t>(client::S2WorldMapLayer::Heights)]);
+    EXPECT_EQ(image->layer_ranges[static_cast<size_t>(client::S2WorldMapLayer::Heights)],
+        (std::array<float, 2U>{1.0F, 1.0F}));
+    EXPECT_EQ(image->layer_ranges[static_cast<size_t>(client::S2WorldMapLayer::Temperature)],
+        (std::array<float, 2U>{-40.0F, 30.0F}));
+    EXPECT_EQ(image->layer_ranges[static_cast<size_t>(client::S2WorldMapLayer::Biomes)],
+        (std::array<float, 2U>{0.0F, 5.0F}));
+    EXPECT_EQ(image->layer_ranges[static_cast<size_t>(client::S2WorldMapLayer::Moisture)],
+        (std::array<float, 2U>{0.4F, 0.4F}));
+    EXPECT_EQ(image->layer_ranges[static_cast<size_t>(client::S2WorldMapLayer::Precipitation)],
+        (std::array<float, 2U>{0.25F, 0.25F}));
+    EXPECT_FALSE(image->has_numeric_range[static_cast<size_t>(client::S2WorldMapLayer::Wind)]);
+    EXPECT_FALSE(image->has_numeric_range[static_cast<size_t>(client::S2WorldMapLayer::Currents)]);
+
+    auto const partial_world = mapWorld(false);
+    auto const partial_lod = shared::buildTerrainLod(*partial_world, shared::TerrainLodLevel::L0);
+    auto const partial = client::rasterizeS2WorldMap(*partial_world, *partial_lod, state);
+    ASSERT_TRUE(partial.has_value());
+    EXPECT_FALSE(partial->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Plates)]);
+    EXPECT_FALSE(partial->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Wind)]);
+    EXPECT_FALSE(partial->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Currents)]);
+    EXPECT_TRUE(partial->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Heights)]);
+    EXPECT_TRUE(partial->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Temperature)]);
+    EXPECT_FALSE(partial->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Biomes)]);
+    EXPECT_FALSE(partial->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Moisture)]);
+    EXPECT_TRUE(partial->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Precipitation)]);
+}
+
+TEST(S2MapPresentationTest, WorldMapUsesTheSharedCompletedAtlasBaseWhenLayersAreDisabled)
+{
+    auto const world = mapWorld();
+    auto const lod = shared::buildTerrainLod(*world, shared::TerrainLodLevel::L0);
+    auto const ice_mask = client::makeGenerationMapDisplayIceMask(
+        std::span<uint8_t const>(world->atlas()->climate_zone),
+        std::span<uint8_t const>(world->atlas()->ocean_mask),
+        std::span<uint8_t const>(world->atlas()->lake_mask),
+        std::span<float const>(world->atlas()->temperature)
+    );
+    ASSERT_TRUE(ice_mask.has_value());
+    auto const shared_base = client::rasterizeGenerationMap(*world->atlas(), ice_mask->surface_kind);
+    ASSERT_TRUE(shared_base.has_value());
+
+    client::S2WorldMapState state;
+    state.layers.fill(false);
+    auto const image = client::rasterizeS2WorldMap(*world, *lod, state);
+
+    ASSERT_TRUE(image.has_value());
+    EXPECT_EQ(image->rgba.front(), shared_base->rgba.front());
+}
+
+TEST(S2MapPresentationTest, TemperatureMoistureAndPrecipitationLayersUseOpaqueBoundedColors)
+{
+    auto const world = mapWorld();
+    auto const lod = shared::buildTerrainLod(*world, shared::TerrainLodLevel::L0);
+    client::S2WorldMapState state;
+    state.layers.fill(false);
+
+    state.layers[static_cast<size_t>(client::S2WorldMapLayer::Temperature)] = true;
+    auto const temperature = client::rasterizeS2WorldMap(*world, *lod, state);
+    state.layers.fill(false);
+    state.layers[static_cast<size_t>(client::S2WorldMapLayer::Moisture)] = true;
+    auto const moisture = client::rasterizeS2WorldMap(*world, *lod, state);
+    state.layers.fill(false);
+    state.layers[static_cast<size_t>(client::S2WorldMapLayer::Precipitation)] = true;
+    auto const precipitation = client::rasterizeS2WorldMap(*world, *lod, state);
+
+    ASSERT_TRUE(temperature);
+    ASSERT_TRUE(moisture);
+    ASSERT_TRUE(precipitation);
+    EXPECT_EQ(temperature->rgba.front(), (std::array<uint8_t, 4U>{213U, 200U, 162U, 255U}));
+    EXPECT_EQ(moisture->rgba.front(), (std::array<uint8_t, 4U>{209U, 189U, 137U, 255U}));
+    EXPECT_EQ(precipitation->rgba.front(), (std::array<uint8_t, 4U>{220U, 213U, 235U, 255U}));
+}
+
+TEST(S2MapPresentationTest, MinimapUsesTheSuppliedLocalProjectionAndHeading)
+{
+    auto lod = localLod();
+    auto const north_up = client::rasterizeS2Minimap(lod);
+    auto const north = client::layoutS2MinimapMarker(lod, 16.0, 16.0, 0.0, {10.0F, 20.0F, 100.0F, 100.0F});
+    auto const east = client::layoutS2MinimapMarker(lod, 16.0, 16.0, 90.0, {10.0F, 20.0F, 100.0F, 100.0F});
+
+    ASSERT_TRUE(north_up.has_value());
+    EXPECT_EQ(north_up->width, client::S2_MINIMAP_IMAGE_SIDE);
+    EXPECT_EQ(north_up->source_identity, lod.terrain_identity);
+    EXPECT_TRUE(north.visible);
+    EXPECT_TRUE(east.visible);
+    EXPECT_EQ(north.x, east.x);
+    EXPECT_EQ(north.y, east.y);
+    EXPECT_NE(north.direction_glyph, east.direction_glyph);
+}
+
+TEST(S2MapPresentationTest, MinimapLocalLodStitchesAcrossBothWorldWrapSeams)
+{
+    auto const world = mapWorld();
+    auto const lod = client::buildS2MinimapLod(*world, 0.0, 0.0);
+
+    ASSERT_NE(lod, nullptr);
+    EXPECT_EQ(lod->level, shared::TerrainLodLevel::L1);
+    EXPECT_EQ(lod->extent, client::S2_MINIMAP_WORLD_EXTENT);
+    EXPECT_EQ(lod->side, client::S2_MINIMAP_WORLD_EXTENT / lod->spacing + 1U);
+    EXPECT_LE(lod->side, client::S2_MINIMAP_IMAGE_SIDE * 2U + 1U);
+    EXPECT_LE(lod->nodes.size(), shared::TERRAIN_LOD_MAX_NODES);
+    EXPECT_EQ(lod->origin_x, generation::WORLD_SIZE_BLOCKS - client::S2_MINIMAP_WORLD_EXTENT / 2U);
+    EXPECT_EQ(lod->origin_y, generation::WORLD_SIZE_BLOCKS - client::S2_MINIMAP_WORLD_EXTENT / 2U);
+    uint32_t const seam_x = (generation::WORLD_SIZE_BLOCKS - lod->origin_x) / lod->spacing;
+    uint32_t const seam_y = (generation::WORLD_SIZE_BLOCKS - lod->origin_y) / lod->spacing;
+    EXPECT_EQ(lod->nodes[seam_x].key.x, 0U);
+    EXPECT_EQ(lod->nodes[seam_x + 1U].key.x, lod->spacing);
+    EXPECT_EQ(lod->nodes[static_cast<size_t>(seam_y) * lod->side].key.y, 0U);
+    EXPECT_EQ(lod->nodes[static_cast<size_t>(seam_y + 1U) * lod->side].key.y, lod->spacing);
+    EXPECT_TRUE(client::rasterizeS2Minimap(*lod).has_value());
+}
+
+TEST(S2MapPresentationTest, MapLayoutWrapsTheCloseViewAndFitsOneUnrepeatedOverview)
+{
+    client::S2WorldMapState state{
+        .center_x = 65'530.0,
+        .center_y = 2.0,
+        .zoom = 2.0,
+    };
+    client::S2MapLayout const close = client::layoutS2Map(state, 1'200U, 800U, true, false);
+    EXPECT_GT(close.world_draw_count, 1U);
+    EXPECT_LE(close.world_draw_count, close.world_draws.size());
+
+    state.overview = true;
+    client::S2MapLayout const overview = client::layoutS2Map(state, 1'200U, 800U, true, true);
+    EXPECT_EQ(overview.world_draw_count, 1U);
+    EXPECT_FALSE(overview.show_minimap);
+    EXPECT_NEAR(overview.world_draws[0].destination[2], overview.world_draws[0].destination[3], 0.001F);
+
+    client::S2MapLayout const minimap = client::layoutS2Map({}, 1'280U, 676U, false, true);
+    ASSERT_TRUE(minimap.show_minimap);
+    EXPECT_EQ(minimap.minimap_bounds, (std::array<float, 4U>{1'054.0F, 44.0F, 192.0F, 192.0F}));
+
+    client::S2MapLayout const hidpi_minimap = client::layoutS2Map(
+        {}, 2'560U, 1'352U, false, true, 2.0F);
+    ASSERT_TRUE(hidpi_minimap.show_minimap);
+    EXPECT_EQ(hidpi_minimap.minimap_bounds,
+        (std::array<float, 4U>{2'108.0F, 88.0F, 384.0F, 384.0F}));
+}
+
+TEST(S2MapPresentationTest, WorldMapViewComposesWrappedRasterAndOpaqueCanvas)
+{
+    client::S2MapImage source;
+    source.width = 4U;
+    source.height = 2U;
+    source.rgba = {
+        {10U, 20U, 30U, 255U}, {60U, 50U, 50U, 255U},
+        {110U, 80U, 70U, 255U}, {160U, 110U, 90U, 255U},
+        {11U, 21U, 31U, 255U}, {61U, 51U, 51U, 255U},
+        {111U, 81U, 71U, 255U}, {161U, 111U, 91U, 255U},
+    };
+    client::S2MapLayout layout;
+    layout.world_draw_count = 2U;
+    layout.world_draws[0] = {
+        .image = 0U,
+        .source = {0.5F, 0.0F, 0.5F, 1.0F},
+        .destination = {0.0F, 0.0F, 2.0F, 2.0F},
+        .scissor = {0U, 0U, 4U, 2U},
+    };
+    layout.world_draws[1] = {
+        .image = 0U,
+        .source = {0.0F, 0.0F, 0.5F, 1.0F},
+        .destination = {2.0F, 0.0F, 2.0F, 2.0F},
+        .scissor = {0U, 0U, 4U, 2U},
+    };
+    client::S2MapOverlayLayout overlay;
+    overlay.panel_count = 1U;
+    overlay.panels[0U] = { .bounds = {0.0F, 0.0F, 1.0F, 2.0F}, .palette_index = 1U };
+
+    auto const view = client::composeS2WorldMapView(&source, layout, overlay, 4U, 2U);
+
+    ASSERT_TRUE(view);
+    EXPECT_EQ(view->width, 4U);
+    EXPECT_EQ(view->height, 2U);
+    EXPECT_EQ(view->rgba[0U], (std::array<uint8_t, 4U>{49U, 48U, 49U, 255U}));
+    EXPECT_EQ(view->rgba[1U], (std::array<uint8_t, 4U>{160U, 110U, 90U, 255U}));
+    EXPECT_EQ(view->rgba[2U], (std::array<uint8_t, 4U>{10U, 20U, 30U, 255U}));
+    EXPECT_EQ(view->rgba[3U], (std::array<uint8_t, 4U>{60U, 50U, 50U, 255U}));
+    EXPECT_TRUE(std::all_of(view->rgba.begin(), view->rgba.end(), [](auto const& pixel) {
+        return pixel[3U] == 255U;
+    }));
+
+    auto const canvas = client::composeS2WorldMapView(nullptr, {}, {}, 600U, 300U);
+    ASSERT_TRUE(canvas);
+    EXPECT_EQ(canvas->width, 512U);
+    EXPECT_EQ(canvas->height, 256U);
+    EXPECT_TRUE(std::all_of(canvas->rgba.begin(), canvas->rgba.end(), [](auto const& pixel) {
+        return pixel == (std::array<uint8_t, 4U>{21U, 39U, 47U, 255U});
+    }));
+}
+
+TEST(S2MapPresentationTest, LayerAndNavigationActionsAreIndependentAndBounded)
+{
+    client::S2WorldMapState state;
+    EXPECT_TRUE(client::applyS2WorldMapAction(
+        state, client::S2WorldMapAction::ToggleWind, 2'000.0, 4'000.0));
+    EXPECT_TRUE(state.layers[static_cast<size_t>(client::S2WorldMapLayer::Wind)]);
+    EXPECT_FALSE(state.layers[static_cast<size_t>(client::S2WorldMapLayer::Currents)]);
+
+    EXPECT_TRUE(client::applyS2WorldMapAction(
+        state, client::S2WorldMapAction::PanLeft, 2'000.0, 4'000.0, true));
+    EXPECT_GE(state.center_x, 0.0);
+    EXPECT_LT(state.center_x, generation::WORLD_SIZE_BLOCKS);
+    EXPECT_TRUE(client::applyS2WorldMapAction(
+        state, client::S2WorldMapAction::Overview, 2'000.0, 4'000.0));
+    EXPECT_TRUE(state.overview);
+    EXPECT_TRUE(client::applyS2WorldMapAction(
+        state, client::S2WorldMapAction::ZoomIn, 2'000.0, 4'000.0));
+    EXPECT_FALSE(state.overview);
+    EXPECT_GT(state.zoom, 1.0);
+}

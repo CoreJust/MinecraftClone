@@ -102,6 +102,8 @@ TEST(PresentationFrameProgressTest, DoesNotRetainRetirementHistoryUnlessDiagnost
     }
     ASSERT_TRUE(tracker.progress().completed.has_value());
     EXPECT_EQ(tracker.progress().completed->sequence, 256U);
+    EXPECT_TRUE(tracker.progress().completed_observed_at.has_value());
+    EXPECT_EQ(*tracker.progress().completed_observed_at, observed_at + std::chrono::nanoseconds{ 256U });
 
     tracker.setRetiredHistoryEnabled(true);
     static_cast<void>(tracker.recordSubmission(0U, 257U));
@@ -110,4 +112,23 @@ TEST(PresentationFrameProgressTest, DoesNotRetainRetirementHistoryUnlessDiagnost
     EXPECT_EQ(tracker.retiredCompletions().front().submission.sequence, 257U);
     tracker.setRetiredHistoryEnabled(false);
     EXPECT_TRUE(tracker.retiredCompletions().empty());
+}
+
+TEST(PresentationFrameProgressTest, CompletionObservationTimeIsStableUntilANewerFenceCompletes)
+{
+    client::detail::PresentationFrameProgressTracker tracker;
+    tracker.prepareSlot(0U);
+    tracker.prepareSlot(1U);
+    static_cast<void>(tracker.recordSubmission(0U, 4U));
+    static_cast<void>(tracker.recordSubmission(1U, 4U));
+    auto const first = std::chrono::steady_clock::time_point{} + std::chrono::seconds{ 5 };
+    tracker.observeCompletedSlot(1U, first);
+    ASSERT_TRUE(tracker.progress().completed_observed_at.has_value());
+    EXPECT_EQ(*tracker.progress().completed_observed_at, first);
+    tracker.observeCompletedSlot(0U, first + std::chrono::seconds{ 1 });
+    EXPECT_EQ(*tracker.progress().completed_observed_at, first);
+    tracker.observeCompletedSlot(1U, first + std::chrono::seconds{ 2 });
+    EXPECT_EQ(*tracker.progress().completed_observed_at, first);
+    tracker.resetProgress();
+    EXPECT_FALSE(tracker.progress().completed_observed_at.has_value());
 }

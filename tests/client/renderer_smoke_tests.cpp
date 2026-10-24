@@ -691,11 +691,12 @@ struct PixelRectangle final {
     uint8_t const minimum = std::min(red, std::min(green, blue));
     bool const bright_color = maximum >= 220U && maximum - minimum >= 35U;
     bool const bright_neutral = minimum >= 180U;
+    bool const dark_neutral = maximum <= 20U;
     // The presentation background is a blue-dominant sky. Keep its high blue
     // channel from being mistaken for generic colored text, while allowing the
     // brighter cyan HUD row through.
     bool const sky_like = blue > green + 20U && green > red + 20U && green < 200U;
-    return bright_neutral || (bright_color && !sky_like);
+    return bright_neutral || dark_neutral || (bright_color && !sky_like);
 }
 
 [[nodiscard]] CaptureColorClasses classifyCaptureColors(client::RendererFrameCapture const& capture)
@@ -810,7 +811,8 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
         original_capture->rgba8.size(),
         static_cast<uint64_t>(initial_framebuffer_width) * initial_framebuffer_height * 4U
     );
-    EXPECT_EQ(renderer.runtimeInfo().debug_hud_draw_count, 0U);
+    uint32_t const controls_draw_count = renderer.runtimeInfo().debug_hud_draw_count;
+    EXPECT_GT(controls_draw_count, 0U);
 
     renderer.requestFrameCapture();
     ASSERT_TRUE(completeCapture());
@@ -857,7 +859,7 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
     EXPECT_TRUE(subsequent_colors.complete())
         << "subsequent capture lacks: " << subsequent_colors.missingClasses()
         << "; the resized platform/grid/sky/HUD scene may cover every physical framebuffer sample";
-    EXPECT_EQ(renderer.runtimeInfo().debug_hud_draw_count, 1U);
+    EXPECT_GT(renderer.runtimeInfo().debug_hud_draw_count, controls_draw_count);
 
     renderer.hotReload();
     renderer.requestFrameCapture();
@@ -2491,6 +2493,34 @@ TEST(RendererSmokeTest, NormalRendererDisplaysAspectFittedMapPixelsAndGuiOverlay
         ASSERT_TRUE(written.has_value()) << written.error();
     }
 
+    ASSERT_TRUE(renderer.setMapDraws({}));
+    auto const no_maps = captureFrame();
+    ASSERT_TRUE(no_maps.has_value());
+    std::array<std::array<uint8_t, 4>, 1> const second_image{
+        std::array<uint8_t, 4>{ 128U, 32U, 200U, 255U },
+    };
+    ASSERT_TRUE(renderer.setMapImage(1U, 1U, 1U, second_image));
+    std::array<client::MapImageDraw, 2> const draws{
+        client::MapImageDraw{
+            .source = { 0.25F, 0.0F, 0.25F, 0.5F },
+            .destination = { 10.0F, 10.0F, 40.0F, 40.0F },
+            .scissor = { 10U, 10U, 20U, 40U },
+        },
+        client::MapImageDraw{ .image = 1U, .destination = { 80.0F, 10.0F, 40.0F, 40.0F } },
+    };
+    ASSERT_TRUE(renderer.setMapDraws(draws));
+    auto const cropped_maps = captureFrame();
+    ASSERT_TRUE(cropped_maps.has_value());
+    auto channel = [&](client::RendererFrameCapture const& image, uint32_t x, uint32_t y, uint32_t component) {
+        return image.rgba8[(static_cast<size_t>(y) * image.width + x) * 4U + component];
+    };
+    EXPECT_LT(channel(*cropped_maps, 15U, 20U, 0U), 5U);
+    EXPECT_GT(channel(*cropped_maps, 15U, 20U, 1U), 250U);
+    for (uint32_t component = 0U; component < 3U; ++component) {
+        EXPECT_EQ(channel(*cropped_maps, 35U, 20U, component), channel(*no_maps, 35U, 20U, component));
+        EXPECT_NEAR(channel(*cropped_maps, 90U, 20U, component), second_image[0][component], 3);
+    }
+    ASSERT_TRUE(renderer.setMapImage(MAP_WIDTH, MAP_HEIGHT, MAP_PIXELS));
     renderer.clearMapImage();
     auto const cleared_capture = captureFrame();
     ASSERT_TRUE(cleared_capture.has_value());
@@ -2614,3 +2644,339 @@ TEST(RendererSmokeTest, ActiveThirdPersonRendererShowsPlatformPlayersAndTopLeftH
 }
 
 } // namespace
+
+TEST(RendererSmokeTest, AdaptiveGlyphSamplesTheSameFrameSceneAcrossOverlappingHud)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 320U, .height = 240U, .title = "Adaptive scene contrast",
+        },
+    };
+    client::InstalledShaderAssets const shaders;
+    auto const context = client::VulkanRenderer::createPresentationContext(
+        window, { .require_validation = true, .enable_frame_capture = true }
+    );
+    RecordProperty("surface_format", static_cast<int>(context->info().format));
+    RecordProperty("surface_srgb", context->info().srgb ? 1 : 0);
+    client::VulkanRenderer renderer{
+        context, shaders, { .require_validation = true, .enable_frame_capture = true },
+    };
+    renderer.setDebugHudEnabled(false);
+    renderer.setFallbackSceneEnabled(false);
+    std::array<std::array<uint8_t, 4>, 2> const pixels{
+        std::array<uint8_t, 4>{ 0U, 0U, 0U, 255U },
+        std::array<uint8_t, 4>{ 255U, 255U, 255U, 255U },
+    };
+    ASSERT_TRUE(renderer.setMapImage(2U, 1U, pixels));
+    uint32_t width = 0U;
+    uint32_t height = 0U;
+    window.framebufferSize(width, height);
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 15 };
+    auto capture = [&]() -> std::optional<client::RendererFrameCapture> {
+        renderer.requestFrameCapture();
+        for (uint32_t attempt = 0U; attempt < 20U && std::chrono::steady_clock::now() < deadline; ++attempt) {
+            if (!window.nextFrame()) { return std::nullopt; }
+            static_cast<void>(renderer.render({}, deadline));
+            auto result = renderer.takeFrameCapture();
+            if (result) { return result; }
+        }
+        return std::nullopt;
+    };
+    client::TextPlacement const placement{
+        .position = { static_cast<float>(width / 2U) - 8.0F, static_cast<float>(height / 2U), 0.0F },
+        .style = client::TextStyle::Adaptive,
+    };
+    renderer.addGuiText("M", placement);
+    auto const single = capture();
+    ASSERT_TRUE(single.has_value());
+    size_t light = 0U;
+    size_t dark = 0U;
+    for (uint32_t y = height / 2U; y < height / 2U + 32U; ++y) {
+        for (uint32_t x = width / 2U - 8U; x < width / 2U + 8U; ++x) {
+            uint8_t const red = single->rgba8[(static_cast<size_t>(y) * width + x) * 4U];
+            light += x < width / 2U && red > 240U ? 1U : 0U;
+            dark += x >= width / 2U && red < 15U ? 1U : 0U;
+        }
+    }
+    EXPECT_GT(light, 0U);
+    EXPECT_GT(dark, 0U);
+    renderer.addGuiText("M", placement);
+    auto const overlap = capture();
+    ASSERT_TRUE(overlap.has_value());
+    EXPECT_EQ(overlap->rgba8, single->rgba8);
+    renderer.clearGuiText();
+    renderer.addGuiText("M", placement, { 1.0F, 1.0F, 1.0F, 0.5F });
+    auto const translucent = capture();
+    ASSERT_TRUE(translucent.has_value());
+    ASSERT_TRUE(translucent->srgb_encoded);
+    size_t blended_left = 0U;
+    size_t blended_right = 0U;
+    for (uint32_t y = height / 2U; y < height / 2U + 32U; ++y) {
+        for (uint32_t x = width / 2U - 8U; x < width / 2U + 8U; ++x) {
+            uint8_t const red = translucent->rgba8[(static_cast<size_t>(y) * width + x) * 4U];
+            if (red >= 185U && red <= 190U) {
+                blended_left += x < width / 2U ? 1U : 0U;
+                blended_right += x >= width / 2U ? 1U : 0U;
+            }
+        }
+    }
+    EXPECT_GT(blended_left, 0U);
+    EXPECT_GT(blended_right, 0U);
+    renderer.clearGuiText();
+    renderer.addGuiText("M", placement);
+    auto reversed_pixels = pixels;
+    std::swap(reversed_pixels[0], reversed_pixels[1]);
+    ASSERT_TRUE(renderer.setMapImage(2U, 1U, reversed_pixels));
+    auto const changed_scene = capture();
+    ASSERT_TRUE(changed_scene.has_value());
+    auto expectReversedGlyph = [&](client::RendererFrameCapture const& image) {
+        size_t dark_left = 0U;
+        size_t light_right = 0U;
+        for (uint32_t y = image.height / 2U; y < image.height / 2U + 32U; ++y) {
+            for (uint32_t x = image.width / 2U - 8U; x < image.width / 2U + 8U; ++x) {
+                uint8_t const red = image.rgba8[(static_cast<size_t>(y) * image.width + x) * 4U];
+                dark_left += x < image.width / 2U && red < 15U ? 1U : 0U;
+                light_right += x >= image.width / 2U && red > 240U ? 1U : 0U;
+            }
+        }
+        EXPECT_GT(dark_left, 0U);
+        EXPECT_GT(light_right, 0U);
+    };
+    expectReversedGlyph(*changed_scene);
+    renderer.hotReload();
+    auto const reloaded = capture();
+    ASSERT_TRUE(reloaded.has_value());
+    EXPECT_EQ(reloaded->rgba8, changed_scene->rgba8);
+    glfwSetWindowSize(window.nativeHandle(), 400, 300);
+    ASSERT_TRUE(window.nextFrame());
+    window.framebufferSize(width, height);
+    renderer.recreate(width, height);
+    renderer.clearGuiText();
+    auto resized_placement = placement;
+    resized_placement.position = { static_cast<float>(width / 2U) - 8.0F,
+        static_cast<float>(height / 2U), 0.0F };
+    renderer.addGuiText("M", resized_placement);
+    auto const resized = capture();
+    ASSERT_TRUE(resized.has_value());
+    ASSERT_EQ(resized->width, width);
+    ASSERT_EQ(resized->height, height);
+    expectReversedGlyph(*resized);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, AdaptiveOffscreenGlyphPreservesRawLinearAlphaAndFixedStyle)
+{
+    client::InstalledShaderAssets const shaders;
+    client::VulkanOffscreenRenderer renderer{ shaders, true };
+    renderer.setDebugHudEnabled(false);
+    std::array<std::array<uint8_t, 4>, 2> const pixels{
+        std::array<uint8_t, 4>{ 0U, 0U, 0U, 255U },
+        std::array<uint8_t, 4>{ 255U, 255U, 255U, 255U },
+    };
+    ASSERT_TRUE(renderer.setMapImage(2U, 1U, pixels));
+    client::TextPlacement const placement{
+        .position = { 312.0F, 240.0F, 0.0F }, .style = client::TextStyle::Adaptive,
+    };
+    renderer.addGuiText("M", placement, { 1.0F, 1.0F, 1.0F, 0.5F });
+    auto const image = renderer.render({});
+    ASSERT_FALSE(image.srgb_encoded);
+    ASSERT_EQ(image.width, 640U);
+    size_t blended_left = 0U;
+    size_t blended_right = 0U;
+    for (uint32_t y = 240U; y < 272U; ++y) {
+        for (uint32_t x = 312U; x < 328U; ++x) {
+            uint8_t const red = image.rgba8[(static_cast<size_t>(y) * image.width + x) * 4U];
+            if (red >= 126U && red <= 129U) {
+                blended_left += x < 320U ? 1U : 0U;
+                blended_right += x >= 320U ? 1U : 0U;
+            }
+        }
+    }
+    EXPECT_GT(blended_left, 0U);
+    EXPECT_GT(blended_right, 0U);
+    renderer.addGuiText("M", placement, { 1.0F, 1.0F, 1.0F, 0.5F });
+    auto const overlap = renderer.render({});
+    size_t layered_left = 0U;
+    size_t layered_right = 0U;
+    for (uint32_t y = 240U; y < 272U; ++y) {
+        for (uint32_t x = 312U; x < 328U; ++x) {
+            uint8_t const red = overlap.rgba8[(static_cast<size_t>(y) * overlap.width + x) * 4U];
+            layered_left += x < 320U && red >= 190U && red <= 193U ? 1U : 0U;
+            layered_right += x >= 320U && red >= 62U && red <= 65U ? 1U : 0U;
+        }
+    }
+    EXPECT_GT(layered_left, 0U);
+    EXPECT_GT(layered_right, 0U);
+    renderer.clearGuiText();
+    auto fixed = placement;
+    fixed.style = client::TextStyle::Fixed;
+    renderer.addGuiText("M", fixed);
+    auto const fixed_image = renderer.render({});
+    for (uint32_t y = 240U; y < 272U; ++y) {
+        for (uint32_t x = 320U; x < 328U; ++x) {
+            EXPECT_EQ(fixed_image.rgba8[(static_cast<size_t>(y) * image.width + x) * 4U], 255U);
+        }
+    }
+    renderer.clearGuiText();
+    auto colored = placement;
+    colored.light_color = { 0.5F, 0.5F, 0.5F, 1.0F };
+    colored.dark_color = { 0.1F, 0.1F, 0.1F, 1.0F };
+    renderer.addGuiText("M", colored);
+    auto const colored_image = renderer.render({});
+    size_t light_linear = 0U;
+    size_t dark_linear = 0U;
+    for (uint32_t y = 240U; y < 272U; ++y) {
+        for (uint32_t x = 312U; x < 328U; ++x) {
+            uint8_t const red = colored_image.rgba8[(static_cast<size_t>(y) * colored_image.width + x) * 4U];
+            light_linear += x < 320U && red >= 54U && red <= 56U ? 1U : 0U;
+            dark_linear += x >= 320U && red >= 2U && red <= 4U ? 1U : 0U;
+        }
+    }
+    EXPECT_GT(light_linear, 0U);
+    EXPECT_GT(dark_linear, 0U);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, BlockEffectsShowTargetCracksAndAcceptedParticlesWithSceneDepth)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 320U, .height = 240U, .title = "Block interaction effects",
+        },
+    };
+    client::InstalledShaderAssets const shaders;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window, {.require_validation = true, .enable_frame_capture = true}),
+        shaders, {.require_validation = true, .enable_frame_capture = true},
+    };
+    renderer.setDebugHudEnabled(false);
+    renderer.setFallbackSceneEnabled(false);
+    renderer.setCamera({.position = {2.5, -3.0, 2.5}});
+    shared::ChunkMesh wall{
+        .coordinate = {}, .content_identity = {.revision = 1U, .content_hash = 1U}, .faces = {},
+    };
+    for (uint8_t x = 0U; x < 5U; ++x) {
+        for (uint8_t z = 0U; z < 5U; ++z) {
+            wall.faces.push_back({.local_origin = {x, 0U, z},
+                .direction = shared::FaceDirection::NegativeY, .material = shared::Block::Stone});
+        }
+    }
+    renderer.setChunkMesh(wall);
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+    auto capture = [&]() -> std::optional<client::RendererFrameCapture> {
+        renderer.requestFrameCapture();
+        for (uint32_t attempt = 0U; attempt < 20U && std::chrono::steady_clock::now() < deadline; ++attempt) {
+            if (!window.nextFrame()) { return std::nullopt; }
+            static_cast<void>(renderer.render({}, deadline));
+            auto result = renderer.takeFrameCapture();
+            if (result) { return result; }
+        }
+        return std::nullopt;
+    };
+    auto const baseline = capture();
+    ASSERT_TRUE(baseline);
+    shared::BlockTarget const visible{.cell = {2, 0, 2}, .block = shared::Block::Stone};
+    renderer.setBlockInteractionTarget(visible, 0.0F);
+    auto const outline = capture();
+    ASSERT_TRUE(outline);
+    EXPECT_NE(outline->rgba8, baseline->rgba8);
+    renderer.setBlockInteractionTarget(visible, 0.75F);
+    auto const cracks = capture();
+    ASSERT_TRUE(cracks);
+    EXPECT_NE(cracks->rgba8, outline->rgba8);
+    renderer.setBlockInteractionTarget(
+        shared::BlockTarget{.cell = {2, 2, 2}, .block = shared::Block::Stone}, 0.75F);
+    auto const occluded = capture();
+    ASSERT_TRUE(occluded);
+    EXPECT_EQ(occluded->rgba8, baseline->rgba8);
+    renderer.setBlockInteractionTarget(std::nullopt, 0.0F);
+    ASSERT_TRUE(renderer.addAcceptedBlockBreak({1U, 1U, 1U, 1U}, {2, -1, 2}, shared::Block::Snow,
+        std::chrono::steady_clock::now()));
+    auto const particles = capture();
+    ASSERT_TRUE(particles);
+    EXPECT_NE(particles->rgba8, baseline->rgba8);
+    renderer.clearBlockInteractionEffects();
+    auto const cleared = capture();
+    ASSERT_TRUE(cleared);
+    EXPECT_EQ(cleared->rgba8, baseline->rgba8);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, CurvedBlockOutlineAlignsWithTerrainInsteadOfFlatWorldPosition)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 640U, .height = 480U, .title = "Curved block outline alignment",
+        },
+    };
+    client::InstalledShaderAssets const shaders;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window, {.require_validation = true, .enable_frame_capture = true}),
+        shaders, {.require_validation = true, .enable_frame_capture = true},
+    };
+    renderer.setDebugHudEnabled(false);
+    renderer.setFallbackSceneEnabled(false);
+    // A narrow lens magnifies the 0.25-block sag at 256 blocks. The direct
+    // presentation input deliberately bypasses gameplay reach for this transform oracle.
+    client::CameraProjection const lens{.vertical_fov_degrees = 1.0};
+    renderer.setCamera({.position = {32'768.5, 32'768.0, 64.5}}, lens);
+    auto scene = std::make_shared<client::TerrainLodScene>();
+    scene->faces = {client::StoneFaceInstance::fromChunkFace({2'048, 2'064, 4}, {
+        .local_origin = {0U, 0U, 0U}, .direction = shared::FaceDirection::NegativeY,
+        .material = shared::Block::Stone,
+    })};
+    scene->groups = {{.range = {0U, 1U}, .origin_x = 32'768U, .origin_y = 33'024U,
+        .extent = 16U, .minimum_z = 64, .maximum_z = 65}};
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+    while (!renderer.upsertTerrainLodScene(scene, deadline)) {
+        ASSERT_LT(std::chrono::steady_clock::now(), deadline);
+        std::this_thread::yield();
+    }
+    auto capture = [&]() -> std::optional<client::RendererFrameCapture> {
+        renderer.requestFrameCapture();
+        for (uint32_t attempt = 0U; attempt < 20U && std::chrono::steady_clock::now() < deadline; ++attempt) {
+            if (!window.nextFrame()) { return std::nullopt; }
+            static_cast<void>(renderer.render({}, deadline));
+            auto result = renderer.takeFrameCapture();
+            if (result) { return result; }
+        }
+        return std::nullopt;
+    };
+    auto const baseline = capture();
+    ASSERT_TRUE(baseline);
+    ASSERT_EQ(renderer.runtimeInfo().terrain_lod_scene, scene);
+    renderer.setBlockInteractionTarget(
+        shared::BlockTarget{.cell = {32'768, 33'024, 64}, .block = shared::Block::Stone}, 0.0F);
+    auto const outline = capture();
+    ASSERT_TRUE(outline);
+    ASSERT_EQ(outline->width, baseline->width);
+    ASSERT_EQ(outline->height, baseline->height);
+
+    client::Camera const relative_camera{{}, lens};
+    glm::vec3 const flat_top{0.0F, 256.0F, 0.5F};
+    glm::vec3 curved_top = flat_top;
+    curved_top.z -= (flat_top.x * flat_top.x + flat_top.y * flat_top.y)
+        / (2.0F * static_cast<float>(shared::INTERACTION_WORLD_CURVATURE_RADIUS));
+    auto const curved_pixel = projectedPixel(relative_camera, curved_top, outline->width, outline->height);
+    auto const flat_pixel = projectedPixel(relative_camera, flat_top, outline->width, outline->height);
+    ASSERT_TRUE(curved_pixel);
+    ASSERT_TRUE(flat_pixel);
+    uint32_t const band = (std::max)(4U, outline->height / 120U);
+    ASSERT_GT((*curved_pixel)[1U], (*flat_pixel)[1U] + 2U * band);
+    auto const changedInBand = [&](std::array<uint32_t, 2U> const center) {
+        size_t changed = 0U;
+        for (uint32_t y = center[1U] - band; y <= center[1U] + band; ++y) {
+            for (uint32_t x = center[0U] - 12U; x <= center[0U] + 12U; ++x) {
+                size_t const offset = (static_cast<size_t>(y) * outline->width + x) * 4U;
+                changed += std::memcmp(outline->rgba8.data() + offset,
+                    baseline->rgba8.data() + offset, 4U) != 0 ? 1U : 0U;
+            }
+        }
+        return changed;
+    };
+    EXPECT_GT(changedInBand(*curved_pixel), 20U);
+    EXPECT_EQ(changedInBand(*flat_pixel), 0U);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}

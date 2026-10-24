@@ -362,6 +362,7 @@ uint64_t GameClient::ChunkCoordinateHash::operator()(
 
 bool GameClient::beginLoadingRequest(LoadingTimePoint const accepted_at)
 {
+    m_connection_attempt_started = false;
     generation::GenerationConfiguration configuration;
     configuration.seed = m_world.configuration().seed;
     WorldLoadingIdentity identity{
@@ -409,6 +410,7 @@ void GameClient::run(
         CORE_ERROR("Could not initialize the loading state for this client request");
         return;
     }
+    m_server_address = fmt::format("{}", server_address);
     m_benchmark_hooks = benchmark_hooks;
     m_benchmark_bytes_sent = 0U;
     m_benchmark_bytes_received = 0U;
@@ -450,6 +452,7 @@ void GameClient::run(
             break;
         }
         if (!isConnected()) {
+            m_connection_attempt_started = true;
             if (!connect(server_address, CONNECTION_ATTEMPT_TIMEOUT, service_connection)) {
                 CORE_INFO("Waiting to connect to server {}", server_address);
                 auto const retry_deadline = std::chrono::steady_clock::now() + CONNECTION_RETRY_DELAY;

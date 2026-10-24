@@ -1,5 +1,6 @@
 target_sources(mc
     PRIVATE
+        BlockActionPresentation.cpp
         BotClient.cpp
         HeightTileInterestRegion.cpp
         PreviewMeshConnectivity.cpp
@@ -7,7 +8,10 @@ target_sources(mc
     Camera.cpp
     DepthFormat.cpp
         GenerationMapPresentation.cpp
+        UiPresentation.cpp
+        S2MapPresentation.cpp
         PlayerPreviewLod.cpp
+        render/BlockInteractionEffects.cpp
         render/DebugHud.cpp
         render/GuiRenderer.cpp
         render/HeightTileDrawIndex.cpp
@@ -47,6 +51,7 @@ if(NOT ANDROID)
         render/shaders/trivial.frag
         render/shaders/text.vert
         render/shaders/text.frag
+        render/shaders/adaptive_text.frag
         render/shaders/map.vert
         render/shaders/map.frag
     )
@@ -69,11 +74,17 @@ if(NOT ANDROID)
     )
     foreach(curved_shader IN ITEMS
         stone.vert stone_indexed_block.vert stone.frag stone_solid.frag
-        player.vert player.mesh player.frag text.vert text.frag
+        player.vert player.mesh player.frag text.vert text.frag adaptive_text.frag
     )
         add_custom_command(
             OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${curved_shader}.spv" APPEND
             DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/world_curvature.glsl"
+        )
+    endforeach()
+    foreach(text_shader IN ITEMS text.frag adaptive_text.frag)
+        add_custom_command(
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${text_shader}.spv" APPEND
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/text_glyph.glsl"
         )
     endforeach()
     mc_copy_target_shaders(mc_main mc)

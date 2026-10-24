@@ -23,8 +23,6 @@ constexpr double PLAYER_BODY_CENTER_OFFSET = static_cast<double>(shared::World::
     / static_cast<double>(shared::SUBCELLS_PER_CELL) / 2.0;
 constexpr double PLAYER_BODY_CENTER_HEIGHT = static_cast<double>(shared::World::PLAYER_HEIGHT_SUBCELLS)
     / static_cast<double>(shared::SUBCELLS_PER_CELL) / 2.0;
-constexpr double THIRD_PERSON_DISTANCE = MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
-constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'89;
 constexpr double WORLD_WRAP_PERIOD = static_cast<double>(shared::WorldExtent::WIDTH);
 constexpr double PRESENTATION_TICK_SECONDS = 0.1;
 constexpr double PRESENTATION_GRAVITY = static_cast<double>(shared::World::PLAYER_GRAVITY_SUBCELLS_PER_TICK)
@@ -43,22 +41,14 @@ constexpr std::array<std::array<float, 4>, shared::PLAYER_PALETTE_COUNT> PLAYER_
 
 [[nodiscard]] glm::dvec3 forward(CameraAngles const angles) noexcept
 {
-    double const yaw = angles.yaw_degrees * DEGREES_TO_RADIANS;
-    double const pitch = angles.pitch_degrees * DEGREES_TO_RADIANS;
-    double const cosine_pitch = std::cos(pitch);
-    return {
-        std::sin(yaw) * cosine_pitch,
-        std::cos(yaw) * cosine_pitch,
-        std::sin(pitch),
-    };
-}
-
-[[nodiscard]] double clippedThirdPersonDistance(double const maximum_unobstructed_distance) noexcept
-{
-    if (!std::isfinite(maximum_unobstructed_distance) || maximum_unobstructed_distance <= 0.0) {
-        return 0.0;
+    std::optional<std::array<double, 3>> const direction = shared::interactionLookDirection(
+        angles.yaw_degrees,
+        angles.pitch_degrees
+    );
+    if (!direction) {
+        return {0.0, 1.0, 0.0};
     }
-    return std::min(THIRD_PERSON_DISTANCE, maximum_unobstructed_distance);
+    return {(*direction)[0], (*direction)[1], (*direction)[2]};
 }
 
 [[nodiscard]] double interpolateWrappedHorizontal(
@@ -330,7 +320,7 @@ CameraPose localPlayerThirdPersonPose(
 ) noexcept
 {
     return {
-        .position = localPlayerEyePosition(position) - forward(angles) * THIRD_PERSON_DISTANCE,
+        .position = localPlayerEyePosition(position) - forward(angles) * MAX_LOCAL_PLAYER_CAMERA_DISTANCE,
         .angles = angles,
     };
 }
@@ -343,19 +333,39 @@ PlayerCameraView resolveLocalPlayerCamera(
 ) noexcept
 {
     glm::dvec3 const eye = localPlayerEyePosition(position);
-    double const distance = clippedThirdPersonDistance(maximum_unobstructed_distance);
+    glm::dvec3 const look_direction = forward(look_angles);
+    auto const camera_ray = shared::reconstructInteractionCameraRay(
+        {
+            .origin_x = eye.x,
+            .origin_y = eye.y,
+            .origin_z = eye.z,
+            .direction_x = look_direction.x,
+            .direction_y = look_direction.y,
+            .direction_z = look_direction.z,
+        },
+        perspective,
+        maximum_unobstructed_distance
+    );
+    if (!camera_ray) {
+        return { .pose = { .position = eye, .angles = look_angles }, .renders_local_body = false };
+    }
+    glm::dvec3 const camera_position{
+        camera_ray->origin_x,
+        camera_ray->origin_y,
+        camera_ray->origin_z,
+    };
     switch (perspective) {
     case CameraPerspective::FirstPerson:
-        return { .pose = { .position = eye, .angles = look_angles }, .renders_local_body = false };
+        return { .pose = { .position = camera_position, .angles = look_angles }, .renders_local_body = false };
     case CameraPerspective::ThirdPersonRear:
         return {
-            .pose = { .position = eye - forward(look_angles) * distance, .angles = look_angles },
+            .pose = { .position = camera_position, .angles = look_angles },
             .renders_local_body = true,
         };
     case CameraPerspective::ThirdPersonFront:
         return {
             .pose = {
-                .position = eye + forward(look_angles) * distance,
+                .position = camera_position,
                 .angles = {
                     .yaw_degrees = look_angles.yaw_degrees + 180.0,
                     .pitch_degrees = -look_angles.pitch_degrees,

@@ -1,9 +1,12 @@
 #include <client/render/DebugHud.hpp>
+#include <client/render/GuiRenderer.hpp>
 #include <client/render/TextRenderer.hpp>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -30,7 +33,7 @@ size_t writeMarker(
 
 } // namespace
 
-TEST(DebugHudTest, FormatsBoundedTelemetryViewAndAuthorityLines)
+TEST(DebugHudTest, FormatsCompactTelemetryAndPreservesCameraHelpWithoutViewReadout)
 {
     client::DebugHudState hud;
     hud.setEnabled(true);
@@ -41,16 +44,21 @@ TEST(DebugHudTest, FormatsBoundedTelemetryViewAndAuthorityLines)
         .camera_yaw_degrees = 45.0F,
         .camera_pitch_degrees = -10.0F,
         .camera_roll_degrees = 3.0F,
+        .loaded_dense_chunks_available = true,
+        .loaded_dense_chunks = 0U,
+        .client_memory_rss_bytes = 1'572'864U,
     });
 
     client::DebugHudText text;
     ASSERT_TRUE(hud.formatText(text));
     EXPECT_EQ(
         std::string_view(text.value),
-        "FPS:0.0\nUPTIME:0.0s\nSPEED:1x(5x)\nVIEW: FIRST (F5 or 5)\n"
-        "FLIGHT: OFF BYPASS: OFF (F6 or 6)\nXYZ: 1.2 4.6 -2.3\nYPR deg: 45.0 -10.0 3.0"
+        "FPS:0.0 UPTIME:0.0s\nSPEED:1x (5x selected)\nCAMERA: F5 or 5\n"
+        "FLIGHT: OFF BYPASS: OFF (F6 or 6)\nXYZ: 1.2 4.6 -2.3\nYPR deg: 45.0 -10.0 3.0\n"
+        "DENSE CHUNKS: 0\nCLIENT MEMORY (RSS): 1.5 MiB  CLIMATE: --"
     );
-    ASSERT_EQ(text.spans.size(), 12U);
+    EXPECT_EQ(text.value.find("VIEW:"), std::string::npos);
+    ASSERT_EQ(text.spans.size(), 13U);
     uint32_t const white = client::TextColor{}.packed();
     uint32_t const cyan = client::TextColor{ 0.48F, 0.88F, 1.0F, 1.0F }.packed();
     uint32_t const gold = client::TextColor{ 1.0F, 0.82F, 0.38F, 1.0F }.packed();
@@ -69,18 +77,14 @@ TEST(DebugHudTest, FormatsBoundedTelemetryViewAndAuthorityLines)
         EXPECT_EQ(text.spans[expected.index].packed_color, expected.color);
     };
 
-    expectSpan({ .index = 0U, .offset = 0U, .length = 94U, .color = white });
-    expectSpan({ .index = 1U, .offset = 94U, .length = 3U, .color = cyan });
-    expectSpan({ .index = 2U, .offset = 97U, .length = 1U, .color = white });
-    expectSpan({ .index = 3U, .offset = 98U, .length = 3U, .color = gold });
-    expectSpan({ .index = 4U, .offset = 101U, .length = 1U, .color = white });
-    expectSpan({ .index = 5U, .offset = 102U, .length = 4U, .color = green });
-    expectSpan({ .index = 6U, .offset = 106U, .length = 10U, .color = white });
-    expectSpan({ .index = 7U, .offset = 116U, .length = 4U, .color = cyan });
-    expectSpan({ .index = 8U, .offset = 120U, .length = 1U, .color = white });
-    expectSpan({ .index = 9U, .offset = 121U, .length = 5U, .color = gold });
-    expectSpan({ .index = 10U, .offset = 126U, .length = 1U, .color = white });
-    expectSpan({ .index = 11U, .offset = 127U, .length = 3U, .color = rose });
+    expectSpan({ .index = 0U, .offset = 0U, .length = text.value.find("1.2"), .color = white });
+    EXPECT_EQ(text.spans[1].packed_color, cyan);
+    EXPECT_EQ(text.spans[3].packed_color, gold);
+    EXPECT_EQ(text.spans[5].packed_color, green);
+    EXPECT_EQ(text.spans[7].packed_color, cyan);
+    EXPECT_EQ(text.spans[9].packed_color, gold);
+    EXPECT_EQ(text.spans[11].packed_color, rose);
+    EXPECT_EQ(text.spans[12].packed_color, white);
 }
 
 TEST(DebugHudTest, UsesTouchHelpAndAccelerationState)
@@ -98,10 +102,10 @@ TEST(DebugHudTest, UsesTouchHelpAndAccelerationState)
     ASSERT_TRUE(hud.formatText(text));
     std::string_view const formatted(text.value);
     EXPECT_NE(formatted.find("TOUCH: UP/DOWN"), std::string_view::npos);
-    EXPECT_NE(formatted.find("SPEED:30x(ON)"), std::string_view::npos);
+    EXPECT_NE(formatted.find("SPEED:30x (acceleration ON)"), std::string_view::npos);
 }
 
-TEST(DebugHudTest, NamesEveryCameraViewAndAuthorityWithoutGameplayArchetypes)
+TEST(DebugHudTest, HidesCameraViewAndPreservesEffectiveMovementRights)
 {
     client::DebugHudState hud;
     hud.setEnabled(true);
@@ -114,7 +118,8 @@ TEST(DebugHudTest, NamesEveryCameraViewAndAuthorityWithoutGameplayArchetypes)
     client::DebugHudText text;
     ASSERT_TRUE(hud.formatText(text));
     std::string_view const formatted(text.value);
-    EXPECT_NE(formatted.find("VIEW: FRONT (F5 or 5)"), std::string_view::npos);
+    EXPECT_NE(formatted.find("CAMERA: F5 or 5"), std::string_view::npos);
+    EXPECT_EQ(formatted.find("VIEW:"), std::string_view::npos);
     EXPECT_NE(formatted.find("FLIGHT: ON BYPASS: ON (F6 or 6)"), std::string_view::npos);
     EXPECT_EQ(formatted.find("SURVIVAL"), std::string_view::npos);
     EXPECT_EQ(formatted.find("CREATIVE"), std::string_view::npos);
@@ -130,7 +135,7 @@ TEST(DebugHudTest, BuildsDynamicGlyphBatch)
 
     ASSERT_TRUE(hud.buildBatch(text, batch));
     EXPECT_EQ(batch.space, client::TextSpace::Screen);
-    EXPECT_EQ(batch.glyphs.size(), text.value.size() - 6U);
+    EXPECT_EQ(batch.glyphs.size(), text.value.size() - (client::DEBUG_HUD_LINE_COUNT - 1U));
     EXPECT_EQ(batch.glyphs.front().character, static_cast<uint32_t>('F'));
     EXPECT_EQ(batch.glyphs.front().packed_color, hud.lineColors()[0].packed());
 }
@@ -146,19 +151,42 @@ TEST(DebugHudTest, F1ToggleLatchDebouncesPressesAndCanBeReset)
     EXPECT_TRUE(latch.update(true));
 }
 
-TEST(DebugHudTest, UsesPresentedFramesInSlidingWindow)
+TEST(DebugHudTest, CountsUniqueFenceCompletedIdentitiesInTheSlidingWindow)
 {
     client::DebugHudState hud;
-    client::DebugHudInput input{ .presented = true };
+    client::DebugHudInput input{
+        .completed_frame = client::RendererFrameIdentity{ 1U, 4U },
+        .completed_frame_observed_at = std::chrono::steady_clock::time_point{},
+    };
 
     hud.updateAt(0.0, input);
     hud.updateAt(0.5, input);
+    input.completed_frame = client::RendererFrameIdentity{ 2U, 4U };
+    input.completed_frame_observed_at = std::chrono::steady_clock::time_point{} + std::chrono::milliseconds{ 500 };
+    hud.updateAt(0.5, input);
+    input.completed_frame = client::RendererFrameIdentity{ 3U, 4U };
+    input.completed_frame_observed_at = std::chrono::steady_clock::time_point{} + std::chrono::seconds{ 1 };
     hud.updateAt(1.0, input);
     EXPECT_DOUBLE_EQ(hud.snapshot().presented_fps, 2.0);
 
-    input.presented = false;
     hud.updateAt(2.1, input);
     EXPECT_DOUBLE_EQ(hud.snapshot().presented_fps, 0.0);
+}
+
+TEST(DebugHudTest, SwapchainGenerationMakesOtherwiseEqualFrameIdentityFresh)
+{
+    client::DebugHudState hud;
+    client::DebugHudInput input{
+        .completed_frame = client::RendererFrameIdentity{ 9U, 2U },
+        .completed_frame_observed_at = std::chrono::steady_clock::time_point{},
+    };
+
+    hud.updateAt(0.0, input);
+    input.completed_frame = client::RendererFrameIdentity{ 9U, 3U };
+    input.completed_frame_observed_at = std::chrono::steady_clock::time_point{} + std::chrono::milliseconds{ 500 };
+    hud.updateAt(0.5, input);
+
+    EXPECT_DOUBLE_EQ(hud.snapshot().presented_fps, 2.0);
 }
 
 TEST(DebugHudTest, ClocksNeverRewindAndIgnoreNonFiniteValues)
@@ -198,4 +226,476 @@ TEST(DebugHudTest, SupportsLineColorChanges)
     client::DebugHudText text;
     ASSERT_TRUE(hud.formatText(text));
     EXPECT_EQ(text.spans.front().packed_color, hud.lineColors()[0].packed());
+}
+
+TEST(DebugHudTest, MeasuresFenceObservationSpacingInsteadOfDelayedHudUpdates)
+{
+    client::DebugHudState hud;
+    auto const epoch = std::chrono::steady_clock::time_point{};
+    client::DebugHudInput input{
+        .completed_frame = client::RendererFrameIdentity{ 1U, 5U },
+        .completed_frame_observed_at = epoch + std::chrono::seconds{ 10 },
+    };
+    hud.updateAt(10.7, input);
+    input.completed_frame = client::RendererFrameIdentity{ 2U, 5U };
+    input.completed_frame_observed_at = epoch + std::chrono::milliseconds{ 10'250 };
+    hud.updateAt(10.8, input);
+    EXPECT_DOUBLE_EQ(hud.snapshot().presented_fps, 4.0);
+    hud.updateAt(11.3, input);
+    EXPECT_DOUBLE_EQ(hud.snapshot().presented_fps, 0.0);
+}
+
+TEST(DebugHudTest, DoesNotCreditCompletionsWithoutFenceTimesOrExpiredObservations)
+{
+    client::DebugHudState hud;
+    client::DebugHudInput input{ .completed_frame = client::RendererFrameIdentity{ 1U, 5U } };
+    hud.updateAt(10.0, input);
+    input.completed_frame = client::RendererFrameIdentity{ 2U, 5U };
+    hud.updateAt(10.5, input);
+    EXPECT_DOUBLE_EQ(hud.snapshot().presented_fps, 0.0);
+    input.completed_frame = client::RendererFrameIdentity{ 3U, 5U };
+    input.completed_frame_observed_at = std::chrono::steady_clock::time_point{};
+    hud.updateAt(10.6, input);
+    EXPECT_DOUBLE_EQ(hud.snapshot().presented_fps, 0.0);
+}
+
+TEST(DebugHudTest, MatchesPrototypeMapAndColumnGeometryAcrossViewportAndDpi)
+{
+    client::DebugHudLayout const desktop = client::layoutDebugHud(1280U, 676U, 1.0F);
+    EXPECT_FALSE(desktop.compact);
+    EXPECT_FLOAT_EQ(desktop.margin_pixels, 24.0F);
+    EXPECT_FLOAT_EQ(desktop.left_column_x, 24.0F);
+    EXPECT_FLOAT_EQ(desktop.right_column_x, 534.0F);
+    EXPECT_FLOAT_EQ(desktop.column_width_pixels, 470.0F);
+    EXPECT_FLOAT_EQ(desktop.minimap.x, 1054.0F);
+    EXPECT_FLOAT_EQ(desktop.minimap.y, 44.0F);
+    EXPECT_FLOAT_EQ(desktop.minimap.width, 192.0F);
+    EXPECT_FLOAT_EQ(desktop.minimap.height, 192.0F);
+    EXPECT_FLOAT_EQ(desktop.minimap_interactive.x, 1028.0F);
+    EXPECT_FLOAT_EQ(desktop.minimap_interactive.y, 6.0F);
+    EXPECT_FLOAT_EQ(desktop.minimap_interactive.width, 244.0F);
+    EXPECT_FLOAT_EQ(desktop.minimap_interactive.height, 268.0F);
+    EXPECT_FLOAT_EQ(desktop.north.x, 1142.0F);
+    EXPECT_FLOAT_EQ(desktop.north.y, 8.0F);
+    EXPECT_FLOAT_EQ(desktop.east.x, 1254.0F);
+    EXPECT_FLOAT_EQ(desktop.east.y, 124.0F);
+    EXPECT_FLOAT_EQ(desktop.south.x, 1142.0F);
+    EXPECT_FLOAT_EQ(desktop.south.y, 240.0F);
+    EXPECT_FLOAT_EQ(desktop.west.x, 1030.0F);
+    EXPECT_FLOAT_EQ(desktop.west.y, 124.0F);
+    EXPECT_FLOAT_EQ(desktop.heading.x, 1198.0F);
+    EXPECT_FLOAT_EQ(desktop.heading.y, 16.0F);
+    EXPECT_FLOAT_EQ(desktop.selected_block_y, 548.0F);
+    EXPECT_FLOAT_EQ(desktop.controls_y, 628.0F);
+
+    client::DebugHudLayout const windowed = client::layoutDebugHud(1280U, 676U, 1.0F, true);
+    EXPECT_TRUE(windowed.compact);
+    EXPECT_FLOAT_EQ(windowed.glyph_scale, 0.5F);
+    EXPECT_FLOAT_EQ(windowed.minimap.x, desktop.minimap.x);
+    EXPECT_FLOAT_EQ(windowed.minimap.y, desktop.minimap.y);
+    EXPECT_FLOAT_EQ(windowed.minimap.width, desktop.minimap.width);
+    EXPECT_FLOAT_EQ(windowed.minimap.height, desktop.minimap.height);
+
+    client::DebugHudLayout const compact = client::layoutDebugHud(844U, 346U, 1.0F);
+    EXPECT_TRUE(compact.compact);
+    EXPECT_FLOAT_EQ(compact.margin_pixels, 12.0F);
+    EXPECT_FLOAT_EQ(compact.glyph_scale, 0.5F);
+    EXPECT_FLOAT_EQ(compact.minimap.x, 682.0F);
+    EXPECT_FLOAT_EQ(compact.minimap.y, 44.0F);
+    EXPECT_FLOAT_EQ(compact.minimap.width, 128.0F);
+    EXPECT_FLOAT_EQ(compact.minimap.height, 128.0F);
+    EXPECT_FLOAT_EQ(compact.north.x, 738.0F);
+    EXPECT_FLOAT_EQ(compact.north.y, 8.0F);
+    EXPECT_FLOAT_EQ(compact.east.x, 818.0F);
+    EXPECT_FLOAT_EQ(compact.east.y, 92.0F);
+    EXPECT_FLOAT_EQ(compact.south.x, 738.0F);
+    EXPECT_FLOAT_EQ(compact.south.y, 176.0F);
+    EXPECT_FLOAT_EQ(compact.west.x, 658.0F);
+    EXPECT_FLOAT_EQ(compact.west.y, 92.0F);
+    EXPECT_FLOAT_EQ(compact.heading.x, 762.0F);
+    EXPECT_FLOAT_EQ(compact.heading.y, 16.0F);
+    EXPECT_FLOAT_EQ(compact.right_column_x, 338.0F);
+    EXPECT_FLOAT_EQ(compact.column_width_pixels, 302.0F);
+
+    client::DebugHudLayout const hidpi = client::layoutDebugHud(2560U, 1352U, 2.0F);
+    EXPECT_EQ(hidpi.compact, desktop.compact);
+    EXPECT_FLOAT_EQ(hidpi.margin_pixels, desktop.margin_pixels * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.left_column_x, desktop.left_column_x * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.right_column_x, desktop.right_column_x * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.minimap.x, desktop.minimap.x * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.minimap.y, desktop.minimap.y * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.minimap.width, desktop.minimap.width * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.glyph_scale, desktop.glyph_scale * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.north.x, desktop.north.x * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.north.y, desktop.north.y * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.east.x, desktop.east.x * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.east.y, desktop.east.y * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.south.x, desktop.south.x * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.south.y, desktop.south.y * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.west.x, desktop.west.x * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.west.y, desktop.west.y * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.heading.x, desktop.heading.x * 2.0F);
+    EXPECT_FLOAT_EQ(hidpi.heading.y, desktop.heading.y * 2.0F);
+}
+
+TEST(DebugHudTest, BuildsPrototypeReadoutGroupsFromAvailableRuntimeValues)
+{
+    client::DebugHudSnapshot const snapshot{
+        .uptime_seconds = 134.0,
+        .presented_fps = 60.0,
+        .input = {
+            .player_x = 37'888.0F,
+            .player_y = 28'672.0F,
+            .player_z = 84.1F,
+            .camera_yaw_degrees = 180.0F,
+            .camera_pitch_degrees = 0.0F,
+            .camera_roll_degrees = 0.0F,
+            .speedup = 1U,
+            .selected_speedup = 5U,
+            .loaded_dense_chunks_available = true,
+            .loaded_dense_chunks = 18U,
+            .client_memory_rss_bytes = 44'040'192U,
+            .temperature_celsius = 16.6F,
+        },
+        .dpi_scale = 1.0F,
+        .enabled = true,
+    };
+    client::TextRenderer labels;
+    client::DebugHudLayout const layout = client::layoutDebugHud(1280U, 676U, 1.0F);
+    client::buildDebugHudPresentation(snapshot, layout, labels);
+
+    auto const hasLabel = [&labels](std::string_view const value) {
+        return std::any_of(labels.labels().begin(), labels.labels().end(), [value](auto const& label) {
+            return label.value == value;
+        });
+    };
+    EXPECT_TRUE(hasLabel("FPS 60"));
+    EXPECT_TRUE(hasLabel("Uptime 02:14"));
+    EXPECT_TRUE(hasLabel("Chunks 18"));
+    EXPECT_TRUE(hasLabel("Memory 42 MiB"));
+    EXPECT_TRUE(hasLabel("Position"));
+    EXPECT_TRUE(hasLabel("Movement"));
+    EXPECT_TRUE(hasLabel("Local climate"));
+    EXPECT_TRUE(hasLabel("Temperature 16.6 C"));
+    EXPECT_TRUE(std::any_of(labels.labels().begin(), labels.labels().end(), [](auto const& label) {
+        return label.value.starts_with("Humidity") && label.value.find("Unavailable") != std::string::npos;
+    }));
+    EXPECT_TRUE(std::none_of(labels.labels().begin(), labels.labels().end(), [](auto const& label) {
+        return label.value.find("Selected block") != std::string::npos
+            || label.value.find("Mode") != std::string::npos
+            || label.value.find("Break") != std::string::npos
+            || label.value.find("Place") != std::string::npos;
+    }));
+    EXPECT_TRUE(hasLabel("F5/5 Change view"));
+    EXPECT_TRUE(std::none_of(labels.labels().begin(), labels.labels().end(), [](auto const& label) {
+        return label.value.find("View:") != std::string::npos;
+    }));
+    EXPECT_TRUE(std::none_of(labels.labels().begin(), labels.labels().end(), [](auto const& label) {
+        return label.value == "N" || label.value == "E" || label.value == "S" || label.value == "W"
+            || label.value.ends_with("deg");
+    }));
+}
+
+TEST(DebugHudTest, PrototypeReadoutsRemainInsideDesktopCompactAndHiDpiCanvases)
+{
+    client::DebugHudSnapshot const snapshot{
+        .uptime_seconds = 86'400.0,
+        .presented_fps = 60.0,
+        .input = {
+            .player_x = 37'888.0F,
+            .player_y = 28'672.0F,
+            .player_z = 84.1F,
+            .camera_yaw_degrees = 180.0F,
+            .camera_pitch_degrees = -42.0F,
+            .camera_roll_degrees = 0.0F,
+            .speedup = 1U,
+            .selected_speedup = 99U,
+            .acceleration_enabled = true,
+            .flight_enabled = true,
+            .collision_bypass_enabled = true,
+            .loaded_dense_chunks_available = true,
+            .loaded_dense_chunks = 513U,
+            .client_memory_rss_bytes = 44'040'192U,
+            .temperature_celsius = 16.6F,
+        },
+        .enabled = true,
+    };
+    std::array<std::array<uint32_t, 3U>, 3U> const viewports{{
+        { 1280U, 676U, 1U },
+        { 844U, 346U, 1U },
+        { 2560U, 1352U, 2U },
+    }};
+
+    for (auto const& viewport : viewports) {
+        uint32_t const width = viewport[0U];
+        uint32_t const height = viewport[1U];
+        float const dpi_scale = static_cast<float>(viewport[2U]);
+        client::DebugHudLayout const layout = client::layoutDebugHud(width, height, dpi_scale);
+        client::TextRenderer labels;
+        client::buildDebugHudPresentation(snapshot, layout, labels);
+
+        EXPECT_TRUE(std::any_of(labels.labels().begin(), labels.labels().end(), [](auto const& label) {
+            return label.value == "Position";
+        }));
+        EXPECT_TRUE(std::any_of(labels.labels().begin(), labels.labels().end(), [&layout](auto const& label) {
+            return label.value == (layout.compact
+                ? "Temp 16.6 C  Humidity unavailable"
+                : "Local climate");
+        }));
+        for (auto const& label : labels.labels()) {
+            float const text_width = static_cast<float>(label.value.size()) * 16.0F * label.placement.scale;
+            float const text_height = 32.0F * label.placement.scale;
+            EXPECT_GE(label.placement.position[0U], 0.0F) << label.value;
+            EXPECT_GE(label.placement.position[1U], 0.0F) << label.value;
+            EXPECT_LE(label.placement.position[0U] + text_width, static_cast<float>(width)) << label.value;
+            EXPECT_LE(label.placement.position[1U] + text_height, static_cast<float>(height)) << label.value;
+        }
+    }
+}
+
+TEST(DebugHudTest, CompactWindowKeepsTelemetryReadableWithinHalfTheCanvas)
+{
+    struct Viewport final {
+        uint32_t width;
+        uint32_t height;
+        float dpi_scale;
+        bool force_compact;
+    };
+    struct Bounds final {
+        bool populated = false;
+        float left = 0.0F;
+        float top = 0.0F;
+        float right = 0.0F;
+        float bottom = 0.0F;
+
+        void include(float const x, float const y, float const width, float const height)
+        {
+            if (!populated) {
+                left = x;
+                top = y;
+                right = x + width;
+                bottom = y + height;
+                populated = true;
+                return;
+            }
+            left = (std::min)(left, x);
+            top = (std::min)(top, y);
+            right = (std::max)(right, x + width);
+            bottom = (std::max)(bottom, y + height);
+        }
+
+        [[nodiscard]] float area() const
+        {
+            return populated ? (right - left) * (bottom - top) : 0.0F;
+        }
+    };
+    std::array<Viewport, 4U> const viewports{{
+        { 1280U, 676U, 1.0F, true },
+        { 844U, 346U, 1.0F, false },
+        { 640U, 360U, 1.0F, false },
+        { 1688U, 692U, 2.0F, false },
+    }};
+    client::DebugHudSnapshot const snapshot{
+        .uptime_seconds = 86'400.0,
+        .presented_fps = 60.0,
+        .input = {
+            .player_x = 37'888.0F,
+            .player_y = 28'672.0F,
+            .player_z = 84.1F,
+            .camera_yaw_degrees = 180.0F,
+            .camera_pitch_degrees = -42.0F,
+            .camera_roll_degrees = 0.0F,
+            .speedup = 1U,
+            .selected_speedup = 99U,
+            .acceleration_enabled = true,
+            .flight_enabled = true,
+            .collision_bypass_enabled = true,
+            .loaded_dense_chunks_available = true,
+            .loaded_dense_chunks = 513U,
+            .client_memory_rss_bytes = 44'040'192U,
+            .temperature_celsius = 16.6F,
+        },
+        .enabled = true,
+    };
+
+    for (Viewport const viewport : viewports) {
+        client::DebugHudLayout const layout = client::layoutDebugHud(
+            viewport.width,
+            viewport.height,
+            viewport.dpi_scale,
+            viewport.force_compact
+        );
+        ASSERT_TRUE(layout.compact);
+        EXPECT_FLOAT_EQ(layout.glyph_scale / viewport.dpi_scale, 0.5F);
+
+        client::TextRenderer labels;
+        client::buildDebugHudPresentation(snapshot, layout, labels);
+        auto const hasLabel = [&labels](std::string_view const value) {
+            return std::any_of(labels.labels().begin(), labels.labels().end(), [value](auto const& label) {
+                return label.value == value;
+            });
+        };
+        auto const hasText = [&labels](std::string_view const value) {
+            return std::any_of(labels.labels().begin(), labels.labels().end(), [value](auto const& label) {
+                return label.value.find(value) != std::string::npos;
+            });
+        };
+        EXPECT_TRUE(hasLabel("FPS 60"));
+        EXPECT_TRUE(hasLabel("Up 1440:00"));
+        EXPECT_TRUE(hasLabel("Chunks 513"));
+        EXPECT_TRUE(hasLabel("RSS 42 MiB"));
+        EXPECT_TRUE(hasLabel("Position"));
+        EXPECT_TRUE(hasLabel("X 37888.0  Z 28672.0  Y 84.1")
+            || (hasLabel("X 37888.0  Z 28672.0  Y") && hasLabel("84.1")));
+        EXPECT_TRUE(hasText("X 37888.0"));
+        EXPECT_TRUE(hasText("Z 28672.0"));
+        EXPECT_TRUE(hasText("84.1"));
+        EXPECT_TRUE(hasLabel("YPR 180.0 / -42.0 / 0.0"));
+        EXPECT_TRUE(hasLabel("Speed 1x  Selected 99x"));
+        EXPECT_TRUE(hasLabel("Accel ON  Bypass ON"));
+        EXPECT_TRUE(hasLabel("Flight ON"));
+        EXPECT_TRUE(hasLabel("Temp 16.6 C  Humidity unavailable"));
+        EXPECT_TRUE(hasLabel("F5/5 View"));
+        EXPECT_TRUE(hasLabel("F6/6 Movement"));
+        EXPECT_TRUE(hasLabel("+/- Speed"));
+        EXPECT_TRUE(hasLabel("Ctrl Accel"));
+        EXPECT_FALSE(hasLabel("Game position example"));
+        EXPECT_FALSE(hasLabel("Local climate"));
+
+        Bounds telemetry;
+        Bounds footer;
+        for (client::TextLabel const& label : labels.labels()) {
+            float const text_width = static_cast<float>(label.value.size())
+                * client::DEBUG_HUD_GLYPH_WIDTH_PIXELS * label.placement.scale;
+            float const text_height = client::DEBUG_HUD_GLYPH_HEIGHT_PIXELS * label.placement.scale;
+            EXPECT_GE(label.placement.position[0U], 0.0F) << label.value;
+            EXPECT_GE(label.placement.position[1U], 0.0F) << label.value;
+            EXPECT_LE(label.placement.position[0U] + text_width, static_cast<float>(viewport.width))
+                << label.value;
+            EXPECT_LE(label.placement.position[1U] + text_height, static_cast<float>(viewport.height))
+                << label.value;
+
+            float const center_y = label.placement.position[1U] + text_height * 0.5F;
+            if (center_y < layout.controls_y
+                && label.placement.position[0U] < layout.minimap_interactive.x) {
+                telemetry.include(label.placement.position[0U], label.placement.position[1U], text_width, text_height);
+            } else if (center_y >= layout.controls_y) {
+                footer.include(label.placement.position[0U], label.placement.position[1U], text_width, text_height);
+            }
+        }
+        float const covered_area = telemetry.area()
+            + layout.minimap.width * layout.minimap.height
+            + footer.area();
+        float const canvas_area = static_cast<float>(viewport.width) * static_cast<float>(viewport.height);
+        EXPECT_LT(covered_area, canvas_area * 0.5F);
+    }
+}
+
+TEST(DebugHudTest, OutsideGameplayTheBuilderEmitsNoHudText)
+{
+    client::DebugHudSnapshot const snapshot{
+        .input = {
+            .gameplay_ui = false,
+            .flight_enabled = true,
+        },
+        .enabled = true,
+    };
+    client::TextRenderer labels;
+    client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(1280U, 676U, 1.0F), labels);
+    EXPECT_TRUE(labels.labels().empty());
+}
+
+TEST(DebugHudTest, HiddenGameplayHudRetainsOnlyGameControlHints)
+{
+    client::DebugHudSnapshot const snapshot{
+        .input = {
+            .flight_enabled = true,
+            .collision_bypass_enabled = false,
+        },
+        .enabled = false,
+    };
+    client::TextRenderer labels;
+    client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(1280U, 676U, 1.0F), labels);
+
+    auto const hasLabel = [&labels](std::string_view const value) {
+        return std::any_of(labels.labels().begin(), labels.labels().end(), [value](auto const& label) {
+            return label.value == value;
+        });
+    };
+    EXPECT_TRUE(hasLabel("Flight ON"));
+    EXPECT_TRUE(hasLabel("Collision bypass OFF"));
+    EXPECT_TRUE(hasLabel("F1 Show HUD"));
+    EXPECT_TRUE(hasLabel("M World map"));
+#if defined(__APPLE__)
+    EXPECT_TRUE(hasLabel("F2 Copy screenshot"));
+#else
+    EXPECT_FALSE(hasLabel("F2 Copy screenshot"));
+#endif
+    EXPECT_FALSE(hasLabel("FPS 0"));
+    EXPECT_FALSE(hasLabel("Game position example"));
+}
+
+
+TEST(DebugHudTest, FixedPrototypeKeepsSemanticFacesAndDarkOutlinesByDefault)
+{
+    client::DebugHudSnapshot const snapshot{.enabled = true};
+    client::TextRenderer output;
+    client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(844U, 346U, 1.0F), output);
+    auto const& labels = output.labels();
+    ASSERT_FALSE(labels.empty());
+    EXPECT_TRUE(std::all_of(labels.begin(), labels.end(), [](auto const& label) {
+        return label.placement.style == client::TextStyle::Fixed;
+    }));
+    auto const face = std::find_if(labels.begin(), labels.end(), [](auto const& label) {
+        return label.value == "Position" && label.color.packed() == 0xFF98'C7E5U;
+    });
+    ASSERT_NE(face, labels.end());
+    EXPECT_EQ(std::count_if(labels.begin(), labels.end(), [](auto const& label) {
+        return label.value == "Position" && label.color.packed() == 0xFF2D'2414U;
+    }), 4);
+}
+
+TEST(DebugHudTest, AdaptivePrototypeUsesOneFacePerLabelAndPreservesMixedStyleGlyphs)
+{
+    auto const layout = client::layoutDebugHud(844U, 346U, 1.0F);
+    client::DebugHudSnapshot snapshot{.enabled = true};
+    client::TextRenderer fixed;
+    client::buildDebugHudPresentation(snapshot, layout, fixed);
+    snapshot.input.text_style = client::TextStyle::Adaptive;
+    client::TextRenderer adaptive;
+    client::buildDebugHudPresentation(snapshot, layout, adaptive);
+    ASSERT_FALSE(adaptive.labels().empty());
+    EXPECT_EQ(fixed.labels().size(), adaptive.labels().size() * 5U);
+    bool found_style_hint = false;
+    for (size_t index = 0U; index < adaptive.labels().size(); ++index) {
+        auto const& face = adaptive.labels()[index];
+        auto const& fixed_face = fixed.labels()[index * 5U + 4U];
+        if (fixed_face.value == "F7 Adaptive HUD") {
+            EXPECT_EQ(face.value, "F7 Colored HUD");
+            found_style_hint = true;
+        } else {
+            EXPECT_EQ(face.value, fixed_face.value);
+        }
+        EXPECT_EQ(face.placement.position, fixed_face.placement.position);
+        EXPECT_EQ(face.placement.style, client::TextStyle::Adaptive);
+        EXPECT_EQ(face.placement.light_color.packed(), fixed_face.color.packed());
+        EXPECT_EQ(face.placement.dark_color.packed(), 0xFF2D'2414U);
+    }
+    EXPECT_TRUE(found_style_hint);
+    client::TextRenderer mixed;
+    static_cast<void>(mixed.submit("Map", {}, {}));
+    for (auto const& label : adaptive.labels()) {
+        static_cast<void>(mixed.submit(label.value, label.color, label.placement));
+    }
+    client::GuiRenderer gui;
+    ASSERT_TRUE(gui.submit(mixed, glm::mat4{1.0F}, 844U, 346U));
+    ASSERT_GT(gui.batches().size(), 1U);
+    auto const& fixed_batch = gui.batches()[0U];
+    auto const& adaptive_batch = gui.batches()[1U];
+    ASSERT_FALSE(fixed_batch.glyphs.empty());
+    ASSERT_FALSE(adaptive_batch.glyphs.empty());
+    EXPECT_EQ(fixed_batch.glyphs[0U].character & 0x100U, 0U);
+    EXPECT_NE(adaptive_batch.glyphs[0U].character & 0x100U, 0U);
+    EXPECT_EQ(adaptive_batch.glyphs[0U].light_color, adaptive.labels()[0U].placement.light_color.packed());
+    EXPECT_EQ(adaptive_batch.glyphs[0U].dark_color, 0xFF2D'2414U);
 }

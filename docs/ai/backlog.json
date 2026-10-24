@@ -312,7 +312,7 @@
       "MC-AI-0037"
     ],
     "acceptance": "Remaining wrapping compatibility coverage spans collision, permissions, deferred visual LOD, and scripted multiplayer workloads without reimplementing S6 coordinate normalization or presentation. Reproducible profiles record the resulting budgets.",
-    "evidence": "Five focused Release regressions passed: a real GameServer test publishes hard movement permissions to two connected clients and proves the edge player cannot cross into its neighbor at x=65535→0; existing tests prove wrapped collision adjacency, nearest-world-image LOD bounds with the confirmed projected-area ≤2 px² cutoff, and deterministic two-client adverse-transport authority convergence. The current five-scenario full-game profile records ordinary, x200, wrapped-border, permission/collision, and adverse-network budgets (raw JSON SHA-256 5f513a61567232e0d9451eb2e45e9345aa106fb1c052692d077e301ab1edd1e2). Its terrain readiness was 27.290 s; 120 Hz p99.8 remains unmet at 9.350–9.603 ms and stays open in MC-AI-0061/0248.",
+    "evidence": "Five focused Release regressions passed: a real GameServer test publishes hard movement permissions to two connected clients and proves the edge player cannot cross into its neighbor at x=65535\u21920; existing tests prove wrapped collision adjacency, nearest-world-image LOD bounds with the confirmed projected-area \u22642 px\u00b2 cutoff, and deterministic two-client adverse-transport authority convergence. The current five-scenario full-game profile records ordinary, x200, wrapped-border, permission/collision, and adverse-network budgets (raw JSON SHA-256 5f513a61567232e0d9451eb2e45e9345aa106fb1c052692d077e301ab1edd1e2). Its terrain readiness was 27.290 s; 120 Hz p99.8 remains unmet at 9.350\u20139.603 ms and stays open in MC-AI-0061/0248.",
     "blocker": "",
     "owner": "Codex"
   },
@@ -1267,14 +1267,14 @@
     "environment_review": "",
     "backlog_review": "",
     "id": "MC-AI-0032",
-    "title": "EarlyDev 0.1.0:3 — Rendering snapshot",
+    "title": "EarlyDev 0.1.0:3 \u2014 Rendering snapshot",
     "kind": "feature",
     "status": "done",
     "priority": "P1",
     "route": "sol",
     "milestone": "ED-010-S3",
     "depends_on": [],
-    "acceptance": "Snapshot 3 roadmap rendering acceptance and every scoped basic child are complete; full enabled release checks pass; actual product/code changes and promotion evidence are recorded. The exact reviewed/tagged build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while runtime results from the user’s Windows laptop are recorded separately and never inferred.",
+    "acceptance": "Snapshot 3 roadmap rendering acceptance and every scoped basic child are complete; full enabled release checks pass; actual product/code changes and promotion evidence are recorded. The exact reviewed/tagged build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while runtime results from the user\u2019s Windows laptop are recorded separately and never inferred.",
     "evidence": "Release https://github.com/CoreJust/MinecraftClone/releases/tag/ai/EarlyDev/0.1.0/3_26.09.10 resolves to ai-main c5100f5dc77a151a2644079575e25efd0f93a85d from ai-dev 24519b0683252d6496a18621875b243c729e37d4. Strict gates passed 182 Python tests, build, 205 CTests, packaged MoltenVK smoke, and publisher validation. Runs 34501182172 and 34501182171 passed; duplicate run 34502895257 was cancelled. Hosted artifacts: macOS 10162102089; Windows 10162273049; Android evidence 10162077337. Verifier receipt /private/tmp/mc-s3-final-artifacts/github-release-verification.json passed with SHA256 2aee1432ced9b8d8d6607f5b1e30d9bb595ff93488b697a415a4edc3eb5370ba. Signing: annotated tag unsigned; macOS and Windows package signing not asserted; Android stable development-signed. Published SHA256: macOS 674f2a321ab20c8cba9dc7dae074b2a5d0e8190ffa5987ebb31b23573f541347; Windows 8f5c2b63432f933a0e2f19c9831f9d8be2a889c9967355b0fa32f3a69495fdc1; Android 159ef62cbe2f8eba6eaefccfdbed10582876dcf74770c645a5d97fa687d8c28a. The CI Android APK was not published. Exact macOS Apple M3 Pro packaged-MoltenVK runtime passed. Android post-publication receipt /private/tmp/mc-s3-android-final/android-post-publication-acceptance.json passed on API35 emulator-5556 with SHA256 4b94cbe07e8746bdcbb357e49503349a4ef96d2eb26a3c308ad4f4f35f92bebd. Windows runtime is pending user-owned evidence. ",
     "blocker": "",
     "owner": "Codex"
@@ -1305,7 +1305,7 @@
     "environment_review": "",
     "backlog_review": "",
     "id": "MC-AI-0033",
-    "title": "EarlyDev 0.1.0 — Initiation",
+    "title": "EarlyDev 0.1.0 \u2014 Initiation",
     "kind": "feature",
     "status": "blocked",
     "priority": "P1",
@@ -1342,7 +1342,7 @@
     "environment_review": "",
     "backlog_review": "",
     "id": "MC-AI-0034",
-    "title": "EarlyDev 0.1 — Core playable foundations",
+    "title": "EarlyDev 0.1 \u2014 Core playable foundations",
     "kind": "feature",
     "status": "active",
     "priority": "P1",
@@ -1356,7 +1356,7 @@
   },
   {
     "id": "MC-AI-0035",
-    "title": "EarlyDev 0.1.0:4 — 3D controls snapshot",
+    "title": "EarlyDev 0.1.0:4 \u2014 3D controls snapshot",
     "kind": "feature",
     "status": "active",
     "priority": "P1",
@@ -1399,7 +1399,7 @@
   },
   {
     "id": "MC-AI-0036",
-    "title": "EarlyDev 0.1.0:5 — Blocks snapshot",
+    "title": "EarlyDev 0.1.0:5 \u2014 Blocks snapshot",
     "kind": "feature",
     "status": "done",
     "priority": "P1",
@@ -1444,7 +1444,7 @@
   },
   {
     "id": "MC-AI-0037",
-    "title": "EarlyDev 0.1.0:6 — Sparse world snapshot",
+    "title": "EarlyDev 0.1.0:6 \u2014 Sparse world snapshot",
     "kind": "feature",
     "status": "active",
     "priority": "P1",
@@ -1491,7 +1491,7 @@
   },
   {
     "id": "MC-AI-0038",
-    "title": "EarlyDev 0.1.0:7 — Physics and permissions snapshot",
+    "title": "EarlyDev 0.1.0:7 \u2014 Physics and permissions snapshot",
     "kind": "feature",
     "status": "done",
     "priority": "P1",
@@ -1500,7 +1500,7 @@
     "depends_on": [
       "MC-AI-0037"
     ],
-    "acceptance": "Deliver immutable generation-tagged hard/soft permissions for all, players, mobs, technical entities, per-kind, explicit-member and selector groups; namespace mod/command permission keys, defer world subjects, and cover movement, flight/collision, blocks, inventory, invincibility, commands, and mode presets. Use CoreLang 0.1.3.1 (documented 0.1.3.3 maintenance only), verify interpreter/JIT parity, and prepare kernels outside physics ticks. Test latency, loss, jitter, freezes, reordering and duplication. Provide a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep radius-256 terrain position-driven and camera-independent; derive LOD from projected face area ≤2 px². Supply four distinct, fully loaded, inspected 2560×1440 Mac screenshots with prominent labels centered below HUD: (1) third-person central spike at radius72, about30% closer and slightly lower but elevated, with full spike, most first ring, terrain beyond and unobscured player; (2) one trench view near first spike; (3) mountain climb; (4) first-person at X/Z0. Follow the explicit16October release boundary: prove complete radius256 terrain separately from stable120FPS at100+chunks on the primary Mac target for this S7 release, using a radius128 performance proof with99.8percent stability accounting. Keep500FPS as a later target, not a claimed S7 result. Pass required Mac runtime and platform/MC-AI-0249 gates; include CoreCpp MC-AI-0056, 0057 and 0240. Android needs local tests, basic runtime, and a GitHub build artifact only; Linux is analysis-only, not a supported game target. Release S7, hold the minor for feedback, and do not start S8. Final current-source platform qualification and separate Mac R256/R128 proofs belong here under0465, not as repeated basic-commit gates. For S7 only, the user temporarily defers Windows matrix/build/artifact/proofs; these are not passed. All Mac/Android requirements remain. Basic implementation closure is not release qualification. On18October2026 the user explicitly authorizes a documented S7-only Mac cadence exception; preserve the strict99.8percent target and actual failed timing metrics, bind approval in S7-CADENCE-EXCEPTION-2026-10-18.json, record accepted_exception rather than performancePASS, and retain follow-upMC-AI-0472. This waives no other product, sanitizer, provenance, runtime or publication requirement.",
+    "acceptance": "Deliver immutable generation-tagged hard/soft permissions for all, players, mobs, technical entities, per-kind, explicit-member and selector groups; namespace mod/command permission keys, defer world subjects, and cover movement, flight/collision, blocks, inventory, invincibility, commands, and mode presets. Use CoreLang 0.1.3.1 (documented 0.1.3.3 maintenance only), verify interpreter/JIT parity, and prepare kernels outside physics ticks. Test latency, loss, jitter, freezes, reordering and duplication. Provide a 29/16 \u00d7 10/16 \u00d7 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep radius-256 terrain position-driven and camera-independent; derive LOD from projected face area \u22642 px\u00b2. Supply four distinct, fully loaded, inspected 2560\u00d71440 Mac screenshots with prominent labels centered below HUD: (1) third-person central spike at radius72, about30% closer and slightly lower but elevated, with full spike, most first ring, terrain beyond and unobscured player; (2) one trench view near first spike; (3) mountain climb; (4) first-person at X/Z0. Follow the explicit16October release boundary: prove complete radius256 terrain separately from stable120FPS at100+chunks on the primary Mac target for this S7 release, using a radius128 performance proof with99.8percent stability accounting. Keep500FPS as a later target, not a claimed S7 result. Pass required Mac runtime and platform/MC-AI-0249 gates; include CoreCpp MC-AI-0056, 0057 and 0240. Android needs local tests, basic runtime, and a GitHub build artifact only; Linux is analysis-only, not a supported game target. Release S7, hold the minor for feedback, and do not start S8. Final current-source platform qualification and separate Mac R256/R128 proofs belong here under0465, not as repeated basic-commit gates. For S7 only, the user temporarily defers Windows matrix/build/artifact/proofs; these are not passed. All Mac/Android requirements remain. Basic implementation closure is not release qualification. On18October2026 the user explicitly authorizes a documented S7-only Mac cadence exception; preserve the strict99.8percent target and actual failed timing metrics, bind approval in S7-CADENCE-EXCEPTION-2026-10-18.json, record accepted_exception rather than performancePASS, and retain follow-upMC-AI-0472. This waives no other product, sanitizer, provenance, runtime or publication requirement.",
     "evidence": "Published S7cbfd4a640badbc4b803eac9e393326d62626ac9f; prior automated qualification is historical limited evidence, NOT final human acceptance.19October2026 normal shipped-package playtest: visible cursor, FPS falling to about80 during movement, apparently random visible chunk order within about30seconds. Owner authorizes closing current minor with known defects, not a gameplay PASS. Carry-forward0477-0479 and INITIATION-CLOSURE-2026-10-19.md supersede earlier blanket completion claim. Bugs remain unresolved; no further S7 implementation requested.",
     "blocker": "",
     "owner": "Codex",
@@ -1539,7 +1539,7 @@
   },
   {
     "id": "MC-AI-0039",
-    "title": "Retired Snapshot 8 plan — merged into Snapshot 7",
+    "title": "Retired Snapshot 8 plan \u2014 merged into Snapshot 7",
     "kind": "feature",
     "status": "blocked",
     "priority": "P1",
@@ -1893,7 +1893,7 @@
     "level": "basic",
     "parent": "MC-AI-0035",
     "motivation": "Make reusable utilities and generic stateful services independently buildable and consumable without game-source coupling before S4 expands the client.",
-    "context": "CoreJust/CoreCpp is a private repository created at the user’s request. It owns generic Core and Runtime source, README, build/tests and a minimal independent ledger; MinecraftClone consumes only reviewed immutable installed-package revisions. The user approved separate read-only deploy keys for CoreCpp and CoreProject2026 in trusted release workflows; private dependency sources are excluded from public artifacts.",
+    "context": "CoreJust/CoreCpp is a private repository created at the user\u2019s request. It owns generic Core and Runtime source, README, build/tests and a minimal independent ledger; MinecraftClone consumes only reviewed immutable installed-package revisions. The user approved separate read-only deploy keys for CoreCpp and CoreProject2026 in trusted release workflows; private dependency sources are excluded from public artifacts.",
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "2026-09-10",
@@ -2305,7 +2305,7 @@
     "owner": "codex",
     "level": "basic",
     "parent": "MC-AI-0038",
-    "motivation": "Implement the scalable generation mechanism requested for the large world while keeping this minor’s actual content intentionally simple.",
+    "motivation": "Implement the scalable generation mechanism requested for the large world while keeping this minor\u2019s actual content intentionally simple.",
     "context": "Shared owns stage schemas, generation state and bounded priorities; Script declares optional entrypoints and stage configuration; Runtime only executes jobs. Demonstrate with versioned seeded air/stone. Rich geography, structures, decoration and loot are future tasks.",
     "complexity": "high",
     "created_at": "2026-09-09",
@@ -2384,7 +2384,7 @@
     "depends_on": [
       "MC-AI-0006"
     ],
-    "acceptance": "Flight terrain residency is the exact camera-, heading-, and frustum-independent radius-256 height-tile disk (205,861 tiles) with shortest X/Y wrapping; heading affects generation priority only. The client selects visual mesh detail from shortest wrapped, player-centered distance and the current vertical FOV plus physical framebuffer extent, with a conservative projected-face bound of at most 2 px² and documented hysteresis; there is no fixed chunk-distance cutoff. Stale mesh jobs are rejected when their tile, captured neighbors, or selected detail no longer match, preserving wrapped seams. Bounded residency/uploads remain, and visual LOD never changes authoritative terrain or physics. Deterministic tests cover disk membership, projection-dependent cutovers, relief, hysteresis, wrapping, and neighbor revisions. Full-radius Mac visual/runtime capture remains a coordinated batch gate.",
+    "acceptance": "Flight terrain residency is the exact camera-, heading-, and frustum-independent radius-256 height-tile disk (205,861 tiles) with shortest X/Y wrapping; heading affects generation priority only. The client selects visual mesh detail from shortest wrapped, player-centered distance and the current vertical FOV plus physical framebuffer extent, with a conservative projected-face bound of at most 2 px\u00b2 and documented hysteresis; there is no fixed chunk-distance cutoff. Stale mesh jobs are rejected when their tile, captured neighbors, or selected detail no longer match, preserving wrapped seams. Bounded residency/uploads remain, and visual LOD never changes authoritative terrain or physics. Deterministic tests cover disk membership, projection-dependent cutovers, relief, hysteresis, wrapping, and neighbor revisions. Full-radius Mac visual/runtime capture remains a coordinated batch gate.",
     "evidence": "Production target passed `cmake --build build/debug --target mc_main -j4` on top of MC-AI-0264; five focused suites passed 48/48 tests, including deterministic intermediate transition checks for both tile arrival orders, normalized world-wrap bridge geometry, and the four-neighbor re-upload bound. `python3 script/ai_docs.py check`, `python3 script/ai_tasks.py ready`, `git diff --check`, and `python3 script/ai_check.py --fast` passed; the fast gate records only the baseline Snapshot 7 date drift and expected dirty-worktree source-check exceptions. Full-radius Mac runtime capture and the batch integration gate remain pending. The monolithic `mc_tests` target still cannot serve as the integrated check on this base because unrelated tests require PolicyCapabilityRegistry/GameServer::publishPermissions and GameClientBenchmarkHooks, which are absent before MC-AI-0245.",
     "blocker": "",
     "owner": "Codex",
@@ -2398,15 +2398,15 @@
     "resolution_changes": "Implemented exact radius-256 residency, projection-bounded visual LOD, and seam-safe stale-result handling.",
     "plan": [
       "Expand camera-independent height-tile membership to the exact radius-256 disk and advertise its capacity in protocol v11.",
-      "Select preview mesh detail from player-centered shortest wrapped distance and live FOV/framebuffer projection, with a conservative 2 px² simplified-face bound and hysteresis.",
+      "Select preview mesh detail from player-centered shortest wrapped distance and live FOV/framebuffer projection, with a conservative 2 px\u00b2 simplified-face bound and hysteresis.",
       "Reject stale tile/neighbor/detail mesh results, document the visual-only contract, and validate wrapped seams; leave full-radius runtime capture to the coordinated batch gate."
     ],
     "product_changes": [
       "Flight streams a camera-independent radius-256 height-tile disk (205,861 tiles); live FOV/framebuffer projection and player-centered wrapped distance select visual-only terrain detail."
     ],
     "code_changes": [
-      "Added projection-aware height-tile surface detail with conservative 2 px² face cutoff, hysteresis, wrapped bounds, mixed-detail neighbor seam handling, cached transition bridges for out-of-order mesh publication, and stale tile/neighbor/detail result rejection; raised protocol capacity to 205,861 and updated fixed wire bytes to protocol v11.",
-      "Kept the S6 benchmark stress scene fixed at 90×90; updated gameplay, rendering, and acceptance docs to distinguish exact residency from pending full-radius runtime capture."
+      "Added projection-aware height-tile surface detail with conservative 2 px\u00b2 face cutoff, hysteresis, wrapped bounds, mixed-detail neighbor seam handling, cached transition bridges for out-of-order mesh publication, and stale tile/neighbor/detail result rejection; raised protocol capacity to 205,861 and updated fixed wire bytes to protocol v11.",
+      "Kept the S6 benchmark stress scene fixed at 90\u00d790; updated gameplay, rendering, and acceptance docs to distinguish exact residency from pending full-radius runtime capture."
     ],
     "baseline_commit": "",
     "commits": [],
@@ -2433,7 +2433,7 @@
     "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
-    "motivation": "Turn the owner’s performance goals into reproducible measurements and profile-guided decisions instead of unsupported FPS claims.",
+    "motivation": "Turn the owner\u2019s performance goals into reproducible measurements and profile-guided decisions instead of unsupported FPS claims.",
     "context": "The targets are at least 5000 completed full-frame render/submit/present-request game-loop iterations per second on the specified Ryzen 9 HX/RTX 5070 Ti laptop and several hundred on this Mac, with weaker-laptop smoothness. They do not mean 5000 physical screen refreshes; actual displayed cadence is measured separately. The existing roughly 120 sample is renderer-only submit/present-request throughput with constant state and no server/network/simulation, so it establishes neither full-game throughput nor displayed cadence.",
     "complexity": "high",
     "created_at": "2026-09-09",
@@ -3532,7 +3532,7 @@
     "route": "luna",
     "milestone": "ED-010-S3",
     "depends_on": [],
-    "acceptance": "Project-local routing and workflow guidance select Luna/high by default for well-specified work, define the Terra/Sol/Astra escalation boundaries, and record only actual input/cached/output usage with cumulative target bands of Luna 60–80%, Luna+Terra 94–96%, Luna+Terra+Sol 98–99%, and Astra 1–2% when measured. Reusable dependency checks and one hook receipt eliminate duplicate precommit work; CI fails fast; automated packets include a next-five ordinary-task comparison; debugging is evidence-first and tests remain deterministic. Existing review, exact asset/signing, full release gates, per-snapshot publish→launch→pause, one Task-ID, and S3 pause rules remain intact.",
+    "acceptance": "Project-local routing and workflow guidance select Luna/high by default for well-specified work, define the Terra/Sol/Astra escalation boundaries, and record only actual input/cached/output usage with cumulative target bands of Luna 60\u201380%, Luna+Terra 94\u201396%, Luna+Terra+Sol 98\u201399%, and Astra 1\u20132% when measured. Reusable dependency checks and one hook receipt eliminate duplicate precommit work; CI fails fast; automated packets include a next-five ordinary-task comparison; debugging is evidence-first and tests remain deterministic. Existing review, exact asset/signing, full release gates, per-snapshot publish\u2192launch\u2192pause, one Task-ID, and S3 pause rules remain intact.",
     "evidence": "Final follow-up validation: script.tests.test_ai_tasks passed 16/16. The real efficiency-cohort command with baseline 824d9f50d1909775ca8e20ace268b1a8117bb922 reads existing summary.jsonl history, deduplicates the latest summary.json by invocation ID, ignores malformed history lines, and joins actual Task88 and Task42 summaries by parent HEAD and commit tree. It selected 2 of the target 5 tasks, with both check-summary histories joined; elapsed and model-usage fields remain unavailable and are not inferred. Receipt fingerprint behavior remains covered by the prior focused ai_check tests and the installed hook evidence.",
     "blocker": "",
     "owner": "Codex",
@@ -3543,7 +3543,7 @@
     "complexity": "medium",
     "created_at": "2026-09-10",
     "resolved_at": "2026-09-10",
-    "resolution_changes": "Changed project-local routing and config to Luna/high for well-specified implementation, tests, tooling, metadata, reviews, and handoffs; documented Terra/Sol/Astra escalation, honest token accounting, evidence-first debugging, deterministic testing, reusable dependency/check receipts, no duplicate precommit work, fail-fast CI, exact release verification, and publish→launch→pause. Added bounded packet, CI-record, efficiency-cohort, and token-usage tooling with conservative receipt invalidation and partial-result reporting; corrected project skill and generated-plan defaults to Luna. Follow-up closes the observed efficiency-cohort identity gap by matching taskless summaries to actual parent HEAD and commit tree, reading the existing summary history with latest-invocation deduplication and malformed-line tolerance, and making commit-hook reuse stable without weakening explicit Git executable-path invalidation.",
+    "resolution_changes": "Changed project-local routing and config to Luna/high for well-specified implementation, tests, tooling, metadata, reviews, and handoffs; documented Terra/Sol/Astra escalation, honest token accounting, evidence-first debugging, deterministic testing, reusable dependency/check receipts, no duplicate precommit work, fail-fast CI, exact release verification, and publish\u2192launch\u2192pause. Added bounded packet, CI-record, efficiency-cohort, and token-usage tooling with conservative receipt invalidation and partial-result reporting; corrected project skill and generated-plan defaults to Luna. Follow-up closes the observed efficiency-cohort identity gap by matching taskless summaries to actual parent HEAD and commit tree, reading the existing summary history with latest-invocation deduplication and malformed-line tolerance, and making commit-hook reuse stable without weakening explicit Git executable-path invalidation.",
     "plan": [
       "Make project-local configuration and model-routing guidance use Luna/high as the efficient default, with explicit escalation boundaries and honest usage accounting.",
       "Add reusable dependency/check and hook-receipt guidance without duplicate precommit execution; keep CI fail-fast and preserve release and review gates.",
@@ -5999,7 +5999,7 @@
     "complexity": "high",
     "created_at": "2026-09-13",
     "resolved_at": "2026-09-13",
-    "resolution_changes": "Integrated desktop and Android flight controls, XYZ prediction and presentation, flight HUD state, vertical ±127 parser coverage, and direct no-prompt Flight-mode localhost player launch. Preserved existing S4 presentation tests and excluded the later explicit CLI parser.",
+    "resolution_changes": "Integrated desktop and Android flight controls, XYZ prediction and presentation, flight HUD state, vertical \u00b1127 parser coverage, and direct no-prompt Flight-mode localhost player launch. Preserved existing S4 presentation tests and excluded the later explicit CLI parser.",
     "plan": [],
     "product_changes": [
       "Desktop flight uses yaw-relative WASD, Space and Shift vertical input, first-person camera, predicted/reconciled XYZ movement, and direct localhost graphical launch; Android supplies usable vertical touch controls."
@@ -7080,51 +7080,6 @@
     "backlog_review": ""
   },
   {
-    "id": "MC-AI-0208",
-    "title": "Implement S6 sparse wrapped world bulk",
-    "kind": "feature",
-    "status": "done",
-    "priority": "P1",
-    "route": "luna",
-    "milestone": "ED-010-S6",
-    "depends_on": [
-      "MC-AI-0036"
-    ],
-    "acceptance": "Implement and commit the main S6 bulk: CoreLang0.1.2-only scripts and legacy .mcscenario removal; obsolete src/core removal; canonical 65536x65536x1024 world with X/Y wrapping and boundaries; bounded sparse16-cubed chunks; CoreLang16x16 heightmaps with C++ block placement and exact six-base/806-center/406-first-crest/64-spacing formula; bounded executor scheduling and stale-result rejection; server-authoritative bounded chunk streaming; client revisioned previews and practical LOD; start beside first wave; deterministic audio foundation and once-per-local-spawn sound where RuntimeAudio is available; non-windowed macOS build and focused/full tests. Preserve S5 behavior. Record blockers. Do not launch, capture screenshots, release, publish, push or promote.",
-    "evidence": "macOS Debug mc_main and mc_tests built successfully against CoreLang 0.1.2 fc02c0b and compatible CoreCpp 1a1d409; full CTest passed 294/294; ai_check.py --fast passed; docs/backlog/current-plan checks passed; no .mcscenario files remain and src/core is absent.",
-    "blocker": "The pinned compatible CoreCpp revision lacks a native RuntimeAudio output backend, so this batch cannot provide an audible once-per-spawn sound. CoreCpp audio/executor commits exist separately but cannot be adopted without rebuilding the verified CoreLang 0.1.2 dependency line.",
-    "owner": "s6-main",
-    "level": "basic",
-    "parent": "MC-AI-0037",
-    "motivation": "Deliver the user-approved S6 gameplay bulk while deferring launch, screenshots and release.",
-    "context": "Exact published S5 ledger f4edb22 with source e3cf09ff94a27a5a6e4ee40e5405846527abc2f7; CoreCpp1a1d4095bd553ed1ea382523eecd22c9748bbe9f; CoreLang0.1.2 fc02c0b896a6509f21f9832b68f8b24c925defd5. User authorized conditional implementation at15% remaining with10% reserve; no game launch, screenshots, release, push or promotion.",
-    "complexity": "high",
-    "created_at": "2026-09-13",
-    "resolved_at": "2026-09-13",
-    "resolution_changes": "Implemented CoreLang 0.1.2 terrain heightmaps with C++ block materialization, the fixed six-block-base fading wave terrain, sparse wrapped 65536x65536x1024 world storage and boundaries, bounded generation scheduling, preview protocol/residency/rendering, first-wave spawn, and legacy scenario/src/core cleanup. Added preview capability negotiation so non-rendering bots do not request terrain.",
-    "plan": [
-      "Clarify acceptance and implementation steps.",
-      "Implement the smallest vertically integrated sparse wrapped terrain path.",
-      "Add deterministic boundary, heightmap, storage, scheduling, streaming, preview and audio tests.",
-      "Build and run non-windowed macOS checks, commit reviewed task changes, then stop."
-    ],
-    "product_changes": [
-      "Normal flight sessions start beside the first wave and receive a rendered 5x5 terrain preview around the spawn.",
-      "Horizontal flight wraps across the 65536-cell world while vertical flight remains bounded to 1024 cells."
-    ],
-    "code_changes": [
-      "Added sparse world, CoreLang terrain generator, bounded scheduler, revisioned preview protocol/residency, server preview production, and multi-chunk client rendering.",
-      "Removed all checked-in .mcscenario files and the obsolete src/core tree; migrated scenario scripts to CoreLang 0.1.2."
-    ],
-    "baseline_commit": "",
-    "commits": [],
-    "finalized": true,
-    "retrospective": "Preview generation must be negotiated and deferred beyond join handling; synchronous generation delayed protocol tests and bot joins until capability negotiation isolated rendering clients.",
-    "docs_review": "Refreshed and validated generated code documentation after reading the changed guides against source.",
-    "environment_review": "Built and tested non-windowed on macOS arm64. Per user instruction, did not launch the game or capture screenshots. Windows and Android runtime evidence remain snapshot gates.",
-    "backlog_review": "The aggregate S6 snapshot remains active for native spawn audio, dynamic travel streaming/true coarse LOD, screenshots, platform acceptance, review hold, and release work."
-  },
-  {
     "id": "MC-AI-0206",
     "title": "Repair S6 playtest performance, reach, controls, spawn, HUD, and stone presentation",
     "kind": "bug",
@@ -7204,6 +7159,51 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0208",
+    "title": "Implement S6 sparse wrapped world bulk",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [
+      "MC-AI-0036"
+    ],
+    "acceptance": "Implement and commit the main S6 bulk: CoreLang0.1.2-only scripts and legacy .mcscenario removal; obsolete src/core removal; canonical 65536x65536x1024 world with X/Y wrapping and boundaries; bounded sparse16-cubed chunks; CoreLang16x16 heightmaps with C++ block placement and exact six-base/806-center/406-first-crest/64-spacing formula; bounded executor scheduling and stale-result rejection; server-authoritative bounded chunk streaming; client revisioned previews and practical LOD; start beside first wave; deterministic audio foundation and once-per-local-spawn sound where RuntimeAudio is available; non-windowed macOS build and focused/full tests. Preserve S5 behavior. Record blockers. Do not launch, capture screenshots, release, publish, push or promote.",
+    "evidence": "macOS Debug mc_main and mc_tests built successfully against CoreLang 0.1.2 fc02c0b and compatible CoreCpp 1a1d409; full CTest passed 294/294; ai_check.py --fast passed; docs/backlog/current-plan checks passed; no .mcscenario files remain and src/core is absent.",
+    "blocker": "The pinned compatible CoreCpp revision lacks a native RuntimeAudio output backend, so this batch cannot provide an audible once-per-spawn sound. CoreCpp audio/executor commits exist separately but cannot be adopted without rebuilding the verified CoreLang 0.1.2 dependency line.",
+    "owner": "s6-main",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Deliver the user-approved S6 gameplay bulk while deferring launch, screenshots and release.",
+    "context": "Exact published S5 ledger f4edb22 with source e3cf09ff94a27a5a6e4ee40e5405846527abc2f7; CoreCpp1a1d4095bd553ed1ea382523eecd22c9748bbe9f; CoreLang0.1.2 fc02c0b896a6509f21f9832b68f8b24c925defd5. User authorized conditional implementation at15% remaining with10% reserve; no game launch, screenshots, release, push or promotion.",
+    "complexity": "high",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Implemented CoreLang 0.1.2 terrain heightmaps with C++ block materialization, the fixed six-block-base fading wave terrain, sparse wrapped 65536x65536x1024 world storage and boundaries, bounded generation scheduling, preview protocol/residency/rendering, first-wave spawn, and legacy scenario/src/core cleanup. Added preview capability negotiation so non-rendering bots do not request terrain.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Implement the smallest vertically integrated sparse wrapped terrain path.",
+      "Add deterministic boundary, heightmap, storage, scheduling, streaming, preview and audio tests.",
+      "Build and run non-windowed macOS checks, commit reviewed task changes, then stop."
+    ],
+    "product_changes": [
+      "Normal flight sessions start beside the first wave and receive a rendered 5x5 terrain preview around the spawn.",
+      "Horizontal flight wraps across the 65536-cell world while vertical flight remains bounded to 1024 cells."
+    ],
+    "code_changes": [
+      "Added sparse world, CoreLang terrain generator, bounded scheduler, revisioned preview protocol/residency, server preview production, and multi-chunk client rendering.",
+      "Removed all checked-in .mcscenario files and the obsolete src/core tree; migrated scenario scripts to CoreLang 0.1.2."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Preview generation must be negotiated and deferred beyond join handling; synchronous generation delayed protocol tests and bot joins until capability negotiation isolated rendering clients.",
+    "docs_review": "Refreshed and validated generated code documentation after reading the changed guides against source.",
+    "environment_review": "Built and tested non-windowed on macOS arm64. Per user instruction, did not launch the game or capture screenshots. Windows and Android runtime evidence remain snapshot gates.",
+    "backlog_review": "The aggregate S6 snapshot remains active for native spawn audio, dynamic travel streaming/true coarse LOD, screenshots, platform acceptance, review hold, and release work."
   },
   {
     "id": "MC-AI-0209",
@@ -7516,7 +7516,7 @@
     "owner": "",
     "level": "basic",
     "parent": "MC-AI-0037",
-    "motivation": "Hosted run 35462880045 proved clang-cl appends _CL_ after CMake’s -- source separator and treats those options as filenames, while earlier runs proved raw GNU -Wall activates a materially different all-diagnostics policy.",
+    "motivation": "Hosted run 35462880045 proved clang-cl appends _CL_ after CMake\u2019s -- source separator and treats those options as filenames, while earlier runs proved raw GNU -Wall activates a materially different all-diagnostics policy.",
     "context": "Remove the failed environment technique. Do not edit tagged source or dependency locks. Translate only warning-policy spelling at the Windows private-dependency compiler boundary.",
     "complexity": "medium",
     "created_at": "2026-09-19",
@@ -9038,20 +9038,20 @@
     "route": "luna",
     "milestone": "ED-010-S7",
     "depends_on": [],
-    "acceptance": "Guarantee player-position-only terrain generation and current uploaded-mesh residency for the 256-chunk disk (205,861 tiles); retain exact per-block heights and reduce only derived meshes. For live vertical FOV fv, physical framebuffer W×H, tv=tan(radians(fv)/2), th=tv*W/H, S=1+th²+tv², and f=H/(2tv), each visible unit-block face at minimum Euclidean camera-to-tile-bound separation r is bounded by f²S^(3/2)/r² pixels². An L×L detail cell represents top faces of area L² and cliff faces up to L×R, where R is the height envelope of the tile and neighbor samples used for edge meshes. Coarsen only when the bound for A=max(L²,L×R) is ≤2 pixels²; coplanar render-quad merging does not change A. Derive each 2×2/4×4/8×8/16×16 cutoff from live projection, terrain envelope, and conservative bounds; prescribe no chunk distance. Test exact and nearer cutoffs across FOVs, framebuffer sizes/aspects, height ranges, wrapping, and camera/tile bounds. Heading, frustum, projection, and fog may not reduce generation, residency, or current mesh coverage; never evict in-range data or meshes. Complete center and origin mesh-key comparisons through 16 stationary headings and verify X/Y seams. A 100-chunk-radius 60-second readiness target and frame-pacing samples are diagnostic only, not release proof gates.",
+    "acceptance": "Guarantee player-position-only terrain generation and current uploaded-mesh residency for the 256-chunk disk (205,861 tiles); retain exact per-block heights and reduce only derived meshes. For live vertical FOV fv, physical framebuffer W\u00d7H, tv=tan(radians(fv)/2), th=tv*W/H, S=1+th\u00b2+tv\u00b2, and f=H/(2tv), each visible unit-block face at minimum Euclidean camera-to-tile-bound separation r is bounded by f\u00b2S^(3/2)/r\u00b2 pixels\u00b2. An L\u00d7L detail cell represents top faces of area L\u00b2 and cliff faces up to L\u00d7R, where R is the height envelope of the tile and neighbor samples used for edge meshes. Coarsen only when the bound for A=max(L\u00b2,L\u00d7R) is \u22642 pixels\u00b2; coplanar render-quad merging does not change A. Derive each 2\u00d72/4\u00d74/8\u00d78/16\u00d716 cutoff from live projection, terrain envelope, and conservative bounds; prescribe no chunk distance. Test exact and nearer cutoffs across FOVs, framebuffer sizes/aspects, height ranges, wrapping, and camera/tile bounds. Heading, frustum, projection, and fog may not reduce generation, residency, or current mesh coverage; never evict in-range data or meshes. Complete center and origin mesh-key comparisons through 16 stationary headings and verify X/Y seams. A 100-chunk-radius 60-second readiness target and frame-pacing samples are diagnostic only, not release proof gates.",
     "evidence": "Capture source tree 209fafa50c4dec1748fe07593dd7a9ae480304f4 and binary SHA256 ccff35c36669c30cda4f0bc28ce820433b27f30b3964e5a65175f2372018b25c passed full 205,861-tile residency/current-mesh checks and 16-heading key-set comparisons at the central scene and wrapped origin. Trench full-coverage capture also passed. The 2560x1440 central, trench and origin images were inspected; their PPM SHA256 values are a18def94537180159b8e833fb54599f4a69ebc60521ff69eb7cb40f66f29bef1, a1de38f40349f1118f1324ea5869fe50e44f8cfb4f9c360e4fd8eaf87f6d5799 and 36fc71f1cb2d56a6ec13ac859af18b7c75083d0bd77730e978a8a9a0106e34d9. The four-scene wrapper finished with 3 passing tests and 1 mountain failure: full terrain coverage succeeded there, but collision height disagreed with the capture target; that production defect is tracked separately as MC-AI-0268 and S7 remains open. Integrated mc_main/mc_tests builds and 49/49 focused tests passed; after skipping the empty-removal coverage scan, rebuild and all 13 capture-plan tests passed. The reset GPU target also builds after removing its obsolete queue-member assertion. Capture timings and HUD FPS are diagnostics, not proof of the performance target.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "Prevent camera turns from exposing missing chunks at the edge of the rendered world while preserving bounded streaming and frustum-culling performance.",
-    "context": "Rendering distance guarantees terrain and uploaded meshes by player position, never by frustum. S7 radius 256 is 205,861 tiles (about 100.5 MiB raw heights); preserve exact heights and reduce only derived terrain geometry. Bound top faces by L² and cliffs by L×R, where R covers tile and neighbor edge heights. Derive cutoffs from current projection and bounds; merged coplanar render quads do not change source area. This height-field implementation does not promise content-aware LOD for caves, edits, structures, materials, or mods.",
+    "context": "Rendering distance guarantees terrain and uploaded meshes by player position, never by frustum. S7 radius 256 is 205,861 tiles (about 100.5 MiB raw heights); preserve exact heights and reduce only derived terrain geometry. Bound top faces by L\u00b2 and cliffs by L\u00d7R, where R covers tile and neighbor edge heights. Derive cutoffs from current projection and bounds; merged coplanar render quads do not change source area. This height-field implementation does not promise content-aware LOD for caves, edits, structures, materials, or mods.",
     "complexity": "high",
     "created_at": "2026-09-23",
     "resolved_at": "2026-09-30",
     "resolution_changes": "Completed full-radius current-mesh coverage and camera-invariance acceptance at an interior point and both wrapped origin seams, with bounded prioritized mesh work and high-resolution labeled captures. Kept the separately reproduced mountain collision-height defect and final S7 release gates open.",
     "plan": [
-      "Guarantee exact data and uploaded meshes in the player-centered 256-tile disk; derive 2/4/8/16-cell detail from the live-projection ≤2 px² bound for top/cliff faces, including neighbor heights. Never let projection or fog reduce residency.",
+      "Guarantee exact data and uploaded meshes in the player-centered 256-tile disk; derive 2/4/8/16-cell detail from the live-projection \u22642 px\u00b2 bound for top/cliff faces, including neighbor heights. Never let projection or fog reduce residency.",
       "Verify the whole 256-radius circular interest set, including exact boundary inclusion and exclusion, is invariant across headings and remains correctly wrapped at both world seams.",
       "Prove server generation, client residency budgets, and GPU mesh storage retain every in-range tile and current uploaded mesh without eviction or device-limit violations.",
       "Run full-stream production capture sweeps at an interior point and X/Y wrap seams; compare player-centered tile and uploaded-mesh key sets before and after all 16 camera headings.",
@@ -9272,6 +9272,42 @@
     "backlog_review": ""
   },
   {
+    "id": "MC-AI-0265",
+    "title": "Avoid rescanning full S7 height-tile interest during queue refill",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Server height-tile refill resumes from a per-stream cursor in the existing nearest-first, direction-aware list. The cursor advances only over keys handled or already unavailable, remains at the first unhandled key when the scheduler is full, and resets on interest center, canonical heading, or scheduler generation changes. Failed terminal generation remains retryable, deduplication is preserved, and a reconnect starts from the new stream priority head. Preview integration coverage proves refill progresses beyond 128 queued jobs and a heading change after cursor progress schedules an early key from the new priority order.",
+    "evidence": "Focused mc_tests build passed. Focused CTest passed 2/2: ProgressiveStreamFormsAForwardBiasedArea and ResetsPriorityCursorAfterProgressWhenHeadingChanges. ai_docs.py refresh and check passed. ai_check.py --fast passed docs, backlog, current-plan, and diff checks; source checks report the existing latest-snapshot date mismatch (26.09.20 versus environment date 26.09.30) plus the expected dirty-tree check before commit. CameraRotationKeepsInterestAndMovementAddsFreshFrontier failed 0/8 with both optimized and original full-scan server implementations, so its failure is baseline behavior in this checkout.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Avoid repeated full-interest scans during S7 server pumps so the fixed simulation cadence remains responsive while height tiles stream.",
+    "context": "S7 interest contains 205861 keys and the per-stream scheduler is capped at 128 pending jobs. GameServer::fillHeightTileQueue currently begins at the first priority key on each pump, revisiting the already queued prefix. The ordered interest is rebuilt when center or canonical heading changes; each stream has a scheduler generation and reconnect creates a fresh stream.",
+    "complexity": "medium",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Added the per-stream queue cursor and reset handling for interest-order changes, scheduler-generation changes, and failed terminal retries; added the post-progress heading-change integration regression.",
+    "plan": [
+      "Add a persistent priority cursor to each server preview stream, reset it with the interest ordering and scheduler generation, and preserve retry behavior. Add a reset-after-progress integration regression and run focused preview tests plus the project fast gate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Added a per-stream cursor over the existing nearest-first height-tile priority list, reset it on interest-order rebuild, scheduler generation change, and terminal retry failure, and added a heading-change-after-progress preview integration test."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
     "id": "MC-AI-0266",
     "title": "Allow Snapshot 7 promotion preparation before hosted matrix receipts exist",
     "kind": "chore",
@@ -9345,46 +9381,6 @@
     "backlog_review": ""
   },
   {
-    "id": "MC-AI-0269",
-    "title": "Consume the exact S7 audio-validation dependency pair",
-    "kind": "chore",
-    "status": "done",
-    "priority": "P1",
-    "route": "luna",
-    "milestone": "ED-010-S7",
-    "depends_on": [
-      "MC-AI-0244"
-    ],
-    "acceptance": "Pin CoreCpp 57817d78ef7b1ac625223e9e6d9351b1091c63bd and CoreProject2026 be150279803807746f9b81c326879bb2462b7272 exactly. Configure MinecraftClone against the verified installed pair with MC_ALLOW_INEXACT_CORECPP=OFF, pass focused acquisition/provenance and fast documentation/backlog gates, and preserve CoreLang 0.1.3.1 language semantics through the 0.1.3.3 maintenance package.",
-    "evidence": "CoreCpp 57817d78ef7b1ac625223e9e6d9351b1091c63bd passed 213 selected noninteractive CTests; CoreProject2026 be150279803807746f9b81c326879bb2462b7272 passed 28/28 CTests. The installed pair at /Users/core-just/MinecraftClone/.worktrees/ai-s7-player/build/s7-audio-fixed-deps/install reports exact clean provenance, version 0.1.3.3, and matching required CoreCpp revision. MinecraftClone Debug configuration passed against only that pair with MC_ALLOW_INEXACT_CORECPP=OFF and COREPROJECT2026_ALLOW_INEXACT_CORECPP=OFF; focused acquisition/workflow Python tests passed 48/48 and CoreProject2026.Provenance passed 1/1. ai_check.py --fast passed all 345 Python tests, docs, backlog, current-plan, and diff checks. The coordinator retains the full integrated build/runtime/platform release gates.",
-    "blocker": "",
-    "owner": "Codex",
-    "level": "basic",
-    "parent": "MC-AI-0038",
-    "motivation": "Consume the reviewed audio silence and immediate invalid-clip admission fixes without weakening exact dependency provenance.",
-    "context": "CoreCpp CC-0036 and the CoreProject2026 pin-only successor are published immutable revisions. The verified macOS Debug pair is installed at /Users/core-just/MinecraftClone/.worktrees/ai-s7-player/build/s7-audio-fixed-deps/install; CoreCpp passed 213 noninteractive tests and CoreProject2026 passed all 28 tests. Native-window and dependency-installing CoreCpp tests were excluded from that bounded check.",
-    "complexity": "low",
-    "created_at": "2026-09-30",
-    "resolved_at": "2026-09-30",
-    "resolution_changes": "Pinned the verified CoreCpp audio-validation fix and its CoreProject2026 pin-only successor; regenerated task views and the owning build-module source-state hash without changing MinecraftClone runtime or CoreLang semantics.",
-    "plan": [
-      "Update only the exact dependency pins, configure the installed pair without a provenance bypass, run focused acquisition/provenance checks and project fast gates, and regenerate task/source-state metadata."
-    ],
-    "product_changes": [
-      "S7 consumes dependency fixes for malformed audio-buffer silence and immediate invalid-clip rejection."
-    ],
-    "code_changes": [
-      "Repin dependencies.lock.json to the verified audio-validation CoreCpp commit and its compatible CoreProject2026 maintenance package."
-    ],
-    "baseline_commit": "",
-    "commits": [],
-    "finalized": true,
-    "retrospective": "",
-    "docs_review": "",
-    "environment_review": "",
-    "backlog_review": ""
-  },
-  {
     "id": "MC-AI-0268",
     "title": "Materialize exact terrain consistent with streamed height previews",
     "kind": "bug",
@@ -9425,6 +9421,46 @@
     "backlog_review": "Recorded the incompatible existing full-stream validation deadline separately as MC-AI-0270."
   },
   {
+    "id": "MC-AI-0269",
+    "title": "Consume the exact S7 audio-validation dependency pair",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0244"
+    ],
+    "acceptance": "Pin CoreCpp 57817d78ef7b1ac625223e9e6d9351b1091c63bd and CoreProject2026 be150279803807746f9b81c326879bb2462b7272 exactly. Configure MinecraftClone against the verified installed pair with MC_ALLOW_INEXACT_CORECPP=OFF, pass focused acquisition/provenance and fast documentation/backlog gates, and preserve CoreLang 0.1.3.1 language semantics through the 0.1.3.3 maintenance package.",
+    "evidence": "CoreCpp 57817d78ef7b1ac625223e9e6d9351b1091c63bd passed 213 selected noninteractive CTests; CoreProject2026 be150279803807746f9b81c326879bb2462b7272 passed 28/28 CTests. The installed pair at /Users/core-just/MinecraftClone/.worktrees/ai-s7-player/build/s7-audio-fixed-deps/install reports exact clean provenance, version 0.1.3.3, and matching required CoreCpp revision. MinecraftClone Debug configuration passed against only that pair with MC_ALLOW_INEXACT_CORECPP=OFF and COREPROJECT2026_ALLOW_INEXACT_CORECPP=OFF; focused acquisition/workflow Python tests passed 48/48 and CoreProject2026.Provenance passed 1/1. ai_check.py --fast passed all 345 Python tests, docs, backlog, current-plan, and diff checks. The coordinator retains the full integrated build/runtime/platform release gates.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Consume the reviewed audio silence and immediate invalid-clip admission fixes without weakening exact dependency provenance.",
+    "context": "CoreCpp CC-0036 and the CoreProject2026 pin-only successor are published immutable revisions. The verified macOS Debug pair is installed at /Users/core-just/MinecraftClone/.worktrees/ai-s7-player/build/s7-audio-fixed-deps/install; CoreCpp passed 213 noninteractive tests and CoreProject2026 passed all 28 tests. Native-window and dependency-installing CoreCpp tests were excluded from that bounded check.",
+    "complexity": "low",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Pinned the verified CoreCpp audio-validation fix and its CoreProject2026 pin-only successor; regenerated task views and the owning build-module source-state hash without changing MinecraftClone runtime or CoreLang semantics.",
+    "plan": [
+      "Update only the exact dependency pins, configure the installed pair without a provenance bypass, run focused acquisition/provenance checks and project fast gates, and regenerate task/source-state metadata."
+    ],
+    "product_changes": [
+      "S7 consumes dependency fixes for malformed audio-buffer silence and immediate invalid-clip rejection."
+    ],
+    "code_changes": [
+      "Repin dependencies.lock.json to the verified audio-validation CoreCpp commit and its compatible CoreProject2026 maintenance package."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
     "id": "MC-AI-0270",
     "title": "Deliver the full S7 terrain radius promptly with bounded preview work",
     "kind": "bug",
@@ -9460,80 +9496,6 @@
       "Retain at most 128 ready plus dispatched preview tiles per stream and at most 32 submitted jobs within the existing global 128-job pool.",
       "Reconcile acknowledged keys directly and reset refill for desired removals and failed admissions; retain queued-key accounting on retries.",
       "Add observational prefetch diagnostics, exact full-circle equality and progress counters, meaningful radius-derived movement stimuli, and a late-removal-ACK red/green regression."
-    ],
-    "baseline_commit": "",
-    "commits": [],
-    "finalized": true,
-    "retrospective": "",
-    "docs_review": "",
-    "environment_review": "",
-    "backlog_review": ""
-  },
-  {
-    "id": "MC-AI-0265",
-    "title": "Avoid rescanning full S7 height-tile interest during queue refill",
-    "kind": "bug",
-    "status": "done",
-    "priority": "P1",
-    "route": "luna",
-    "milestone": "ED-010-S7",
-    "depends_on": [],
-    "acceptance": "Server height-tile refill resumes from a per-stream cursor in the existing nearest-first, direction-aware list. The cursor advances only over keys handled or already unavailable, remains at the first unhandled key when the scheduler is full, and resets on interest center, canonical heading, or scheduler generation changes. Failed terminal generation remains retryable, deduplication is preserved, and a reconnect starts from the new stream priority head. Preview integration coverage proves refill progresses beyond 128 queued jobs and a heading change after cursor progress schedules an early key from the new priority order.",
-    "evidence": "Focused mc_tests build passed. Focused CTest passed 2/2: ProgressiveStreamFormsAForwardBiasedArea and ResetsPriorityCursorAfterProgressWhenHeadingChanges. ai_docs.py refresh and check passed. ai_check.py --fast passed docs, backlog, current-plan, and diff checks; source checks report the existing latest-snapshot date mismatch (26.09.20 versus environment date 26.09.30) plus the expected dirty-tree check before commit. CameraRotationKeepsInterestAndMovementAddsFreshFrontier failed 0/8 with both optimized and original full-scan server implementations, so its failure is baseline behavior in this checkout.",
-    "blocker": "",
-    "owner": "Codex",
-    "level": "basic",
-    "parent": "MC-AI-0038",
-    "motivation": "Avoid repeated full-interest scans during S7 server pumps so the fixed simulation cadence remains responsive while height tiles stream.",
-    "context": "S7 interest contains 205861 keys and the per-stream scheduler is capped at 128 pending jobs. GameServer::fillHeightTileQueue currently begins at the first priority key on each pump, revisiting the already queued prefix. The ordered interest is rebuilt when center or canonical heading changes; each stream has a scheduler generation and reconnect creates a fresh stream.",
-    "complexity": "medium",
-    "created_at": "2026-09-30",
-    "resolved_at": "2026-09-30",
-    "resolution_changes": "Added the per-stream queue cursor and reset handling for interest-order changes, scheduler-generation changes, and failed terminal retries; added the post-progress heading-change integration regression.",
-    "plan": [
-      "Add a persistent priority cursor to each server preview stream, reset it with the interest ordering and scheduler generation, and preserve retry behavior. Add a reset-after-progress integration regression and run focused preview tests plus the project fast gate."
-    ],
-    "product_changes": [],
-    "code_changes": [
-      "Added a per-stream cursor over the existing nearest-first height-tile priority list, reset it on interest-order rebuild, scheduler generation change, and terminal retry failure, and added a heading-change-after-progress preview integration test."
-    ],
-    "baseline_commit": "",
-    "commits": [],
-    "finalized": true,
-    "retrospective": "",
-    "docs_review": "",
-    "environment_review": "",
-    "backlog_review": ""
-  },
-  {
-    "id": "MC-AI-0272",
-    "title": "Consume the MSVC-portable exact S7 dependency pair",
-    "kind": "bug",
-    "status": "done",
-    "priority": "P1",
-    "route": "luna",
-    "milestone": "ED-010-S7",
-    "depends_on": [
-      "MC-AI-0269"
-    ],
-    "acceptance": "Pin CoreCpp 6273573d93b8f2c3ecfea04ff433dbf3b49fe005 and CoreProject2026 bd23164cb151ff5f1bd4bf279009ec81a4d748cc exactly. Preserve CoreLang 0.1.3.1 semantics through package 0.1.3.3. Verify clean exact package provenance and matching consumer configuration without disabling checks. Record native MSVC and available macOS/Android dependency evidence separately from final game runtime and hosted release gates.",
-    "evidence": "Read exact-pair receipts: macOS .worktrees/ai-s7-player/build/s7-msvc-fixed-macos-deps/receipt.json records clean/exact CoreCpp 6273573d and CoreProject2026 bd23164, Debug and Release each 67/67 CoreCpp and 28/28 CoreProject tests, installed consumer included, with matching imported configurations. Android .worktrees/ai-s7-player/build/s7-msvc-fixed-android-deps/dependency-receipt.json records clean exact arm64-v8a Release cross-compilation: 11 AArch64 archives, 50 objects, API 28, NDK 27.0.12077973; runtime_tested=false. Windows /private/tmp/mc-s7-windows-preflight.cr0MN6/identity-receipt.json records native MSVC Release full dependency builds, 67/67 CoreCpp and 28/28 CoreProject tests including installed consumer compile/link/execute, strict clean/exact installed readback and matching Release parent/child configuration. Existing acquisition tests and focused lock/receipt identity checks passed; ai_docs refresh/check and ai_tasks render/check passed. These are dependency checks, not final MinecraftClone runtime, full integration, hosted CI or release acceptance.",
-    "blocker": "",
-    "owner": "Codex",
-    "level": "basic",
-    "parent": "MC-AI-0038",
-    "motivation": "Unblock required native Windows testing after MSVC rejected an existing CoreCpp test's out-of-order designated initializers.",
-    "context": "CoreCpp CC-0037 reorders one MSVC-rejected test initializer without changing production code, values or assertions. CoreProject2026 CP-0033 updates its compatible exact CoreCpp pin; CP-0034 forwards the parent build configuration to the single-config installed-consumer fixture, fixing the observed Windows Debug-child/Release-parent ABI mismatch. Neither maintenance correction changes CoreLang 0.1.3.1 semantics or package 0.1.3.3. Exact platform dependency receipts are available; final game integration and runtime gates remain separate.",
-    "complexity": "low",
-    "created_at": "2026-09-30",
-    "resolved_at": "2026-09-30",
-    "resolution_changes": "Pinned CoreCpp 6273573d93b8f2c3ecfea04ff433dbf3b49fe005 and CoreProject2026 bd23164cb151ff5f1bd4bf279009ec81a4d748cc; reconciled exact macOS, Android and native Windows dependency evidence without claiming final game acceptance.",
-    "plan": [
-      "Update the exact dependency pair, verify rebuilt platform packages and consumer provenance, then record focused acquisition checks and regenerate owning metadata."
-    ],
-    "product_changes": [],
-    "code_changes": [
-      "Consume the test-only CoreCpp MSVC portability correction and CoreProject2026 installed-consumer fixture correction through exact compatible maintenance pins."
     ],
     "baseline_commit": "",
     "commits": [],
@@ -9588,6 +9550,44 @@
     "backlog_review": ""
   },
   {
+    "id": "MC-AI-0272",
+    "title": "Consume the MSVC-portable exact S7 dependency pair",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0269"
+    ],
+    "acceptance": "Pin CoreCpp 6273573d93b8f2c3ecfea04ff433dbf3b49fe005 and CoreProject2026 bd23164cb151ff5f1bd4bf279009ec81a4d748cc exactly. Preserve CoreLang 0.1.3.1 semantics through package 0.1.3.3. Verify clean exact package provenance and matching consumer configuration without disabling checks. Record native MSVC and available macOS/Android dependency evidence separately from final game runtime and hosted release gates.",
+    "evidence": "Read exact-pair receipts: macOS .worktrees/ai-s7-player/build/s7-msvc-fixed-macos-deps/receipt.json records clean/exact CoreCpp 6273573d and CoreProject2026 bd23164, Debug and Release each 67/67 CoreCpp and 28/28 CoreProject tests, installed consumer included, with matching imported configurations. Android .worktrees/ai-s7-player/build/s7-msvc-fixed-android-deps/dependency-receipt.json records clean exact arm64-v8a Release cross-compilation: 11 AArch64 archives, 50 objects, API 28, NDK 27.0.12077973; runtime_tested=false. Windows /private/tmp/mc-s7-windows-preflight.cr0MN6/identity-receipt.json records native MSVC Release full dependency builds, 67/67 CoreCpp and 28/28 CoreProject tests including installed consumer compile/link/execute, strict clean/exact installed readback and matching Release parent/child configuration. Existing acquisition tests and focused lock/receipt identity checks passed; ai_docs refresh/check and ai_tasks render/check passed. These are dependency checks, not final MinecraftClone runtime, full integration, hosted CI or release acceptance.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Unblock required native Windows testing after MSVC rejected an existing CoreCpp test's out-of-order designated initializers.",
+    "context": "CoreCpp CC-0037 reorders one MSVC-rejected test initializer without changing production code, values or assertions. CoreProject2026 CP-0033 updates its compatible exact CoreCpp pin; CP-0034 forwards the parent build configuration to the single-config installed-consumer fixture, fixing the observed Windows Debug-child/Release-parent ABI mismatch. Neither maintenance correction changes CoreLang 0.1.3.1 semantics or package 0.1.3.3. Exact platform dependency receipts are available; final game integration and runtime gates remain separate.",
+    "complexity": "low",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Pinned CoreCpp 6273573d93b8f2c3ecfea04ff433dbf3b49fe005 and CoreProject2026 bd23164cb151ff5f1bd4bf279009ec81a4d748cc; reconciled exact macOS, Android and native Windows dependency evidence without claiming final game acceptance.",
+    "plan": [
+      "Update the exact dependency pair, verify rebuilt platform packages and consumer provenance, then record focused acquisition checks and regenerate owning metadata."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Consume the test-only CoreCpp MSVC portability correction and CoreProject2026 installed-consumer fixture correction through exact compatible maintenance pins."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
     "id": "MC-AI-0273",
     "title": "Avoid full-residency LOD and interest scans during S7 player movement",
     "kind": "bug",
@@ -9630,6 +9630,48 @@
     "backlog_review": ""
   },
   {
+    "id": "MC-AI-0274",
+    "title": "Remove S7 per-frame visible sorting and reduce exact tile culling work",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0271"
+    ],
+    "acceptance": "Maintain an incrementally arena-ordered live draw index without a full per-frame or per-upload sort. Conservatively classify fixed spatial tile groups and test only unresolved planes per tile, preserving exactly the existing individual wrapped AABB visibility and merged live ranges across moving/rotating cameras, seams, and terrain distances 256/1024. Do not merge freed spans or change residency, generation, meshes, shaders, LOD, projected-area quality, direct/offscreen or legacy fallback contracts. Update derived cull records only after successful publication and preserve failed/rejected batch behavior, replacement, removal, reset, recreation and arena reuse. Deterministic oracle and full 205861-record work counts prove exact visible merged ranges and reduced plane work; focused build/tests, owning docs/source policy and coordinator native validation pass. Coordinator owns exact candidate review, integration and measured full-game performance; CPU preparation improvements do not establish the aggregate FPS target or resolve measured GPU/fence waits.",
+    "evidence": "Worker Release builds passed with the disclosed older 57817d78/be150279 prefix; 82/82 focused tests passed. Full 205861-record oracle matched exact visible ranges at four headings, using 11825\u201315126 plane tests versus 543399\u2013545402 individually; each mutation inspects at most 256 group slots. Integrated on 31ecb6d with exact CoreCpp 6273573/CoreProject bd23164 Release packages: all three targets built, 76/76 focused tests and native RendererSmoke/PlayerClientReset 11/11 passed. XML receipts: /private/tmp/MC-AI-0274-integrated-focused.xml and MC-AI-0274-integrated-smoke.xml. Full-game ordinary benchmark (180s cold, 10s warm, 5s uncapped) passed functional checks; first full residency at 136.231s, all 1335 measured attempts retained 205861 tiles. Warm/uncapped successful requests were 24.1/24.0 per second; successful-loop medians 11.206/11.737ms. The aggregate 120FPS/200-iteration target remains unmet; no physical-cadence or GPU-duration claim. Raw JSON: /private/tmp/MC-AI-0274-resident-ordinary.json. Measured staged tree 9bc9f6a6e76bab09f44f7eb66e1cf95e644292ae; production binary SHA256 7fe1a35e9604465957e075a85bb42742269db57feb622173de63ac39d0aaa69d; public-API harness SHA256 ad405a408eaceafdbd0e69006eac425c2feacc4bb89b86a9657274ec8b178d0e. Subsequent task finalization changes metadata only. Source-policy checks pass with existing development date/dirty exceptions; rendering guide was semantically checked. No radius, geometry or LOD-quality relaxation.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Remove measured per-frame renderer CPU work while preserving full-radius terrain quality and player-position-only residency.",
+    "context": "The exact combined 0271/0273 Release full-residency run remains 23.5 requests/s with 205861 tiles and 41845057 resident faces. Cold profile has 876 frustum, 323 visible-sort and 374 Metal indirect-encode samples out of 2890 main samples. Fully resident profile has 1352 frustum and 2996 acquire samples (mostly fence waits) out of 6025. Evidence: /private/tmp/MC-S7-integrated-resident-ordinary.json, /private/tmp/MC-S7-integrated-cold-sample.txt and /private/tmp/MC-S7-integrated-resident-sample.txt.",
+    "complexity": "high",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Added a live arena-ordered draw index with logarithmic record insertion/removal and fixed 16-by-16 spatial group invalidation. Classify group AABBs conservatively once per frame and test only unresolved tile planes when all members share the nearest wrap image; ambiguous wrap cuts retain individual wrapping. Merge exactly surviving live ranges linearly without a per-frame sort or freed-span coalescing. Integrate only successful publication/removal/reset, retain CPU records through recreation, preserve negative-coordinate legacy selection and original scan/sort fallback on optional index allocation failure. Added exact visibility/mutation/failure/wide-distance/work-count oracles, inherited-plane boundary coverage, recorded-quad diagnostics, smoke assertion, build registrations and owning documentation.",
+    "plan": [
+      "Add a bounded incremental arena-order/spatial-group draw index, preserve exact conservative wrapped culling with inherited plane masks, integrate successful-publication invalidation, and prove exact merged ranges plus 205861-record work reduction. Build focused contracts and native smoke without launching GPU in the worker lane; coordinator owns runtime/review/integration."
+    ],
+    "product_changes": [
+      "Reduce full-residency frame preparation without changing visible terrain or residency."
+    ],
+    "code_changes": [
+      "Maintain live arena order incrementally and invalidate only bounded affected spatial groups after successful publication.",
+      "Use conservative shared-wrap group classification and unresolved-plane masks while preserving exact per-tile visibility and merged live ranges.",
+      "Add exact oracle/work-count regressions and separate recorded-quad diagnostics without geometry, shader, LOD, residency or protocol changes."
+    ],
+    "baseline_commit": "31ecb6d0dd0bdcd9e145d3ebca0044566cc8b4f5",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
     "id": "MC-AI-0275",
     "title": "Keep S7 movement test fixtures portable to MSVC",
     "kind": "bug",
@@ -9660,48 +9702,6 @@
       "Use declaration order for the existing Direction and Player test fixtures."
     ],
     "baseline_commit": "",
-    "commits": [],
-    "finalized": true,
-    "retrospective": "",
-    "docs_review": "",
-    "environment_review": "",
-    "backlog_review": ""
-  },
-  {
-    "id": "MC-AI-0274",
-    "title": "Remove S7 per-frame visible sorting and reduce exact tile culling work",
-    "kind": "bug",
-    "status": "done",
-    "priority": "P0",
-    "route": "sol",
-    "milestone": "ED-010-S7",
-    "depends_on": [
-      "MC-AI-0271"
-    ],
-    "acceptance": "Maintain an incrementally arena-ordered live draw index without a full per-frame or per-upload sort. Conservatively classify fixed spatial tile groups and test only unresolved planes per tile, preserving exactly the existing individual wrapped AABB visibility and merged live ranges across moving/rotating cameras, seams, and terrain distances 256/1024. Do not merge freed spans or change residency, generation, meshes, shaders, LOD, projected-area quality, direct/offscreen or legacy fallback contracts. Update derived cull records only after successful publication and preserve failed/rejected batch behavior, replacement, removal, reset, recreation and arena reuse. Deterministic oracle and full 205861-record work counts prove exact visible merged ranges and reduced plane work; focused build/tests, owning docs/source policy and coordinator native validation pass. Coordinator owns exact candidate review, integration and measured full-game performance; CPU preparation improvements do not establish the aggregate FPS target or resolve measured GPU/fence waits.",
-    "evidence": "Worker Release builds passed with the disclosed older 57817d78/be150279 prefix; 82/82 focused tests passed. Full 205861-record oracle matched exact visible ranges at four headings, using 11825–15126 plane tests versus 543399–545402 individually; each mutation inspects at most 256 group slots. Integrated on 31ecb6d with exact CoreCpp 6273573/CoreProject bd23164 Release packages: all three targets built, 76/76 focused tests and native RendererSmoke/PlayerClientReset 11/11 passed. XML receipts: /private/tmp/MC-AI-0274-integrated-focused.xml and MC-AI-0274-integrated-smoke.xml. Full-game ordinary benchmark (180s cold, 10s warm, 5s uncapped) passed functional checks; first full residency at 136.231s, all 1335 measured attempts retained 205861 tiles. Warm/uncapped successful requests were 24.1/24.0 per second; successful-loop medians 11.206/11.737ms. The aggregate 120FPS/200-iteration target remains unmet; no physical-cadence or GPU-duration claim. Raw JSON: /private/tmp/MC-AI-0274-resident-ordinary.json. Measured staged tree 9bc9f6a6e76bab09f44f7eb66e1cf95e644292ae; production binary SHA256 7fe1a35e9604465957e075a85bb42742269db57feb622173de63ac39d0aaa69d; public-API harness SHA256 ad405a408eaceafdbd0e69006eac425c2feacc4bb89b86a9657274ec8b178d0e. Subsequent task finalization changes metadata only. Source-policy checks pass with existing development date/dirty exceptions; rendering guide was semantically checked. No radius, geometry or LOD-quality relaxation.",
-    "blocker": "",
-    "owner": "Codex",
-    "level": "basic",
-    "parent": "MC-AI-0038",
-    "motivation": "Remove measured per-frame renderer CPU work while preserving full-radius terrain quality and player-position-only residency.",
-    "context": "The exact combined 0271/0273 Release full-residency run remains 23.5 requests/s with 205861 tiles and 41845057 resident faces. Cold profile has 876 frustum, 323 visible-sort and 374 Metal indirect-encode samples out of 2890 main samples. Fully resident profile has 1352 frustum and 2996 acquire samples (mostly fence waits) out of 6025. Evidence: /private/tmp/MC-S7-integrated-resident-ordinary.json, /private/tmp/MC-S7-integrated-cold-sample.txt and /private/tmp/MC-S7-integrated-resident-sample.txt.",
-    "complexity": "high",
-    "created_at": "2026-09-30",
-    "resolved_at": "2026-09-30",
-    "resolution_changes": "Added a live arena-ordered draw index with logarithmic record insertion/removal and fixed 16-by-16 spatial group invalidation. Classify group AABBs conservatively once per frame and test only unresolved tile planes when all members share the nearest wrap image; ambiguous wrap cuts retain individual wrapping. Merge exactly surviving live ranges linearly without a per-frame sort or freed-span coalescing. Integrate only successful publication/removal/reset, retain CPU records through recreation, preserve negative-coordinate legacy selection and original scan/sort fallback on optional index allocation failure. Added exact visibility/mutation/failure/wide-distance/work-count oracles, inherited-plane boundary coverage, recorded-quad diagnostics, smoke assertion, build registrations and owning documentation.",
-    "plan": [
-      "Add a bounded incremental arena-order/spatial-group draw index, preserve exact conservative wrapped culling with inherited plane masks, integrate successful-publication invalidation, and prove exact merged ranges plus 205861-record work reduction. Build focused contracts and native smoke without launching GPU in the worker lane; coordinator owns runtime/review/integration."
-    ],
-    "product_changes": [
-      "Reduce full-residency frame preparation without changing visible terrain or residency."
-    ],
-    "code_changes": [
-      "Maintain live arena order incrementally and invalidate only bounded affected spatial groups after successful publication.",
-      "Use conservative shared-wrap group classification and unresolved-plane masks while preserving exact per-tile visibility and merged live ranges.",
-      "Add exact oracle/work-count regressions and separate recorded-quad diagnostics without geometry, shader, LOD, residency or protocol changes."
-    ],
-    "baseline_commit": "31ecb6d0dd0bdcd9e145d3ebca0044566cc8b4f5",
     "commits": [],
     "finalized": true,
     "retrospective": "",
@@ -9749,6 +9749,45 @@
     "backlog_review": ""
   },
   {
+    "id": "MC-AI-0277",
+    "title": "Adopt indexed stone quads with measured submission and geometry parity",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Prepare the coordinator-authorized minimal indexed adoption on exact CoreCpp 6273573 and CoreProject2026 bd23164 packages, indexed by default with an explicit diagnostic six-vertex override. Preserve direct, optional indirect and offscreen recording, face instances, triangle winding and diagonal, texture and fog, camera-independent residency, actual framebuffer/FOV and the existing at-most-2-pixel-squared simplified-face contract. Retain render-attempt-attributed submitted quad/logical-draw counts and CPU phases. MoltenVK terrain timestamp scope must be unsupported/null, not the observed invalid roughly two-microsecond artifact; any other opt-in timestamp path must use existing acquired-slot fences without added waits. Cover deterministic six-corner/index parity and byte-identical native six/index and direct/indirect output, including multiple commands with nonzero first-instance offsets. Keep stationary A/B diagnostic-only and report near-matched workload differences honestly. Renew the same bounded Luna/high staged-candidate review. No commit, push, dependency pin/default radius change or task finalization by this worker; coordinator owns integration and cross-platform release acceptance.",
+    "evidence": "Near-matched diagnostic-stationary-v1 A/B at identical 2560x1440 pose/FOV and 205861 resident tiles: six-vertex warm/uncapped 23.9/23.8 successful requests/s with 12489966 submitted quads and 42951 logical draws; indexed 33.9/34.0 with 12489971 quads and 42944 draws. Differences are +5 quads (0.000040%) and -7 draws (0.01630%); this is not exact causal proof or a 120-FPS claim. CPU command-record medians remain 5.826/5.798 ms, within measurement uncertainty. GPU terrain marker medians around 1958/1959 ns are invalid for attribution on MoltenVK and are retained only as raw rejected evidence. Focused CPU tests passed 40/40. Native validation-required offscreen five-view six/index byte equality and other original stone tests passed 4/4; the corrected targeted four-mode direct/indirect six/index byte equality passed 1/1 in 204 ms with two visible quads, two commands, a live culled intervening arena range and explicit selected-path checks. Corrected XML records MoltenVK unsupported reason; no suspect timing is shipped as valid. Integrated on 7cec501 with newer MC-AI-0279 LOD and MC-AI-0281 hashes preserved: exact-pinned Release mc_tests and mc_main built successfully in 24 actions; focused EvidenceJson, GameBenchmark, HeightTileDrawIndexTest and StoneIndirectDrawsTest passed 34/34 in 162 ms, XML /private/tmp/MC-AI-0277-integrated-focused.xml. Rendering guide keeps current certification/publication semantics; documentation integrity and diff checks pass.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Separate GPU geometry cost from CPU/MoltenVK submission cost with one falsifiable quad experiment while preserving requested terrain quality and distance.",
+    "context": "The normal full-residency benchmark at 2560x1440 reports 23.5/23.6 successful requests/s with 205861 resident tiles and 41845057 resident faces; resident faces are not submitted faces. Frozen MC-AI-0274 source is identical in both probe modes; its normal benchmark reports 24.1/24.0. Stationary A/B is distinct from normal full-game performance acceptance. Both modes had exact camera [32896.3125,32768.3125,411.625,0,0,0,70]; submitted-work differences are quantified, not silently declared equal. Retain source-attempt IDs for asynchronous samples, not repeated latest values as independent measurements. MoltenVK v1.2.11 stage-counter encoding may defer in-render-pass markers to encoder end; the observed roughly two-microsecond interval does not measure terrain vertex or whole-frame GPU work. User performance scope is 100+ chunks; 256/1024 are projection/residency correctness bounds, not authorization to change the current radius-256 default. Root authorized production indexed adoption after the near-matched experiment; no speculative redesign or radius change is included.",
+    "complexity": "medium",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Adopted indexed terrain quads across direct, indirect and offscreen recording while preserving geometry, winding, textures, LOD and residency. Added actual submitted-work and CPU evidence plus diagnostic-only stationary comparison; MoltenVK terrain timestamps remain explicitly unsupported/null. Integrated against newer hash and LOD-certification fixes; aggregate performance and platform release acceptance remain separate.",
+    "plan": [
+      "Adopt indexed quads by default with explicit six-vertex and direct diagnostic overrides, preserving every terrain quality/residency contract and exact dependency pins.",
+      "Keep actual submitted work and CPU phases, mark MoltenVK terrain timestamps unsupported/null, and retain stationary measurements only as diagnostic evidence.",
+      "Freeze focused CPU/build and native geometry/submission parity evidence, renew the same staged-candidate review, and hand off for coordinator-owned integration."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Add a shared quad index buffer and indexed direct/indirect recording without changing terrain meshes or LOD; legacy comparison is explicitly diagnostic.",
+      "Expose diagnostic render-attempt, submitted-work, selected submission path and CPU phases, with unsupported/null MoltenVK terrain GPU scope."
+    ],
+    "baseline_commit": "da96d97a5c2efdf5f61460becaab5abac9cdd36e",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Report-only setup finding: sandboxed native Vulkan startup cannot access Metal on this host, so GPU evidence uses the established scoped Terminal wrapper with exact MoltenVK ICD, bounded watchdog and separate XML/log/exit outputs. Initial startup-failure XML remains preserved and is not geometry evidence. The first presentation fixture legitimately merged three contiguous ranges; the corrected fixture retains a live culled intervening range, testing two commands and nonzero first-instance offsets. No global setup, permission or hook change is authorized or needed.",
+    "docs_review": "Rendering guide checked against indexed-default/diagnostic overrides, frozen CPU index, native output parity and truthful unsupported MoltenVK terrain scope; generated inventory/source state refreshed and ai_docs check passed within the 900-word limit.",
+    "environment_review": "Exact 627/bd Release mc_main, mc_tests, stone acceptance and renderer smoke builds passed; focused CPU tests passed 40/40. Coordinator-authorized native Terminal parity passed without skips or validation errors; raw A/B files are /private/tmp/MC-AI-0277-stationary-{six,indexed}.json, native receipts /private/tmp/MC-AI-0277-native-parity-corrected.xml and /private/tmp/MC-AI-0277-native-parity-final.xml. ai_check --fast passed, including the complete Python suite; docs/tasks checks and all source-code policy checks passed. The broader publisher check is not a release receipt: only the existing 26.09.20 snapshot date and dirty-worktree release checks fail, outside this active uncommitted worker task.",
+    "backlog_review": "Reserved only MC-AI-0277 as active in the isolated worktree; no main metadata, dependency pin, commit, push or finalized state changed."
+  },
+  {
     "id": "MC-AI-0278",
     "title": "Preserve terrain job identity before moving executor handles",
     "kind": "bug",
@@ -9779,6 +9818,49 @@
     ],
     "code_changes": [
       "Sequence JobHandle ID capture before moving the handle into the terrain submission map; reuse the actual public executor probe and existing terrain regressions without changing tests or deadlines."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0279",
+    "title": "Certify S7 LOD against reduced and installed neighbor seam profiles",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "sol",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Preserve player-position-only wrapped terrain residency and the current conservative replacement LOD-cell-face projected area limit of at most 2 px squared using actual vertical FOV and physical framebuffer extent. Include every possible reduced raw-neighbor height and installed neighbor base profile, including older revisions or details, in cached elevation bounds; invalidate and recertify affected neighbors when installed inputs change. New preview publications must use no coarser detail than the current certified target, without duplicating identical coarse and final meshing. Preserve atomic seam publication, rejection retaining installed state, source/neighbor/target/epoch staleness checks, and existing seam/revision/FOV/wrap oracles. Reproduce the own/edge1024 neighbor-interior0 reduced-edge512 counterexample and installed-profile replacement/removal. Do not relax projection, radius, geometry bounds or dependencies; document asynchronous refinement limits without claiming instantaneous global refinement. Coordinator owns review, commit and runtime acceptance.",
+    "evidence": "Baseline focused regressions failed 3/3 (/private/tmp/MC-AI-0279-before.xml): reduced neighbor edge 512 escaped the raw-edge 1024 bound, and first/new-revision stages exceeded certified detail. Initial native tests exposed reused tokens across revisions retaining stale bounds (MC-AI-0279-native.xml); explicit revision identity fixes this without weakening expected detail. Exact CoreCpp 6273573/CoreProject2026 bd23164 macOS Release builds passed. Worker focused tests passed 44/44 (MC-AI-0279-focused.xml); integrated Release rebuild passed 29 actions and focused tests passed 45/45 including the newer coordinate-hash regression (/private/tmp/MC-AI-0279-integrated-focused.xml). Corrected worker native PlayerClientResetTest passed 3/3 in 667 ms, exit 0 (/private/tmp/MC-AI-0279-native-corrected.xml, .log, .exit), verifying raw heights, equal tokens under distinct revisions, wrapped neighbor revisions, cached 512..512 then 512..1024 then 1024..1024 bounds, rejected uploads, accepted replacement/removal recertification and reset. Fast/docs/backlog gates passed with existing development snapshot-date and dirty-tree exceptions. Later renderer/hash code and guide changes were preserved during integration. Review binds to the final staged candidate through the commit gate; aggregate native/runtime/FPS acceptance remains separate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Preserve the user's LOD visual quality requirement and projected area at most 2 px squared while retaining camera-independent full terrain residency.",
+    "context": "The authoritative user request is /private/tmp/MC-AI-0271-request.txt with SHA-256 dc90027a8fb7ae0ecc96ed7642e585aa0582f17c97fb48e9e8444f95497b59f3. Raw touching-edge extrema can miss reduced neighbor averages: own tile and touching edge 1024, neighbor interior 0 produces a Coarse2 edge 512. Seam bridges also consume actually installed bases, which can retain older revision/detail profiles. New-tile staging currently meshes one level coarser than the certified target. The existing strict replacement-cell-face bound remains authoritative during the pending source-versus-replacement clarification; lossless coplanar greedy merges do not reduce quality.",
+    "complexity": "high",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Bounded complete raw neighbor extrema so all reduced edge averages are enclosed. Bound cached raw inputs to explicit revision identity as well as tokens, since revision advancement permits token reuse. Cached installed base edge-profile ranges, retained them across upload rejection, and locally recertified affected neighbors after accepted base publication/removal. Published the certified target directly without identical coarse/final meshing. Added reduced-neighbor, retained old-profile, expired-publication, replacement/removal, first-publication and new-revision regressions; documented asynchronous displayed-mesh refinement limits without relaxing projection, radius or geometry constraints.",
+    "plan": [
+      "Reproduce missing reduced-neighbor bounds and unsafe first-publication staging with focused regressions.",
+      "Bound complete raw neighbor data and installed edge profiles, update cache inputs only with accepted publications/removals, and recertify affected neighbors.",
+      "Publish the certified target directly, retain asynchronous staleness/seam contracts, update owning guides, and freeze focused verification evidence for the coordinator."
+    ],
+    "product_changes": [
+      "Certify new terrain preview publications against current raw data and retained installed seam geometry without over-coarse first publication."
+    ],
+    "code_changes": [
+      "Include complete raw neighbor extrema and installed touching-edge profile ranges in cached LOD elevation inputs, binding cache identity to revisions and tokens.",
+      "Update installed range inputs only with accepted atomic publication/removal and locally recertify affected neighbor targets.",
+      "Mesh each certified target once and preserve generic stale-stage, seam-batch and retry contracts.",
+      "Cover reduced-edge height 512 from raw edge 1024/interior 0, older installed profiles, failed publication, accepted replacement/removal, and certified first/new-revision staging."
     ],
     "baseline_commit": "",
     "commits": [],
@@ -9867,86 +9949,44 @@
     "backlog_review": ""
   },
   {
-    "id": "MC-AI-0279",
-    "title": "Certify S7 LOD against reduced and installed neighbor seam profiles",
+    "id": "MC-AI-0282",
+    "title": "Keep connection handshakes and platform lifecycle responsive",
     "kind": "bug",
     "status": "done",
     "priority": "P1",
-    "route": "sol",
+    "route": "luna",
     "milestone": "ED-010-S7",
     "depends_on": [],
-    "acceptance": "Preserve player-position-only wrapped terrain residency and the current conservative replacement LOD-cell-face projected area limit of at most 2 px squared using actual vertical FOV and physical framebuffer extent. Include every possible reduced raw-neighbor height and installed neighbor base profile, including older revisions or details, in cached elevation bounds; invalidate and recertify affected neighbors when installed inputs change. New preview publications must use no coarser detail than the current certified target, without duplicating identical coarse and final meshing. Preserve atomic seam publication, rejection retaining installed state, source/neighbor/target/epoch staleness checks, and existing seam/revision/FOV/wrap oracles. Reproduce the own/edge1024 neighbor-interior0 reduced-edge512 counterexample and installed-profile replacement/removal. Do not relax projection, radius, geometry bounds or dependencies; document asynchronous refinement limits without claiming instantaneous global refinement. Coordinator owns review, commit and runtime acceptance.",
-    "evidence": "Baseline focused regressions failed 3/3 (/private/tmp/MC-AI-0279-before.xml): reduced neighbor edge 512 escaped the raw-edge 1024 bound, and first/new-revision stages exceeded certified detail. Initial native tests exposed reused tokens across revisions retaining stale bounds (MC-AI-0279-native.xml); explicit revision identity fixes this without weakening expected detail. Exact CoreCpp 6273573/CoreProject2026 bd23164 macOS Release builds passed. Worker focused tests passed 44/44 (MC-AI-0279-focused.xml); integrated Release rebuild passed 29 actions and focused tests passed 45/45 including the newer coordinate-hash regression (/private/tmp/MC-AI-0279-integrated-focused.xml). Corrected worker native PlayerClientResetTest passed 3/3 in 667 ms, exit 0 (/private/tmp/MC-AI-0279-native-corrected.xml, .log, .exit), verifying raw heights, equal tokens under distinct revisions, wrapped neighbor revisions, cached 512..512 then 512..1024 then 1024..1024 bounds, rejected uploads, accepted replacement/removal recertification and reset. Fast/docs/backlog gates passed with existing development snapshot-date and dirty-tree exceptions. Later renderer/hash code and guide changes were preserved during integration. Review binds to the final staged candidate through the commit gate; aggregate native/runtime/FPS acceptance remains separate.",
+    "acceptance": "Retain one ENet peer through a30-second aggregate connection attempt and service Android lifecycle and desktop window events between transport waits of at most25ms; promptly cancel pending attempts,250ms retry waits and join waits. Preserve ENet timeout policy, protocol, authoritative join and no gameplay before acceptance. Present the existing ready Android surface while connecting. Verify actual server handshake replies withheld for at least15seconds in GameClient, cancellation mid-attempt and retry, and no-server/reachable-server platform responsiveness. Consume exact clean reviewed successor CoreCpp/CoreProject packages without changing CoreLang language,API,CoreBC or SLJIT.",
+    "evidence": "Native Release focused CTest passed 8/8 on the exact 0282 source and successor package prefix; the held handshake joined after 15.570 seconds with one attempt, pending-connect cancellation took 90 ms, and retry service stayed below the asserted 200 ms gap. XML SHA256 4374583f057330d3faa9344778367f3ade82852a88df8332ac09fdc0e70c912c; log SHA256 214e7572929df99df65c5fc181ea0c761e0094580a6d6d1dfad0db03a5be95c2. Android Release assembleRelease and lintVitalRelease passed 52/52 tasks using the current 0282 source, exact CoreCpp f2fe7db86a068b464dde1c5f7f4a13ddcefda26d and CoreProject2026 92c8058dcfbff13010502a5bd46d7920b52815ea pins, NDK 27/API 28/CMake 3.30.5/JDK 21/Gradle 8.13. Original unsigned APK SHA256 1374b3b38dbe18e5e9845e8380a9463a11613f830118bbc85071e4a38a712c85. Because the APK is unsigned, emulator installation used a separate ephemeral-key test copy at /private/tmp/mc-s7-0282-emulator.23D6uk/app-release-emulator-signed.apk; apksigner verify passed and its SHA256 is 5e76fe1ac5afd97c0adc17c40f76d27b5722de5a0e08dd6c90b74ddc1c200bfc. Its embedded libmc_android.so matches the original Release library hash 73b08c0b555a103b6719c914f6000758bf0a220786be9cf226a2e81b6932573f. Emulator Medium_Phone_API_35, API 35 arm64-v8a, serial emulator-5554: with host UDP 20040 unbound, NativeActivity remained live for about 7m36s; HOME and relaunch returned to the same activity, and filtered error logcat showed no app errors. With the host Release mc_main server at 127.0.0.1:20040, server logged onConnected 127.0.0.1:61959 and spawn x32896/y410/z32768; the foreground HUD reflected that position. Screenshots: no_server_initial_step.png SHA256 143ff82d287ca40b2e62612f273c6c9096ea6a3a2763b8ec082ecc94b441e529; no_server_after_wait_step.png SHA256 bb04b260d848ce8d5402cd14d3b6600fa803a536f2d7b60ee5c2fde6d55d294a; reachable_server_step.png SHA256 c366fa6002a2af4e2b1e9c7879161115f1dd5f0d8d1c66dfb9fcb92fa8eb5454; reachable_server_after_load_step.png SHA256 1b3a09b3f6f098e86d335b990865fd3e8166e65bd5394acbff0c315a6071f358. The post-join view still showed sky after 15 seconds under emulator software rendering; this is recorded as an observation only, not terrain or FPS acceptance. Windows successor dependencies passed their exact Release/install and Net 30/30 plus CoreProject 28/28 consumer gates; no MinecraftClone Windows build/runtime is claimed. No aggregate S7/release acceptance is claimed.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
-    "motivation": "Preserve the user's LOD visual quality requirement and projected area at most 2 px squared while retaining camera-independent full terrain residency.",
-    "context": "The authoritative user request is /private/tmp/MC-AI-0271-request.txt with SHA-256 dc90027a8fb7ae0ecc96ed7642e585aa0582f17c97fb48e9e8444f95497b59f3. Raw touching-edge extrema can miss reduced neighbor averages: own tile and touching edge 1024, neighbor interior 0 produces a Coarse2 edge 512. Seam bridges also consume actually installed bases, which can retain older revision/detail profiles. New-tile staging currently meshes one level coarser than the certified target. The existing strict replacement-cell-face bound remains authoritative during the pending source-versus-replacement clarification; lossless coplanar greedy merges do not reduce quality.",
-    "complexity": "high",
+    "motivation": "Keep the native activity responsive and show a valid initial surface even when its game server is temporarily unavailable.",
+    "context": "A diagnostic Release APK executes android_main and completes initialization and canonical meshing, but failed ENet attempts leave Android lifecycle commands unprocessed because their pump is reached only in render after accepted join. The exact UDP connection cause is a separate diagnosis; this task must not claim to fix it. Start from clean integration 0b122d26b47e41fac1c1ce5f9b0a191c259e2a4a and preserve the reviewed MC-AI-0276 worktree and immutable baseline APK. The same reviewer rejected boundary-only pumping because1000msconnect and250msretry remained blocking. Read-only contract inspection also proved each short attempt reset its ENet peer, violating the user's15-second ping requirement. Root authorized a cohesive0282 expansion, separateCoreCppCC0038/CoreProjectCP0035 commits, and released unused0285. The original staged candidate/rejectedreview/runtimeevidence remain preserved. Successor starts fromeea813baa0fcccc1f24a7dba22a71909e635b006.",
+    "complexity": "medium",
     "created_at": "2026-09-30",
     "resolved_at": "2026-09-30",
-    "resolution_changes": "Bounded complete raw neighbor extrema so all reduced edge averages are enclosed. Bound cached raw inputs to explicit revision identity as well as tokens, since revision advancement permits token reuse. Cached installed base edge-profile ranges, retained them across upload rejection, and locally recertified affected neighbors after accepted base publication/removal. Published the certified target directly without identical coarse/final meshing. Added reduced-neighbor, retained old-profile, expired-publication, replacement/removal, first-publication and new-revision regressions; documented asynchronous displayed-mesh refinement limits without relaxing projection, radius or geometry constraints.",
+    "resolution_changes": "The cooperative GameClient retained one peer through the 15.570-second handshake test, stayed responsive during cancellation and retry, and continued servicing Android lifecycle and desktop window events during bounded transport waits. The exact successor CoreCpp and CoreProject pair passed focused native and Android Release checks. On Medium_Phone_API_35, the exact-source Android Release library stayed live with UDP 20040 unbound for about 7 minutes 36 seconds; HOME and relaunch returned to NativeActivity. With the host Release server bound, the emulator joined and its HUD position matched the server spawn. Terrain visibility and frame-rate acceptance are not inferred from this lifecycle test.",
     "plan": [
-      "Reproduce missing reduced-neighbor bounds and unsafe first-publication staging with focused regressions.",
-      "Bound complete raw neighbor data and installed edge profiles, update cache inputs only with accepted publications/removals, and recertify affected neighbors.",
-      "Publish the certified target directly, retain asynchronous staleness/seam contracts, update owning guides, and freeze focused verification evidence for the coordinator."
+      "Adopt the reviewed exact cooperative dependency pair; retain one peer for30seconds while servicing both platform hooks and cancellable retry waits.",
+      "Cover actual15-second serverreply delay and mid-attempt/retry/join cancellation; refresh Android/desktop checks and renew the same0282reviewer."
     ],
     "product_changes": [
-      "Certify new terrain preview publications against current raw data and retained installed seam geometry without over-coarse first publication."
+      "Remain responsive while connecting and support delayed handshakes without resetting the peer every second."
     ],
     "code_changes": [
-      "Include complete raw neighbor extrema and installed touching-edge profile ranges in cached LOD elevation inputs, binding cache identity to revisions and tokens.",
-      "Update installed range inputs only with accepted atomic publication/removal and locally recertify affected neighbor targets.",
-      "Mesh each certified target once and preserve generic stale-stage, seam-batch and retry contracts.",
-      "Cover reduced-edge height 512 from raw edge 1024/interior 0, older installed profiles, failed publication, accepted replacement/removal, and certified first/new-revision staging."
+      "Add cooperative GameClient connect/retry/join servicing, Android pre-join presentation and desktop window-close pumping; consume exact successor pins.",
+      "Test public delayed-handshake identity and cancellation contracts, preserving prior red/green evidence and review rejection."
     ],
-    "baseline_commit": "",
+    "baseline_commit": "eea813baa0fcccc1f24a7dba22a71909e635b006",
     "commits": [],
     "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
-  },
-  {
-    "id": "MC-AI-0277",
-    "title": "Adopt indexed stone quads with measured submission and geometry parity",
-    "kind": "chore",
-    "status": "done",
-    "priority": "P0",
-    "route": "sol",
-    "milestone": "ED-010-S7",
-    "depends_on": [],
-    "acceptance": "Prepare the coordinator-authorized minimal indexed adoption on exact CoreCpp 6273573 and CoreProject2026 bd23164 packages, indexed by default with an explicit diagnostic six-vertex override. Preserve direct, optional indirect and offscreen recording, face instances, triangle winding and diagonal, texture and fog, camera-independent residency, actual framebuffer/FOV and the existing at-most-2-pixel-squared simplified-face contract. Retain render-attempt-attributed submitted quad/logical-draw counts and CPU phases. MoltenVK terrain timestamp scope must be unsupported/null, not the observed invalid roughly two-microsecond artifact; any other opt-in timestamp path must use existing acquired-slot fences without added waits. Cover deterministic six-corner/index parity and byte-identical native six/index and direct/indirect output, including multiple commands with nonzero first-instance offsets. Keep stationary A/B diagnostic-only and report near-matched workload differences honestly. Renew the same bounded Luna/high staged-candidate review. No commit, push, dependency pin/default radius change or task finalization by this worker; coordinator owns integration and cross-platform release acceptance.",
-    "evidence": "Near-matched diagnostic-stationary-v1 A/B at identical 2560x1440 pose/FOV and 205861 resident tiles: six-vertex warm/uncapped 23.9/23.8 successful requests/s with 12489966 submitted quads and 42951 logical draws; indexed 33.9/34.0 with 12489971 quads and 42944 draws. Differences are +5 quads (0.000040%) and -7 draws (0.01630%); this is not exact causal proof or a 120-FPS claim. CPU command-record medians remain 5.826/5.798 ms, within measurement uncertainty. GPU terrain marker medians around 1958/1959 ns are invalid for attribution on MoltenVK and are retained only as raw rejected evidence. Focused CPU tests passed 40/40. Native validation-required offscreen five-view six/index byte equality and other original stone tests passed 4/4; the corrected targeted four-mode direct/indirect six/index byte equality passed 1/1 in 204 ms with two visible quads, two commands, a live culled intervening arena range and explicit selected-path checks. Corrected XML records MoltenVK unsupported reason; no suspect timing is shipped as valid. Integrated on 7cec501 with newer MC-AI-0279 LOD and MC-AI-0281 hashes preserved: exact-pinned Release mc_tests and mc_main built successfully in 24 actions; focused EvidenceJson, GameBenchmark, HeightTileDrawIndexTest and StoneIndirectDrawsTest passed 34/34 in 162 ms, XML /private/tmp/MC-AI-0277-integrated-focused.xml. Rendering guide keeps current certification/publication semantics; documentation integrity and diff checks pass.",
-    "blocker": "",
-    "owner": "Codex",
-    "level": "basic",
-    "parent": "MC-AI-0038",
-    "motivation": "Separate GPU geometry cost from CPU/MoltenVK submission cost with one falsifiable quad experiment while preserving requested terrain quality and distance.",
-    "context": "The normal full-residency benchmark at 2560x1440 reports 23.5/23.6 successful requests/s with 205861 resident tiles and 41845057 resident faces; resident faces are not submitted faces. Frozen MC-AI-0274 source is identical in both probe modes; its normal benchmark reports 24.1/24.0. Stationary A/B is distinct from normal full-game performance acceptance. Both modes had exact camera [32896.3125,32768.3125,411.625,0,0,0,70]; submitted-work differences are quantified, not silently declared equal. Retain source-attempt IDs for asynchronous samples, not repeated latest values as independent measurements. MoltenVK v1.2.11 stage-counter encoding may defer in-render-pass markers to encoder end; the observed roughly two-microsecond interval does not measure terrain vertex or whole-frame GPU work. User performance scope is 100+ chunks; 256/1024 are projection/residency correctness bounds, not authorization to change the current radius-256 default. Root authorized production indexed adoption after the near-matched experiment; no speculative redesign or radius change is included.",
-    "complexity": "medium",
-    "created_at": "2026-09-30",
-    "resolved_at": "2026-09-30",
-    "resolution_changes": "Adopted indexed terrain quads across direct, indirect and offscreen recording while preserving geometry, winding, textures, LOD and residency. Added actual submitted-work and CPU evidence plus diagnostic-only stationary comparison; MoltenVK terrain timestamps remain explicitly unsupported/null. Integrated against newer hash and LOD-certification fixes; aggregate performance and platform release acceptance remain separate.",
-    "plan": [
-      "Adopt indexed quads by default with explicit six-vertex and direct diagnostic overrides, preserving every terrain quality/residency contract and exact dependency pins.",
-      "Keep actual submitted work and CPU phases, mark MoltenVK terrain timestamps unsupported/null, and retain stationary measurements only as diagnostic evidence.",
-      "Freeze focused CPU/build and native geometry/submission parity evidence, renew the same staged-candidate review, and hand off for coordinator-owned integration."
-    ],
-    "product_changes": [],
-    "code_changes": [
-      "Add a shared quad index buffer and indexed direct/indirect recording without changing terrain meshes or LOD; legacy comparison is explicitly diagnostic.",
-      "Expose diagnostic render-attempt, submitted-work, selected submission path and CPU phases, with unsupported/null MoltenVK terrain GPU scope."
-    ],
-    "baseline_commit": "da96d97a5c2efdf5f61460becaab5abac9cdd36e",
-    "commits": [],
-    "finalized": true,
-    "retrospective": "Report-only setup finding: sandboxed native Vulkan startup cannot access Metal on this host, so GPU evidence uses the established scoped Terminal wrapper with exact MoltenVK ICD, bounded watchdog and separate XML/log/exit outputs. Initial startup-failure XML remains preserved and is not geometry evidence. The first presentation fixture legitimately merged three contiguous ranges; the corrected fixture retains a live culled intervening range, testing two commands and nonzero first-instance offsets. No global setup, permission or hook change is authorized or needed.",
-    "docs_review": "Rendering guide checked against indexed-default/diagnostic overrides, frozen CPU index, native output parity and truthful unsupported MoltenVK terrain scope; generated inventory/source state refreshed and ai_docs check passed within the 900-word limit.",
-    "environment_review": "Exact 627/bd Release mc_main, mc_tests, stone acceptance and renderer smoke builds passed; focused CPU tests passed 40/40. Coordinator-authorized native Terminal parity passed without skips or validation errors; raw A/B files are /private/tmp/MC-AI-0277-stationary-{six,indexed}.json, native receipts /private/tmp/MC-AI-0277-native-parity-corrected.xml and /private/tmp/MC-AI-0277-native-parity-final.xml. ai_check --fast passed, including the complete Python suite; docs/tasks checks and all source-code policy checks passed. The broader publisher check is not a release receipt: only the existing 26.09.20 snapshot date and dirty-worktree release checks fail, outside this active uncommitted worker task.",
-    "backlog_review": "Reserved only MC-AI-0277 as active in the isolated worktree; no main metadata, dependency pin, commit, push or finalized state changed."
   },
   {
     "id": "MC-AI-0283",
@@ -9981,46 +10021,6 @@
       "Add one private per-peer outstanding-delivery limit and use it in both admission bounds; extend the public admission regression and retain saturated removal/reversal coverage without exhausting every advertised credit."
     ],
     "baseline_commit": "",
-    "commits": [],
-    "finalized": true,
-    "retrospective": "",
-    "docs_review": "",
-    "environment_review": "",
-    "backlog_review": ""
-  },
-  {
-    "id": "MC-AI-0282",
-    "title": "Keep connection handshakes and platform lifecycle responsive",
-    "kind": "bug",
-    "status": "done",
-    "priority": "P1",
-    "route": "luna",
-    "milestone": "ED-010-S7",
-    "depends_on": [],
-    "acceptance": "Retain one ENet peer through a30-second aggregate connection attempt and service Android lifecycle and desktop window events between transport waits of at most25ms; promptly cancel pending attempts,250ms retry waits and join waits. Preserve ENet timeout policy, protocol, authoritative join and no gameplay before acceptance. Present the existing ready Android surface while connecting. Verify actual server handshake replies withheld for at least15seconds in GameClient, cancellation mid-attempt and retry, and no-server/reachable-server platform responsiveness. Consume exact clean reviewed successor CoreCpp/CoreProject packages without changing CoreLang language,API,CoreBC or SLJIT.",
-    "evidence": "Native Release focused CTest passed 8/8 on the exact 0282 source and successor package prefix; the held handshake joined after 15.570 seconds with one attempt, pending-connect cancellation took 90 ms, and retry service stayed below the asserted 200 ms gap. XML SHA256 4374583f057330d3faa9344778367f3ade82852a88df8332ac09fdc0e70c912c; log SHA256 214e7572929df99df65c5fc181ea0c761e0094580a6d6d1dfad0db03a5be95c2. Android Release assembleRelease and lintVitalRelease passed 52/52 tasks using the current 0282 source, exact CoreCpp f2fe7db86a068b464dde1c5f7f4a13ddcefda26d and CoreProject2026 92c8058dcfbff13010502a5bd46d7920b52815ea pins, NDK 27/API 28/CMake 3.30.5/JDK 21/Gradle 8.13. Original unsigned APK SHA256 1374b3b38dbe18e5e9845e8380a9463a11613f830118bbc85071e4a38a712c85. Because the APK is unsigned, emulator installation used a separate ephemeral-key test copy at /private/tmp/mc-s7-0282-emulator.23D6uk/app-release-emulator-signed.apk; apksigner verify passed and its SHA256 is 5e76fe1ac5afd97c0adc17c40f76d27b5722de5a0e08dd6c90b74ddc1c200bfc. Its embedded libmc_android.so matches the original Release library hash 73b08c0b555a103b6719c914f6000758bf0a220786be9cf226a2e81b6932573f. Emulator Medium_Phone_API_35, API 35 arm64-v8a, serial emulator-5554: with host UDP 20040 unbound, NativeActivity remained live for about 7m36s; HOME and relaunch returned to the same activity, and filtered error logcat showed no app errors. With the host Release mc_main server at 127.0.0.1:20040, server logged onConnected 127.0.0.1:61959 and spawn x32896/y410/z32768; the foreground HUD reflected that position. Screenshots: no_server_initial_step.png SHA256 143ff82d287ca40b2e62612f273c6c9096ea6a3a2763b8ec082ecc94b441e529; no_server_after_wait_step.png SHA256 bb04b260d848ce8d5402cd14d3b6600fa803a536f2d7b60ee5c2fde6d55d294a; reachable_server_step.png SHA256 c366fa6002a2af4e2b1e9c7879161115f1dd5f0d8d1c66dfb9fcb92fa8eb5454; reachable_server_after_load_step.png SHA256 1b3a09b3f6f098e86d335b990865fd3e8166e65bd5394acbff0c315a6071f358. The post-join view still showed sky after 15 seconds under emulator software rendering; this is recorded as an observation only, not terrain or FPS acceptance. Windows successor dependencies passed their exact Release/install and Net 30/30 plus CoreProject 28/28 consumer gates; no MinecraftClone Windows build/runtime is claimed. No aggregate S7/release acceptance is claimed.",
-    "blocker": "",
-    "owner": "Codex",
-    "level": "basic",
-    "parent": "MC-AI-0038",
-    "motivation": "Keep the native activity responsive and show a valid initial surface even when its game server is temporarily unavailable.",
-    "context": "A diagnostic Release APK executes android_main and completes initialization and canonical meshing, but failed ENet attempts leave Android lifecycle commands unprocessed because their pump is reached only in render after accepted join. The exact UDP connection cause is a separate diagnosis; this task must not claim to fix it. Start from clean integration 0b122d26b47e41fac1c1ce5f9b0a191c259e2a4a and preserve the reviewed MC-AI-0276 worktree and immutable baseline APK. The same reviewer rejected boundary-only pumping because1000msconnect and250msretry remained blocking. Read-only contract inspection also proved each short attempt reset its ENet peer, violating the user's15-second ping requirement. Root authorized a cohesive0282 expansion, separateCoreCppCC0038/CoreProjectCP0035 commits, and released unused0285. The original staged candidate/rejectedreview/runtimeevidence remain preserved. Successor starts fromeea813baa0fcccc1f24a7dba22a71909e635b006.",
-    "complexity": "medium",
-    "created_at": "2026-09-30",
-    "resolved_at": "2026-09-30",
-    "resolution_changes": "The cooperative GameClient retained one peer through the 15.570-second handshake test, stayed responsive during cancellation and retry, and continued servicing Android lifecycle and desktop window events during bounded transport waits. The exact successor CoreCpp and CoreProject pair passed focused native and Android Release checks. On Medium_Phone_API_35, the exact-source Android Release library stayed live with UDP 20040 unbound for about 7 minutes 36 seconds; HOME and relaunch returned to NativeActivity. With the host Release server bound, the emulator joined and its HUD position matched the server spawn. Terrain visibility and frame-rate acceptance are not inferred from this lifecycle test.",
-    "plan": [
-      "Adopt the reviewed exact cooperative dependency pair; retain one peer for30seconds while servicing both platform hooks and cancellable retry waits.",
-      "Cover actual15-second serverreply delay and mid-attempt/retry/join cancellation; refresh Android/desktop checks and renew the same0282reviewer."
-    ],
-    "product_changes": [
-      "Remain responsive while connecting and support delayed handshakes without resetting the peer every second."
-    ],
-    "code_changes": [
-      "Add cooperative GameClient connect/retry/join servicing, Android pre-join presentation and desktop window-close pumping; consume exact successor pins.",
-      "Test public delayed-handshake identity and cancellation contracts, preserving prior red/green evidence and review rejection."
-    ],
-    "baseline_commit": "eea813baa0fcccc1f24a7dba22a71909e635b006",
     "commits": [],
     "finalized": true,
     "retrospective": "",
@@ -10443,19 +10443,19 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Authoritative scenario and CoreLang multiplayer acceptance runs use the minimum terrain-interest radius needed for local movement tests, so the 5-second scenario deadline is not consumed constructing the unrelated production 256-radius ordering table. Preserve production server defaults and dedicated radius-256 coverage. All eight previously failing scenario CTest cases pass.",
-    "evidence": "Before the change, the exact candidate’s full CTest run failed 8/578 cases; a focused reproduction failed the same case in 5.35 s before the first ScenarioClient was constructed. After passing MIN_HEIGHT_TILE_INTEREST_RADIUS to the isolated ScenarioRunner GameServer, the Debug build passed and all eight previously failing ScenarioRunner/CoreLang CTest cases passed 8/8 in 0.59 s.",
+    "evidence": "Before the change, the exact candidate\u2019s full CTest run failed 8/578 cases; a focused reproduction failed the same case in 5.35 s before the first ScenarioClient was constructed. After passing MIN_HEIGHT_TILE_INTEREST_RADIUS to the isolated ScenarioRunner GameServer, the Debug build passed and all eight previously failing ScenarioRunner/CoreLang CTest cases passed 8/8 in 0.59 s.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "The full Snapshot 7 candidate CTest run failed eight real-ENet scenarios before constructing the first scenario client. An isolated rerun reproduced the same five-second timeout.",
-    "context": "ScenarioRunner starts its monotonic execution deadline before constructing GameServer. Each CTest filter starts a fresh process, so GameServer recomputes the default 256-radius height-tile order table for every case; this setup consumes the deadline and the resulting diagnostic incorrectly says the timeout occurred while connecting clients. The real game’s 256-radius default must remain unchanged.",
+    "context": "ScenarioRunner starts its monotonic execution deadline before constructing GameServer. Each CTest filter starts a fresh process, so GameServer recomputes the default 256-radius height-tile order table for every case; this setup consumes the deadline and the resulting diagnostic incorrectly says the timeout occurred while connecting clients. The real game\u2019s 256-radius default must remain unchanged.",
     "complexity": "low",
     "created_at": "2026-10-03",
     "resolved_at": "2026-10-03",
     "resolution_changes": "Configured the ScenarioRunner-only GameServer with the minimum supported height-tile interest radius. This avoids charging the unrelated production radius-256 order-table initialization to local scenario deadlines, while preserving production defaults.",
     "plan": [
-      "Give ScenarioRunner’s local authoritative server the minimum supported height-tile interest radius without changing GameServer defaults.",
+      "Give ScenarioRunner\u2019s local authoritative server the minimum supported height-tile interest radius without changing GameServer defaults.",
       "Rerun all eight previously failed ScenarioRunner/CoreLang CTest cases."
     ],
     "product_changes": [],
@@ -11218,7 +11218,7 @@
     "route": "luna",
     "milestone": "ED-010-S7",
     "depends_on": [],
-    "acceptance": "On every host, the regression computes expected paths with that host’s os.path.abspath spelling while proving the C and C++ aliases remain distinct and Path.resolve is not called. The focused installer suite and local fast gate pass; the exact hosted Windows fast rerun remains an aggregate MC-AI-0038 gate before promotion.",
+    "acceptance": "On every host, the regression computes expected paths with that host\u2019s os.path.abspath spelling while proving the C and C++ aliases remain distinct and Path.resolve is not called. The focused installer suite and local fast gate pass; the exact hosted Windows fast rerun remains an aggregate MC-AI-0038 gate before promotion.",
     "evidence": "GitHub ai-dev run 37247763643 isolated the Windows-only failure: the fake /usr/bin/clang-18 path became a D:-rooted Windows path under host normalization, while the test expected POSIX spelling. The updated regression derives expected spellings from the host and checks both aliases remain distinct. Focused installer suite passed 7/7 on macOS; python3 script/ai_check.py --fast passed on the exact candidate after refreshing docs/code/source_state.json. The corrected hosted Windows fast rerun remains an aggregate MC-AI-0038 gate.",
     "blocker": "",
     "owner": "Codex",
@@ -11229,7 +11229,7 @@
     "complexity": "low",
     "created_at": "2026-10-05",
     "resolved_at": "2026-10-05",
-    "resolution_changes": "Changed the regression to compare compiler aliases using the host’s os.path.abspath spelling while still asserting Path.resolve is never called; the production installer is unchanged.",
+    "resolution_changes": "Changed the regression to compare compiler aliases using the host\u2019s os.path.abspath spelling while still asserting Path.resolve is never called; the production installer is unchanged.",
     "plan": [
       "Use host-native normalized expected paths in the compiler-alias test while retaining the assertion that Path.resolve is never called. Run the focused installer suite, fast gate, exact hosted Windows rerun, and then resume snapshot finalization."
     ],
@@ -13979,14 +13979,14 @@
     "route": "luna",
     "milestone": "ED-010-S7",
     "depends_on": [],
-    "acceptance": "Explicitly initialize the four members reported by strict macOS Clang-Tidy, preserving each field’s existing aggregate value-initialization semantics. No public API or runtime behavior changes. The affected production library must compile and the fast project gate must pass. The parent snapshot’s exact-source sanitizer/static-analysis matrix remains a separate release gate.",
+    "acceptance": "Explicitly initialize the four members reported by strict macOS Clang-Tidy, preserving each field\u2019s existing aggregate value-initialization semantics. No public API or runtime behavior changes. The affected production library must compile and the fast project gate must pass. The parent snapshot\u2019s exact-source sanitizer/static-analysis matrix remains a separate release gate.",
     "evidence": "The Debug `mc` production library compiled successfully with AppleClang 17 against the locked CoreProject2026 0.1.3.3 maintenance package (revision a4d3fa8a7b81407d0f6bae3ef10d2632d7b74fb9) and CoreCpp revision d5759fa48b7073787434121624b5f5f93cf3fa2c. The four explicit `{}` designators match the declared empty/value-initialized states. `python3 script/ai_docs.py refresh`, `python3 script/ai_docs.py check`, and `python3 script/ai_check.py --fast` passed. The fast gate skipped Python tests for full-C++ scope and allowed only the expected dirty-tree source-check diagnostic. A local `mc_tests` link attempt was blocked by reused private/vcpkg artifacts mixing fmt 12 and fmt 11; the exact promotion GitHub macOS job had already passed its full Debug build, CTest, and shader-validation step before the Clang-Tidy row failed. The parent exact-source matrix remains responsible for certifying the corrected Clang-Tidy row and current full tests.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "The exact promoted S7 macOS Debug clang-tidy row rejects four omitted default-initialized CoreLang aggregate members, blocking the required release matrix.",
-    "context": "The exact promoted source f4566e3519da5e132a295ed3a972e4dea59bdc01 failed the macOS Debug Clang-Tidy row on four omitted members of the pinned CoreProject2026 0.1.3.3 maintenance package (revision a4d3fa8a7b81407d0f6bae3ef10d2632d7b74fb9). Each field’s default/value-initialized state is empty; explicit empty designated initializers preserve those semantics. Do not add suppressions or alter analyzer strictness.",
+    "context": "The exact promoted source f4566e3519da5e132a295ed3a972e4dea59bdc01 failed the macOS Debug Clang-Tidy row on four omitted members of the pinned CoreProject2026 0.1.3.3 maintenance package (revision a4d3fa8a7b81407d0f6bae3ef10d2632d7b74fb9). Each field\u2019s default/value-initialized state is empty; explicit empty designated initializers preserve those semantics. Do not add suppressions or alter analyzer strictness.",
     "complexity": "low",
     "created_at": "2026-10-09",
     "resolved_at": "2026-10-09",
@@ -14138,7 +14138,7 @@
     "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
-    "motivation": "The exact-source Snapshot 7 candidate gate produced one failure in GameServerPreviewTest.SustainedNetworkIngressDoesNotStarveTicksTerrainOrShutdown: the server exited within the test run, but no new client-side send was counted during the test’s 250 ms post-stop window. Ten immediate isolated repetitions passed, indicating the post-stop increment is a scheduling-sensitive proxy rather than a stable shutdown contract.",
+    "motivation": "The exact-source Snapshot 7 candidate gate produced one failure in GameServerPreviewTest.SustainedNetworkIngressDoesNotStarveTicksTerrainOrShutdown: the server exited within the test run, but no new client-side send was counted during the test\u2019s 250 ms post-stop window. Ten immediate isolated repetitions passed, indicating the post-stop increment is a scheduling-sensitive proxy rather than a stable shutdown contract.",
     "context": "The full suite had one failure at the post-stop packet-count assertion; ten isolated repetitions passed. The failure does not identify whether senders were simply unscheduled during the 250 ms shutdown window or stalled by transport backpressure. Source inspection confirms core::Client::send can return false when ENet rejects a packet, while the test flood loop previously retried without flushing until 128 successful sends accumulated. Both cases make post-stop packet growth an unreliable shutdown predicate. The correction flushes accepted partial batches, observes recent completed flushes before shutdown, then evaluates prompt server exit independently.",
     "complexity": "low",
     "created_at": "2026-10-10",
@@ -14766,7 +14766,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Keep the four-client, 35-second, 500x optimized acknowledgement/terrain-streaming stress and its existing requirements unchanged: at least 340 inputs, maximum acknowledgement lag 16 from input one, final lag at most 2, and terrain progress. Replace unbounded per-client event draining in the active measurement loop with a bounded round-robin polling quantum so one simulated peer's terrain callbacks cannot starve observation of the others. Do not relax thresholds or change production limits. The focused Release test and project fast gate must pass; exact-candidate macOS TSan is a separate hard gate of aggregate MC-AI-0038.",
-    "evidence": "AppleClang 17 Release build passed; focused CTest passed 1/1 in 35.86s. The stress sent 350 inputs, peaked at lag 6 at input 8 (limit 16), ended at 350/350/350/350, and delivered 8,628–9,789 tiles per simulated client. `python3 script/ai_check.py --fast` passed docs, backlog, plan, diff, and source checks, allowing only the expected dirty-tree exception. A local AppleClang TSan-instrumented binary linked but exits 139 while GoogleTest discovery starts, before any test; no local TSan pass is claimed. Exact-candidate hosted TSan remains a separate aggregate release gate.",
+    "evidence": "AppleClang 17 Release build passed; focused CTest passed 1/1 in 35.86s. The stress sent 350 inputs, peaked at lag 6 at input 8 (limit 16), ended at 350/350/350/350, and delivered 8,628\u20139,789 tiles per simulated client. `python3 script/ai_check.py --fast` passed docs, backlog, plan, diff, and source checks, allowing only the expected dirty-tree exception. A local AppleClang TSan-instrumented binary linked but exits 139 while GoogleTest discovery starts, before any test; no local TSan pass is claimed. Exact-candidate hosted TSan remains a separate aggregate release gate.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -14918,7 +14918,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Treat a missing stone face buffer after deferred recreation as the existing recoverable arena recreation failure, not termination. Preserve capacity rollback and initialized-buffer behavior; pass focused renderer validation and analyzer checks.",
-    "evidence": "Verified the partial resource-creation failure and deferred rollback against the pinned CoreCpp source. Focused clang-tidy passed PresentationRenderer.cpp; cppcheck and IWYU target builds each completed 41 steps. GPU renderer smoke passed 14 tests, including capacity rollback with the original deadline. Source checks 1–26 and whitespace checks passed; the only publisher failure was the expected uncommitted state.",
+    "evidence": "Verified the partial resource-creation failure and deferred rollback against the pinned CoreCpp source. Focused clang-tidy passed PresentationRenderer.cpp; cppcheck and IWYU target builds each completed 41 steps. GPU renderer smoke passed 14 tests, including capacity rollback with the original deadline. Source checks 1\u201326 and whitespace checks passed; the only publisher failure was the expected uncommitted state.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -14950,7 +14950,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Parser fixtures use native absolute roots and prove owned diagnostics block while external diagnostics remain advisory. Preserve production classification and required Windows checks.",
-    "evidence": "All 14 cppcheck launcher contract tests passed on macOS and native Windows Python 3.13 (14/14, exit 0). The exact script fixture was transferred to isolated C:\\Users\\codexbuild\\CodexTasks\\MC-AI-0424. Owned severity cases and advisory hints/external locations now assert classification directly. Production analyzer code and Windows requirements are unchanged. Source checks 1–26 passed; dirty state was the sole expected publisher failure.",
+    "evidence": "All 14 cppcheck launcher contract tests passed on macOS and native Windows Python 3.13 (14/14, exit 0). The exact script fixture was transferred to isolated C:\\Users\\codexbuild\\CodexTasks\\MC-AI-0424. Owned severity cases and advisory hints/external locations now assert classification directly. Production analyzer code and Windows requirements are unchanged. Source checks 1\u201326 passed; dirty state was the sole expected publisher failure.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -15929,14 +15929,14 @@
     "route": "sol",
     "milestone": "ED-010-S7",
     "depends_on": [],
-    "acceptance": "Derive each LOD certificate from actual rounded candidate-cell faces and all relevant neighbor/seam profile inputs while preserving guaranteed projected area<=2px². Keep complete raw-height distance bounds, position-selected residency and exact collision. Handle nonmonotone per-detail areas, full installed profiles, successful-publication invalidation, failed-publication retention and stale worker results without recursion. Add per-generated-face oracle, seam/profile/revision/movement/FOV boundary regressions; measure geometry and cadence separately without claiming unmeasured improvement.",
+    "acceptance": "Derive each LOD certificate from actual rounded candidate-cell faces and all relevant neighbor/seam profile inputs while preserving guaranteed projected area<=2px\u00b2. Keep complete raw-height distance bounds, position-selected residency and exact collision. Handle nonmonotone per-detail areas, full installed profiles, successful-publication invalidation, failed-publication retention and stale worker results without recursion. Add per-generated-face oracle, seam/profile/revision/movement/FOV boundary regressions; measure geometry and cadence separately without claiming unmeasured improvement.",
     "evidence": "Frozen native tree92bd50febb244c98de2e6aa416ac2d4ef2efe05f: Release and renderer-smoke builds passed,85 focused tests passed including profile-only reuse and unsafe-target rejection. Source-bound /private/tmp/mc-s7-0451-repair-macos-proof.json retained native innerexit0 and failed cadence qualification. Exact205861 current meshes/emptyqueues initial137.974s/recovery169.068s; initial67814Coarse2 tiles reduce submitted quads to7435677; baseline55Hz, recovered78.492Hz. No physicalscanout or120Hz claim. Before/after provenance unchanged; executableSHA18a27cc53ab6ca9c195aa448bbb2c903c5500613876379bb034bfed2a7eb1643.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "Current whole-tile height-span bounds force full detail at the largest normal radius despite individually small replacement-cell faces",
-    "context": "Full default-radius Mac diagnostics install205861Fine meshes and41922484quads; directional culling alone gives48.2successfulrequests/s. User requires replacement-face projected area at most2px² with actual FOV/framebuffer and unchanged position-driven residency. Read-only design identified per-detail rounded cell wall differences and requested/installed neighbor seam profiles as the relevant conservative face bounds; projected-distance enclosure remains conservative.",
+    "context": "Full default-radius Mac diagnostics install205861Fine meshes and41922484quads; directional culling alone gives48.2successfulrequests/s. User requires replacement-face projected area at most2px\u00b2 with actual FOV/framebuffer and unchanged position-driven residency. Read-only design identified per-detail rounded cell wall differences and requested/installed neighbor seam profiles as the relevant conservative face bounds; projected-distance enclosure remains conservative.",
     "complexity": "high",
     "created_at": "2026-10-13",
     "resolved_at": "2026-10-13",
@@ -15973,8 +15973,8 @@
     "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
-    "motivation": "Production full-radius collection alone consumes4.5–6.6ms per frame and prevents requested stable cadence",
-    "context": "Source-bound native tree92bd50febb244c98de2e6aa416ac2d4ef2efe05f reaches exact205861 initial/recovered meshes but baseline55Hz/recovered78.492Hz. Recovered draw collection6.572ms,58419 ranges. Fragmented node traversal is independently measured; compact AABB metadata saved8–10percent traversal but inflated selected geometry19.56percent and was rejected.",
+    "motivation": "Production full-radius collection alone consumes4.5\u20136.6ms per frame and prevents requested stable cadence",
+    "context": "Source-bound native tree92bd50febb244c98de2e6aa416ac2d4ef2efe05f reaches exact205861 initial/recovered meshes but baseline55Hz/recovered78.492Hz. Recovered draw collection6.572ms,58419 ranges. Fragmented node traversal is independently measured; compact AABB metadata saved8\u201310percent traversal but inflated selected geometry19.56percent and was rejected.",
     "complexity": "high",
     "created_at": "2026-10-13",
     "resolved_at": "2026-10-13",
@@ -16514,13 +16514,13 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Export the exact staged tree without bidirectional Git pipe deadlock on real repository-sized batches. Preserve binary bytes, existing size/path/symlink checks, nonzero Git stderr and CommitGateError timeout translation. Keep subprocess deadlines effective without increasing them or changing global Python, Git or OS settings. Add large-batch and binary-output regression coverage plus separate stderr/timeout cases; verify the actual formerly blocked tree exports and all focused commit-helper tests pass. Preserve unrelated index/source state and all failed diagnostic evidence. This tooling task does not close S7 native or publication acceptance.",
-    "evidence": "Independent controlled reproduction on Python3.14.6 and3.13.14:875 OIDs/35875inputbytes deadlocked pipe-backed Git beyond its5s timeout; separate8s supervisors killed only owned groups and verified absence. Identical file-backed operations passed21–47ms with875lines/44656outputbytes and identical SHA2566453eb6279ca6dd878ae014791c763153e08f7a5e665c6c969e2d64c4092086a. After the minimal git_bytes fix, all39 AiCommitTests passed18.054s, including4096-OID batch,131072-byte binary output, nonzero stderr and timeout cause. Actual formerly blocked tree0f2ac6b7183fa0bc27da5fa31ae205926d67779b exported875files in0.224s. The saved0463 index patch remains SHA256b093003ef8f6f85869cc07974fb20e2d34afe6e16e5ed87928d4cdba5b9ba485; unrelated working bytes preserved. Current native gameplay input remainsf074e1836fc3a500d90e031346d67cdb7d63a7d3811f8d4ef5e64e491886150c. No Windows, global config or OS repair. Diagnostic evidence /private/tmp/mc-s7-git-pipe-c and /private/tmp/mc-s7-0463-review.0fxQvv.",
+    "evidence": "Independent controlled reproduction on Python3.14.6 and3.13.14:875 OIDs/35875inputbytes deadlocked pipe-backed Git beyond its5s timeout; separate8s supervisors killed only owned groups and verified absence. Identical file-backed operations passed21\u201347ms with875lines/44656outputbytes and identical SHA2566453eb6279ca6dd878ae014791c763153e08f7a5e665c6c969e2d64c4092086a. After the minimal git_bytes fix, all39 AiCommitTests passed18.054s, including4096-OID batch,131072-byte binary output, nonzero stderr and timeout cause. Actual formerly blocked tree0f2ac6b7183fa0bc27da5fa31ae205926d67779b exported875files in0.224s. The saved0463 index patch remains SHA256b093003ef8f6f85869cc07974fb20e2d34afe6e16e5ed87928d4cdba5b9ba485; unrelated working bytes preserved. Current native gameplay input remainsf074e1836fc3a500d90e031346d67cdb7d63a7d3811f8d4ef5e64e491886150c. No Windows, global config or OS repair. Diagnostic evidence /private/tmp/mc-s7-git-pipe-c and /private/tmp/mc-s7-0463-review.0fxQvv.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "The exact staged export blocked Git commit preparation despite its configured timeout.",
-    "context": "Host and sandbox stack samples show Python blocked writing Git stdin while Git blocks writing stdout. Independent eight-second supervisors reproduce the875-OID/35875-byte batch hang on Python3.14.6 and3.13.14; one OID passes. Identical file-backed input/output/error completes in21–47ms with identical875-line output. Failed samples and supervised probe receipts remain under /private/tmp/mc-s7-git-pipe-c and /private/tmp/mc-s7-0463-review.0fxQvv. No Windows or OS repair is involved.",
+    "context": "Host and sandbox stack samples show Python blocked writing Git stdin while Git blocks writing stdout. Independent eight-second supervisors reproduce the875-OID/35875-byte batch hang on Python3.14.6 and3.13.14; one OID passes. Identical file-backed input/output/error completes in21\u201347ms with identical875-line output. Failed samples and supervised probe receipts remain under /private/tmp/mc-s7-git-pipe-c and /private/tmp/mc-s7-0463-review.0fxQvv. No Windows or OS repair is involved.",
     "complexity": "medium",
     "created_at": "2026-10-17",
     "resolved_at": "2026-10-17",
@@ -16614,7 +16614,7 @@
     ],
     "code_changes": [
       "Set native stationary/movement samples to30seconds and non-warmup watchdog budget to120seconds; preserve production renderer/workload semantics.",
-      "Require each performance phase to last30–31seconds, keep terrain coverage predicates, extend matching capture/helper deadlines, and correct fixtures for the longer sample.",
+      "Require each performance phase to last30\u201331seconds, keep terrain coverage predicates, extend matching capture/helper deadlines, and correct fixtures for the longer sample.",
       "Document one prospective capture/no pass-seeking retries, retainedv25 failure and diagnostic10/6/10 prefixes derived later from full raw evidence; no schema or prefix-output API."
     ],
     "baseline_commit": "f684145d13adc67c183e7a57fefa584d3ffad995",
@@ -16635,7 +16635,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Trace and reproduce sustained-motion starvation with a deterministic public-contract regression before changing production scheduling. Correct the evidenced bottleneck while retaining current-near priority, camera-independent full interest, bounded asynchronous ownership and render-loop work. Verify progress across the requested radius during movement rather than relying only on radius7 or final refill. Preserve prior failures and raw evidence. Parent0038 remains open until actual visual travel quality and unchanged R128 performance requirements pass; no threshold, radius or quality reduction.",
-    "evidence": "Evidence is retained in /Users/core-just/.codex/task-evidence/s7-0469-throughput-e-20261018. The fixed-window-four delivery regression failed RED; compact lossless protocol 14, immediate credit flush, and a byte-accounted eight-credit delivery window passed renewed server/codec suites. Client RED/GREEN tests cover fairness under sustained center changes, mixed intake/removal, first-publication priority through jobs/results/deferral, stale-head progress, and bounded ownership. Current-mesh edge profiles use clipped quad spans with unchanged exact output checksums; fixed-corpus profile/seam microbenchmarks were 5.282x and 3.953x faster. 137 focused tests passed; the full local gate passed 864 Python tests (4 skipped), a Debug build, and CTest 784/784. The known Debug skip was GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream because its four-peer full-radius latency predicate requires optimized Release; a separate Release-only run passed once in 35.639 seconds. Publisher source-policy checks 1–26 passed after behavior-neutral test cleanup; check 27 was the expected dirty-worktree sentinel. The retained 30-second R128 worker-class diagnostic uses executable SHA-256 986da45a6e53ddfdb4b317e6b5427de20da2d159b6c80e98ba23d3c12742aa00 and raw SHA-256 327ac8b6d1c2564af9319c964ee818707879311126be29b6b93cbaabe61f709e. Movement snapshots show all sampled bands 0–79 complete; bands 80+ made progress but had some gaps at 10/20/25 seconds; full recovery took 1,134 ms. This demonstrates requested-radius progress, not continuous completeness or a normal performance pass. Latest normal v29 candidate source input SHA-256 9a497e025d9740befd1ea46a42f6e8701a05b0d5e51fb269d95d662f9113f786 and executable SHA-256 a2809771c44414e8e72f49eba9848397cdecf085ba03138417664171035cb9b2 passed the normal R256 terrain-coverage proof in 22.944 seconds (raw SHA-256 5778d226b98c2f5804b2db4ed09d6cdbc63ee6e4dc8be198719286dec591fae1). The same-source normal R128 performance proof failed with 8/9/10 lost slots in baseline/movement/recovery; raw report SHA-256 b2d36a98f848f9706e2be73f066a7cbbf3587f3d75709db6d2ae1b5a7589ed7a. Private v29 framebuffer diagnostic /Users/core-just/.codex/task-evidence/s7-v29-native-frame-quality-e-20261018/run-v2 has five reviewed movement PNGs; they show continuous terrain at sampled instants, but readback substantially perturbed timing and does not prove normal continuous visual quality or performance. No overall S7 PASS.",
+    "evidence": "Evidence is retained in /Users/core-just/.codex/task-evidence/s7-0469-throughput-e-20261018. The fixed-window-four delivery regression failed RED; compact lossless protocol 14, immediate credit flush, and a byte-accounted eight-credit delivery window passed renewed server/codec suites. Client RED/GREEN tests cover fairness under sustained center changes, mixed intake/removal, first-publication priority through jobs/results/deferral, stale-head progress, and bounded ownership. Current-mesh edge profiles use clipped quad spans with unchanged exact output checksums; fixed-corpus profile/seam microbenchmarks were 5.282x and 3.953x faster. 137 focused tests passed; the full local gate passed 864 Python tests (4 skipped), a Debug build, and CTest 784/784. The known Debug skip was GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream because its four-peer full-radius latency predicate requires optimized Release; a separate Release-only run passed once in 35.639 seconds. Publisher source-policy checks 1\u201326 passed after behavior-neutral test cleanup; check 27 was the expected dirty-worktree sentinel. The retained 30-second R128 worker-class diagnostic uses executable SHA-256 986da45a6e53ddfdb4b317e6b5427de20da2d159b6c80e98ba23d3c12742aa00 and raw SHA-256 327ac8b6d1c2564af9319c964ee818707879311126be29b6b93cbaabe61f709e. Movement snapshots show all sampled bands 0\u201379 complete; bands 80+ made progress but had some gaps at 10/20/25 seconds; full recovery took 1,134 ms. This demonstrates requested-radius progress, not continuous completeness or a normal performance pass. Latest normal v29 candidate source input SHA-256 9a497e025d9740befd1ea46a42f6e8701a05b0d5e51fb269d95d662f9113f786 and executable SHA-256 a2809771c44414e8e72f49eba9848397cdecf085ba03138417664171035cb9b2 passed the normal R256 terrain-coverage proof in 22.944 seconds (raw SHA-256 5778d226b98c2f5804b2db4ed09d6cdbc63ee6e4dc8be198719286dec591fae1). The same-source normal R128 performance proof failed with 8/9/10 lost slots in baseline/movement/recovery; raw report SHA-256 b2d36a98f848f9706e2be73f066a7cbbf3587f3d75709db6d2ae1b5a7589ed7a. Private v29 framebuffer diagnostic /Users/core-just/.codex/task-evidence/s7-v29-native-frame-quality-e-20261018/run-v2 has five reviewed movement PNGs; they show continuous terrain at sampled instants, but readback substantially perturbed timing and does not prove normal continuous visual quality or performance. No overall S7 PASS.",
     "blocker": "Parent MC-AI-0038 remains open: normal R128 v29 performance failed with 8/9/10 lost slots, and normal continuous visual quality is not proven. No overall S7 pass is claimed.",
     "owner": "Codex",
     "level": "basic",
@@ -17030,7 +17030,7 @@
     "route": "luna",
     "milestone": "ED-011",
     "depends_on": [],
-    "acceptance": "Deliver the four owner-supplied snapshots recorded in docs/ROADMAP.md and docs/ai/ROADMAP.md: staged global tectonics, terrain/hydrology and climate with regional/local elaboration, climate-driven solid materials and standalone six-seed world maps, editing/modes, adaptive HUD/crosshair, water/swimming/flow, animated models/opacity and multiplayer bots. First fix inherited 0477/0478/0479 alongside S1 and retain representative gameplay regressions. Keep automated gates, exact-package owner acceptance/exception and separately authorized publication distinct. Plan only in this chat; reporting starts automatically with later implementation. Include distinct smooth/irregular/ragged coasts, multiple island families, uneven half-world land concentration and sparse unusual landforms; demonstrate diversity across seeds rather than repeating uniform templates. Additional finalized S1 requirements: CoreLang 0.1.5 JIT/AOT with an exact temporary ai-dev pin/fix updates and release transition; actual loading map and key gate within 4 s including safe refined spawn and Ready 48-block sphere; Ready 320-block sphere by 20 s Mac/15 s Windows from original T0, preserved at x30 with ≥99% moving time at ≥120/≥300 fresh FPS at existing settings; shared normal-game 2D top-block-pixel mode, connected new coverage and order/movement/version-stable Python/native reference comparisons; subsystem/module review and test modes; physical two-laptop playtests with both host roles. S2 additionally includes gameplay minimap/world-map UI, brought forward from GeographyDev by the owner on 22 October 2026. S2 UI adds pre-connect/generation/game/map presentation with loaded-chunk, memory and local-climate HUD, using existing text/background/map capabilities.",
+    "acceptance": "Deliver the four owner-supplied snapshots recorded in docs/ROADMAP.md and docs/ai/ROADMAP.md: staged global tectonics, terrain/hydrology and climate with regional/local elaboration, climate-driven solid materials and standalone six-seed world maps, editing/modes, adaptive HUD/crosshair, water/swimming/flow, animated models/opacity and multiplayer bots. First fix inherited 0477/0478/0479 alongside S1 and retain representative gameplay regressions. Keep automated gates, exact-package owner acceptance/exception and separately authorized publication distinct. Plan only in this chat; reporting starts automatically with later implementation. Include distinct smooth/irregular/ragged coasts, multiple island families, uneven half-world land concentration and sparse unusual landforms; demonstrate diversity across seeds rather than repeating uniform templates. Additional finalized S1 requirements: CoreLang 0.1.5 JIT/AOT with an exact temporary ai-dev pin/fix updates and release transition; actual loading map and key gate within 4 s including safe refined spawn and Ready 48-block sphere; Ready 320-block sphere by 20 s Mac/15 s Windows from original T0, preserved at x30 with \u226599% moving time at \u2265120/\u2265300 fresh FPS at existing settings; shared normal-game 2D top-block-pixel mode, connected new coverage and order/movement/version-stable Python/native reference comparisons; subsystem/module review and test modes; physical two-laptop playtests with both host roles. S2 additionally includes gameplay minimap/world-map UI, brought forward from GeographyDev by the owner on 22 October 2026. S2 UI adds pre-connect/generation/game/map presentation with loaded-chunk, memory and local-climate HUD, using existing text/background/map capabilities.",
     "evidence": "",
     "blocker": "",
     "owner": "codex",
@@ -17070,7 +17070,7 @@
     "milestone": "ED-011-PLAN",
     "depends_on": [],
     "acceptance": "Record all six owner-supplied product snapshots without replacing them by fixes; elaborate S1 terrain, column/band rules, source integration, work packages and acceptance; separate owner requirements, proposed defaults and unresolved decisions. Validate generated plans and documentation. No game implementation or publication.",
-    "evidence": "Product and AI roadmaps record the six recovered product snapshots; S1 requirements, generation/integration proposal and acceptance/work packages are linked under docs/ai/decisions. Snapshot tasks MC-AI-0482–0487 are planned children of MC-AI-0480; inherited defects are assigned to S1. ai_tasks.py check, ai_plan.py check, ai_docs.py check and git diff --check passed; all 20 changed-Markdown local file links resolve. No game code, runtime qualification, current selection, reporting automation or remote state changed.",
+    "evidence": "Product and AI roadmaps record the six recovered product snapshots; S1 requirements, generation/integration proposal and acceptance/work packages are linked under docs/ai/decisions. Snapshot tasks MC-AI-0482\u20130487 are planned children of MC-AI-0480; inherited defects are assigned to S1. ai_tasks.py check, ai_plan.py check, ai_docs.py check and git diff --check passed; all 20 changed-Markdown local file links resolve. No game code, runtime qualification, current selection, reporting automation or remote state changed.",
     "blocker": "",
     "owner": "codex",
     "level": "basic",
@@ -17103,7 +17103,7 @@
   },
   {
     "id": "MC-AI-0482",
-    "title": "EarlyDev 0.1.1:1 — Terrain-v2 world generation and solid blocks",
+    "title": "EarlyDev 0.1.1:1 \u2014 Terrain-v2 world generation and solid blocks",
     "kind": "feature",
     "status": "done",
     "priority": "P1",
@@ -17148,7 +17148,7 @@
     "finalized": true,
     "retrospective": "Late matrix discovery, premature freezes, missed worker wakeups and outer-timeout errors caused reruns. Use frozen inputs, exact source binding, strict reuse and retained-handle cleanup. Both deadline misses remain recorded.",
     "docs_review": "BUILD/RELEASES ABI and S1 policy match the reviewed presets/verifier. Documentation integrity passes; source-state hashes record inventory, not semantic proof. Bounded review receipts are retained.",
-    "environment_review": "Exact CoreCpp 5c1bad/CoreProject 23f814 pins and private instrumented variants are proven. Pinned Mac tools and Linux analysis-only capabilities were checked. Windows 10% CPU/2GB/30GB limits remain; 3.841GB was archived/reclaimed. The broader 12–15GB cleanup remains incomplete.",
+    "environment_review": "Exact CoreCpp 5c1bad/CoreProject 23f814 pins and private instrumented variants are proven. Pinned Mac tools and Linux analysis-only capabilities were checked. Windows 10% CPU/2GB/30GB limits remain; 3.841GB was archived/reclaimed. The broader 12\u201315GB cleanup remains incomplete.",
     "backlog_review": "Preserved S1 criteria/baseline and S2 planning separation. MC-AI-0522 retains five analyzer findings and future eleven-row qualification. No deferred, partial or failed metric is marked passed."
   },
   {
@@ -17182,7 +17182,7 @@
       "Add MC-AI-0515 minimap/world-map UI using the accepted session atlas and canonical surface/edit data; cover view/input ownership, navigation, wrapping, identity invalidation and bounded work.",
       "Implement MC-AI-0516 using existing bitmap text/background/map primitives; preserve the original readiness clock/gate, measure chunk/RSS data, and define a canonical humidity producer before displaying humidity. Hide inapplicable salinity.",
       "Adopt the separately accepted terrain-model handoff; do not substitute editing tests for model qualification or close S2 with that gate missing.",
-      "Use the linked W0–W10 work packages and deterministic, native, visual, multiplayer and inherited S1 acceptance evidence; keep S2 unfinalized until all required gates pass.",
+      "Use the linked W0\u2013W10 work packages and deterministic, native, visual, multiplayer and inherited S1 acceptance evidence; keep S2 unfinalized until all required gates pass.",
       "Execute W0 evidence/confirmed-allocation work, W9 scripting contracts/bounds and W10 environment corrections from the review register; evaluate core/SIMD/GPU/hash alternatives on matched workloads without assumed replacements or speedups.",
       "Integrate the completed new terrain model; only afterward implement model-driven summit snow below 0 C and Sand/desert material and generation presentation."
     ],
@@ -17235,7 +17235,7 @@
   },
   {
     "id": "MC-AI-0485",
-    "title": "EarlyDev 0.1.1:3 — Water and swimming",
+    "title": "EarlyDev 0.1.1:3 \u2014 Water and swimming",
     "kind": "feature",
     "status": "backlog",
     "priority": "P1",
@@ -17273,7 +17273,7 @@
   },
   {
     "id": "MC-AI-0486",
-    "title": "EarlyDev 0.1.1:4 — Animated player models, opacity, multiplayer and bots",
+    "title": "EarlyDev 0.1.1:4 \u2014 Animated player models, opacity, multiplayer and bots",
     "kind": "feature",
     "status": "backlog",
     "priority": "P1",
@@ -17282,7 +17282,7 @@
     "depends_on": [
       "MC-AI-0485"
     ],
-    "acceptance": "Conventional player model; two visible first-person hands with separate running/jumping/breaking/placing/swimming motions; full animation in rear/front external views; selected block moves from HUD into the hand; opacity 0–100 percent and Spectator 40 percent. Every multiplayer player has the model; capability-aware bots wander, sometimes edit/swim and use granted flight; Spectator bots only fly. Keep bots nearby with proposed 64/128/160-block return/spectator/acceleration thresholds and speed up to 500x; restore original mode inside 64 blocks; safely separate embedded bots and human players on mode changes.",
+    "acceptance": "Conventional player model; two visible first-person hands with separate running/jumping/breaking/placing/swimming motions; full animation in rear/front external views; selected block moves from HUD into the hand; opacity 0\u2013100 percent and Spectator 40 percent. Every multiplayer player has the model; capability-aware bots wander, sometimes edit/swim and use granted flight; Spectator bots only fly. Keep bots nearby with proposed 64/128/160-block return/spectator/acceleration thresholds and speed up to 500x; restore original mode inside 64 blocks; safely separate embedded bots and human players on mode changes.",
     "evidence": "",
     "blocker": "",
     "owner": "",
@@ -17400,7 +17400,7 @@
     "milestone": "ED-011-PLAN",
     "depends_on": [],
     "acceptance": "Complete a researched, concrete, bounded generation model and technical/architecture plan; run temporary prototypes and inspect actual maps for exact ordered seeds [0, 1, 42, 777, 2004, 8800555]; measure global creation/memory and regional/local costs with declared identities; verify determinism, seams, drainage, climate/material and causal effects; retain honest failures and approximation limits. Record standalone world-map generation as S1 test/demo feature. No native game implementation, publication or runtime-acceptance claim. Latest owner steering additionally requires multiple coast regimes, island families, world-scale anisotropy and sparse unusual landscapes; record causal mechanisms and actual map/crop evidence, not size diversity alone. Final owner request adds an explanatory PDF report with actual images/plots, step-by-step seed 42 and other-seed examples; render/inspect all pages. Defend the selected approach against alternatives, its dependency order and parameter choices, distinguishing empirical evidence from procedural calibration.",
-    "evidence": "Selected v3 model SHA-256 5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704; retained sources/results at /Users/core-just/.codex/reports/minecraft-worldgen-2026-10-19/bundle. All 35 focused tests and 14 frozen world variants passed; exact repeat of all raw arrays; all six required maps/diagnostics/crops inspected. 256² numerical generation 1.512–1.612 s/101.6–103.0 MiB; 512² seed 42 8.154 s/212.8 MiB. Separate report/ contains the 16-page explanatory PDF (SHA-256 131ab6f4a23b57ef07d9b2d0904d3ca0b61d28b7c1188e11790d5640b915848a), nine exact seed 42 stage captures, six parameter variants and visual-qa.json for all rendered pages. Frozen stage rerun matches every final atlas array. Native code untouched. ai_docs, ai_tasks, ai_plan and whitespace checks pass; exact staged review and commit are enforced by the local task gate.",
+    "evidence": "Selected v3 model SHA-256 5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704; retained sources/results at /Users/core-just/.codex/reports/minecraft-worldgen-2026-10-19/bundle. All 35 focused tests and 14 frozen world variants passed; exact repeat of all raw arrays; all six required maps/diagnostics/crops inspected. 256\u00b2 numerical generation 1.512\u20131.612 s/101.6\u2013103.0 MiB; 512\u00b2 seed 42 8.154 s/212.8 MiB. Separate report/ contains the 16-page explanatory PDF (SHA-256 131ab6f4a23b57ef07d9b2d0904d3ca0b61d28b7c1188e11790d5640b915848a), nine exact seed 42 stage captures, six parameter variants and visual-qa.json for all rendered pages. Frozen stage rerun matches every final atlas array. Native code untouched. ai_docs, ai_tasks, ai_plan and whitespace checks pass; exact staged review and commit are enforced by the local task gate.",
     "blocker": "",
     "owner": "codex",
     "level": "basic",
@@ -17440,7 +17440,7 @@
     "depends_on": [
       "MC-AI-0489"
     ],
-    "acceptance": "Finalize Terrain-v2 in S1 plans; identify Terrain-v1 waves and prototype v3 provenance. Record all new owner requirements: CoreLang 0.1.5 JIT/AOT with an exact temporary ai-dev pin/fix updates and release transition; actual loading map and key gate within 4 s including safe refined spawn and Ready 48-block sphere; Ready 320-block sphere by 20 s Mac/15 s Windows from original T0, preserved at x30 with ≥99% moving time at ≥120/≥300 fresh FPS at existing settings; shared normal-game 2D top-block-pixel mode, connected new coverage and order/movement/version-stable Python/native reference comparisons; subsystem/module review and test modes; physical two-laptop playtests with both host roles. Coordinate a candidate dependency handoff with the owning CoreLang chat and record actual readiness honestly. Preserve later implementation/publication boundaries and validate exact planning artifacts. Record the project-wide small/medium/large validation classification, automatic affected-module selection, Mac 3/12/45-minute lane budgets, failure-first reruns, 4h/12h reporting/review and checked remote-major checkpoints; provide the initial S1 iteration split. Planning only: do not implement tooling, activate reporting or start snapshot development.",
+    "acceptance": "Finalize Terrain-v2 in S1 plans; identify Terrain-v1 waves and prototype v3 provenance. Record all new owner requirements: CoreLang 0.1.5 JIT/AOT with an exact temporary ai-dev pin/fix updates and release transition; actual loading map and key gate within 4 s including safe refined spawn and Ready 48-block sphere; Ready 320-block sphere by 20 s Mac/15 s Windows from original T0, preserved at x30 with \u226599% moving time at \u2265120/\u2265300 fresh FPS at existing settings; shared normal-game 2D top-block-pixel mode, connected new coverage and order/movement/version-stable Python/native reference comparisons; subsystem/module review and test modes; physical two-laptop playtests with both host roles. Coordinate a candidate dependency handoff with the owning CoreLang chat and record actual readiness honestly. Preserve later implementation/publication boundaries and validate exact planning artifacts. Record the project-wide small/medium/large validation classification, automatic affected-module selection, Mac 3/12/45-minute lane budgets, failure-first reruns, 4h/12h reporting/review and checked remote-major checkpoints; provide the initial S1 iteration split. Planning only: do not implement tooling, activate reporting or start snapshot development.",
     "evidence": "Finalized S1 design and additional contract notes are indexed by earlydev_0_1_1_s1.md. earlydev_0_1_1_s1_iterations.md records three parallel major objective groups, their dependencies, ownership and machine scheduling; 4h objectives are deferred until each major starts; project_iteration_workflow.md records the requirements for MinecraftClone and CoreProject2026. Source-backed module audits and the authorized CoreLang handoff request are retained; a usable dependency pin remains a future prerequisite. Unrequested workflow implementation was removed, with cleanup recorded in /private/tmp/mc-terrain-v2-finalize-20261019/planning-only-correction.json. Remaining changes are planning documentation only; documentation/backlog/plan and whitespace checks verify this delivery. No commit or publication is claimed.",
     "blocker": "",
     "owner": "codex",
@@ -18292,7 +18292,7 @@
       "Commit through ordinary hooks and retain/verify the commit in the primary repository without unrelated S1 work."
     ],
     "product_changes": [
-      "S2 interaction/world/edit replication/rendering/map/UI contracts, proposals, gaps and W1–W8 acceptance outline.",
+      "S2 interaction/world/edit replication/rendering/map/UI contracts, proposals, gaps and W1\u2013W8 acceptance outline.",
       "Four-screen browser prototype and native-source assets/screens for UI review; no game implementation."
     ],
     "code_changes": [],
@@ -18971,6 +18971,50 @@
     "backlog_review": "Task0531 is scoped under active/unfinalized MC-AI-0483. Historical partial1312-test integration and sustained-flight skip do not establish parent completion."
   },
   {
+    "id": "MC-AI-0532",
+    "title": "Build the first Windows S2 UI single-executable playtest",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0482"
+    ],
+    "acceptance": "Reviewed native Windows standalone GUI EXE includes functional minimap, world map and animated geographical generation, truthful loading and compact HUD with unique fence-completed FPS, dense chunks/RSS and honest unavailable fields; exact source/package hashes and focused integration/UI tests pass. Desktop placement and its readback are tracked by dependent MC-AI-0534; parent S2 and first-playtest delivery remain open until that task passes.",
+    "evidence": "Windows Release/Ninja mc_main exit0, 16 steps/50s; standalone 13106688 bytes SHA256 b45fc77ff578ec22fbaa29b8b03f49e05f0919c3b529d937a28b34cf37c077b6 from source archive42ee60020f3cb54c05e45153cbbd5840d97eeed5666bae4ef54f11435b267820 (1723 files verified before/after build). Debug mc_main/mc_tests/mc_renderer_smoke PASS; 58 focused tests PASS; native map-input1/1 and cropped map GPU1/1 PASS; ai_check --fast PASS. Independent37-path review approved fingerprintb25ef1669f074b86ee308e5fee3578716ba1781c146b140b9486188c50a44ca0. Windows receipts: mc-s2-20261024/ui-playtest-1/windows-delivery-maps-animation. Desktop/user acceptance not claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Deliver dependency-ready S2 scope and close source-confirmed S1 review issues.",
+    "context": "Owner prioritizes quick first Windows playtest with UI, as one EXE on Desktop. Isolate initial UI subset on stable released S1 gameplay from incomplete W2/W3/adaptive renderer; retain full S2 UI/maps/model scope open. DirectLAN hotspot route uses saved HostKeyAlias; no access-policy changes. User explicitly corrected first-playtest scope: minimap, map and animated generation are mandatory before Desktop handoff. Prior HUD/text-only package was built but never delivered.",
+    "complexity": "medium",
+    "created_at": "2026-10-24",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Built the first native Windows UI playtest with minimap, full world map, real-field generation animation, compact measured HUD and exclusive map input. Source/package prepared and reviewed; dependent MC-AI-0534 still owns Desktop placement and readback. Full S2 remains open.",
+    "plan": [
+      "Integrate accepted minimap/world-map controls and animated generation with truthful progress on stable S1 gameplay.",
+      "Run focused portable and native rendering/UI tests, exact review, Windows native incremental build/package checks.",
+      "Commit the exact reviewed source/package identity before dependent Desktop placement; do not claim user delivery from package preparation."
+    ],
+    "product_changes": [
+      "First playtest includes functional minimap/world map and animated generation, truthful loading, readable HUD and fresh-input map ownership."
+    ],
+    "code_changes": [
+      "Add pure source-backed map composition, bounded asynchronous local L2, real-field animation and indexed map draws; retain isolated stable S1 gameplay and fixed text ABI."
+    ],
+    "baseline_commit": "",
+    "commits": [
+      "76e2f8196c7c7b303edbcf77607249a5577fabfb"
+    ],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Source guides and first-playtest contract checked against the integrated source; docs integrity passes.",
+    "environment_review": "Reuse exact locked dependency prefixes and native Windows cache; hotspot trusted alias; Release package closure and source hashes verified, no Git publication or game launch.",
+    "backlog_review": "MC-AI-0534 remains pending Desktop placement; parent0483 and full map/UI/model/platform qualifications remain open."
+  },
+  {
     "id": "MC-AI-0533",
     "title": "Bound world-generation script execution before running exports",
     "kind": "bug",
@@ -19017,6 +19061,83 @@
     "backlog_review": "Closed only MC-AI-0533 in this candidate. Its parent MC-AI-0483 remains active; unrelated backlog records are unchanged."
   },
   {
+    "id": "MC-AI-0534",
+    "title": "Place reviewed first S2 playtest EXE on Windows Desktop",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0532"
+    ],
+    "acceptance": "Exact MC-AI-0532 standalone EXE is copied without overwrite to the interactive user KnownFolder Desktop, terminal helper exit0 and source/destination SHA256 equality are read back. User hands-on acceptance is reported separately; S2 remains open.",
+    "evidence": "Interactive helper job f1218526-bca2-425f-aa3f-b2b6b596de18 succeeded with exit0. Desktop-session utility read back C:\\Users\\egor2\\Desktop\\MinecraftClone S2 UI Playtest 1.exe and SHA256 b45fc77ff578ec22fbaa29b8b03f49e05f0919c3b529d937a28b34cf37c077b6 equal to reviewed standalone package; fail-if-exists copy, destination previously absent. Source commit76e2f8196c7c7b303edbcf77607249a5577fabfb tree45a5c03d37f11ae7347016957d12b3f586e5bd6c matches approved review. Receipt mc-s2-20261024/ui-playtest-1/windows-delivery-maps-animation/desktop-copy-receipt.json. No game launch or owner hands-on acceptance claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Complete the owner-requested single-EXE Desktop delivery after the source/package review and commit.",
+    "context": "Dependent delivery receipt keeps the original first-playtest outcome explicit while the source commit precedes handoff. Existing limited desktop helper and reviewed no-overwrite KnownFolder copy utility; hotspot route uses saved trusted alias.",
+    "complexity": "low",
+    "created_at": "2026-10-24",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Placed reviewed first S2 UI standalone on the interactive user Desktop with source/destination hash equality; minimap, world map and animated generation included. Full S2 remains open.",
+    "plan": [
+      "Verify committed candidate/package identity and pre-handoff review.",
+      "Run reviewed native --copy utility via the existing interactive helper.",
+      "Retain actual Desktop path, terminal exit and equal SHA256 readback; report availability."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "76e2f8196c7c7b303edbcf77607249a5577fabfb",
+    "commits": [
+      "f8781eae575899d7d20090892473434122b593d9"
+    ],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Delivery receipt checked against source commit and interactive utility output; no code-guide contract change.",
+    "environment_review": "Trusted saved hotspot route and existing interactive helper; no access-policy changes or game launch. Build-account Desktop access denied, so hash readback comes from interactive user session.",
+    "backlog_review": "First-playtest placement complete; parent S2 and terrain/model/platform acceptance remain open."
+  },
+  {
+    "id": "MC-AI-0535",
+    "title": "Qualify integrated targeting and authoritative breaking effects",
+    "kind": "feature",
+    "status": "backlog",
+    "priority": "P1",
+    "route": "sol",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0538"
+    ],
+    "acceptance": "Reachable authoritative resident block is visibly highlighted with the shared perspective/curvature transform; cracks reflect server-confirmed breaking progress and bounded cubic particles emit once for an accepted break. Map/focus/session/target changes clear stale effects; native rendering and focused state regressions pass.",
+    "evidence": "",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Complete the requested S2 ordinary-world target highlight, timed cracks and cubic break particles.",
+    "context": "S2-01 and S2-03 roadmap requirements; protocol21 authoritative result/progress and native PlayerClient actions are concurrent prerequisites. Generated terrain remains solid columns; arbitrary player edits are separate. Source integration is owned by MC-AI-0538 because it shares the real map/focus/input path. This task records the complete original effects acceptance against the committed integrated source; no map criterion is deferred or removed.",
+    "complexity": "high",
+    "created_at": "2026-10-24",
+    "resolved_at": "",
+    "resolution_changes": "",
+    "plan": [
+      "Verify the integrated MC-AI-0538 source with bounded state, transport and native depth/curvature/lifecycle tests.",
+      "Record exact committed-source identities and the complete original effects acceptance evidence; retain parent gameplay/platform gates."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
     "id": "MC-AI-0536",
     "title": "Bound ordinary HUD frame-retirement tracking while retaining benchmark evidence",
     "kind": "bug",
@@ -19056,5 +19177,99 @@
     "docs_review": "Reviewed tracker/API/caller code against the narrow RENDERING guide correction.",
     "environment_review": "Focused4/4 and native shared-candidate consumer evidence; no isolated export build or aggregate qualification claim.",
     "backlog_review": "Only536 tracking scope closes. Ordinary enablement/native regression are included here so this prerequisite is used; parent0483, UI feature completion and full platform/aggregate gates remain open."
+  },
+  {
+    "id": "MC-AI-0537",
+    "title": "Correct first playtest animation and accepted prototype fidelity",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0534"
+    ],
+    "acceptance": "Actual normal-startup generation frames are visible and evolve without repeated-message clock resets; native four-view layout follows accepted prototype232eae68. Preserve real readiness, exact final atlas and maps. Source-bound rendered recording and direct visual comparison precede corrected Windows Desktop EXE delivery. Preserve the rich maximized/full-screen HUD, condense windowed telemetry, and soften early formation edges without changing later stages or exact Ready imagery; verify rendered compact and rich views.",
+    "evidence": "Source-bound native qualification: full integration baseline 06c passed 1020 Python tests (12 skipped) and 1241 CTest cases; narrow 07b delta passed 127 focused tests and actual native startup captures; final 07c passed 2 focused Mac GPU regressions and all 8 Windows runtime tests. Windows normal startup recorded 63 geographic pre-ready frames, 57 distinct images and zero clock resets. Compact 844x346 and maximized 1920x1129 Windows captures inspected. Reviewed standalone Desktop copy job de0e6c33-965b-4501-bcc6-000432d93b6a exited 0 with source/destination SHA-256 6e4ab60383d9cad2294c7b1cc3497d282c4da8d4d714a7339f9c54684671275b (13413376 bytes). Receipt: /Users/core-just/.codex/task-evidence/mc-s2-20261024/ui-playtest-2/windows-delivery-2-receipt.json. Owner hands-on acceptance and parent S2 gates remain open.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Restore the explicitly requested first-playtest outcome through the real application path.",
+    "context": "Owner rejected delivered first playtest: unlike accepted prototype and no world creation animation. Source trace found non-Playing render clearing the explicit map draw list after loading upload, plus pointer-based animation clock resets.",
+    "complexity": "high",
+    "created_at": "2026-10-24",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Restored visible evolving generation through the ordinary startup path, matched accepted prototype composition, preserved exact readiness/final imagery, condensed windowed telemetry while retaining rich maximized/full-screen HUD, softened early formation edges, and delivered corrected standalone Windows Playtest 2 to the actual Desktop.",
+    "plan": [
+      "Capture the failing actual loading render path before changing product code.",
+      "Fix generation map draw ownership and source clock identity; match accepted prototype layouts and illustrative formation, condense windowed telemetry, and soften early image edges.",
+      "Record corrected real startup, compare native views, run focused gates and review exact source, then deliver one corrected Windows EXE."
+    ],
+    "product_changes": [
+      "Generation map remains visible and advances across repeated or replaced snapshots without resetting its visible clock.",
+      "Prototype-based pre-connect, generation, gameplay/minimap and navigable world-map views; compact windowed HUD, rich maximized/full-screen HUD and gentler early formation imagery.",
+      "One standalone MinecraftClone S2 UI Playtest 2.exe delivered to C:\\Users\\egor2\\Desktop; original Playtest 1 preserved."
+    ],
+    "code_changes": [
+      "Own loading draw retention and visible-time accumulation by loading session; use stage-specific shared map animator and immutable prototype backdrop.",
+      "Bounded native readback retries retain the pending slot and invalidate eligibility on recreation; production capture defaults remain unchanged.",
+      "Update HUD geometry/telemetry and map composition, with real-startup and native readback regressions."
+    ],
+    "baseline_commit": "f8781eae575899d7d20090892473434122b593d9",
+    "commits": [
+      "e56401d335996b68e72d47a6c9a0b2a938e39667"
+    ],
+    "finalized": true,
+    "retrospective": "Helper and endpoint checks did not expose the original hidden loading map. Added ordinary startup recordings and source-bound compact/rich captures; retained failed baseline evidence. Full integration was not rerun after the narrow readback delta; focused and native Windows qualification cover that delta.",
+    "docs_review": "Reviewed GAMEPLAY and RENDERING guides against source; refreshed and checked source bindings. Updated prototype/playtest decision and task traceability.",
+    "environment_review": "Windows hotspot alias used. Reviewed copier resolved KnownFolder Desktop, refused overwrite and verified SHA equality. Storage scan measured 27483086090 bytes but could not enumerate one Content.IE5 directory; full 30 GB compliance is inconclusive. No permission or remote Git changes.",
+    "backlog_review": "Corrected playtest delivery complete; owner acceptance remains pending. Full S2 and replacement terrain-model integration remain open; no new terrain materials before accepted model integration."
+  },
+  {
+    "id": "MC-AI-0538",
+    "title": "Integrate corrected S2 UI and authoritative block feedback",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0537"
+    ],
+    "acceptance": "Full S2 retains protocol21 block actions, adaptive overlays and authoritative world state while matching corrected playtest generation, final atlas, four-screen composition and compact-window/rich-maximized HUD. Real normal startup and focused rendering/input regressions pass. Reachable authoritative resident block is visibly highlighted with the shared perspective/curvature transform; cracks reflect server-confirmed breaking progress and bounded cubic particles emit once for an accepted break. Map/focus/session/target changes clear stale effects; native rendering and focused state regressions pass.",
+    "evidence": "Current macOS native CTest entries pass2/2: renderer83PASS/1existing opt-in SKIP and real startup2PASS in103.56s, unchanged binary and no source drift (task-0538/native-current-01). Focused UI/action/map/text suite80/80PASS (pure-current-01); standalone package tests15/15PASS (package-tests.log). Thirteen readback PNGs retain exact RGBA pixels at2,624,600B; compact game/generation frames visually inspected. Protocol21/base action and revision state preserved. No isolated export build, Windows/Android runtime, full integration, performance, owner aesthetic acceptance or snapshot/release closure is claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Complete the owner-requested full S2 behavior after the corrected Windows playtest.",
+    "context": "Corrected Playtest2 on isolated S1-compatible UI branch owns MC-AI-0537; full S2 still contains loading-map suppression and pointer-reset animation clock. Port focused changes without replacing newer action/renderer contracts. The native input and renderer consumers share map/focus state with interaction effects. Integrate their source together rather than project a mapless effects path; preserve all MC-AI-0535 criteria. MC-AI-0535 becomes the focused qualification receipt for this integrated source.",
+    "complexity": "high",
+    "created_at": "2026-10-24",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Integrated corrected four-view presentation, source-bound illustrative generation with actual final atlas, responsive HUD, minimap/world map, adaptive glyphs and authoritative block feedback. Included required adaptive shader delivery and restored the original setup entrypoint executable mode.",
+    "plan": [
+      "Merge corrected presentation, source-bound animation and HUD into full S2 while preserving newer backend and renderer behavior.",
+      "Integrate reachable targeting, authoritative crack progress and accepted-break particles; clear effects and pending correlations on actual map, focus, session and target transitions.",
+      "Compile and run focused regressions, actual startup captures and guide integrity checks; review and commit exact task slice."
+    ],
+    "product_changes": [
+      "Continuous generation illustration ends on the authoritative Ready atlas; map and gameplay views retain their own input ownership.",
+      "Compact windowed HUD preserves required telemetry and controls; maximized/fullscreen remains rich.",
+      "Authoritative target/crack/accepted-particle presentation clears stale effects across map/focus/session/target transitions."
+    ],
+    "code_changes": [
+      "Shared UiPresentation/S2MapPresentation and generation phase composition; canonical minimap and edited-world overlays.",
+      "Native controller action correlation, perspective/curvature target rendering, bounded effects and screenshot/fence handling.",
+      "Per-pixel adaptive text shader and required Windows/Android shader assets; exact file modes preserved."
+    ],
+    "baseline_commit": "8ac3a140d889f1fe8898682ea216f2830c86cf40",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": "Parent S2 remains active. MC-AI-0535 records integrated-effects qualification separately; Android gameplay, model integration, material extensions and aggregate platform/performance/release gates remain open."
   }
 ]

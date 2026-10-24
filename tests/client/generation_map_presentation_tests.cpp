@@ -6,11 +6,15 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -59,6 +63,16 @@ void addClimate(generation::GenerationSnapshot& snapshot, float const temperatur
     static constexpr uint32_t FIELD_COUNT = 256U * 256U;
     snapshot.temperature.assign(FIELD_COUNT, temperature);
     snapshot.precipitation.assign(FIELD_COUNT, precipitation);
+}
+
+[[nodiscard]]
+uint32_t animationRenderPixelIndex(uint32_t const native_x, uint32_t const native_y) noexcept
+{
+    static constexpr uint32_t SCALE = client::GENERATION_MAP_ANIMATION_SCALE;
+    static constexpr uint32_t RENDER_RESOLUTION = client::GENERATION_MAP_ANIMATION_RENDER_RESOLUTION;
+    uint32_t const x = native_x * SCALE + SCALE / 2U;
+    uint32_t const y = native_y * SCALE + SCALE / 2U;
+    return y * RENDER_RESOLUTION + x;
 }
 
 TEST(GenerationMapPresentationTest, MissingMalformedOrNonFiniteHeightProducesNoImage)
@@ -203,7 +217,14 @@ TEST(GenerationMapPresentationTest, FinalDrainageShowsSnowOnColdLandAndIceOnCold
     snapshot.precipitation[DRY_COLD_LAND] = 0.0F;
     snapshot.precipitation[COLD_OCEAN] = 0.0F;
 
-    std::optional<client::GenerationMapImage> image = client::rasterizeGenerationMap(snapshot);
+    std::vector<uint8_t> display_ice_mask(FIELD_COUNT, client::GENERATION_MAP_ICE_NONE);
+    display_ice_mask[COLD_LAND] = client::GENERATION_MAP_ICE_SNOW;
+    display_ice_mask[DRY_COLD_LAND] = client::GENERATION_MAP_ICE_SNOW;
+    display_ice_mask[COLD_OCEAN] = client::GENERATION_MAP_ICE_WATER;
+    std::optional<client::GenerationMapImage> image = client::rasterizeGenerationMap(
+        snapshot,
+        display_ice_mask
+    );
 
     ASSERT_TRUE(image);
     EXPECT_GT(image->rgba[COLD_LAND][0U], 180U);
@@ -228,8 +249,9 @@ TEST(GenerationMapPresentationTest, FinalDrainageShowsSnowOnColdLandAndIceOnCold
     EXPECT_EQ(FIELD_COUNT, image->rgba.size());
 }
 
-TEST(GenerationMapPresentationTest, LandUsesInclusiveSnowBoundaryAndOceanUsesStrictIceBoundary)
+TEST(GenerationMapPresentationTest, DisplayIceMaskControlsSnowAndWaterIceComposition)
 {
+    static constexpr uint32_t FIELD_COUNT = 256U * 256U;
     static constexpr uint32_t JUST_WARM = 0U;
     static constexpr uint32_t AT_BOUNDARY = 1U;
     static constexpr uint32_t JUST_COLD = 2U;
@@ -240,12 +262,6 @@ TEST(GenerationMapPresentationTest, LandUsesInclusiveSnowBoundaryAndOceanUsesStr
     generation::GenerationSnapshot snapshot = makeSnapshot(generation::GenerationStage::FinalDrainage);
     addHydrology(snapshot);
     addClimate(snapshot, 5.0F, 0.5F);
-    snapshot.temperature[JUST_WARM] = std::nextafter(-2.0F, 0.0F);
-    snapshot.temperature[AT_BOUNDARY] = -2.0F;
-    snapshot.temperature[JUST_COLD] = std::nextafter(-2.0F, -3.0F);
-    snapshot.temperature[OCEAN_JUST_WARM] = std::nextafter(-2.0F, 0.0F);
-    snapshot.temperature[OCEAN_AT_BOUNDARY] = -2.0F;
-    snapshot.temperature[OCEAN_JUST_COLD] = std::nextafter(-2.0F, -3.0F);
     snapshot.ocean_mask[OCEAN_JUST_WARM] = 1U;
     snapshot.ocean_mask[OCEAN_AT_BOUNDARY] = 1U;
     snapshot.ocean_mask[OCEAN_JUST_COLD] = 1U;
@@ -253,7 +269,14 @@ TEST(GenerationMapPresentationTest, LandUsesInclusiveSnowBoundaryAndOceanUsesStr
     snapshot.elevation[OCEAN_AT_BOUNDARY] = -0.5F;
     snapshot.elevation[OCEAN_JUST_COLD] = -0.5F;
 
-    std::optional<client::GenerationMapImage> image = client::rasterizeGenerationMap(snapshot);
+    std::vector<uint8_t> display_ice_mask(FIELD_COUNT, client::GENERATION_MAP_ICE_NONE);
+    display_ice_mask[AT_BOUNDARY] = client::GENERATION_MAP_ICE_SNOW;
+    display_ice_mask[JUST_COLD] = client::GENERATION_MAP_ICE_SNOW;
+    display_ice_mask[OCEAN_JUST_COLD] = client::GENERATION_MAP_ICE_WATER;
+    std::optional<client::GenerationMapImage> image = client::rasterizeGenerationMap(
+        snapshot,
+        display_ice_mask
+    );
     ASSERT_TRUE(image);
 
     EXPECT_GT(maximumChannelDistance(image->rgba[AT_BOUNDARY], image->rgba[JUST_WARM]), 40U);
@@ -275,6 +298,296 @@ TEST(GenerationMapPresentationTest, LandUsesInclusiveSnowBoundaryAndOceanUsesStr
     EXPECT_GT(image->rgba[OCEAN_JUST_COLD][0U], image->rgba[OCEAN_AT_BOUNDARY][0U]);
     EXPECT_GT(image->rgba[OCEAN_JUST_COLD][1U], image->rgba[OCEAN_AT_BOUNDARY][1U]);
     EXPECT_GT(image->rgba[OCEAN_JUST_COLD][2U], image->rgba[OCEAN_AT_BOUNDARY][2U]);
+}
+
+TEST(GenerationMapPresentationTest, SharedDisplayIceMaskUsesSnowZonesAndColdWaterThreshold)
+{
+    std::array<uint8_t, 5U> climate_zone{ 5U, 5U, 0U, 0U, 0U };
+    std::array<uint8_t, 5U> ocean_mask{ 0U, 1U, 1U, 0U, 0U };
+    std::array<uint8_t, 5U> lake_mask{ 0U, 0U, 0U, 1U, 0U };
+    std::array<float, 5U> temperature{ -3.0F, -20.0F, -10.0F, -10.0F, -10.0F };
+
+    std::optional<client::GenerationMapDisplayIceMask> const mask = client::makeGenerationMapDisplayIceMask(
+        climate_zone,
+        ocean_mask,
+        lake_mask,
+        temperature
+    );
+
+    ASSERT_TRUE(mask);
+    EXPECT_EQ(mask->surface_kind, (std::vector<uint8_t>{
+        client::GENERATION_MAP_ICE_SNOW,
+        client::GENERATION_MAP_ICE_WATER,
+        client::GENERATION_MAP_ICE_WATER,
+        client::GENERATION_MAP_ICE_WATER,
+        client::GENERATION_MAP_ICE_NONE,
+    }));
+    EXPECT_TRUE(std::equal(mask->temperature.begin(), mask->temperature.end(), temperature.begin()));
+}
+
+TEST(GenerationMapPresentationTest, GlobalAtlasRasterMatchesSnapshotForSharedFinalMask)
+{
+    static constexpr uint32_t FIELD_COUNT = 256U * 256U;
+    static constexpr uint32_t SNOW_INDEX = 0U;
+    static constexpr uint32_t WATER_ICE_INDEX = 1U;
+
+    generation::GenerationSnapshot snapshot = makeSnapshot(generation::GenerationStage::FinalDrainage);
+    addHydrology(snapshot);
+    addClimate(snapshot, -20.0F, 0.5F);
+    snapshot.ocean_mask[WATER_ICE_INDEX] = 1U;
+
+    generation::GlobalAtlas atlas;
+    atlas.configuration.resolution = snapshot.resolution;
+    atlas.elevation = snapshot.elevation;
+    atlas.water_level = snapshot.water_level;
+    atlas.ocean_mask = snapshot.ocean_mask;
+    atlas.lake_mask = snapshot.lake_mask;
+    atlas.river_mask = snapshot.river_mask;
+    atlas.temperature = snapshot.temperature;
+    atlas.precipitation = snapshot.precipitation;
+    atlas.climate_zone.assign(FIELD_COUNT, 0U);
+    atlas.climate_zone[SNOW_INDEX] = 5U;
+
+    std::optional<client::GenerationMapDisplayIceMask> const display_ice_mask =
+        client::makeGenerationMapDisplayIceMask(
+            atlas.climate_zone,
+            atlas.ocean_mask,
+            atlas.lake_mask,
+            atlas.temperature
+        );
+    ASSERT_TRUE(display_ice_mask);
+
+    std::optional<client::GenerationMapImage> const snapshot_image = client::rasterizeGenerationMap(
+        snapshot,
+        display_ice_mask->surface_kind
+    );
+    std::optional<client::GenerationMapImage> const atlas_image = client::rasterizeGenerationMap(
+        atlas,
+        display_ice_mask->surface_kind
+    );
+
+    ASSERT_TRUE(snapshot_image);
+    ASSERT_TRUE(atlas_image);
+    EXPECT_EQ(atlas_image->rgba, snapshot_image->rgba);
+}
+
+TEST(GenerationMapPresentationTest, AnimationFillsOnlyCellsInActualHydrologyMasks)
+{
+    static constexpr uint32_t OCEAN_INDEX = 0U;
+    generation::GenerationSnapshot snapshot = makeSnapshot(generation::GenerationStage::InitialDrainage);
+    addHydrology(snapshot);
+    snapshot.elevation[OCEAN_INDEX] = -0.3F;
+    snapshot.ocean_mask[OCEAN_INDEX] = 1U;
+    snapshot.water_level[OCEAN_INDEX] = 1.0F;
+    generation::GenerationSnapshot without_water = snapshot;
+    without_water.ocean_mask[OCEAN_INDEX] = 0U;
+
+    client::GenerationMapAnimationClock const clock{
+        .visible_elapsed = std::chrono::milliseconds{ 12'000 },
+    };
+    std::shared_ptr<client::GenerationMapImage const> const water = client::animateGenerationMap(
+        snapshot,
+        nullptr,
+        nullptr,
+        clock
+    );
+    std::shared_ptr<client::GenerationMapImage const> const land = client::animateGenerationMap(
+        without_water,
+        nullptr,
+        nullptr,
+        clock
+    );
+
+    ASSERT_NE(water, nullptr);
+    ASSERT_NE(land, nullptr);
+    EXPECT_NE(
+        water->rgba[animationRenderPixelIndex(0U, 0U)],
+        land->rgba[animationRenderPixelIndex(0U, 0U)]
+    );
+    EXPECT_EQ(
+        water->rgba[animationRenderPixelIndex(1U, 0U)],
+        land->rgba[animationRenderPixelIndex(1U, 0U)]
+    );
+}
+
+TEST(GenerationMapPresentationTest, AnimationGrowsIceMonotonicallyTowardTheSharedMask)
+{
+    static constexpr uint32_t COLDER_INDEX = 0U;
+    static constexpr uint32_t WARMER_SOURCE_INDEX = 2U;
+    static constexpr uint32_t FIELD_COUNT = 256U * 256U;
+
+    generation::GenerationSnapshot snapshot = makeSnapshot(generation::GenerationStage::FinalDrainage);
+    addHydrology(snapshot);
+    addClimate(snapshot, 0.0F, 0.5F);
+    std::vector<uint8_t> climate_zone(FIELD_COUNT, 0U);
+    std::vector<uint8_t> ocean_mask(FIELD_COUNT, 0U);
+    std::vector<uint8_t> lake_mask(FIELD_COUNT, 0U);
+    std::vector<float> target_temperature(FIELD_COUNT, 0.0F);
+    climate_zone[COLDER_INDEX] = 5U;
+    climate_zone[WARMER_SOURCE_INDEX] = 5U;
+    target_temperature[COLDER_INDEX] = -20.0F;
+    target_temperature[WARMER_SOURCE_INDEX] = -2.0F;
+    snapshot.temperature[COLDER_INDEX] = -20.0F;
+    snapshot.temperature[WARMER_SOURCE_INDEX] = -2.0F;
+    std::optional<client::GenerationMapDisplayIceMask> const mask = client::makeGenerationMapDisplayIceMask(
+        climate_zone,
+        ocean_mask,
+        lake_mask,
+        target_temperature
+    );
+    ASSERT_TRUE(mask);
+    auto const mask_handle = std::make_shared<client::GenerationMapDisplayIceMask const>(*mask);
+
+    client::GenerationMapAnimationClock const early_clock{
+        .visible_elapsed = std::chrono::milliseconds{ 15'100 },
+    };
+    client::GenerationMapAnimationClock const late_clock{
+        .visible_elapsed = std::chrono::milliseconds{ 20'000 },
+    };
+    std::shared_ptr<client::GenerationMapImage const> const early = client::animateGenerationMap(
+        snapshot,
+        nullptr,
+        mask_handle,
+        early_clock
+    );
+    std::shared_ptr<client::GenerationMapImage const> const late = client::animateGenerationMap(
+        snapshot,
+        nullptr,
+        mask_handle,
+        late_clock
+    );
+
+    ASSERT_NE(early, nullptr);
+    ASSERT_NE(late, nullptr);
+    uint32_t const colder_pixel = animationRenderPixelIndex(0U, 0U);
+    uint32_t const warmer_pixel = animationRenderPixelIndex(1U, 0U);
+    EXPECT_GT(early->rgba[colder_pixel][0U], early->rgba[warmer_pixel][0U]);
+    EXPECT_GT(late->rgba[warmer_pixel][0U], early->rgba[warmer_pixel][0U]);
+}
+
+TEST(GenerationMapPresentationTest, AnimationIsBoundedDeterministicAndSettlesToTheSharedFinalImage)
+{
+    generation::GenerationSnapshot snapshot = makeSnapshot(generation::GenerationStage::Tectonics);
+    for (uint32_t y = 0U; y < snapshot.resolution; ++y)
+    {
+        for (uint32_t x = 0U; x < snapshot.resolution; ++x)
+        {
+            snapshot.elevation[y * snapshot.resolution + x] = static_cast<float>(x) / 64.0F;
+        }
+    }
+
+    client::GenerationMapAnimationClock const early_clock{
+        .visible_elapsed = std::chrono::milliseconds{ 0 },
+    };
+    client::GenerationMapAnimationClock const late_clock{
+        .visible_elapsed = std::chrono::milliseconds{ 1'750 },
+    };
+    std::shared_ptr<client::GenerationMapImage const> const early = client::animateGenerationMap(
+        snapshot,
+        nullptr,
+        nullptr,
+        early_clock
+    );
+    std::shared_ptr<client::GenerationMapImage const> const late = client::animateGenerationMap(
+        snapshot,
+        nullptr,
+        nullptr,
+        late_clock
+    );
+
+    ASSERT_NE(early, nullptr);
+    ASSERT_NE(late, nullptr);
+    EXPECT_EQ(early->width, client::GENERATION_MAP_ANIMATION_RENDER_RESOLUTION);
+    EXPECT_EQ(early->height, client::GENERATION_MAP_ANIMATION_RENDER_RESOLUTION);
+    EXPECT_NE(early->rgba, late->rgba);
+
+    std::optional<client::GenerationMapImage> final_image_value = client::rasterizeGenerationMap(snapshot);
+    ASSERT_TRUE(final_image_value);
+    client::GenerationMapImageHandle const final_image = std::make_shared<client::GenerationMapImage const>(
+        std::move(*final_image_value)
+    );
+    client::GenerationMapAnimationClock const ready_clock{
+        .visible_elapsed = std::chrono::milliseconds{ 0 },
+        .ready = true,
+    };
+
+    EXPECT_EQ(client::animateGenerationMap(snapshot, final_image, nullptr, ready_clock), final_image);
+}
+
+TEST(GenerationMapPresentationTest, ReducedMotionUsesAStableSnapshotEndpoint)
+{
+    generation::GenerationSnapshot snapshot = makeSnapshot(generation::GenerationStage::Tectonics);
+    std::optional<client::GenerationMapImage> const snapshot_image = client::rasterizeGenerationMap(snapshot);
+    ASSERT_TRUE(snapshot_image);
+    client::GenerationMapAnimationClock const early_clock{
+        .visible_elapsed = std::chrono::milliseconds{ 0 },
+        .reduced_motion = true,
+    };
+    client::GenerationMapAnimationClock const late_clock{
+        .visible_elapsed = std::chrono::milliseconds{ 3'600'000 },
+        .reduced_motion = true,
+    };
+
+    std::shared_ptr<client::GenerationMapImage const> const early = client::animateGenerationMap(
+        snapshot,
+        nullptr,
+        nullptr,
+        early_clock
+    );
+    std::shared_ptr<client::GenerationMapImage const> const late = client::animateGenerationMap(
+        snapshot,
+        nullptr,
+        nullptr,
+        late_clock
+    );
+
+    ASSERT_NE(early, nullptr);
+    ASSERT_NE(late, nullptr);
+    EXPECT_EQ(early->rgba, snapshot_image->rgba);
+    EXPECT_EQ(late->rgba, snapshot_image->rgba);
+
+    client::GenerationMapAnimator animator;
+    auto const snapshot_handle = std::make_shared<generation::GenerationSnapshot const>(snapshot);
+    client::GenerationMapAnimationFrame const static_frame = animator.update(
+        snapshot_handle,
+        nullptr,
+        nullptr,
+        nullptr,
+        late_clock
+    );
+    ASSERT_NE(static_frame.image, nullptr);
+    EXPECT_EQ(static_frame.image->rgba, snapshot_image->rgba);
+}
+
+TEST(GenerationMapPresentationTest, ReducedMotionKeepsTheLatestHydrologySnapshot)
+{
+    static constexpr uint32_t OCEAN_INDEX = 0U;
+    generation::GenerationSnapshot snapshot = makeSnapshot(generation::GenerationStage::FinalDrainage);
+    addHydrology(snapshot);
+    snapshot.elevation[OCEAN_INDEX] = -0.3F;
+    snapshot.ocean_mask[OCEAN_INDEX] = 1U;
+    snapshot.water_level[OCEAN_INDEX] = 1.0F;
+    generation::GenerationSnapshot without_water = snapshot;
+    without_water.ocean_mask[OCEAN_INDEX] = 0U;
+
+    std::optional<client::GenerationMapImage> const expected = client::rasterizeGenerationMap(snapshot);
+    std::optional<client::GenerationMapImage> const dry = client::rasterizeGenerationMap(without_water);
+    ASSERT_TRUE(expected);
+    ASSERT_TRUE(dry);
+    EXPECT_NE(expected->rgba[OCEAN_INDEX], dry->rgba[OCEAN_INDEX]);
+
+    client::GenerationMapAnimationClock const clock{
+        .visible_elapsed = std::chrono::milliseconds{ 3'600'000 },
+        .reduced_motion = true,
+    };
+    std::shared_ptr<client::GenerationMapImage const> const image = client::animateGenerationMap(
+        snapshot,
+        nullptr,
+        nullptr,
+        clock
+    );
+    ASSERT_NE(image, nullptr);
+    EXPECT_EQ(image->rgba, expected->rgba);
 }
 
 TEST(GenerationMapPresentationTest, MissingClimateDoesNotBreakFinalHydrologyOrPreClimateStages)
@@ -429,6 +742,42 @@ TEST(GenerationMapPresentationTest, MaximumResolutionIsBoundedAndAllPixelsAreOpa
     EXPECT_TRUE(std::all_of(image->rgba.begin(), image->rgba.end(), [](Rgba8 const& pixel) {
         return pixel[3U] == 255U;
     }));
+}
+
+TEST(GenerationMapPresentationTest, AnimatorKeepsSixIllustrativePhasesAndReturnsTheExactReadyImage)
+{
+    auto snapshot = std::make_shared<generation::GenerationSnapshot const>(
+        makeSnapshot(generation::GenerationStage::Tectonics));
+    auto final_image = std::make_shared<client::GenerationMapImage const>();
+    client::GenerationMapAnimator animator;
+    static constexpr std::array<client::GenerationMapAnimationPhase, 6U> PHASES{{
+        client::GenerationMapAnimationPhase::Tectonics,
+        client::GenerationMapAnimationPhase::Relief,
+        client::GenerationMapAnimationPhase::Water,
+        client::GenerationMapAnimationPhase::Ice,
+        client::GenerationMapAnimationPhase::Climate,
+        client::GenerationMapAnimationPhase::Arrival,
+    }};
+
+    for (uint32_t index = 0U; index < static_cast<uint32_t>(PHASES.size()); ++index) {
+        client::GenerationMapAnimationClock const clock{
+            .visible_elapsed = std::chrono::seconds{ index * 5U },
+        };
+        client::GenerationMapAnimationFrame const frame = animator.update(
+            snapshot, nullptr, final_image, nullptr, clock);
+        EXPECT_EQ(frame.phase, PHASES[index]);
+        EXPECT_NE(frame.image, nullptr);
+    }
+
+    client::GenerationMapAnimationClock const ready_clock{
+        .visible_elapsed = std::chrono::milliseconds{ 0 },
+        .ready = true,
+    };
+    client::GenerationMapAnimationFrame const ready = animator.update(
+        snapshot, nullptr, final_image, nullptr, ready_clock);
+    EXPECT_EQ(ready.phase, client::GenerationMapAnimationPhase::Arrival);
+    EXPECT_FLOAT_EQ(ready.phase_progress, 1.0F);
+    EXPECT_EQ(ready.image, final_image);
 }
 
 } // namespace

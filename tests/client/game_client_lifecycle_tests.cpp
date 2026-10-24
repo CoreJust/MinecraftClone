@@ -536,9 +536,11 @@ TEST(GameClientLifecycleTest, StopDuringPendingConnectionDoesNotSubmitGameplay)
     static constexpr std::chrono::milliseconds STOP_BOUND{ 250 };
     uint16_t const port = unusedPort();
     bool stop_processed = false;
+    bool connection_attempt_observed = false;
     auto const started = std::chrono::steady_clock::now();
     LifecycleClient game_client{ [&](LifecycleClient& client) {
         if (std::chrono::steady_clock::now() - started >= STOP_DELAY) {
+            connection_attempt_observed = client.connectionAttemptStarted();
             stop_processed = true;
             client.requestStop();
         }
@@ -557,6 +559,7 @@ TEST(GameClientLifecycleTest, StopDuringPendingConnectionDoesNotSubmitGameplay)
     game_client.run(core::Address::localhost(port), '@', &hooks);
 
     EXPECT_TRUE(stop_processed);
+    EXPECT_TRUE(connection_attempt_observed);
     EXPECT_FALSE(game_client.isConnected());
     EXPECT_FALSE(game_client.accepted());
     EXPECT_EQ(game_client.inputCalls(), 0U);

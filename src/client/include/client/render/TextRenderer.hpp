@@ -39,12 +39,21 @@ constexpr TextShaderMode textShaderMode(TextSpace const space) noexcept
         : TextShaderMode::World;
 }
 
+enum class TextStyle : uint8_t {
+    Fixed,
+    Adaptive,
+};
+
 struct TextPlacement final {
     TextSpace space = TextSpace::Screen;
     std::array<float, 3> position{ 0.0F, 0.0F, 0.0F };
     float scale = 1.0F;
     std::array<float, 3> right{ 1.0F, 0.0F, 0.0F };
     std::array<float, 3> up{ 0.0F, 1.0F, 0.0F };
+    TextStyle style = TextStyle::Fixed;
+    // Adaptive candidates are sRGB; the label color supplies additional alpha.
+    TextColor light_color{};
+    TextColor dark_color{ 0.0F, 0.0F, 0.0F, 1.0F };
 };
 
 struct TextLabel final {
@@ -86,8 +95,10 @@ struct TextGlyph final {
     std::array<float, 3> up{ 0.0F, 0.0F, 0.0F };
     float width = 16.0F;
     float height = 32.0F;
+    uint32_t light_color = 0xFFFF'FFFFU;
+    uint32_t dark_color = 0xFF00'0000U;
 };
-static_assert(sizeof(TextGlyph) == 56U);
+static_assert(sizeof(TextGlyph) == 64U);
 
 struct TextBatch final {
     std::vector<TextGlyph> glyphs;

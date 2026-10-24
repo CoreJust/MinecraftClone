@@ -212,8 +212,13 @@ struct MapImagePushConstants final {
     std::array<uint32_t, 2> viewport_size{};
     std::array<uint32_t, 2> image_size{};
     uint32_t encode_srgb = 0U;
+    uint32_t cropped = 0U;
+    uint32_t decode_srgb = 0U;
+    uint32_t padding = 0U;
+    std::array<float, 4> source{ 0.0F, 0.0F, 1.0F, 1.0F };
+    std::array<float, 4> destination{};
 };
-static_assert(sizeof(MapImagePushConstants) == 20U);
+static_assert(sizeof(MapImagePushConstants) == 64U);
 
 void checkResult(VkResult const result, char const* const operation)
 {
@@ -1028,9 +1033,18 @@ private:
 
 class MapImageTexture final {
 public:
-    MapImageTexture(VkDevice const device, VkPhysicalDevice const physical_device)
+    MapImageTexture(
+        VkDevice const device,
+        VkPhysicalDevice const physical_device,
+        VkFormat const format = VK_FORMAT_R8G8B8A8_SRGB,
+        VkExtent2D const extent = { MapImageData::MAXIMUM_DIMENSION, MapImageData::MAXIMUM_DIMENSION },
+        bool const render_target = false
+    )
         : m_device(device)
         , m_physical_device(physical_device)
+        , m_format(format)
+        , m_extent(extent)
+        , m_render_target(render_target)
     {
         try {
             createImage();
@@ -1050,6 +1064,8 @@ public:
     MapImageTexture(MapImageTexture const&) = delete;
     MapImageTexture& operator=(MapImageTexture const&) = delete;
 
+    [[nodiscard]] VkImage image() const noexcept { return m_image; }
+    [[nodiscard]] VkImageView view() const noexcept { return m_view; }
     [[nodiscard]] VkDescriptorSetLayout layout() const noexcept { return m_layout; }
     [[nodiscard]] VkDescriptorSet set() const noexcept { return m_set; }
 
@@ -1147,22 +1163,39 @@ public:
 private:
     void createImage()
     {
+        VkImageUsageFlags const usage = VK_IMAGE_USAGE_SAMPLED_BIT
+            | (m_render_target ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+        if (m_render_target) {
+            VkFormatProperties features{};
+            vkGetPhysicalDeviceFormatProperties(m_physical_device, m_format, &features);
+            VkFormatFeatureFlags const required = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+            if ((features.optimalTilingFeatures & required) != required) {
+                throw std::runtime_error("adaptive HUD scene format cannot be sampled and rendered");
+            }
+            VkImageFormatProperties properties{};
+            checkResult(vkGetPhysicalDeviceImageFormatProperties(m_physical_device, m_format,
+                VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL, usage, 0U, &properties),
+                "vkGetPhysicalDeviceImageFormatProperties adaptive HUD scene");
+            if (m_extent.width > properties.maxExtent.width || m_extent.height > properties.maxExtent.height) {
+                throw std::runtime_error("adaptive HUD scene extent exceeds image format limits");
+            }
+        }
         VkImageCreateInfo const image_info{
             .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
             .pNext = nullptr,
             .flags = 0U,
             .imageType = VK_IMAGE_TYPE_2D,
-            .format = VK_FORMAT_R8G8B8A8_SRGB,
+            .format = m_format,
             .extent = {
-                .width = MapImageData::MAXIMUM_DIMENSION,
-                .height = MapImageData::MAXIMUM_DIMENSION,
+                .width = m_extent.width,
+                .height = m_extent.height,
                 .depth = 1U,
             },
             .mipLevels = 1U,
             .arrayLayers = 1U,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .tiling = VK_IMAGE_TILING_OPTIMAL,
-            .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            .usage = usage,
             .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
             .queueFamilyIndexCount = 0U,
             .pQueueFamilyIndices = nullptr,
@@ -1201,7 +1234,7 @@ private:
             .flags = 0U,
             .image = m_image,
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = VK_FORMAT_R8G8B8A8_SRGB,
+            .format = m_format,
             .components = {
                 .r = VK_COMPONENT_SWIZZLE_IDENTITY,
                 .g = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -1339,6 +1372,9 @@ private:
 
     VkDevice m_device = VK_NULL_HANDLE;
     VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
+    VkFormat m_format;
+    VkExtent2D m_extent;
+    bool m_render_target;
     VkImage m_image = VK_NULL_HANDLE;
     VkDeviceMemory m_memory = VK_NULL_HANDLE;
     VkImageView m_view = VK_NULL_HANDLE;
@@ -1623,6 +1659,42 @@ void recordPlayers(
     draw(player_overlay_pipeline, true);
 }
 
+void recordBlockEffects(
+    VkCommandBuffer command, VkPipeline pipeline, VkPipelineLayout layout,
+    Camera const& camera, VkExtent2D extent, bool curved_world,
+    std::span<BlockEffectBox const> boxes
+)
+{
+    if (boxes.empty()) {
+        return;
+    }
+    auto const projection = sceneProjection(camera, extent, curved_world);
+    if (!projection) {
+        return;
+    }
+    glm::mat4 const projection_view = curved_world ? *projection * glm::lookAtRH(
+        glm::vec3{0.0F}, glm::vec3{camera.forward()}, glm::vec3{camera.up()}
+    ) : *projection * camera.viewMatrix();
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    for (BlockEffectBox const& box : boxes) {
+        glm::vec3 origin{box.origin};
+        if (curved_world) {
+            origin = boundsNearestToCamera(origin, origin, camera.pose().position).minimum
+                - glm::vec3{camera.pose().position};
+        }
+        BoxPushConstants const push{
+            .projection_view = projection_view,
+            .origin = {origin.x, origin.y, origin.z, 0.0F},
+            .extent = {box.extent.x, box.extent.y, box.extent.z, 0.0F},
+            .color = {box.color.r, box.color.g, box.color.b, box.color.a},
+            .curvature = {0.0F, 0.0F, curved_world ? 1.0F : 0.0F,
+                curved_world ? worldVisibilityRadius(camera.pose().position.z) : MIN_WORLD_VISIBILITY_RADIUS},
+        };
+        vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(push), &push);
+        vkCmdDraw(command, BOX_VERTEX_COUNT, 1U, 0U, 0U);
+    }
+}
+
 void recordFlat3dScene(
     VkCommandBuffer const command,
     VkPipeline const grid_pipeline,
@@ -1873,7 +1945,9 @@ void recordText(
     TextShaderMode const mode,
     uint32_t const first_instance,
     uint32_t& draw_count,
-    glm::vec4 const curvature_camera = {}
+    glm::vec4 const curvature_camera = {},
+    VkDescriptorSet const scene_descriptor = VK_NULL_HANDLE,
+    bool const encoded_scene = false
 )
 {
     size_t const count = batch.glyphs.size();
@@ -1901,12 +1975,164 @@ void recordText(
             static_cast<float>(extent.height),
         },
         .scale = 1.0F,
-        .mode = static_cast<uint32_t>(mode),
+        .mode = static_cast<uint32_t>(mode) | (encoded_scene ? 2U : 0U),
         .curvature_camera = curvature_camera,
     };
-    vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(push), &push);
+    VkShaderStageFlags const push_stages = scene_descriptor == VK_NULL_HANDLE
+        ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    if (scene_descriptor != VK_NULL_HANDLE) {
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
+            1U, 1U, &scene_descriptor, 0U, nullptr);
+    }
+    vkCmdPushConstants(command, layout, push_stages, 0U, sizeof(push), &push);
     vkCmdDraw(command, QUAD_VERTEX_COUNT, static_cast<uint32_t>(count), 0U, first_instance);
     ++draw_count;
+}
+
+
+[[nodiscard]] core::graphics::vulkan::VulkanPipeline createAdaptiveTextPipeline(
+    core::graphics::vulkan::VulkanDeviceReference const device,
+    VkPhysicalDevice const physical_device,
+    core::graphics::vulkan::VulkanKernelCache& cache,
+    core::kernel::GraphicsProgram const& program,
+    VkPipelineLayout const layout,
+    VkFormat const format
+)
+{
+    VkFormatProperties properties{};
+    vkGetPhysicalDeviceFormatProperties(physical_device, format, &properties);
+    if ((properties.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT) == 0U) {
+        throw std::runtime_error("adaptive text output format does not support alpha blending");
+    }
+    std::array<VkPipelineShaderStageCreateInfo, 2> const stages{
+        VkPipelineShaderStageCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = cache.moduleFor(device, program, core::kernel::ShaderStage::Vertex), .pName = "main",
+        },
+        VkPipelineShaderStageCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = cache.moduleFor(device, program, core::kernel::ShaderStage::Fragment), .pName = "main",
+        },
+    };
+    VkPipelineVertexInputStateCreateInfo vertex{};
+    vertex.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    VkPipelineInputAssemblyStateCreateInfo assembly{};
+    assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo viewport{};
+    viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewport.viewportCount = 1U;
+    viewport.scissorCount = 1U;
+    VkPipelineRasterizationStateCreateInfo raster{};
+    raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.cullMode = VK_CULL_MODE_BACK_BIT;
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    raster.lineWidth = 1.0F;
+    VkPipelineMultisampleStateCreateInfo samples{};
+    samples.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    // CoreCpp's pinned pipeline descriptor has no blend contract. Keep this
+    // state local to adaptive glyphs; fixed/world text retain their existing path.
+    VkPipelineColorBlendAttachmentState const attachment{
+        .blendEnable = VK_TRUE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+            | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+    };
+    VkPipelineColorBlendStateCreateInfo blend{};
+    blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    blend.attachmentCount = 1U;
+    blend.pAttachments = &attachment;
+    std::array<VkDynamicState, 2> const dynamic_states{ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo dynamic{};
+    dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
+    dynamic.pDynamicStates = dynamic_states.data();
+    VkPipelineRenderingCreateInfo rendering{};
+    rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    rendering.colorAttachmentCount = 1U;
+    rendering.pColorAttachmentFormats = &format;
+    VkGraphicsPipelineCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    info.pNext = &rendering;
+    info.stageCount = static_cast<uint32_t>(stages.size());
+    info.pStages = stages.data();
+    info.pVertexInputState = &vertex;
+    info.pInputAssemblyState = &assembly;
+    info.pViewportState = &viewport;
+    info.pRasterizationState = &raster;
+    info.pMultisampleState = &samples;
+    info.pColorBlendState = &blend;
+    info.pDynamicState = &dynamic;
+    info.layout = layout;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkResult const result = vkCreateGraphicsPipelines(device.handle(), VK_NULL_HANDLE, 1U, &info, nullptr, &pipeline);
+    if (result != VK_SUCCESS) {
+        if (pipeline != VK_NULL_HANDLE) { vkDestroyPipeline(device.handle(), pipeline, nullptr); }
+        checkResult(result, "vkCreateGraphicsPipelines adaptive text blend");
+    }
+    return { device, pipeline };
+}
+
+
+[[nodiscard]] bool hasAdaptiveGlyphs(std::span<TextBatch const> const batches)
+{
+    return std::ranges::any_of(batches, [](TextBatch const& batch) {
+        return std::ranges::any_of(batch.glyphs, [](TextGlyph const& glyph) {
+            return (glyph.character & 0x100U) != 0U;
+        });
+    });
+}
+
+void recordSceneBarrier(VkCommandBuffer const command, VkImage const image,
+    bool const initialized, bool const to_sample)
+{
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcAccessMask = to_sample ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+        : initialized ? VK_ACCESS_SHADER_READ_BIT : 0U;
+    barrier.dstAccessMask = to_sample ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.oldLayout = to_sample ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+        : initialized ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = to_sample ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.levelCount = 1U;
+    barrier.subresourceRange.layerCount = 1U;
+    vkCmdPipelineBarrier(command,
+        to_sample ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+            : initialized ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        to_sample ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0U, 0U, nullptr, 0U, nullptr, 1U, &barrier);
+}
+
+[[nodiscard]] VkPipelineLayout createAdaptiveTextLayout(VkDevice const device,
+    VkDescriptorSetLayout const text_layout, VkDescriptorSetLayout const scene_layout)
+{
+    std::array<VkDescriptorSetLayout, 2> const layouts{ text_layout, scene_layout };
+    VkPushConstantRange const push{
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0U, .size = sizeof(TextPushConstants),
+    };
+    VkPipelineLayoutCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    info.setLayoutCount = static_cast<uint32_t>(layouts.size());
+    info.pSetLayouts = layouts.data();
+    info.pushConstantRangeCount = 1U;
+    info.pPushConstantRanges = &push;
+    VkPipelineLayout result = VK_NULL_HANDLE;
+    checkResult(vkCreatePipelineLayout(device, &info, nullptr, &result), "vkCreatePipelineLayout adaptive text");
+    return result;
 }
 
 } // namespace
@@ -2079,6 +2305,22 @@ struct VulkanRenderer::Impl final {
         uint64_t reusable_after_frame = 0U;
     };
 
+    struct MapStream final {
+        std::optional<MapImageTexture> texture;
+        MapImageData data;
+        uint64_t uploaded_revision = 0U;
+        uint64_t recorded_revision = 0U;
+        VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+        VkImageLayout recorded_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    };
+
+    struct SceneTarget final {
+        std::unique_ptr<MapImageTexture> texture;
+        std::unique_ptr<MapImageTexture> linear_overlay;
+        bool initialized = false;
+        bool overlay_initialized = false;
+    };
+
     struct DepthTarget final {
         VkImage image = VK_NULL_HANDLE;
         VkDeviceMemory memory = VK_NULL_HANDLE;
@@ -2217,18 +2459,36 @@ struct VulkanRenderer::Impl final {
         std::chrono::steady_clock::time_point const deadline
     )
     {
-        debug_hud_input.presented = m_last_presented;
+        pollFrameCapture(remaining(deadline));
+        if (m_capture_requested && m_capture_readback_eligible
+            && m_submitted_frame_count > m_capture_requested_after_submission) {
+            m_last_presented = false;
+            return false;
+        }
+        RendererFrameProgress const frame_progress = m_frame_progress_tracker.progress();
+        debug_hud_input.completed_frame = frame_progress.completed;
+        debug_hud_input.completed_frame_observed_at = frame_progress.completed_observed_at;
         m_debug_hud_state.setDpiScale(debug_hud_dpi_scale);
         m_debug_hud_state.update(debug_hud_input);
         m_gui_renderer.begin();
         m_world_text_batch = {};
-        if (m_debug_hud_state.formatText(m_debug_hud_text)) {
-            DebugHudSnapshot const snapshot = m_debug_hud_state.snapshot();
+        DebugHudLayout const debug_hud_layout = layoutDebugHud(
+            m_context->info().extent.width,
+            m_context->info().extent.height,
+            debug_hud_dpi_scale,
+            debug_hud_input.compact_window
+        );
+        buildDebugHudPresentation(
+            m_debug_hud_state.snapshot(),
+            debug_hud_layout,
+            m_debug_hud_presentation
+        );
+        if (!m_debug_hud_presentation.labels().empty()) {
             static_cast<void>(m_gui_renderer.submit(
-                m_debug_hud_text,
-                m_debug_hud_state.lineColors(),
-                {},
-                TextPlacement{ .position = { 8.0F, 8.0F, 0.0F }, .scale = snapshot.dpi_scale }
+                m_debug_hud_presentation,
+                glm::mat4{ 1.0F },
+                m_context->info().extent.width,
+                m_context->info().extent.height
             ));
         }
         if (!m_gui_text.labels().empty()) {
@@ -2305,6 +2565,21 @@ struct VulkanRenderer::Impl final {
         }
         acquireDiagnosticQuerySlot();
         m_current_depth_target = &depthTargetFor(frame->image());
+        m_current_scene_target = nullptr;
+        if (hasAdaptiveGlyphs(m_gui_renderer.batches())) {
+            auto& scene = m_scene_targets[frame->image()];
+            if (!scene.texture) {
+                scene.texture = std::make_unique<MapImageTexture>(requiredValue(m_resources).device(),
+                    requiredValue(m_resources).physicalDevice(), requiredValue(m_resources).format(),
+                    requiredValue(m_resources).extent(), true);
+            }
+            if (!m_context->info().srgb && !scene.linear_overlay) {
+                scene.linear_overlay = std::make_unique<MapImageTexture>(requiredValue(m_resources).device(),
+                    requiredValue(m_resources).physicalDevice(), VK_FORMAT_R8G8B8A8_SRGB,
+                    requiredValue(m_resources).extent(), true);
+            }
+            m_current_scene_target = &scene;
+        }
         frame->record(&Impl::recordFrame, this);
         m_diagnostic_frame_recorded = true;
         m_cpu_command_record_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -2318,12 +2593,16 @@ struct VulkanRenderer::Impl final {
         std::chrono::steady_clock::time_point const complete_present_started_at =
             std::chrono::steady_clock::now();
         m_context->complete(*frame);
+        m_capture_readback_eligible = !m_occlusion_oracle_frame;
+        m_capture_readback_slot = frame->slotIndex();
         m_last_submitted_terrain_lod_scene = m_terrain_lod_scene;
         m_last_submitted_debug_hud_enabled = m_debug_hud_state.snapshot().enabled;
-        if (m_map_image_recorded_revision != 0U) {
-            m_map_image_uploaded_revision = m_map_image_recorded_revision;
-            m_map_texture_layout = m_map_image_recorded_layout;
-            m_map_image_recorded_revision = 0U;
+        for (MapStream& map : m_map_images) {
+            if (map.recorded_revision != 0U) {
+                map.uploaded_revision = map.recorded_revision;
+                map.layout = map.recorded_layout;
+                map.recorded_revision = 0U;
+            }
         }
         if (m_frame_completion_tracking) {
             static_cast<void>(m_frame_progress_tracker.recordSubmission(
@@ -2351,25 +2630,7 @@ struct VulkanRenderer::Impl final {
         m_cpu_frame_duration = m_cpu_command_record_duration + m_cpu_complete_present_wait_duration;
         ++m_submitted_frame_count;
 
-        if (m_capture_requested && !m_occlusion_oracle_frame) {
-            std::optional<std::span<uint8_t const>> const readback = m_context->takeCompletedReadback(
-                remaining(deadline)
-            );
-            if (readback.has_value()) {
-                if (m_frame_completion_tracking) {
-                    m_frame_progress_tracker.observeCompletedSlot(m_current_frame_slot);
-                }
-                core::graphics::vulkan::PresentationInfo const& info = m_context->info();
-                m_last_capture = RendererFrameCapture{
-                    .width = info.extent.width,
-                    .height = info.extent.height,
-                    .srgb_encoded = true,
-                    .rgba8 = std::vector<uint8_t>(readback->begin(), readback->end()),
-                };
-                m_capture_requested = false;
-                m_capture_state = FrameCaptureState::Completed;
-            }
-        }
+        pollFrameCapture(remaining(deadline));
         return true;
     }
 
@@ -2411,12 +2672,35 @@ struct VulkanRenderer::Impl final {
         std::span<MapImageData::Pixel const> const rgba8
     )
     {
-        return m_map_image_data.set(width, height, rgba8);
+        if (!setMapImage(0U, width, height, rgba8)) { return false; }
+        m_explicit_map_draws = false;
+        return true;
     }
 
     void clearMapImage() noexcept
     {
-        m_map_image_data.clear();
+        clearMapImage(0U);
+    }
+
+    [[nodiscard]] bool setMapImage(uint32_t const image, uint32_t const width, uint32_t const height,
+        std::span<std::array<uint8_t, 4> const> const rgba8)
+    {
+        return image < m_map_images.size() && m_map_images[image].data.set(width, height, rgba8);
+    }
+
+    void clearMapImage(uint32_t const image) noexcept
+    {
+        if (image < m_map_images.size()) { m_map_images[image].data.clear(); }
+    }
+
+    [[nodiscard]] bool setMapDraws(std::span<MapImageDraw const> const draws)
+    {
+        if (draws.size() > MAXIMUM_MAP_DRAWS || !std::ranges::all_of(draws, validMapImageDraw)) {
+            return false;
+        }
+        m_map_draws.assign(draws.begin(), draws.end());
+        m_explicit_map_draws = true;
+        return true;
     }
 
     void setFrameCompletionTracking(bool const enabled, bool const retain_retired_history) noexcept
@@ -2453,6 +2737,22 @@ struct VulkanRenderer::Impl final {
     void clearWorldText() noexcept
     {
         m_world_text.clear();
+    }
+
+    void setBlockInteractionTarget(std::optional<shared::BlockTarget> target, float server_progress) noexcept
+    {
+        m_block_effects.setTarget(target, server_progress);
+    }
+
+    bool addAcceptedBlockBreak(BlockBreakEventIdentity identity, shared::WorldCoordinate cell,
+        shared::Block material, std::chrono::steady_clock::time_point observed_at)
+    {
+        return m_block_effects.acceptBreak(identity, cell, material, observed_at);
+    }
+
+    void clearBlockInteractionEffects() noexcept
+    {
+        m_block_effects.clear();
     }
 
     void setCamera(CameraPose const pose) noexcept
@@ -3075,8 +3375,33 @@ struct VulkanRenderer::Impl final {
         }
         if (m_capture_state == FrameCaptureState::Ready) {
             m_last_capture.reset();
+            m_capture_requested_after_submission = m_submitted_frame_count;
             m_capture_requested = true;
         }
+    }
+
+    void pollFrameCapture(std::chrono::nanoseconds const wait)
+    {
+        if (!m_capture_requested || !m_capture_readback_eligible
+            || m_submitted_frame_count <= m_capture_requested_after_submission) {
+            return;
+        }
+        std::optional<std::span<uint8_t const>> const readback = m_context->takeCompletedReadback(wait);
+        if (!readback.has_value()) {
+            return;
+        }
+        if (m_frame_completion_tracking) {
+            m_frame_progress_tracker.observeCompletedSlot(m_capture_readback_slot);
+        }
+        core::graphics::vulkan::PresentationInfo const& info = m_context->info();
+        m_last_capture = RendererFrameCapture{
+            .width = info.extent.width,
+            .height = info.extent.height,
+            .srgb_encoded = true,
+            .rgba8 = std::vector<uint8_t>(readback->begin(), readback->end()),
+        };
+        m_capture_requested = false;
+        m_capture_state = FrameCaptureState::Completed;
     }
 
     [[nodiscard]] FrameCaptureState captureState() const noexcept { return m_capture_state; }
@@ -3614,7 +3939,12 @@ private:
         depth_target.layout_initialized = true;
         VkRenderingAttachmentInfo color_attachment{};
         color_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        color_attachment.imageView = m_image_view;
+        if (m_current_scene_target != nullptr) {
+            recordSceneBarrier(command, m_current_scene_target->texture->image(),
+                m_current_scene_target->initialized, false);
+        }
+        color_attachment.imageView = m_current_scene_target != nullptr
+            ? m_current_scene_target->texture->view() : m_image_view;
         color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -3841,6 +4171,11 @@ private:
                 extent
             );
         }
+        if (!m_occlusion_oracle_frame) {
+            auto const effects = m_block_effects.boxes(std::chrono::steady_clock::now());
+            recordBlockEffects(command, m_player_pipeline, m_player_layout, m_camera,
+                extent, m_terrain_lod_scene != nullptr, effects);
+        }
         if (!m_world_text_batch.glyphs.empty()) {
             std::optional<glm::mat4> const projection = sceneProjection(m_camera, extent, m_terrain_lod_scene != nullptr);
             if (projection.has_value()) {
@@ -3864,6 +4199,10 @@ private:
         }
         recordMapImage(command, extent);
         m_end_rendering(command);
+        if (m_current_scene_target != nullptr) {
+            recordSceneBarrier(command, m_current_scene_target->texture->image(), true, true);
+            m_current_scene_target->initialized = true;
+        }
         if (!m_gui_renderer.empty()) {
             VkMemoryBarrier color_barrier{};
             color_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -3884,9 +4223,15 @@ private:
             );
             VkRenderingAttachmentInfo gui_color_attachment{};
             gui_color_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            gui_color_attachment.imageView = m_image_view;
+            MapImageTexture* const linear_overlay = m_current_scene_target != nullptr
+                ? m_current_scene_target->linear_overlay.get() : nullptr;
+            if (linear_overlay != nullptr) {
+                recordSceneBarrier(command, linear_overlay->image(), m_current_scene_target->overlay_initialized, false);
+            }
+            gui_color_attachment.imageView = linear_overlay != nullptr ? linear_overlay->view() : m_image_view;
             gui_color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            gui_color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            gui_color_attachment.loadOp = m_current_scene_target != nullptr
+                ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : VK_ATTACHMENT_LOAD_OP_LOAD;
             gui_color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             VkRenderingInfo gui_rendering{};
             gui_rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -3897,72 +4242,117 @@ private:
             m_begin_rendering(command, &gui_rendering);
             vkCmdSetViewport(command, 0U, 1U, &viewport);
             vkCmdSetScissor(command, 0U, 1U, &scissor);
+            if (m_current_scene_target != nullptr) {
+                MapImagePushConstants const scene_copy{
+                    .viewport_size = { extent.width, extent.height },
+                    .image_size = { extent.width, extent.height },
+                    .decode_srgb = m_context->info().srgb ? 0U : 1U,
+                };
+                recordSceneComposite(command, *m_current_scene_target->texture,
+                    linear_overlay != nullptr ? m_overlay_composite_pipeline : m_scene_composite_pipeline, scene_copy);
+            }
             uint32_t first_instance = gui_text_first_instance;
             for (TextBatch const& text : m_gui_renderer.batches()) {
+                bool const adaptive = hasAdaptiveGlyphs(std::span<TextBatch const>{ &text, 1U });
+                bool const converted_fixed = !adaptive && linear_overlay != nullptr;
                 recordText(
                     command,
-                    m_gui_text_pipeline,
-                    m_gui_text_layout,
+                    adaptive ? requiredValue(m_adaptive_text_pipeline).handle()
+                        : converted_fixed ? m_converted_fixed_text_pipeline : m_gui_text_pipeline,
+                    adaptive || converted_fixed ? m_adaptive_text_layout : m_gui_text_layout,
                     requiredValue(m_text_descriptors).set(),
                     text,
                     glm::mat4{ 1.0F },
                     extent,
                     textShaderMode(text.space),
                     first_instance,
-                    m_debug_hud_draw_count
+                    m_debug_hud_draw_count,
+                    {},
+                    adaptive || converted_fixed ? m_current_scene_target->texture->set() : VK_NULL_HANDLE,
+                    linear_overlay != nullptr
                 );
                 first_instance += static_cast<uint32_t>(text.glyphs.size());
             }
             m_end_rendering(command);
+            if (linear_overlay != nullptr) {
+                recordSceneBarrier(command, linear_overlay->image(), true, true);
+                m_current_scene_target->overlay_initialized = true;
+                gui_color_attachment.imageView = m_image_view;
+                gui_color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+                m_begin_rendering(command, &gui_rendering);
+                MapImagePushConstants const output_copy{
+                    .viewport_size = { extent.width, extent.height },
+                    .image_size = { extent.width, extent.height },
+                    .encode_srgb = 1U,
+                };
+                recordSceneComposite(command, *linear_overlay, m_scene_composite_pipeline, output_copy);
+                m_end_rendering(command);
+            }
         }
+    }
+
+    void recordSceneComposite(VkCommandBuffer const command, MapImageTexture const& texture,
+        VkPipeline const pipeline, MapImagePushConstants const& push)
+    {
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        VkDescriptorSet const descriptor = texture.set();
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_map_image_pipeline_layout,
+            0U, 1U, &descriptor, 0U, nullptr);
+        vkCmdPushConstants(command, m_map_image_pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
+            0U, sizeof(push), &push);
+        vkCmdDraw(command, 3U, 1U, 0U, 0U);
     }
 
     void recordMapImage(VkCommandBuffer const command, VkExtent2D const extent)
     {
-        if (m_map_image_data.empty()) {
-            return;
-        }
-        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_map_image_pipeline);
-        VkDescriptorSet const descriptor_set = requiredValue(m_map_image_texture).set();
-        vkCmdBindDescriptorSets(
-            command,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_map_image_pipeline_layout,
-            0U,
-            1U,
-            &descriptor_set,
-            0U,
-            nullptr
-        );
-        MapImagePushConstants const push_constants{
-            .viewport_size = { extent.width, extent.height },
-            .image_size = { m_map_image_data.width(), m_map_image_data.height() },
-            .encode_srgb = m_context->info().srgb ? 0U : 1U,
+        auto draw = [&](uint32_t const image, MapImageDraw const* const region) {
+            MapStream const& map = m_map_images[image];
+            if (map.data.empty()) { return; }
+            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_map_image_pipeline);
+            VkDescriptorSet const descriptor = requiredValue(map.texture).set();
+            vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_map_image_pipeline_layout,
+                0U, 1U, &descriptor, 0U, nullptr);
+            MapImagePushConstants push{
+                .viewport_size = { extent.width, extent.height },
+                .image_size = { map.data.width(), map.data.height() },
+                .encode_srgb = m_context->info().srgb ? 0U : 1U,
+            };
+            VkRect2D scissor{ .offset = { 0, 0 }, .extent = extent };
+            if (region != nullptr) {
+                push.cropped = 1U;
+                push.source = region->source;
+                push.destination = region->destination;
+                if (region->scissor[2] != 0U) {
+                    uint32_t const x = std::min(region->scissor[0], extent.width);
+                    uint32_t const y = std::min(region->scissor[1], extent.height);
+                    scissor.offset = { static_cast<int32_t>(x), static_cast<int32_t>(y) };
+                    scissor.extent = { std::min(region->scissor[2], extent.width - x),
+                        std::min(region->scissor[3], extent.height - y) };
+                }
+            }
+            if (scissor.extent.width == 0U || scissor.extent.height == 0U) { return; }
+            vkCmdSetScissor(command, 0U, 1U, &scissor);
+            vkCmdPushConstants(command, m_map_image_pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
+                0U, sizeof(push), &push);
+            vkCmdDraw(command, 3U, 1U, 0U, 0U);
         };
-        vkCmdPushConstants(
-            command,
-            m_map_image_pipeline_layout,
-            VK_SHADER_STAGE_FRAGMENT_BIT,
-            0U,
-            static_cast<uint32_t>(sizeof(push_constants)),
-            &push_constants
-        );
-        vkCmdDraw(command, 3U, 1U, 0U, 0U);
+        if (m_explicit_map_draws) {
+            for (MapImageDraw const& region : m_map_draws) { draw(region.image, &region); }
+        } else {
+            draw(0U, nullptr);
+        }
+        VkRect2D const full_scissor{ .offset = { 0, 0 }, .extent = extent };
+        vkCmdSetScissor(command, 0U, 1U, &full_scissor);
     }
 
     void recordMapImageUpload(VkCommandBuffer const command)
     {
-        if (m_map_image_data.empty()
-            || m_map_image_data.revision() == m_map_image_uploaded_revision) {
-            return;
+        for (MapStream& map : m_map_images) {
+            if (map.data.empty() || map.data.revision() == map.uploaded_revision) { continue; }
+            map.recorded_revision = map.data.revision();
+            map.recorded_layout = requiredValue(map.texture).recordUpload(command,
+                m_current_frame_slot, map.data, map.layout);
         }
-        m_map_image_recorded_revision = m_map_image_data.revision();
-        m_map_image_recorded_layout = requiredValue(m_map_image_texture).recordUpload(
-            command,
-            m_current_frame_slot,
-            m_map_image_data,
-            m_map_texture_layout
-        );
     }
 
     [[nodiscard]] VkPipelineLayout createLayout(uint32_t const push_constant_size) const
@@ -4003,7 +4393,7 @@ private:
         VkPushConstantRange range{};
         range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         range.size = static_cast<uint32_t>(sizeof(MapImagePushConstants));
-        VkDescriptorSetLayout const descriptor_layout = requiredValue(m_map_image_texture).layout();
+        VkDescriptorSetLayout const descriptor_layout = requiredValue(m_map_images[0].texture).layout();
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         info.setLayoutCount = 1U;
@@ -4292,13 +4682,12 @@ private:
             requiredValue(m_stone_texture_buffer), *m_disabled_terrain_field);
         m_text_glyph_buffer.emplace(requiredValue(m_resources).device(), requiredValue(m_resources).physicalDevice());
         m_text_descriptors.emplace(requiredValue(m_resources).device(), requiredValue(m_text_glyph_buffer));
-        m_map_image_texture.emplace(
-            requiredValue(m_resources).device(),
-            requiredValue(m_resources).physicalDevice()
-        );
-        m_map_texture_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-        m_map_image_uploaded_revision = 0U;
-        m_map_image_recorded_revision = 0U;
+        for (MapStream& map : m_map_images) {
+            map.texture.emplace(requiredValue(m_resources).device(), requiredValue(m_resources).physicalDevice());
+            map.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+            map.uploaded_revision = 0U;
+            map.recorded_revision = 0U;
+        }
         uploadStoredMeshes();
         auto const grid = std::make_shared<core::kernel::SpirvModule const>(
             m_shader_assets.load("grid.vert.spv")
@@ -4404,6 +4793,13 @@ private:
             { .module = map_vertex, .entrypoint = "main", .required_bindings = {} },
             { .module = map_fragment, .entrypoint = "main", .required_bindings = { { .set = 0U, .binding = 0U } } }
         ));
+        m_adaptive_text_program.emplace(core::kernel::GraphicsProgram::create(
+            { .module = text_vertex, .entrypoint = "main", .required_bindings = { { .set = 0U, .binding = 0U } } },
+            { .module = std::make_shared<core::kernel::SpirvModule const>(m_shader_assets.load("adaptive_text.frag.spv")),
+                .entrypoint = "main", .required_bindings = { { .set = 1U, .binding = 0U } } }
+        ));
+        m_adaptive_text_layout = createAdaptiveTextLayout(requiredValue(m_resources).device(),
+            requiredValue(m_text_descriptors).layout(), requiredValue(m_map_images[0].texture).layout());
         m_grid_layout = createLayout(static_cast<uint32_t>(sizeof(GridPushConstants)));
         m_player_layout = createLayout(static_cast<uint32_t>(sizeof(BoxPushConstants)));
         m_world_text_layout = createTextLayout();
@@ -4500,6 +4896,20 @@ private:
                 .depth_write_enabled = false,
             }
         );
+        VkFormat const hud_format = m_context->info().srgb
+            ? requiredValue(m_resources).format() : VK_FORMAT_R8G8B8A8_SRGB;
+        m_adaptive_text_pipeline.emplace(createAdaptiveTextPipeline(device,
+            requiredValue(m_resources).physicalDevice(), requiredValue(m_kernel_cache),
+            *m_adaptive_text_program, m_adaptive_text_layout, hud_format));
+        m_converted_fixed_text_pipeline = requiredValue(m_kernel_cache).pipelineFor(device, *m_adaptive_text_program,
+            { .layout = m_adaptive_text_layout, .color_format = hud_format,
+                .depth_format = VK_FORMAT_UNDEFINED, .depth_test_enabled = false, .depth_write_enabled = false });
+        m_overlay_composite_pipeline = requiredValue(m_kernel_cache).pipelineFor(device, *m_map_image_program,
+            { .layout = m_map_image_pipeline_layout, .color_format = hud_format,
+                .depth_format = VK_FORMAT_UNDEFINED, .depth_test_enabled = false, .depth_write_enabled = false });
+        m_scene_composite_pipeline = requiredValue(m_kernel_cache).pipelineFor(device, *m_map_image_program,
+            { .layout = m_map_image_pipeline_layout, .color_format = requiredValue(m_resources).format(),
+                .depth_format = VK_FORMAT_UNDEFINED, .depth_test_enabled = false, .depth_write_enabled = false });
         m_map_image_pipeline = requiredValue(m_kernel_cache).pipelineFor(
             device,
             *m_map_image_program,
@@ -4520,10 +4930,21 @@ private:
         }
         VkDevice const device = requiredValue(m_resources).device();
         destroyDepthTargets(device);
+        m_current_scene_target = nullptr;
+        m_scene_targets.clear();
+        m_adaptive_text_pipeline.reset();
         if (m_kernel_cache.has_value()) {
             requiredValue(m_kernel_cache).invalidate(requiredValue(m_resources).deviceReference().identity());
             m_kernel_cache.reset();
         }
+        if (m_adaptive_text_layout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, m_adaptive_text_layout, nullptr);
+        }
+        m_adaptive_text_layout = VK_NULL_HANDLE;
+        m_scene_composite_pipeline = VK_NULL_HANDLE;
+        m_overlay_composite_pipeline = VK_NULL_HANDLE;
+        m_converted_fixed_text_pipeline = VK_NULL_HANDLE;
+        m_adaptive_text_program.reset();
         if (m_grid_layout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(device, m_grid_layout, nullptr); }
         if (m_player_layout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(device, m_player_layout, nullptr); }
         if (m_world_text_layout != VK_NULL_HANDLE) {
@@ -4595,10 +5016,12 @@ private:
         m_diagnostic_gpu_sample_draw_count = 0U;
         m_text_descriptors.reset();
         m_text_glyph_buffer.reset();
-        m_map_image_texture.reset();
-        m_map_image_uploaded_revision = 0U;
-        m_map_image_recorded_revision = 0U;
-        m_map_texture_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+        for (MapStream& map : m_map_images) {
+            map.texture.reset();
+            map.uploaded_revision = 0U;
+            map.recorded_revision = 0U;
+            map.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+        }
         m_begin_rendering = nullptr;
         m_end_rendering = nullptr;
         m_resources.reset();
@@ -4744,6 +5167,8 @@ private:
 
     void refreshCaptureState() noexcept
     {
+        // Native recreation discards queued readbacks; a pending request needs a fresh frame.
+        m_capture_readback_eligible = false;
         if (m_last_capture.has_value()) {
             m_capture_state = FrameCaptureState::Completed;
             return;
@@ -4761,6 +5186,7 @@ private:
     VulkanRendererOptions m_options;
     std::optional<ResourceScope> m_resources;
     std::optional<core::graphics::vulkan::VulkanKernelCache> m_kernel_cache;
+    BlockInteractionEffects m_block_effects;
     std::span<PlayerRenderData const> m_players;
     Camera m_camera{
         { .position = { 16.0, -20.0, 22.0 }, .angles = { .pitch_degrees = -35.0 } },
@@ -4776,6 +5202,14 @@ private:
     std::optional<core::kernel::GraphicsProgram> m_stone_program;
     std::optional<core::kernel::GraphicsProgram> m_stone_solid_program;
     std::optional<core::kernel::GraphicsProgram> m_sky_program;
+    std::optional<core::kernel::GraphicsProgram> m_adaptive_text_program;
+    VkPipelineLayout m_adaptive_text_layout = VK_NULL_HANDLE;
+    std::optional<core::graphics::vulkan::VulkanPipeline> m_adaptive_text_pipeline;
+    VkPipeline m_scene_composite_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_overlay_composite_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_converted_fixed_text_pipeline = VK_NULL_HANDLE;
+    std::unordered_map<VkImage, SceneTarget> m_scene_targets;
+    SceneTarget* m_current_scene_target = nullptr;
     std::optional<core::kernel::GraphicsProgram> m_map_image_program;
     std::optional<StoneFaceBuffer> m_stone_face_buffer;
     std::optional<StoneIndirectDraws> m_stone_indirect_draws;
@@ -4821,12 +5255,9 @@ private:
     std::shared_ptr<CanonicalTerrainFieldBuffer> m_active_terrain_field;
     std::shared_ptr<CanonicalTerrainFieldBuffer> m_pending_terrain_field;
     std::optional<StoneDescriptorSet> m_stone_descriptors;
-    std::optional<MapImageTexture> m_map_image_texture;
-    MapImageData m_map_image_data;
-    uint64_t m_map_image_uploaded_revision = 0U;
-    uint64_t m_map_image_recorded_revision = 0U;
-    VkImageLayout m_map_texture_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-    VkImageLayout m_map_image_recorded_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    std::array<MapStream, MAXIMUM_MAP_IMAGES> m_map_images;
+    std::vector<MapImageDraw> m_map_draws;
+    bool m_explicit_map_draws = false;
     VkPipelineLayout m_grid_layout = VK_NULL_HANDLE;
     VkPipelineLayout m_player_layout = VK_NULL_HANDLE;
     VkPipelineLayout m_world_text_layout = VK_NULL_HANDLE;
@@ -4867,8 +5298,12 @@ private:
     std::shared_ptr<TerrainLodScene const> m_last_submitted_terrain_lod_scene;
     bool m_last_submitted_debug_hud_enabled = false;
     bool m_capture_requested = false;
+    bool m_capture_readback_eligible = false;
+    uint32_t m_capture_readback_slot = 0U;
+    uint64_t m_capture_requested_after_submission = 0U;
     DebugHudState m_debug_hud_state;
     DebugHudText m_debug_hud_text;
+    TextRenderer m_debug_hud_presentation;
     TextRenderer m_gui_text;
     TextRenderer m_world_text;
     GuiRenderer m_gui_renderer;
@@ -5052,6 +5487,7 @@ public:
             }
             m_text_glyph_buffer.emplace(m_device->handle(), m_device->physicalDevice());
             m_text_descriptors.emplace(m_device->handle(), *m_text_glyph_buffer);
+            m_map_texture.emplace(m_device->handle(), m_device->physicalDevice());
             auto const grid = std::make_shared<core::kernel::SpirvModule const>(shader_assets.load("grid.vert.spv"));
             auto const player = std::make_shared<core::kernel::SpirvModule const>(
                 shader_assets.load("player.vert.spv")
@@ -5099,6 +5535,30 @@ public:
                     .required_bindings = { { .set = 0U, .binding = 1U }, { .set = 0U, .binding = 2U } },
                 }
             ));
+            m_adaptive_text_program.emplace(core::kernel::GraphicsProgram::create(
+                { .module = text_vertex, .entrypoint = "main", .required_bindings = { { .set = 0U, .binding = 0U } } },
+                { .module = std::make_shared<core::kernel::SpirvModule const>(shader_assets.load("adaptive_text.frag.spv")),
+                    .entrypoint = "main", .required_bindings = { { .set = 1U, .binding = 0U } } }
+            ));
+            m_map_program.emplace(core::kernel::GraphicsProgram::create(
+                { .module = std::make_shared<core::kernel::SpirvModule const>(shader_assets.load("map.vert.spv")),
+                    .entrypoint = "main", .required_bindings = {} },
+                { .module = std::make_shared<core::kernel::SpirvModule const>(shader_assets.load("map.frag.spv")),
+                    .entrypoint = "main", .required_bindings = { { .set = 0U, .binding = 0U } } }
+            ));
+            m_adaptive_layout = createAdaptiveTextLayout(m_device->handle(),
+                requiredValue(m_text_descriptors).layout(), requiredValue(m_map_texture).layout());
+            VkPushConstantRange map_push{ .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+                .offset = 0U, .size = sizeof(MapImagePushConstants) };
+            VkDescriptorSetLayout const map_descriptor_layout = requiredValue(m_map_texture).layout();
+            VkPipelineLayoutCreateInfo map_layout_info{};
+            map_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+            map_layout_info.setLayoutCount = 1U;
+            map_layout_info.pSetLayouts = &map_descriptor_layout;
+            map_layout_info.pushConstantRangeCount = 1U;
+            map_layout_info.pPushConstantRanges = &map_push;
+            checkResult(vkCreatePipelineLayout(m_device->handle(), &map_layout_info, nullptr, &m_map_layout),
+                "vkCreatePipelineLayout offscreen map");
             m_grid_layout = createLayout(static_cast<uint32_t>(sizeof(GridPushConstants)));
             m_player_layout = createLayout(static_cast<uint32_t>(sizeof(BoxPushConstants)));
             m_gui_text_layout = createTextLayout();
@@ -5122,6 +5582,14 @@ public:
                     .depth_write_enabled = false,
                 }
             );
+            m_adaptive_pipeline.emplace(createAdaptiveTextPipeline(reference, m_device->physicalDevice(), m_cache,
+                *m_adaptive_text_program, m_adaptive_layout, VK_FORMAT_R8G8B8A8_UNORM));
+            m_map_pipeline = m_cache.pipelineFor(reference, *m_map_program,
+                { .layout = m_map_layout, .color_format = VK_FORMAT_R8G8B8A8_UNORM,
+                    .depth_format = VK_FORMAT_UNDEFINED, .depth_test_enabled = false, .depth_write_enabled = false });
+            m_map_scene_pipeline = m_cache.pipelineFor(reference, *m_map_program,
+                { .layout = m_map_layout, .color_format = VK_FORMAT_R8G8B8A8_UNORM,
+                    .depth_format = m_depth_format, .depth_test_enabled = false, .depth_write_enabled = false });
             m_stone_pipeline = m_cache.pipelineFor(reference, *m_stone_program, pipelineDescriptor(m_stone_layout));
         } catch (std::exception const&) {
             reset();
@@ -5136,6 +5604,36 @@ public:
 
     OffscreenDrawResources(OffscreenDrawResources const&) = delete;
     OffscreenDrawResources& operator=(OffscreenDrawResources const&) = delete;
+
+    void prepareScene()
+    {
+        if (!m_scene_texture) {
+            m_scene_texture.emplace(m_device->handle(), m_device->physicalDevice(), VK_FORMAT_R8G8B8A8_UNORM,
+                VkExtent2D{ OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT }, true);
+        }
+    }
+    [[nodiscard]] MapImageTexture const& scene() const { return requiredValue(m_scene_texture); }
+    [[nodiscard]] VkPipeline adaptivePipeline() const noexcept { return requiredValue(m_adaptive_pipeline).handle(); }
+    [[nodiscard]] VkPipelineLayout adaptiveLayout() const noexcept { return m_adaptive_layout; }
+    [[nodiscard]] VkImageLayout uploadMap(VkCommandBuffer command, MapImageData const& data,
+        VkImageLayout previous)
+    {
+        return requiredValue(m_map_texture).recordUpload(command, 0U, data, previous);
+    }
+    void drawMap(VkCommandBuffer command, VkExtent2D extent, MapImageData const* data = nullptr) const
+    {
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, data != nullptr ? m_map_scene_pipeline : m_map_pipeline);
+        VkDescriptorSet const descriptor = data != nullptr ? requiredValue(m_map_texture).set() : scene().set();
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_map_layout,
+            0U, 1U, &descriptor, 0U, nullptr);
+        MapImagePushConstants const push{
+            .viewport_size = { extent.width, extent.height },
+            .image_size = data != nullptr ? std::array<uint32_t, 2>{ data->width(), data->height() }
+                : std::array<uint32_t, 2>{ extent.width, extent.height },
+        };
+        vkCmdPushConstants(command, m_map_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(push), &push);
+        vkCmdDraw(command, 3U, 1U, 0U, 0U);
+    }
 
     [[nodiscard]] OffscreenDepthTarget const& depth() const noexcept { return m_depth; }
     [[nodiscard]] VkPipeline gridPipeline() const noexcept { return m_grid_pipeline; }
@@ -5183,7 +5681,20 @@ private:
         if (!m_device || m_device->handle() == VK_NULL_HANDLE) {
             return;
         }
+        m_adaptive_pipeline.reset();
         m_cache.invalidate(m_device->identity());
+        m_scene_texture.reset();
+        m_map_texture.reset();
+        if (m_adaptive_layout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(m_device->handle(), m_adaptive_layout, nullptr);
+        }
+        if (m_map_layout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(m_device->handle(), m_map_layout, nullptr);
+        }
+        m_adaptive_layout = VK_NULL_HANDLE;
+        m_map_layout = VK_NULL_HANDLE;
+        m_adaptive_text_program.reset();
+        m_map_program.reset();
         if (m_grid_layout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(m_device->handle(), m_grid_layout, nullptr);
         }
@@ -5327,6 +5838,15 @@ private:
     VkPipeline m_grid_pipeline = VK_NULL_HANDLE;
     VkPipeline m_player_pipeline = VK_NULL_HANDLE;
     VkPipeline m_player_overlay_pipeline = VK_NULL_HANDLE;
+    std::optional<MapImageTexture> m_map_texture;
+    std::optional<MapImageTexture> m_scene_texture;
+    std::optional<core::kernel::GraphicsProgram> m_adaptive_text_program;
+    std::optional<core::kernel::GraphicsProgram> m_map_program;
+    VkPipelineLayout m_adaptive_layout = VK_NULL_HANDLE;
+    VkPipelineLayout m_map_layout = VK_NULL_HANDLE;
+    std::optional<core::graphics::vulkan::VulkanPipeline> m_adaptive_pipeline;
+    VkPipeline m_map_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_map_scene_pipeline = VK_NULL_HANDLE;
     VkPipeline m_gui_text_pipeline = VK_NULL_HANDLE;
     VkPipeline m_stone_pipeline = VK_NULL_HANDLE;
     PFN_vkCmdBeginRenderingKHR m_begin_rendering = nullptr;
@@ -5363,6 +5883,9 @@ struct VulkanOffscreenRenderer::Impl final {
                 TextPlacement{ .position = { 8.0F, 8.0F, 0.0F }, .scale = snapshot.dpi_scale }
             ));
         }
+        static_cast<void>(m_gui_renderer.submit(m_gui_text, glm::mat4{ 1.0F }, OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT));
+        m_has_adaptive = hasAdaptiveGlyphs(m_gui_renderer.batches());
+        if (m_has_adaptive) { m_resources->prepareScene(); }
         m_text_glyph_upload.clear();
         for (TextBatch const& text : m_gui_renderer.batches()) {
             m_text_glyph_upload.insert(
@@ -5379,6 +5902,17 @@ struct VulkanOffscreenRenderer::Impl final {
             .srgb_encoded = false,
             .rgba8 = std::vector<uint8_t>(readback.begin(), readback.end()),
         };
+    }
+
+    void addGuiText(std::string_view const text, TextPlacement const placement, TextColor const color)
+    {
+        static_cast<void>(m_gui_text.submit(text, color, placement));
+    }
+    void clearGuiText() noexcept { m_gui_text.clear(); }
+    [[nodiscard]] bool setMapImage(uint32_t const width, uint32_t const height,
+        std::span<std::array<uint8_t, 4> const> const rgba8)
+    {
+        return m_map_image.set(width, height, rgba8);
     }
 
     void setCamera(CameraPose const pose) noexcept
@@ -5421,7 +5955,11 @@ private:
     static void record(core::graphics::vulkan::VulkanOffscreenTarget::Recording const& recording, void* const user_data)
     {
         Impl& self = *static_cast<Impl*>(user_data);
-        OffscreenDrawResources const& resources = *self.m_resources;
+        OffscreenDrawResources& resources = *self.m_resources;
+        if (!self.m_map_image.empty() && self.m_map_uploaded_revision != self.m_map_image.revision()) {
+            self.m_map_layout = resources.uploadMap(recording.command_buffer, self.m_map_image, self.m_map_layout);
+            self.m_map_uploaded_revision = self.m_map_image.revision();
+        }
         if (!self.m_text_glyph_upload.empty()) {
             resources.uploadTextGlyphs(recording.command_buffer, self.m_text_glyph_upload);
         }
@@ -5452,7 +5990,10 @@ private:
         }
         VkRenderingAttachmentInfo color{};
         color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        color.imageView = recording.color_view;
+        if (self.m_has_adaptive) {
+            recordSceneBarrier(recording.command_buffer, resources.scene().image(), self.m_scene_initialized, false);
+        }
+        color.imageView = self.m_has_adaptive ? resources.scene().view() : recording.color_view;
         color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -5521,7 +6062,14 @@ private:
                 recording.extent
             );
         }
+        if (!self.m_map_image.empty()) {
+            resources.drawMap(recording.command_buffer, recording.extent, &self.m_map_image);
+        }
         resources.endRendering()(recording.command_buffer);
+        if (self.m_has_adaptive) {
+            recordSceneBarrier(recording.command_buffer, resources.scene().image(), true, true);
+            self.m_scene_initialized = true;
+        }
         if (!self.m_gui_renderer.empty()) {
             VkMemoryBarrier color_barrier{};
             color_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -5561,20 +6109,26 @@ private:
             gui_scissor.extent = recording.extent;
             vkCmdSetViewport(recording.command_buffer, 0U, 1U, &gui_viewport);
             vkCmdSetScissor(recording.command_buffer, 0U, 1U, &gui_scissor);
+            if (self.m_has_adaptive) {
+                resources.drawMap(recording.command_buffer, recording.extent);
+            }
             uint32_t gui_text_draw_count = 0U;
             uint32_t first_instance = 0U;
             for (TextBatch const& text : self.m_gui_renderer.batches()) {
+                bool const adaptive = hasAdaptiveGlyphs(std::span<TextBatch const>{ &text, 1U });
                 recordText(
                     recording.command_buffer,
-                    resources.guiTextPipeline(),
-                    resources.guiTextLayout(),
+                    adaptive ? resources.adaptivePipeline() : resources.guiTextPipeline(),
+                    adaptive ? resources.adaptiveLayout() : resources.guiTextLayout(),
                     resources.textDescriptorSet(),
                     text,
                     glm::mat4{ 1.0F },
                     recording.extent,
                     textShaderMode(text.space),
                     first_instance,
-                    gui_text_draw_count
+                    gui_text_draw_count,
+                    {},
+                    adaptive ? resources.scene().set() : VK_NULL_HANDLE
                 );
                 first_instance += static_cast<uint32_t>(text.glyphs.size());
             }
@@ -5592,6 +6146,12 @@ private:
     DebugHudState m_debug_hud_state;
     DebugHudText m_debug_hud_text;
     GuiRenderer m_gui_renderer;
+    TextRenderer m_gui_text;
+    MapImageData m_map_image;
+    uint64_t m_map_uploaded_revision = 0U;
+    VkImageLayout m_map_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    bool m_has_adaptive = false;
+    bool m_scene_initialized = false;
     std::vector<TextGlyph> m_text_glyph_upload;
     bool m_depth_initialized = false;
     bool m_chunk_scene_enabled = false;
@@ -5723,6 +6283,16 @@ bool VulkanRenderer::setMapImage(
     return m_impl->setMapImage(width, height, rgba8);
 }
 
+bool VulkanRenderer::setMapImage(uint32_t const image, uint32_t const width, uint32_t const height,
+    std::span<std::array<uint8_t, 4> const> const rgba8)
+{
+    return m_impl->setMapImage(image, width, height, rgba8);
+}
+
+void VulkanRenderer::clearMapImage(uint32_t const image) noexcept { m_impl->clearMapImage(image); }
+
+bool VulkanRenderer::setMapDraws(std::span<MapImageDraw const> const draws) { return m_impl->setMapDraws(draws); }
+
 void VulkanRenderer::clearMapImage() noexcept
 {
     m_impl->clearMapImage();
@@ -5751,6 +6321,23 @@ void VulkanRenderer::addWorldText(std::string_view const text, TextPlacement con
 void VulkanRenderer::clearWorldText() noexcept
 {
     m_impl->clearWorldText();
+}
+
+void VulkanRenderer::setBlockInteractionTarget(std::optional<shared::BlockTarget> target,
+    float server_progress) noexcept
+{
+    m_impl->setBlockInteractionTarget(target, server_progress);
+}
+
+bool VulkanRenderer::addAcceptedBlockBreak(BlockBreakEventIdentity identity, shared::WorldCoordinate cell,
+    shared::Block material, std::chrono::steady_clock::time_point observed_at)
+{
+    return m_impl->addAcceptedBlockBreak(identity, cell, material, observed_at);
+}
+
+void VulkanRenderer::clearBlockInteractionEffects() noexcept
+{
+    m_impl->clearBlockInteractionEffects();
 }
 
 void VulkanRenderer::setCamera(CameraPose const pose) noexcept
@@ -5878,6 +6465,19 @@ RendererFrameCapture VulkanOffscreenRenderer::render(
 )
 {
     return m_impl->render(players, deadline);
+}
+
+void VulkanOffscreenRenderer::addGuiText(std::string_view const text, TextPlacement const placement, TextColor const color)
+{
+    m_impl->addGuiText(text, placement, color);
+}
+
+void VulkanOffscreenRenderer::clearGuiText() noexcept { m_impl->clearGuiText(); }
+
+bool VulkanOffscreenRenderer::setMapImage(uint32_t const width, uint32_t const height,
+    std::span<std::array<uint8_t, 4> const> const rgba8)
+{
+    return m_impl->setMapImage(width, height, rgba8);
 }
 
 void VulkanOffscreenRenderer::setCamera(CameraPose const pose) noexcept

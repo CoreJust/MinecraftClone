@@ -22,7 +22,7 @@ LAUNCHER = ROOT / "script/windows-singleplayer-launcher"
 REQUIRED_SHADER_PATHS = frozenset(f"shaders/{name}.spv" for name in (
     "grid.mesh", "player.mesh", "grid.vert", "player.vert", "player.frag", "stone.vert",
     "stone_indexed_block.vert", "stone.frag", "stone_solid.frag", "sky.vert", "sky.frag",
-    "trivial.frag", "text.vert", "text.frag", "map.vert", "map.frag",
+    "trivial.frag", "text.vert", "text.frag", "adaptive_text.frag", "map.vert", "map.frag",
 ))
 
 

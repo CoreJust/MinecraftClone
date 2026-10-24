@@ -39,6 +39,7 @@ def vcpkgOverlayPorts = file('../../script/ci/vcpkg-overlays')
 def fallbackShaderSources = layout.buildDirectory.dir('generated/fallback-shaders')
 def requiredShaderAssets = [
     'text.frag.spv',
+    'adaptive_text.frag.spv',
     'text.vert.spv',
     'grid.vert.spv',
     'player.vert.spv',
@@ -73,6 +74,8 @@ def stageFallbackShaders = tasks.register('stageFallbackShaders', Sync) {
         include 'trivial.frag'
         include 'text.vert'
         include 'text.frag'
+        include 'adaptive_text.frag'
+        include 'text_glyph.glsl'
         include 'stone_solid.frag'
         include 'sky.vert'
         include 'sky.frag'

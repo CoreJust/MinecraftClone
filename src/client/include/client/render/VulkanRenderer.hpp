@@ -1,7 +1,9 @@
 #pragma once
 
 #include <client/Camera.hpp>
+#include <client/render/BlockInteractionEffects.hpp>
 #include <client/render/DebugHud.hpp>
+#include <client/render/MapImageDraw.hpp>
 #include <client/render/PresentationFrameProgress.hpp>
 #include <client/render/ShaderAssets.hpp>
 #include <client/render/StoneFaceCapacity.hpp>
@@ -252,9 +254,14 @@ public:
         uint32_t height,
         std::span<std::array<uint8_t, 4> const> rgba8
     );
+    [[nodiscard]] bool setMapImage(uint32_t image, uint32_t width, uint32_t height,
+        std::span<std::array<uint8_t, 4> const> rgba8);
+    void clearMapImage(uint32_t image) noexcept;
+    // At most eight bounded draws over two independent images. An empty list hides both.
+    [[nodiscard]] bool setMapDraws(std::span<MapImageDraw const> draws);
     void clearMapImage() noexcept;
-    // Completion tracking is opt-in for loading screens. Retired history is
-    // disabled by default and must be explicitly requested by diagnostics.
+    // Completion tracking is opt-in for UI and diagnostics. Toggling clears
+    // progress; submitted IDs advance on submit, completed IDs on observed fences.
     void setFrameCompletionTracking(bool enabled, bool retainRetiredHistory = false) noexcept;
     // Fence-confirmed progress, identified by renderer sequence and swapchain
     // generation. A false render() result leaves the submitted ID unchanged.
@@ -262,6 +269,10 @@ public:
     void setWorldText(std::string_view text, TextPlacement placement, TextColor color = {});
     void addWorldText(std::string_view text, TextPlacement placement, TextColor color = {});
     void clearWorldText() noexcept;
+    void setBlockInteractionTarget(std::optional<shared::BlockTarget> target, float server_progress) noexcept;
+    [[nodiscard]] bool addAcceptedBlockBreak(BlockBreakEventIdentity identity, shared::WorldCoordinate cell,
+        shared::Block material, std::chrono::steady_clock::time_point observed_at);
+    void clearBlockInteractionEffects() noexcept;
     void setCamera(CameraPose pose) noexcept;
     void setCamera(CameraPose pose, CameraProjection projection) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
@@ -321,6 +332,10 @@ public:
         std::span<PlayerRenderData const> players,
         std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
     );
+    void addGuiText(std::string_view text, TextPlacement placement, TextColor color = {});
+    void clearGuiText() noexcept;
+    [[nodiscard]] bool setMapImage(uint32_t width, uint32_t height,
+        std::span<std::array<uint8_t, 4> const> rgba8);
     void setCamera(CameraPose pose) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
     void setTerrainLodScene(std::shared_ptr<TerrainLodScene const> scene);

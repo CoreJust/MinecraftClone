@@ -341,10 +341,14 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
     client/camera_controller_tests.cpp
     client/depth_format_tests.cpp
             client/camera_tests.cpp
+            client/block_action_transport_tests.cpp
+            client/block_interaction_effects_tests.cpp
             client/debug_hud_tests.cpp
             client/frame_scheduler_tests.cpp
             client/game_client_audio_tests.cpp
             client/world_loading_tests.cpp
+            client/ui_presentation_tests.cpp
+            client/s2_map_presentation_tests.cpp
             client/terrain_lod_source_tests.cpp
             client/terrain_lod_selection_tests.cpp
             client/terrain_lod_presentation_tests.cpp
@@ -461,11 +465,21 @@ if(MC_BUILD_CLIENT AND NOT ANDROID AND MC_ENABLE_RENDERER_SMOKE)
         RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_renderer_smoke>"
         DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES} GTest::gtest
     )
-    add_test(NAME RendererSmokeTest COMMAND mc_renderer_smoke)
+    set(MC_STARTUP_PRESENTATION_FILTER
+        "PlayerClientFocusTest.NormalLocalStartupRecordsMovingGenerationMapBeforeReady:PlayerClientFocusTest.ActualStartupCapturesLoadingReadyGameAndWorldMapAtTwoWindowSizes"
+    )
+    add_test(NAME RendererSmokeTest COMMAND mc_renderer_smoke "--gtest_filter=-${MC_STARTUP_PRESENTATION_FILTER}")
     set_tests_properties(RendererSmokeTest PROPERTIES
         TIMEOUT 45
         RUN_SERIAL TRUE
         LABELS "renderer;gpu"
+        FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
+    )
+    add_test(NAME PlayerStartupPresentationTest COMMAND mc_renderer_smoke "--gtest_filter=${MC_STARTUP_PRESENTATION_FILTER}")
+    set_tests_properties(PlayerStartupPresentationTest PROPERTIES
+        TIMEOUT 240
+        RUN_SERIAL TRUE
+        LABELS "renderer;gpu;startup"
         FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
     )
     add_test(

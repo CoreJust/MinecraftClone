@@ -22,6 +22,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -97,7 +98,10 @@ public:
         GameClientBenchmarkHooks const* benchmark_hooks = nullptr,
         std::optional<std::chrono::steady_clock::time_point> request_accepted_at = std::nullopt
     );
+    [[nodiscard]] std::string_view serverAddress() const noexcept { return m_server_address; }
     [[nodiscard]] std::optional<uint32_t> renderDistance() const noexcept { return m_render_distance; }
+    [[nodiscard]] bool connectionAttemptStarted() const noexcept { return m_connection_attempt_started; }
+    [[nodiscard]] uint64_t worldLoadingJoinEpoch() const noexcept { return m_world_loading_identity.join_epoch; }
     [[nodiscard]] uint32_t requiredHeightTileCount() const noexcept
     {
         return m_render_distance ? shared::heightTileInterestCount(*m_render_distance) : 0U;
@@ -292,6 +296,8 @@ protected:
     char m_local_character = 0;
     bool m_running = true;
     bool m_accepted = false;
+    std::string m_server_address;
+    bool m_connection_attempt_started = false;
     uint32_t m_join_character_index = 0;
     GameClientBenchmarkHooks const* m_benchmark_hooks = nullptr;
     uint64_t m_benchmark_bytes_sent = 0U;

@@ -138,6 +138,7 @@
         "script/ci/verify_release_assets.py",
         "script/code_checks.py",
         "script/colored_print.py",
+        "script/generate_loading_backdrop.py",
         "script/generate_terrain_textures.py",
         "script/infrastructure_checks.py",
         "script/package_snapshot.py",
@@ -209,7 +210,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "eec49d1fe81bff5743af5d604f704e337c1a6063c253ca37490598d197bf92a7"
+      "sources_sha256": "b1dddd09fc99dc5580d35b2c185b191af33f6948882d0d59e384f1d062c2b5de"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -246,9 +247,10 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "45db840759601919de59060ed1b642e0f49b86a67117cc9267a7ca2e09c3611d",
+      "guide_sha256": "adb3f0657adee50734c61c7ccadd4cd2066945e83b38a6a449f4a1c0e57138f0",
       "id": "gameplay",
       "sources": [
+        "src/client/BlockActionPresentation.cpp",
         "src/client/BotClient.cpp",
         "src/client/Camera.cpp",
         "src/client/CameraController.cpp",
@@ -265,6 +267,7 @@
         "src/client/PlayerPreviewLod.cpp",
         "src/client/PreviewMeshConnectivity.cpp",
         "src/client/PreviewResidency.cpp",
+        "src/client/S2MapPresentation.cpp",
         "src/client/ScreenshotClipboard.cpp",
         "src/client/ScreenshotClipboard.mm",
         "src/client/ScreenshotPng.cpp",
@@ -273,7 +276,9 @@
         "src/client/TerrainLodSelection.cpp",
         "src/client/TerrainLodSource.cpp",
         "src/client/TerrainLodSource.hpp",
+        "src/client/UiPresentation.cpp",
         "src/client/WorldLoading.cpp",
+        "src/client/include/client/BlockActionPresentation.hpp",
         "src/client/include/client/BotClient.hpp",
         "src/client/include/client/CMakeLists.txt",
         "src/client/include/client/Camera.hpp",
@@ -286,6 +291,7 @@
         "src/client/include/client/GameClient.hpp",
         "src/client/include/client/GenerationMapPresentation.hpp",
         "src/client/include/client/HeightTileInterestRegion.hpp",
+        "src/client/include/client/LoadingBackdrop.hpp",
         "src/client/include/client/PlayerClient.hpp",
         "src/client/include/client/PlayerClientInputState.hpp",
         "src/client/include/client/PlayerPresentation.hpp",
@@ -294,9 +300,11 @@
         "src/client/include/client/PreviewMeshWorkQueue.hpp",
         "src/client/include/client/PreviewMeshing.hpp",
         "src/client/include/client/PreviewResidency.hpp",
+        "src/client/include/client/S2MapPresentation.hpp",
         "src/client/include/client/TerrainLodPresentation.hpp",
         "src/client/include/client/TerrainLodRuntime.hpp",
         "src/client/include/client/TerrainLodSelection.hpp",
+        "src/client/include/client/UiPresentation.hpp",
         "src/client/include/client/WorldLoading.hpp",
         "src/client/include/client/detail/ScreenshotPng.hpp",
         "src/main.cpp",
@@ -389,7 +397,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "4473cc2e9941834e8b4b833dc27ea91506381f46d883d45745a1dca46d30f182"
+      "sources_sha256": "9104182af354dc01b83cfd5f3f24137144ff6cca4fb60a2348d22ec57b097155"
     },
     {
       "guide": "docs/code/GENERATION.md",
@@ -958,10 +966,11 @@
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "67383bc28a3c1918c3d5063cc59d850b78dd813bb605ed3a49116d3a780471c0",
+      "guide_sha256": "a0dc5792313fa6bff2e924420168eebbe5ba2f02021f6fa34a0346e4a5aaadd8",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
+        "src/client/include/client/render/BlockInteractionEffects.hpp",
         "src/client/include/client/render/DebugHud.hpp",
         "src/client/include/client/render/DepthFormat.hpp",
         "src/client/include/client/render/GuiRenderer.hpp",
@@ -969,6 +978,7 @@
         "src/client/include/client/render/HeightTileInstanceReaper.hpp",
         "src/client/include/client/render/InstalledShaderAssets.hpp",
         "src/client/include/client/render/MapImageData.hpp",
+        "src/client/include/client/render/MapImageDraw.hpp",
         "src/client/include/client/render/PresentationFrameProgress.hpp",
         "src/client/include/client/render/ShaderAssets.hpp",
         "src/client/include/client/render/StoneFaceCapacity.hpp",
@@ -978,6 +988,7 @@
         "src/client/include/client/render/TextRenderer.hpp",
         "src/client/include/client/render/VulkanFrustum.hpp",
         "src/client/include/client/render/VulkanRenderer.hpp",
+        "src/client/render/BlockInteractionEffects.cpp",
         "src/client/render/DebugHud.cpp",
         "src/client/render/GuiRenderer.cpp",
         "src/client/render/HeightTileDrawIndex.cpp",
@@ -989,6 +1000,7 @@
         "src/client/render/VulkanFrustum.cpp",
         "src/client/render/shaders/DEBUG_HUD_ATTRIBUTION.md",
         "src/client/render/shaders/TAMSYN_LICENSE.txt",
+        "src/client/render/shaders/adaptive_text.frag",
         "src/client/render/shaders/grid.mesh",
         "src/client/render/shaders/grid.vert",
         "src/client/render/shaders/map.frag",
@@ -1006,8 +1018,11 @@
         "src/client/render/shaders/terrain_texture_sampling.glsl",
         "src/client/render/shaders/text.frag",
         "src/client/render/shaders/text.vert",
+        "src/client/render/shaders/text_glyph.glsl",
         "src/client/render/shaders/trivial.frag",
         "src/client/render/shaders/world_curvature.glsl",
+        "tests/client/block_action_transport_tests.cpp",
+        "tests/client/block_interaction_effects_tests.cpp",
         "tests/client/bot_client_tests.cpp",
         "tests/client/camera_controller_tests.cpp",
         "tests/client/camera_tests.cpp",
@@ -1046,6 +1061,7 @@
         "tests/client/renderer_geometry_tests.cpp",
         "tests/client/renderer_golden_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
+        "tests/client/s2_map_presentation_tests.cpp",
         "tests/client/shader_assets_tests.cpp",
         "tests/client/stone_face_capacity_tests.cpp",
         "tests/client/stone_indirect_draws_tests.cpp",
@@ -1056,6 +1072,7 @@
         "tests/client/terrain_lod_source_tests.cpp",
         "tests/client/terrain_lod_upload_plan_tests.cpp",
         "tests/client/text_renderer_tests.cpp",
+        "tests/client/ui_presentation_tests.cpp",
         "tests/client/vulkan_frustum_tests.cpp",
         "tests/client/world_loading_tests.cpp",
         "tests/testsupport/AdverseTransport.cpp",
@@ -1065,7 +1082,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "0723c5c9304bdaf2526d59644b30d9ad15655b695d28c2c4d4136fba25ba6947"
+      "sources_sha256": "bb6f88dae0dc6e013f2585d55419708a2f101e01b2488254b4bb73e13ddfd813"
     }
   ],
   "version": 1
