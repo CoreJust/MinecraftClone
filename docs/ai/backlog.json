@@ -19104,7 +19104,7 @@
     "id": "MC-AI-0535",
     "title": "Qualify integrated targeting and authoritative breaking effects",
     "kind": "feature",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
     "route": "sol",
     "milestone": "ED-011-S2",
@@ -19112,30 +19112,32 @@
       "MC-AI-0538"
     ],
     "acceptance": "Reachable authoritative resident block is visibly highlighted with the shared perspective/curvature transform; cracks reflect server-confirmed breaking progress and bounded cubic particles emit once for an accepted break. Map/focus/session/target changes clear stale effects; native rendering and focused state regressions pass.",
-    "evidence": "",
+    "evidence": "Qualified committed integration 71e3780135fce912f6e2d2cc4fadfb5b17796523 (tree ba89b86b1987075c8b0f42ad9b7e486136d5a90f). Relevant committed source/test hashes match task-0538/native-current-01: renderer 83 PASS/1 unrelated opt-in SKIP and startup 2 PASS, including flat depth/effects, curved outline and actual focus/map cleanup. pure-current-01 is 80/80 PASS including accepted-break transport, particle bounds/dedup and shared camera correspondence; task-0526 corrected interaction suite is 24/24 PASS. Exact modes, source hashes, evidence hashes, ordered acceptance and nine out-of-component manifest differences are recorded in task-0535/prepared/qualification-71e37801/receipt.json. Valid accepted particles retain their bounded one-second lifetime on ordinary aim changes; stale target/crack state clears. No aggregate, ordinary multiplayer, Android/Windows runtime, model, performance or release gate is closed.",
     "blocker": "",
-    "owner": "",
+    "owner": "codex",
     "level": "basic",
     "parent": "MC-AI-0483",
     "motivation": "Complete the requested S2 ordinary-world target highlight, timed cracks and cubic break particles.",
     "context": "S2-01 and S2-03 roadmap requirements; protocol21 authoritative result/progress and native PlayerClient actions are concurrent prerequisites. Generated terrain remains solid columns; arbitrary player edits are separate. Source integration is owned by MC-AI-0538 because it shares the real map/focus/input path. This task records the complete original effects acceptance against the committed integrated source; no map criterion is deferred or removed.",
     "complexity": "high",
     "created_at": "2026-10-24",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Qualified the complete original targeting and authoritative-effects acceptance against the committed MC-AI-0538 integration. No gameplay source or parent acceptance was changed.",
     "plan": [
       "Verify the integrated MC-AI-0538 source with bounded state, transport and native depth/curvature/lifecycle tests.",
       "Record exact committed-source identities and the complete original effects acceptance evidence; retain parent gameplay/platform gates."
     ],
     "product_changes": [],
-    "code_changes": [],
-    "baseline_commit": "",
+    "code_changes": [
+      "Recorded the task-scoped qualification receipt and canonical done/finalized metadata for the integrated source owned by MC-AI-0538."
+    ],
+    "baseline_commit": "71e3780135fce912f6e2d2cc4fadfb5b17796523",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",
-    "backlog_review": ""
+    "backlog_review": "MC-AI-0483 remains active. Ordinary multiplayer/gameplay, platform runtime, model/material integration, aggregate performance and release acceptance remain open."
   },
   {
     "id": "MC-AI-0536",
