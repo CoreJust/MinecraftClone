@@ -287,6 +287,19 @@ private:
         }
     };
 
+    struct DefaultSpawnSearchNode final {
+        uint32_t origin_x = 0U;
+        uint32_t origin_y = 0U;
+        uint32_t extent = 0U;
+        uint64_t distance_lower_bound_squared = 0U;
+        bool atlas_cell_refined = false;
+    };
+
+    struct DefaultSpawnCandidate final {
+        shared::PlayerPosition position;
+        uint64_t distance_squared = 0U;
+    };
+
     struct PendingTerrainJoin final {
         core::ClientId client_id = 0U;
         char character = '@';
@@ -294,7 +307,11 @@ private:
         bool wants_previews = false;
         uint64_t last_progress_source_sequence = 0U;
         uint64_t next_message_sequence = 1U;
-        uint32_t next_default_spawn_candidate = 0U;
+        bool default_spawn_search_initialized = false;
+        std::vector<DefaultSpawnSearchNode> default_spawn_frontier;
+        std::optional<DefaultSpawnSearchNode> active_default_spawn_tile;
+        uint32_t next_default_spawn_column = 0U;
+        std::optional<DefaultSpawnCandidate> best_default_spawn;
         std::optional<shared::HeightTileKey> requested_surface_key;
         std::optional<shared::HeightTileKey> surface_key;
         std::optional<shared::SurfaceTile> surface_tile;

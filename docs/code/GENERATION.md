@@ -1,75 +1,91 @@
 # Native Terrain-v2 generation
 
-`mc_generation` owns the deterministic CPU atlas kernels and configuration;
-`mc_world_sampling` adds canonical regions, surface columns and chunks. These
-targets require no window, renderer, network startup or CoreLang initialization.
-The standalone `mc_world_map` exporter uses the same atlas and sampler as gameplay.
-Diagnostic RGB interpolation uses fused multiply-add for stable rounding.
+`mc_generation` owns deterministic CPU atlas kernels/configuration;
+`mc_world_sampling` adds canonical regions, columns and chunks. Both need no
+window, renderer, network startup or CoreLang initialization. `mc_world_map`
+exports with gameplay's atlas/sampler. RGB diagnostics use fused multiply-add
+for stable rounding.
 
-With a progress callback, the atlas publishes immutable snapshots at completed
-tectonic, coast, drainage, climate and erosion stages. Without one, it skips
-snapshot construction and copying; final fields remain identical. Consumers may
-coalesce snapshots; readiness requires a completed atlas. Cancellation and failures
-remain explicit. Configuration validation precedes allocation.
+With a callback, the atlas publishes immutable snapshots after tectonic, coast,
+drainage, climate and erosion. Without one, it skips snapshot construction and
+copies; final fields match. Consumers may coalesce snapshots; readiness requires
+a completed atlas. Cancellation/failure stay explicit; configuration validates
+before allocation.
 
-Canonical regional elaboration inherits its parent samples. `TerrainWorld`
-provides typed surface columns and materializes actual chunks from those columns;
-see [GAMEPLAY.md](GAMEPLAY.md) for authority, replication, coverage and edits.
-The bottom layer is Bedrock. Land columns use a top material, four ground
-layers, then Stone. Below sea level, the ground band is limited to the four
-blocks immediately below sea level. Climate selects the materials at source
-precision; rendering and collision consume the same sampled world.
+Canonical regional elaboration inherits parent samples. `TerrainWorld`
+provides typed columns and builds actual chunks; [GAMEPLAY.md](GAMEPLAY.md)
+covers authority, replication, coverage and edits. Columns begin with Bedrock,
+then top material, four ground layers and Stone; below sea level, ground uses
+the four blocks immediately beneath it. Climate selects materials at source
+precision; rendering and collision use those samples.
 
-`WorldPreparation` executes the bounded CoreLang generation plan before atlas
-production. Live scheduling gives each regional job its exact immutable parent;
-workers refine that parent or sample the installed 64-block leaf directly.
- Shared leases coalesce requests and reject stale identity/epoch results. Retained/reserved regional data and completed results have separate
-32 MiB budgets. Accepted pipelines stay capped at 192; retained-chain admission
-queues excess work and retries failures. Waiting job-zero pipelines cancel safely.
-CPU LOD climate keeps double precision through interpolation/classification.
-Prepared joins queue height and materialization work before
-publishing a resident-only spawn; server ticks do not generate terrain.
+`WorldPreparation` runs the bounded CoreLang plan before atlas production.
+Each regional job gets its exact immutable parent; workers refine it or sample
+the installed 64-block leaf. Shared leases coalesce requests and reject stale
+identity/epoch. Retained/reserved regional data and completed results have
+separate 32 MiB budgets; pipelines cap at 192. Excess chains queue and retry;
+waiting job-zero pipelines cancel safely. CPU LOD keeps double precision through
+climate interpolation/classification. Prepared joins queue height/materialization
+before resident-only spawn publication; server ticks never generate terrain.
 
-Numerics and fixture provenance belong to the
-[versioned numerical contract](../ai/decisions/earlydev_0_1_1_s1_numerics.md).
-Revision-3 references remain frozen. Revision 4 changes shelf exponentials to
-binary64 followed by binary32 conversion, requiring the exact
-`shelf-exp=exp64-to-f32-v1` configuration token. Model identities are incompatible; other numerical constraints remain.
-Revision 5 retains those atlas kernels and five regional stages, then adds
-16-block seeded relief to final columns after the 64-block leaf. Regional samples stay unchanged; previews/materialization share the local kernel.
-Its manifest binds samples; revision-4 fixtures remain.
-Six-seed agreement does not establish universal host-libm equivalence.
+## Nearest-land prepared spawn
 
-Revision 6 changes only the exposed-land top-material choice: land warmer than
-−2 °C uses Grass regardless of precipitation, while cold land keeps Snow.
-Ground/height/atlas remain unchanged. `TerrainWorld::sampleClimate`
-returns canonical periodic bilinear temperature/precipitation for finite XY.
-LOD nodes use it; arbitrary LOD samples interpolate scalars and reclassify tops. The revision-5 dry-land Dirt choice remains in its frozen reference
-and cannot be reused as revision-6 identity or cache data. Fixtures bind seeds and rays.
+Without a configured spawn, prepared Flight selects the nearest dry integer
+origin to `(32768,32768)`, ordered by shortest wrapped XY distance, squared
+distance, Y, then X. Require dry `highest_solid_z + 1` (`water_present` and
+`submerged` clear), bounds, materialized support, body clearance and no player
+overlap.
 
-Fixtures bind samples/hashes. Reference tools compare outputs without approving changed expectations. Follow [WORLD_MAP.md](../ai/WORLD_MAP.md)
-for the exporter and [VALIDATION.md](../ai/VALIDATION.md) for focused and full
-verification selection. Platform acceptance stays separate.
+Search periodic rectangles by minimum toroidal distance; certify only when
+every unvisited lower bound exceeds the candidate. Polls handle at most 128
+frontier/candidate items. Height and collision stay asynchronous; polling never
+generates terrain. Exhaustion fails without fallback.
+
+`hasWaterPresenceThroughoutAtlasCell` prunes only complete aligned 256/512 R6
+cells with ocean/lake/river masks. R6 selects mask pixel
+`floor(coordinate * resolution / 65536)` and carries its categorical flag
+through refinements. Each cell covers `[origin, origin + extent - 1]`, including
+the final pre-seam column. False means no proof; refine exact surface. Mixed or
+clipped cells refine. Future versions must prove all columns wet.
+
+Numerics/provenance: [versioned contract](../ai/decisions/earlydev_0_1_1_s1_numerics.md).
+R3 references stay frozen. R4 uses binary64 shelf exponentials then binary32,
+requiring `shelf-exp=exp64-to-f32-v1`; model identities are incompatible and
+other constraints persist. R5 keeps atlas kernels/five regional stages,
+then adds seeded 16-block relief after 64-block leaf. Regional samples stay
+unchanged; previews/materialization share the local kernel. Its manifest binds
+samples; R4 fixtures stay frozen. Six-seed agreement does not prove universal
+host-libm equivalence.
+
+R6 changes exposed-land tops only: Grass above −2 °C regardless of
+precipitation, Snow otherwise. Ground, height and atlas stay unchanged.
+`TerrainWorld::sampleClimate` returns canonical periodic bilinear
+temperature/precipitation for finite XY; LOD nodes use it, while arbitrary
+samples interpolate then reclassify. R5 dry-land Dirt fixtures stay frozen and
+cannot identify R6 caches. Fixtures bind seeds and rays.
+
+Fixtures bind sample hashes; reference tools compare outputs but never approve
+changed expectations. See [WORLD_MAP.md](../ai/WORLD_MAP.md) for the exporter and
+[VALIDATION.md](../ai/VALIDATION.md) for verification selection. Platform
+acceptance stays separate.
 
 ## Layered terrain LOD model
 
-LOD uses the separate visual identity `lod-canonical-r6-height-v2`, not
-Terrain-v2 revision 6; frozen R6 fixtures remain unchanged. L0 spans the full
-65,536-block periodic world at 256 or 512 unique samples per axis plus seam
-edges. L1 and L2 each refine cells 4×4. LOD metadata carries water height and
-presence, but the scene renders no 3D water. L3 samples canonical columns. Linear triangle fans share constrained edge
-chains across equal/mixed levels and periodic seams. Complete actual capture
-or conservative closure replaces one 16-block L2 cell at 256 resolution, or
-four 8-block cells at 512; lower-volume gaps retain fallback. This changes
-presentation, not Terrain-v2 identity. LOD nodes use canonical R6
-`sampleSurfaceHeight`; actual generation is unchanged.
+LOD uses visual identity `lod-canonical-r6-height-v2`, distinct from Terrain-v2
+R6. L0 spans the 65,536-block periodic world at 256/512 unique samples per axis
+plus seam edges; L1/L2 refine 4×4. Metadata carries water height/presence, but no
+3D water renders. L3 samples canonical columns. Triangle fans share constrained
+edges across levels and periodic seams. Complete captures or conservative
+closure replace one 16-block L2 cell at 256, or four 8-block cells at 512;
+gaps retain fallback. This affects presentation only. LOD uses canonical R6
+`sampleSurfaceHeight`; generation is unchanged.
 
 `TerrainLodSource` asynchronously builds a separate client atlas from the exact
-session configuration, cancels superseded work and publishes only matching
-identity/epoch results. This duplicates server atlas work; server chunks, collision, edits and state
-remain authoritative. `TerrainLodRuntime` shares desktop/Android capture and
-publication through persistent deadline-bounded discovery/capture queues; movement
-retains useful columns. Scene builds validate exact captured sources.
+session configuration, cancels superseded work and publishes matching
+identity/epoch only. It duplicates server atlas work; server chunks, collision,
+edits and state remain authoritative. `TerrainLodRuntime` shares desktop/Android
+through persistent deadline-bounded discovery/capture queues that retain useful
+columns. Scene builds validate exact captured sources.
 
 ## Bounded materialized prefetch
 
@@ -92,11 +108,10 @@ and actual lead sufficiency separately.
 
 ## Shared surface sampling
 
-The worker pool reuses completed immutable 16×16 surface tiles across preview
-and materialization jobs at different Z. Its bounded LRU holds at most 8,464
-tiles: four projected 352-block interests, conservatively 46×46 XY chunk
-coordinates each. Payload is approximately 83 MiB, excluding key/index and
-allocator overhead; measure total live memory separately.
+The worker pool reuses immutable completed 16×16 tiles across preview and
+materialization at different Z. Its LRU holds 8,464 tiles: four projected
+352-block interests at 46×46 XY coordinates each. Payload is about 83 MiB,
+excluding index/allocator overhead; measure total live memory separately.
 
 Keys bind terrain identity, epoch, regional leaf and XY. Validation precedes
 lookup; sampling runs outside the mutex, and concurrent misses may duplicate

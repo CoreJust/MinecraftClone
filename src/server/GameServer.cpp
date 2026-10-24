@@ -1368,96 +1368,46 @@ std::expected<std::optional<shared::PlayerPosition>, std::string> GameServer::sa
     if (m_physics_world == nullptr || m_terrain_world == nullptr) {
         return std::unexpected("canonical terrain residency is not initialized");
     }
+
     auto const explicit_spawn = std::ranges::find(m_spawn_points, join.character, &SpawnPoint::character);
     bool const has_explicit_spawn = explicit_spawn != m_spawn_points.end();
-    shared::PlayerPosition initial = has_explicit_spawn
-        ? shared::PlayerPosition{.x = explicit_spawn->x, .y = explicit_spawn->y, .z = explicit_spawn->z}
-        : shared::PlayerPosition{
-            .x = shared::World::FLIGHT_SPAWN.x,
-            .y = shared::World::FLIGHT_SPAWN.y,
-            .z = shared::World::FLIGHT_SPAWN.z,
-        };
 
     static constexpr int64_t SUBCELL_SCALE = shared::SUBCELLS_PER_CELL;
     static constexpr int64_t PLAYER_WIDTH = shared::World::PLAYER_WIDTH_SUBCELLS;
     static constexpr int64_t PLAYER_HEIGHT = shared::World::PLAYER_HEIGHT_SUBCELLS;
     static constexpr int64_t WORLD_PERIOD = static_cast<int64_t>(shared::WorldExtent::WIDTH) * SUBCELL_SCALE;
+    static constexpr uint32_t SEARCH_CENTER = shared::WorldExtent::WIDTH / 2U;
+    static constexpr uint32_t MAX_SEARCH_WORK_PER_POLL = 128U;
+    static constexpr uint32_t TILE_AREA = shared::Chunk::SIDE_LENGTH * shared::Chunk::SIDE_LENGTH;
 
-    auto overlaps_player = [&initial](shared::Player const& player) {
-        auto const horizontal_overlap = [](int64_t const first, int64_t const second) {
-            int64_t delta = std::abs(first - second);
-            delta = std::min(delta, WORLD_PERIOD - delta);
-            return delta < PLAYER_WIDTH;
-        };
-        int64_t const candidate_x = static_cast<int64_t>(initial.x) * SUBCELL_SCALE + initial.x_subcell;
-        int64_t const candidate_y = static_cast<int64_t>(initial.y) * SUBCELL_SCALE + initial.y_subcell;
-        int64_t const candidate_z = static_cast<int64_t>(initial.z) * SUBCELL_SCALE + initial.z_subcell;
-        int64_t const player_x = static_cast<int64_t>(player.x) * SUBCELL_SCALE + player.x_subcell;
-        int64_t const player_y = static_cast<int64_t>(player.y) * SUBCELL_SCALE + player.y_subcell;
-        int64_t const player_z = static_cast<int64_t>(player.z) * SUBCELL_SCALE + player.z_subcell;
-        bool const vertical_overlap = candidate_z < player_z + PLAYER_HEIGHT
-            && player_z < candidate_z + PLAYER_HEIGHT;
-        return horizontal_overlap(candidate_x, player_x)
-            && horizontal_overlap(candidate_y, player_y)
-            && vertical_overlap;
+    enum class CandidateValidation : uint8_t {
+        Safe,
+        Pending,
+        Unsafe,
     };
 
-    uint32_t const candidate_count = has_explicit_spawn ? 1U : 64U;
-    while (has_explicit_spawn || join.next_default_spawn_candidate < candidate_count) {
-        if (!has_explicit_spawn) {
-            initial.x = static_cast<int32_t>(shared::WorldBounds::wrapHorizontal(
-                static_cast<int64_t>(shared::World::FLIGHT_SPAWN.x)
-                + static_cast<int64_t>(join.next_default_spawn_candidate) * 2
-            ));
-            shared::HeightTileKey const key{
-                .x = initial.x / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
-                .y = initial.y / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
-            };
-            if (!join.surface_tile.has_value() || join.surface_key != key) {
-                join.requested_surface_key = key;
-                shared::WorldGenerationPlan surface_plan = m_generation_plan;
-                surface_plan.chunk_stages = {shared::GenerationStage::HeightTile};
-                shared::GenerationAdmission const admission = requestPendingJoinPlan(
-                    join,
-                    {.x = key.x, .y = key.y, .z = 0},
-                    std::move(surface_plan)
-                );
-                if (admission == shared::GenerationAdmission::InvalidPlan
-                    || admission == shared::GenerationAdmission::CapacityExceeded) {
-                    return std::unexpected("canonical spawn height tile could not be admitted");
-                }
-                return std::optional<shared::PlayerPosition>{};
-            }
-            if (join.surface_tile->identity != m_terrain_world->identity()
-                || join.surface_tile->coordinate != shared::ChunkCoordinate{.x = key.x, .y = key.y, .z = 0}
-                || !shared::isValidSurfaceTile(*join.surface_tile)) {
-                return std::unexpected("canonical spawn height tile has a mismatched terrain identity");
-            }
-            uint32_t const local_x = static_cast<uint32_t>(initial.x) % shared::Chunk::SIDE_LENGTH;
-            uint32_t const local_y = static_cast<uint32_t>(initial.y) % shared::Chunk::SIDE_LENGTH;
-            shared::TerrainColumn const& column = join.surface_tile->columns[
-                local_y * shared::Chunk::SIDE_LENGTH + local_x
-            ];
-            initial.z = static_cast<int32_t>(column.highest_solid_z) + 1;
-        }
-        if (!shared::World::isFlightPositionInBounds(initial)) {
-            if (has_explicit_spawn) {
+    auto validate_candidate = [this, &join](
+        shared::PlayerPosition const& position,
+        bool const explicit_position
+    ) -> std::expected<CandidateValidation, std::string> {
+        if (!shared::World::isFlightPositionInBounds(position)) {
+            if (explicit_position) {
                 return std::unexpected("explicit spawn position is outside the canonical flight world");
             }
-            ++join.next_default_spawn_candidate;
-            continue;
+            return CandidateValidation::Unsafe;
         }
 
-        int64_t const x_subcells = static_cast<int64_t>(initial.x) * SUBCELL_SCALE + initial.x_subcell;
-        int64_t const y_subcells = static_cast<int64_t>(initial.y) * SUBCELL_SCALE + initial.y_subcell;
-        int64_t const z_subcells = static_cast<int64_t>(initial.z) * SUBCELL_SCALE + initial.z_subcell;
+        int64_t const x_subcells = static_cast<int64_t>(position.x) * SUBCELL_SCALE + position.x_subcell;
+        int64_t const y_subcells = static_cast<int64_t>(position.y) * SUBCELL_SCALE + position.y_subcell;
+        int64_t const z_subcells = static_cast<int64_t>(position.z) * SUBCELL_SCALE + position.z_subcell;
         int64_t const first_x = x_subcells / SUBCELL_SCALE;
         int64_t const last_x = (x_subcells + PLAYER_WIDTH - 1) / SUBCELL_SCALE;
         int64_t const first_y = y_subcells / SUBCELL_SCALE;
         int64_t const last_y = (y_subcells + PLAYER_WIDTH - 1) / SUBCELL_SCALE;
         int64_t const first_z = z_subcells / SUBCELL_SCALE;
         int64_t const last_z = (z_subcells + PLAYER_HEIGHT - 1) / SUBCELL_SCALE;
-        int64_t const first_checked_z = has_explicit_spawn ? first_z : first_z - 1;
+        int64_t const first_checked_z = explicit_position ? first_z : first_z - 1;
+
         bool valid_vertical_bounds = true;
         std::vector<shared::ChunkCoordinate> missing_chunks;
         for (int64_t block_z = first_checked_z; block_z <= last_z && valid_vertical_bounds; ++block_z) {
@@ -1486,11 +1436,10 @@ std::expected<std::optional<shared::PlayerPosition>, std::string> GameServer::sa
             }
         }
         if (!valid_vertical_bounds) {
-            if (has_explicit_spawn) {
+            if (explicit_position) {
                 return std::unexpected("explicit spawn body is outside the canonical flight world");
             }
-            ++join.next_default_spawn_candidate;
-            continue;
+            return CandidateValidation::Unsafe;
         }
         if (!missing_chunks.empty()) {
             for (shared::ChunkCoordinate const coordinate : missing_chunks) {
@@ -1504,7 +1453,7 @@ std::expected<std::optional<shared::PlayerPosition>, std::string> GameServer::sa
                     return std::unexpected("canonical spawn collision chunks could not be admitted");
                 }
             }
-            return std::optional<shared::PlayerPosition>{};
+            return CandidateValidation::Pending;
         }
 
         bool body_clear = true;
@@ -1521,7 +1470,7 @@ std::expected<std::optional<shared::PlayerPosition>, std::string> GameServer::sa
                         .z = block_z,
                     };
                     shared::SparseBlockQuery const query = m_physics_world->queryBlock(coordinate);
-                    if (!has_explicit_spawn && block_z == first_z - 1) {
+                    if (!explicit_position && block_z == first_z - 1) {
                         bool const materialized = query.state == shared::GenerationState::Materialized;
                         has_support = has_support || (materialized && query.block != shared::Block::Air);
                     } else if (block_z >= first_z
@@ -1533,23 +1482,288 @@ std::expected<std::optional<shared::PlayerPosition>, std::string> GameServer::sa
                 }
             }
         }
-        if (!body_clear || (!has_explicit_spawn && !has_support)) {
-            if (has_explicit_spawn) {
+        if (!body_clear || (!explicit_position && !has_support)) {
+            if (explicit_position) {
                 return std::unexpected("explicit spawn body intersects terrain or has no materialized support");
             }
-            ++join.next_default_spawn_candidate;
+            return CandidateValidation::Unsafe;
+        }
+
+        auto const overlaps_player = [&position](shared::Player const& player) {
+            auto const horizontal_overlap = [](int64_t const first, int64_t const second) {
+                int64_t delta = std::abs(first - second);
+                delta = std::min(delta, WORLD_PERIOD - delta);
+                return delta < PLAYER_WIDTH;
+            };
+            int64_t const candidate_x = static_cast<int64_t>(position.x) * SUBCELL_SCALE + position.x_subcell;
+            int64_t const candidate_y = static_cast<int64_t>(position.y) * SUBCELL_SCALE + position.y_subcell;
+            int64_t const candidate_z = static_cast<int64_t>(position.z) * SUBCELL_SCALE + position.z_subcell;
+            int64_t const player_x = static_cast<int64_t>(player.x) * SUBCELL_SCALE + player.x_subcell;
+            int64_t const player_y = static_cast<int64_t>(player.y) * SUBCELL_SCALE + player.y_subcell;
+            int64_t const player_z = static_cast<int64_t>(player.z) * SUBCELL_SCALE + player.z_subcell;
+            bool const vertical_overlap = candidate_z < player_z + PLAYER_HEIGHT
+                && player_z < candidate_z + PLAYER_HEIGHT;
+            return horizontal_overlap(candidate_x, player_x)
+                && horizontal_overlap(candidate_y, player_y)
+                && vertical_overlap;
+        };
+        if (std::ranges::any_of(m_world.players(), overlaps_player)) {
+            if (explicit_position) {
+                return std::unexpected("explicit spawn position overlaps an active player");
+            }
+            return CandidateValidation::Unsafe;
+        }
+        return CandidateValidation::Safe;
+    };
+
+    if (has_explicit_spawn) {
+        shared::PlayerPosition const position{
+            .x = explicit_spawn->x,
+            .y = explicit_spawn->y,
+            .z = explicit_spawn->z,
+        };
+        auto const validation = validate_candidate(position, true);
+        if (!validation) {
+            return std::unexpected(validation.error());
+        }
+        return *validation == CandidateValidation::Safe
+            ? std::optional<shared::PlayerPosition>{position}
+            : std::optional<shared::PlayerPosition>{};
+    }
+
+    auto const wrapped_axis_distance = [](uint32_t const center, uint32_t const origin, uint32_t const extent) {
+        // Return the shortest toroidal distance from a point to this non-wrapping interval.
+        uint64_t const begin = origin;
+        uint64_t const end = begin + extent - 1U;
+        if (center < begin) {
+            uint64_t const direct = begin - center;
+            uint64_t const across_seam = static_cast<uint64_t>(center) + shared::WorldExtent::WIDTH - end;
+            return std::min(direct, across_seam);
+        }
+        if (center > end) {
+            uint64_t const direct = center - end;
+            uint64_t const across_seam = begin + shared::WorldExtent::WIDTH - center;
+            return std::min(direct, across_seam);
+        }
+        return uint64_t{0U};
+    };
+    auto const rectangle_distance_squared = [&wrapped_axis_distance](
+        uint32_t const origin_x,
+        uint32_t const origin_y,
+        uint32_t const extent
+    ) {
+        uint64_t const delta_x = wrapped_axis_distance(SEARCH_CENTER, origin_x, extent);
+        uint64_t const delta_y = wrapped_axis_distance(SEARCH_CENTER, origin_y, extent);
+        return delta_x * delta_x + delta_y * delta_y;
+    };
+    auto const node_priority = [](DefaultSpawnSearchNode const& first, DefaultSpawnSearchNode const& second) {
+        return std::tie(
+            first.distance_lower_bound_squared, first.origin_y, first.origin_x, first.extent
+        ) > std::tie(
+            second.distance_lower_bound_squared, second.origin_y, second.origin_x, second.extent
+        );
+    };
+    auto push_node = [&join, &node_priority](DefaultSpawnSearchNode node) {
+        join.default_spawn_frontier.push_back(std::move(node));
+        std::push_heap(join.default_spawn_frontier.begin(), join.default_spawn_frontier.end(), node_priority);
+    };
+    auto push_children = [&push_node, &rectangle_distance_squared](DefaultSpawnSearchNode const& parent) {
+        uint32_t const child_extent = parent.extent / 2U;
+        for (uint32_t const offset_y : {0U, child_extent}) {
+            for (uint32_t const offset_x : {0U, child_extent}) {
+                uint32_t const origin_x = parent.origin_x + offset_x;
+                uint32_t const origin_y = parent.origin_y + offset_y;
+                push_node({
+                    .origin_x = origin_x,
+                    .origin_y = origin_y,
+                    .extent = child_extent,
+                    .distance_lower_bound_squared = rectangle_distance_squared(
+                        origin_x, origin_y, child_extent
+                    ),
+                    .atlas_cell_refined = parent.atlas_cell_refined,
+                });
+            }
+        }
+    };
+
+    std::shared_ptr<generation::GlobalAtlas const> const atlas = m_terrain_world->atlas();
+    if (atlas == nullptr || atlas->configuration.resolution == 0U
+        || generation::WORLD_SIZE_BLOCKS % atlas->configuration.resolution != 0U) {
+        return std::unexpected("canonical spawn search has an invalid terrain atlas resolution");
+    }
+    uint32_t const atlas_cell_extent = generation::WORLD_SIZE_BLOCKS / atlas->configuration.resolution;
+    if (atlas_cell_extent < shared::Chunk::SIDE_LENGTH
+        || atlas_cell_extent % shared::Chunk::SIDE_LENGTH != 0U
+        || shared::WorldExtent::WIDTH % atlas_cell_extent != 0U) {
+        return std::unexpected("canonical spawn search cannot align terrain atlas cells with height tiles");
+    }
+    if (!join.default_spawn_search_initialized) {
+        join.default_spawn_search_initialized = true;
+        join.default_spawn_frontier.clear();
+        join.active_default_spawn_tile.reset();
+        join.next_default_spawn_column = 0U;
+        join.best_default_spawn.reset();
+        push_node({
+            .origin_x = 0U,
+            .origin_y = 0U,
+            .extent = shared::WorldExtent::WIDTH,
+            .distance_lower_bound_squared = 0U,
+            .atlas_cell_refined = false,
+        });
+    }
+
+    auto const candidate_distance_squared = [wrapped_axis_distance](uint32_t const x, uint32_t const y) {
+        uint64_t const delta_x = wrapped_axis_distance(SEARCH_CENTER, x, 1U);
+        uint64_t const delta_y = wrapped_axis_distance(SEARCH_CENTER, y, 1U);
+        return delta_x * delta_x + delta_y * delta_y;
+    };
+    auto const improves_best = [](DefaultSpawnCandidate const& candidate, DefaultSpawnCandidate const& best) {
+        return std::tuple{
+            candidate.distance_squared,
+            static_cast<uint32_t>(candidate.position.y),
+            static_cast<uint32_t>(candidate.position.x),
+        } < std::tuple{
+            best.distance_squared,
+            static_cast<uint32_t>(best.position.y),
+            static_cast<uint32_t>(best.position.x),
+        };
+    };
+
+    uint32_t work = 0U;
+    while (work < MAX_SEARCH_WORK_PER_POLL) {
+        if (join.active_default_spawn_tile.has_value()) {
+            DefaultSpawnSearchNode const tile_node = *join.active_default_spawn_tile;
+            shared::HeightTileKey const key{
+                .x = static_cast<int32_t>(tile_node.origin_x / shared::Chunk::SIDE_LENGTH),
+                .y = static_cast<int32_t>(tile_node.origin_y / shared::Chunk::SIDE_LENGTH),
+            };
+            if (!join.surface_tile.has_value() || join.surface_key != key) {
+                join.requested_surface_key = key;
+                shared::WorldGenerationPlan surface_plan = m_generation_plan;
+                surface_plan.chunk_stages = {shared::GenerationStage::HeightTile};
+                shared::GenerationAdmission const admission = requestPendingJoinPlan(
+                    join,
+                    {.x = key.x, .y = key.y, .z = 0},
+                    std::move(surface_plan)
+                );
+                if (admission == shared::GenerationAdmission::InvalidPlan
+                    || admission == shared::GenerationAdmission::CapacityExceeded) {
+                    return std::unexpected("canonical spawn height tile could not be admitted");
+                }
+                return std::optional<shared::PlayerPosition>{};
+            }
+            if (join.surface_tile->identity != m_terrain_world->identity()
+                || join.surface_tile->coordinate != shared::ChunkCoordinate{.x = key.x, .y = key.y, .z = 0}
+                || !shared::isValidSurfaceTile(*join.surface_tile)) {
+                return std::unexpected("canonical spawn height tile has a mismatched terrain identity");
+            }
+
+            while (join.next_default_spawn_column < TILE_AREA && work < MAX_SEARCH_WORK_PER_POLL) {
+                uint32_t const column_index = join.next_default_spawn_column;
+                ++work;
+                shared::TerrainColumn const& column = join.surface_tile->columns[column_index];
+                if (column.water_present || column.submerged) {
+                    ++join.next_default_spawn_column;
+                    continue;
+                }
+                uint32_t const local_x = column_index % shared::Chunk::SIDE_LENGTH;
+                uint32_t const local_y = column_index / shared::Chunk::SIDE_LENGTH;
+                uint32_t const x = tile_node.origin_x + local_x;
+                uint32_t const y = tile_node.origin_y + local_y;
+                uint64_t const distance_squared = candidate_distance_squared(x, y);
+                if (join.best_default_spawn.has_value()
+                    && distance_squared > join.best_default_spawn->distance_squared) {
+                    ++join.next_default_spawn_column;
+                    continue;
+                }
+
+                shared::PlayerPosition const position{
+                    .x = static_cast<int32_t>(x),
+                    .y = static_cast<int32_t>(y),
+                    .z = static_cast<int32_t>(column.highest_solid_z) + 1,
+                };
+                auto const validation = validate_candidate(position, false);
+                if (!validation) {
+                    return std::unexpected(validation.error());
+                }
+                if (*validation == CandidateValidation::Pending) {
+                    return std::optional<shared::PlayerPosition>{};
+                }
+                ++join.next_default_spawn_column;
+                if (*validation == CandidateValidation::Safe) {
+                    DefaultSpawnCandidate const candidate{
+                        .position = position,
+                        .distance_squared = distance_squared,
+                    };
+                    if (!join.best_default_spawn.has_value()
+                        || improves_best(candidate, *join.best_default_spawn)) {
+                        join.best_default_spawn = candidate;
+                    }
+                }
+            }
+            if (join.next_default_spawn_column == TILE_AREA) {
+                join.active_default_spawn_tile.reset();
+                join.next_default_spawn_column = 0U;
+                join.surface_tile.reset();
+                join.surface_key.reset();
+            }
             continue;
         }
-        bool const overlaps_existing = std::ranges::any_of(m_world.players(), overlaps_player);
-        if (!overlaps_existing) {
-            return std::optional<shared::PlayerPosition>{initial};
+
+        // The quadtree frontier partitions all unvisited origins. Strictly greater preserves equal-distance ties.
+        bool const frontier_proves_best = join.best_default_spawn.has_value()
+            && (join.default_spawn_frontier.empty()
+                || join.default_spawn_frontier.front().distance_lower_bound_squared
+                    > join.best_default_spawn->distance_squared);
+        if (frontier_proves_best) {
+            shared::PlayerPosition const best_position = join.best_default_spawn->position;
+            auto const validation = validate_candidate(best_position, false);
+            if (!validation) {
+                return std::unexpected(validation.error());
+            }
+            if (*validation == CandidateValidation::Pending) {
+                return std::optional<shared::PlayerPosition>{};
+            }
+            if (*validation == CandidateValidation::Safe) {
+                return std::optional<shared::PlayerPosition>{best_position};
+            }
+            join.best_default_spawn.reset();
+            if (join.default_spawn_frontier.empty()) {
+                return std::unexpected("canonical terrain has no safe dry-land default spawn");
+            }
+            continue;
         }
-        if (has_explicit_spawn) {
-            return std::unexpected("explicit spawn position overlaps an active player");
+        if (join.default_spawn_frontier.empty()) {
+            return std::unexpected("canonical terrain has no safe dry-land default spawn");
         }
-        ++join.next_default_spawn_candidate;
+
+        std::pop_heap(join.default_spawn_frontier.begin(), join.default_spawn_frontier.end(), node_priority);
+        DefaultSpawnSearchNode node = std::move(join.default_spawn_frontier.back());
+        join.default_spawn_frontier.pop_back();
+        ++work;
+
+        if (node.extent == atlas_cell_extent && !node.atlas_cell_refined) {
+            // A provider may prune only a cell it proves uniformly wet; false means refine exact surface tiles.
+            if (m_terrain_world->hasWaterPresenceThroughoutAtlasCell(
+                    node.origin_x,
+                    node.origin_y,
+                    node.extent
+                )) {
+                continue;
+            }
+            node.atlas_cell_refined = true;
+        }
+        if (node.extent == shared::Chunk::SIDE_LENGTH) {
+            join.active_default_spawn_tile = node;
+            join.next_default_spawn_column = 0U;
+            continue;
+        }
+        if (node.extent < shared::Chunk::SIDE_LENGTH || node.extent % 2U != 0U) {
+            return std::unexpected("canonical spawn search produced a non-aligned terrain rectangle");
+        }
+        push_children(node);
     }
-    return std::unexpected("canonical terrain has no safe default spawn near the world center");
+    return std::optional<shared::PlayerPosition>{};
 }
 
 shared::GenerationAdmission GameServer::requestPendingJoinPlan(

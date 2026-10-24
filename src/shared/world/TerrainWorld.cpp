@@ -958,6 +958,38 @@ uint16_t TerrainWorld::sampleSurfaceHeight(uint32_t const world_x, uint32_t cons
     return mappedHeight(elevation, *m_atlas);
 }
 
+bool TerrainWorld::hasWaterPresenceThroughoutAtlasCell(
+    uint32_t const origin_x,
+    uint32_t const origin_y,
+    uint32_t const extent
+) const noexcept
+{
+    if (generation::MODEL_REVISION != 6U) {
+        return false;
+    }
+
+    uint32_t const resolution = m_atlas->configuration.resolution;
+    if ((resolution != 256U && resolution != 512U)
+        || generation::WORLD_SIZE_BLOCKS % resolution != 0U) {
+        return false;
+    }
+    uint32_t const cell_extent = generation::WORLD_SIZE_BLOCKS / resolution;
+    if (extent != cell_extent
+        || origin_x >= generation::WORLD_SIZE_BLOCKS
+        || origin_y >= generation::WORLD_SIZE_BLOCKS
+        || origin_x % cell_extent != 0U
+        || origin_y % cell_extent != 0U) {
+        return false;
+    }
+
+    // R6 carries this categorical atlas pixel unchanged through every regional refinement.
+    size_t const atlas_index = static_cast<size_t>(origin_y / cell_extent) * resolution
+        + origin_x / cell_extent;
+    return m_atlas->ocean_mask[atlas_index] != 0U
+        || m_atlas->lake_mask[atlas_index] != 0U
+        || m_atlas->river_mask[atlas_index] != 0U;
+}
+
 std::shared_ptr<RegionalArtifact const> TerrainWorld::prepareRegion(
     TerrainRegionKey const key,
     std::stop_token const& cancellation

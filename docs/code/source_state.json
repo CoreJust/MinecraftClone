@@ -247,7 +247,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "adb3f0657adee50734c61c7ccadd4cd2066945e83b38a6a449f4a1c0e57138f0",
+      "guide_sha256": "a27a833545b5da8c30555bf9105c04b08b0d005cd7cf6d8ad1b63655c9bb164b",
       "id": "gameplay",
       "sources": [
         "src/client/BlockActionPresentation.cpp",
@@ -397,11 +397,11 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "9104182af354dc01b83cfd5f3f24137144ff6cca4fb60a2348d22ec57b097155"
+      "sources_sha256": "71829ca08e9c9f635ec8cd2894641ec6be038e7fcc785ae074a7219e0a4975da"
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "6c8ec3fc993a89a9951dc8e788101db2304e6935665d1dc168d4db0f20376ad2",
+      "guide_sha256": "ed7eb0ff4e47e6d3f9c4a62cffa50128e1ae8959209d3925074b09f94183f09e",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",

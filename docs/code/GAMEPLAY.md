@@ -59,6 +59,11 @@ rearms it; partial reserve loss preserves current complete coverage. Session/epo
 identity gate publication. Dense 48/80 delivery and ACK-gated promotion stay
 separate. See [Generation](GENERATION.md#bounded-materialized-prefetch).
 
+Prepared Flight joins without an explicit spawn use nearest safe dry land
+near world center, with wrapped distance and deterministic ties. Support stays
+asynchronous; explicit spawns retain coordinates and validation. See
+[nearest-land spawn](GENERATION.md#nearest-land-prepared-spawn).
+
 Preview meshes grow from near-camera connected coverage and publish after a
 cardinal neighbor is ready. Interest changes/removals rebuild them; retired meshes
 leave canonical resident data available for remeshing.

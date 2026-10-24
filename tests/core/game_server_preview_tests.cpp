@@ -133,6 +133,126 @@ bool materializeFlightCollisionPath(
     return true;
 }
 
+uint64_t wrappedRectangleDistanceSquared(
+    uint32_t const center,
+    uint32_t const origin_x,
+    uint32_t const origin_y,
+    uint32_t const extent
+)
+{
+    auto const axis_distance_to_interval = [center](uint32_t const origin, uint32_t const interval_extent) {
+        uint64_t const begin = origin;
+        uint64_t const end = begin + interval_extent - 1U;
+        if (center < begin) {
+            return std::min(
+                begin - center,
+                static_cast<uint64_t>(center) + shared::WorldExtent::WIDTH - end
+            );
+        }
+        if (center > end) {
+            return std::min(
+                static_cast<uint64_t>(center) - end,
+                begin + shared::WorldExtent::WIDTH - center
+            );
+        }
+        return uint64_t{0U};
+    };
+    uint64_t const delta_x = axis_distance_to_interval(origin_x, extent);
+    uint64_t const delta_y = axis_distance_to_interval(origin_y, extent);
+    return delta_x * delta_x + delta_y * delta_y;
+}
+
+using CanonicalColumnRank = std::tuple<uint64_t, uint32_t, uint32_t>;
+using CanonicalColumnCoordinate = std::pair<uint32_t, uint32_t>;
+
+std::optional<CanonicalColumnCoordinate> firstCloserDryCanonicalColumnInLeaf(
+    shared::TerrainWorld const& terrain_world,
+    uint32_t const leaf_x,
+    uint32_t const leaf_y,
+    uint32_t const center,
+    uint64_t const selected_distance_squared,
+    CanonicalColumnRank const& selected_rank
+)
+{
+    static constexpr uint32_t LEAF_EXTENT = shared::TERRAIN_REGION_EXTENTS.back();
+    auto const leaf = terrain_world.prepareRegion({
+        .origin_x = leaf_x,
+        .origin_y = leaf_y,
+        .extent = LEAF_EXTENT,
+    });
+    for (uint32_t tile_y = leaf_y; tile_y < leaf_y + LEAF_EXTENT; tile_y += shared::Chunk::SIDE_LENGTH) {
+        for (uint32_t tile_x = leaf_x; tile_x < leaf_x + LEAF_EXTENT; tile_x += shared::Chunk::SIDE_LENGTH) {
+            if (wrappedRectangleDistanceSquared(center, tile_x, tile_y, shared::Chunk::SIDE_LENGTH)
+                > selected_distance_squared) {
+                continue;
+            }
+            shared::SurfaceTile const tile = terrain_world.sampleSurface(*leaf, {
+                .x = static_cast<int32_t>(tile_x / shared::Chunk::SIDE_LENGTH),
+                .y = static_cast<int32_t>(tile_y / shared::Chunk::SIDE_LENGTH),
+                .z = 0,
+            });
+            for (uint32_t column_index = 0U; column_index < shared::Chunk::FACE_BLOCK_COUNT; ++column_index) {
+                shared::TerrainColumn const& column = tile.columns[column_index];
+                if (column.water_present || column.submerged) {
+                    continue;
+                }
+                uint32_t const x = tile_x + column_index % shared::Chunk::SIDE_LENGTH;
+                uint32_t const y = tile_y + column_index / shared::Chunk::SIDE_LENGTH;
+                uint64_t const distance_squared = wrappedRectangleDistanceSquared(center, x, y, 1U);
+                CanonicalColumnRank const rank{distance_squared, y, x};
+                if (distance_squared <= selected_distance_squared && rank < selected_rank) {
+                    return CanonicalColumnCoordinate{x, y};
+                }
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<CanonicalColumnCoordinate> firstCloserDryCanonicalColumn(
+    shared::TerrainWorld const& terrain_world,
+    generation::GlobalAtlas const& atlas,
+    uint32_t const center,
+    uint64_t const selected_distance_squared,
+    CanonicalColumnRank const& selected_rank
+)
+{
+    uint32_t const atlas_cell_extent = generation::WORLD_SIZE_BLOCKS / atlas.configuration.resolution;
+    for (uint32_t cell_y = 0U; cell_y < atlas.configuration.resolution; ++cell_y) {
+        uint32_t const cell_origin_y = cell_y * atlas_cell_extent;
+        for (uint32_t cell_x = 0U; cell_x < atlas.configuration.resolution; ++cell_x) {
+            uint32_t const cell_origin_x = cell_x * atlas_cell_extent;
+            if (wrappedRectangleDistanceSquared(center, cell_origin_x, cell_origin_y, atlas_cell_extent)
+                    > selected_distance_squared
+                || terrain_world.hasWaterPresenceThroughoutAtlasCell(
+                    cell_origin_x,
+                    cell_origin_y,
+                    atlas_cell_extent
+                )) {
+                continue;
+            }
+            for (uint32_t leaf_y = cell_origin_y; leaf_y < cell_origin_y + atlas_cell_extent;
+                leaf_y += shared::TERRAIN_REGION_EXTENTS.back()) {
+                for (uint32_t leaf_x = cell_origin_x; leaf_x < cell_origin_x + atlas_cell_extent;
+                    leaf_x += shared::TERRAIN_REGION_EXTENTS.back()) {
+                    auto const closer = firstCloserDryCanonicalColumnInLeaf(
+                        terrain_world,
+                        leaf_x,
+                        leaf_y,
+                        center,
+                        selected_distance_squared,
+                        selected_rank
+                    );
+                    if (closer.has_value()) {
+                        return closer;
+                    }
+                }
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 class PreviewClient final : public core::Client {
 public:
     static constexpr uint32_t MAX_TRACKED_INPUTS = 512U;
@@ -962,6 +1082,79 @@ void expectAcknowledgedDeliveryWindow(
     expectBoundedDeliveryWindow(batches);
 }
 
+struct PreparedSpawnObservation final {
+    shared::ServerPlayerPositionMessage spawn;
+    std::shared_ptr<shared::TerrainWorld const> terrain_world;
+};
+
+std::optional<PreparedSpawnObservation> preparedDefaultSpawnForSeed(uint64_t const seed)
+{
+    static constexpr std::chrono::seconds TIMEOUT{30};
+    static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
+    shared::WorldConfiguration world_configuration = shared::World::canonicalConfiguration();
+    world_configuration.seed = seed;
+    generation::GenerationConfiguration generation_configuration;
+    generation_configuration.seed = seed;
+    generation_configuration.epochs = 1U;
+    generation_configuration.erosion_steps = 0U;
+    generation_configuration.initial_climate_iterations = 1U;
+    generation_configuration.climate_iterations = 1U;
+    generation_configuration.currents = false;
+    generation_configuration.coastal_elaboration = false;
+    auto const preparation = std::make_shared<server::WorldPreparation>(
+        generation_configuration,
+        world_configuration.algorithm_version
+    );
+    auto const preparation_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (preparation->latest().state == server::WorldPreparationState::Preparing
+        && std::chrono::steady_clock::now() < preparation_deadline) {
+        std::this_thread::sleep_for(POLL_INTERVAL);
+    }
+    if (preparation->latest().state != server::WorldPreparationState::Ready) {
+        ADD_FAILURE() << "Prepared terrain did not become ready for seed " << seed;
+        return std::nullopt;
+    }
+
+    server::GameServer game_server{
+        0U,
+        {},
+        shared::WorldMode::Flight,
+        world_configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS,
+        nullptr,
+        preparation,
+    };
+    std::atomic_bool stop_requested{false};
+    std::thread server_thread{[&game_server, &stop_requested] { game_server.run(stop_requested); }};
+    defer {
+        stop_requested.store(true, std::memory_order_relaxed);
+        server_thread.join();
+    };
+    PreviewClient client{false, false};
+    if (!client.connect(core::Address::localhost(game_server.port()), TIMEOUT)) {
+        ADD_FAILURE() << "Could not connect to prepared server for seed " << seed;
+        return std::nullopt;
+    }
+    if (!client.send(shared::encodeMessage(shared::JoinRequestMessage{
+            .ch = '@',
+            .mode = shared::WorldMode::Flight,
+            .configuration = world_configuration,
+            .wants_previews = false,
+        }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable})) {
+        ADD_FAILURE() << "Could not send prepared join request for seed " << seed;
+        return std::nullopt;
+    }
+    auto const join_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (!client.last_player_position.has_value() && std::chrono::steady_clock::now() < join_deadline) {
+        static_cast<void>(client.poll(POLL_INTERVAL));
+    }
+    if (!client.join_accepted.value_or(false) || !client.last_player_position.has_value()) {
+        ADD_FAILURE() << "Prepared join did not spawn for seed " << seed;
+        return std::nullopt;
+    }
+    return PreparedSpawnObservation{*client.last_player_position, preparation->readyWorld()};
+}
+
 } // namespace
 
 TEST(GameServerPreviewTest, CanonicalTerrainServesMatchingCollisionAndPreviewSurface)
@@ -1087,7 +1280,7 @@ TEST(GameServerPreviewTest, CanonicalTerrainServesMatchingCollisionAndPreviewSur
 
 TEST(GameServerPreviewTest, PreparedDefaultSpawnWaitsForAsynchronousTerrainMaterialization)
 {
-    static constexpr std::chrono::seconds TIMEOUT{20};
+    static constexpr std::chrono::seconds TIMEOUT{60};
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
     shared::WorldConfiguration const world_configuration = shared::World::canonicalConfiguration();
     generation::GenerationConfiguration generation_configuration;
@@ -1166,8 +1359,270 @@ TEST(GameServerPreviewTest, PreparedDefaultSpawnWaitsForAsynchronousTerrainMater
         local_y * shared::Chunk::SIDE_LENGTH + local_x
     ];
     EXPECT_EQ(spawn.z, static_cast<int32_t>(column.highest_solid_z) + 1);
+    EXPECT_FALSE(column.water_present);
+    EXPECT_FALSE(column.submerged);
+    uint32_t const center_x = static_cast<uint32_t>(shared::WorldExtent::WIDTH / 2U);
+    uint32_t const center_y = static_cast<uint32_t>(shared::WorldExtent::WIDTH / 2U);
+    shared::SurfaceTile const center_surface = terrain_world->sampleSurface({
+        .x = static_cast<int32_t>(center_x / shared::Chunk::SIDE_LENGTH),
+        .y = static_cast<int32_t>(center_y / shared::Chunk::SIDE_LENGTH),
+        .z = 0,
+    });
+    shared::TerrainColumn const& center_column = center_surface.columns[
+        (center_y % shared::Chunk::SIDE_LENGTH) * shared::Chunk::SIDE_LENGTH
+        + center_x % shared::Chunk::SIDE_LENGTH
+    ];
+    if (!center_column.water_present && !center_column.submerged) {
+        EXPECT_EQ(spawn.x, static_cast<int32_t>(center_x));
+        EXPECT_EQ(spawn.y, static_cast<int32_t>(center_y));
+    }
     EXPECT_EQ(spawn.z_subcell, 0U);
     EXPECT_EQ(spawn.vertical_velocity_subcells, 0);
+}
+
+TEST(GameServerPreviewTest, PreparedDefaultSpawnKeepsTheMathematicalCenterWhenItIsLand)
+{
+    static constexpr int32_t CENTER = static_cast<int32_t>(shared::WorldExtent::WIDTH / 2U);
+    auto const observation = preparedDefaultSpawnForSeed(0U);
+    ASSERT_TRUE(observation.has_value());
+    ASSERT_NE(observation->terrain_world, nullptr);
+    shared::ServerPlayerPositionMessage const& spawn = observation->spawn;
+    shared::TerrainWorld const& terrain_world = *observation->terrain_world;
+    auto const columnAt = [&terrain_world](int32_t const x, int32_t const y) {
+        shared::SurfaceTile const tile = terrain_world.sampleSurface({
+            .x = x / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
+            .y = y / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
+            .z = 0,
+        });
+        uint32_t const local_x = static_cast<uint32_t>(x) % shared::Chunk::SIDE_LENGTH;
+        uint32_t const local_y = static_cast<uint32_t>(y) % shared::Chunk::SIDE_LENGTH;
+        return tile.columns[local_y * shared::Chunk::SIDE_LENGTH + local_x];
+    };
+    shared::TerrainColumn const center = columnAt(CENTER, CENTER);
+    ASSERT_FALSE(center.water_present || center.submerged)
+        << "Seed 0 is the fixture for a dry mathematical center.";
+    shared::TerrainColumn const spawn_column = columnAt(spawn.x, spawn.y);
+    EXPECT_FALSE(spawn_column.water_present);
+    EXPECT_FALSE(spawn_column.submerged);
+    EXPECT_EQ(spawn.z, static_cast<int32_t>(spawn_column.highest_solid_z) + 1);
+    EXPECT_EQ(spawn.x, CENTER);
+    EXPECT_EQ(spawn.y, CENTER);
+    EXPECT_EQ(spawn.z_subcell, 0U);
+}
+
+TEST(GameServerPreviewTest, PreparedDefaultSpawnLeavesASeaCenterForDryLand)
+{
+    static constexpr int32_t CENTER = static_cast<int32_t>(shared::WorldExtent::WIDTH / 2U);
+    auto const observation = preparedDefaultSpawnForSeed(1U);
+    ASSERT_TRUE(observation.has_value());
+    ASSERT_NE(observation->terrain_world, nullptr);
+    shared::ServerPlayerPositionMessage const& spawn = observation->spawn;
+    shared::TerrainWorld const& terrain_world = *observation->terrain_world;
+    auto const column_at = [&terrain_world](int32_t const x, int32_t const y) {
+        shared::SurfaceTile const tile = terrain_world.sampleSurface({
+            .x = x / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
+            .y = y / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
+            .z = 0,
+        });
+        uint32_t const local_x = static_cast<uint32_t>(x) % shared::Chunk::SIDE_LENGTH;
+        uint32_t const local_y = static_cast<uint32_t>(y) % shared::Chunk::SIDE_LENGTH;
+        return tile.columns[local_y * shared::Chunk::SIDE_LENGTH + local_x];
+    };
+    shared::TerrainColumn const center = column_at(CENTER, CENTER);
+    ASSERT_TRUE(center.water_present || center.submerged)
+        << "Seed 1 is the fixture for a wet mathematical center.";
+    shared::TerrainColumn const spawn_column = column_at(spawn.x, spawn.y);
+    EXPECT_FALSE(spawn_column.water_present);
+    EXPECT_FALSE(spawn_column.submerged);
+    EXPECT_EQ(spawn.z, static_cast<int32_t>(spawn_column.highest_solid_z) + 1);
+    EXPECT_TRUE(spawn.x != CENTER || spawn.y != CENTER);
+
+    uint64_t const selected_distance_squared = wrappedRectangleDistanceSquared(
+        CENTER,
+        static_cast<uint32_t>(spawn.x),
+        static_cast<uint32_t>(spawn.y),
+        1U
+    );
+    CanonicalColumnRank const selected_rank{
+        selected_distance_squared,
+        static_cast<uint32_t>(spawn.y),
+        static_cast<uint32_t>(spawn.x),
+    };
+    auto const atlas = terrain_world.atlas();
+    ASSERT_NE(atlas, nullptr);
+    auto const closer = firstCloserDryCanonicalColumn(
+        terrain_world,
+        *atlas,
+        CENTER,
+        selected_distance_squared,
+        selected_rank
+    );
+    if (closer.has_value()) {
+        ADD_FAILURE() << "A closer dry canonical column exists at (" << closer->first << ", " << closer->second
+            << ").";
+    }
+}
+
+TEST(GameServerPreviewTest, PreparedDefaultSpawnBreaksEqualDistanceTiesByYThenX)
+{
+    static constexpr int32_t CENTER = static_cast<int32_t>(shared::WorldExtent::WIDTH / 2U);
+    struct SpawnTarget final {
+        int32_t x;
+        int32_t y;
+    };
+    static constexpr std::array<SpawnTarget, 4U> TARGETS{
+        SpawnTarget{.x = CENTER, .y = CENTER - 1},
+        SpawnTarget{.x = CENTER - 1, .y = CENTER},
+        SpawnTarget{.x = CENTER + 1, .y = CENTER},
+        SpawnTarget{.x = CENTER, .y = CENTER + 1},
+    };
+    static constexpr auto TIMEOUT = std::chrono::seconds{30};
+    static constexpr auto POLL_INTERVAL = std::chrono::milliseconds{1};
+
+    shared::WorldConfiguration world_configuration = shared::World::canonicalConfiguration();
+    world_configuration.seed = 0U;
+    generation::GenerationConfiguration generation_configuration;
+    generation_configuration.seed = world_configuration.seed;
+    generation_configuration.epochs = 1U;
+    generation_configuration.erosion_steps = 0U;
+    generation_configuration.initial_climate_iterations = 1U;
+    generation_configuration.climate_iterations = 1U;
+    generation_configuration.currents = false;
+    generation_configuration.coastal_elaboration = false;
+    auto const preparation = std::make_shared<server::WorldPreparation>(
+        generation_configuration,
+        world_configuration.algorithm_version
+    );
+    auto const preparation_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (preparation->latest().state == server::WorldPreparationState::Preparing
+        && std::chrono::steady_clock::now() < preparation_deadline) {
+        std::this_thread::sleep_for(POLL_INTERVAL);
+    }
+    server::WorldPreparationSnapshot const preparation_snapshot = preparation->latest();
+    ASSERT_EQ(preparation_snapshot.state, server::WorldPreparationState::Ready)
+        << preparation_snapshot.error;
+    std::shared_ptr<shared::TerrainWorld const> const terrain_world = preparation->readyWorld();
+    ASSERT_NE(terrain_world, nullptr);
+    auto const column_at = [&terrain_world](int32_t const x, int32_t const y) {
+        shared::SurfaceTile const tile = terrain_world->sampleSurface({
+            .x = x / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
+            .y = y / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
+            .z = 0,
+        });
+        uint32_t const local_x = static_cast<uint32_t>(x) % shared::Chunk::SIDE_LENGTH;
+        uint32_t const local_y = static_cast<uint32_t>(y) % shared::Chunk::SIDE_LENGTH;
+        return tile.columns[local_y * shared::Chunk::SIDE_LENGTH + local_x];
+    };
+    auto const point_distance_squared = [](int32_t const x, int32_t const y) {
+        int64_t const delta_x = static_cast<int64_t>(x) - CENTER;
+        int64_t const delta_y = static_cast<int64_t>(y) - CENTER;
+        return static_cast<uint64_t>(delta_x * delta_x + delta_y * delta_y);
+    };
+
+    shared::TerrainColumn const center_column = column_at(CENTER, CENTER);
+    ASSERT_FALSE(center_column.water_present || center_column.submerged)
+        << "Seed 0 must have a safe dry mathematical center for the first join.";
+    int32_t const center_spawn_z = static_cast<int32_t>(center_column.highest_solid_z) + 1;
+    ASSERT_LT(center_spawn_z + 1, static_cast<int32_t>(shared::WorldExtent::DEPTH));
+    EXPECT_NE(
+        center_column.materialAt(center_column.highest_solid_z, generation::BLOCK_SEA_LEVEL),
+        shared::Block::Air
+    );
+    EXPECT_EQ(
+        center_column.materialAt(static_cast<uint16_t>(center_spawn_z), generation::BLOCK_SEA_LEVEL),
+        shared::Block::Air
+    );
+    EXPECT_EQ(
+        center_column.materialAt(static_cast<uint16_t>(center_spawn_z + 1), generation::BLOCK_SEA_LEVEL),
+        shared::Block::Air
+    );
+    std::array<int32_t, TARGETS.size()> target_spawn_z{};
+    for (size_t index = 0U; index < TARGETS.size(); ++index) {
+        SpawnTarget const target = TARGETS[index];
+        shared::TerrainColumn const column = column_at(target.x, target.y);
+        ASSERT_FALSE(column.water_present);
+        ASSERT_FALSE(column.submerged);
+        EXPECT_EQ(point_distance_squared(target.x, target.y), 1U);
+        target_spawn_z[index] = static_cast<int32_t>(column.highest_solid_z) + 1;
+        shared::PlayerPosition const position{
+            .x = target.x,
+            .y = target.y,
+            .z = target_spawn_z[index],
+        };
+        EXPECT_TRUE(shared::World::isFlightPositionInBounds(position));
+        ASSERT_LT(target_spawn_z[index] + 1, static_cast<int32_t>(shared::WorldExtent::DEPTH));
+        EXPECT_NE(
+            column.materialAt(column.highest_solid_z, generation::BLOCK_SEA_LEVEL),
+            shared::Block::Air
+        );
+        EXPECT_EQ(
+            column.materialAt(static_cast<uint16_t>(target_spawn_z[index]), generation::BLOCK_SEA_LEVEL),
+            shared::Block::Air
+        );
+        EXPECT_EQ(
+            column.materialAt(static_cast<uint16_t>(target_spawn_z[index] + 1), generation::BLOCK_SEA_LEVEL),
+            shared::Block::Air
+        );
+    }
+
+    server::GameServer game_server{
+        0U,
+        {},
+        shared::WorldMode::Flight,
+        world_configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS,
+        nullptr,
+        preparation,
+    };
+    std::atomic_bool stop_requested{false};
+    std::thread server_thread{[&game_server, &stop_requested] { game_server.run(stop_requested); }};
+    defer {
+        stop_requested.store(true, std::memory_order_relaxed);
+        server_thread.join();
+    };
+    auto const join_default_client = [&](PreviewClient& client, char const character) {
+        if (!client.connect(core::Address::localhost(game_server.port()), TIMEOUT)) {
+            return false;
+        }
+        if (!client.send(shared::encodeMessage(shared::JoinRequestMessage{
+                .ch = character,
+                .mode = shared::WorldMode::Flight,
+                .configuration = world_configuration,
+                .wants_previews = false,
+            }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable})) {
+            return false;
+        }
+        auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+        while (!client.last_player_position.has_value()
+            && client.join_accepted.value_or(true)
+            && std::chrono::steady_clock::now() < deadline) {
+            static_cast<void>(client.poll(POLL_INTERVAL));
+        }
+        return client.join_accepted.value_or(false) && client.last_player_position.has_value();
+    };
+    PreviewClient center_client{false, false, '@', false};
+    PreviewClient north_client{false, false, '#', false};
+    PreviewClient west_client{false, false, '$', false};
+    ASSERT_TRUE(join_default_client(center_client, '@'));
+    ASSERT_TRUE(center_client.last_player_position.has_value());
+    EXPECT_EQ(center_client.last_player_position->x, CENTER);
+    EXPECT_EQ(center_client.last_player_position->y, CENTER);
+    EXPECT_EQ(center_client.last_player_position->z, center_spawn_z);
+    EXPECT_EQ(center_client.last_player_position->z_subcell, 0U);
+
+    ASSERT_TRUE(join_default_client(north_client, '#'));
+    ASSERT_TRUE(north_client.last_player_position.has_value());
+    EXPECT_EQ(north_client.last_player_position->x, CENTER);
+    EXPECT_EQ(north_client.last_player_position->y, CENTER - 1);
+    EXPECT_EQ(north_client.last_player_position->z, target_spawn_z[0]);
+    EXPECT_EQ(north_client.last_player_position->z_subcell, 0U);
+
+    ASSERT_TRUE(join_default_client(west_client, '$'));
+    ASSERT_TRUE(west_client.last_player_position.has_value());
+    EXPECT_EQ(west_client.last_player_position->x, CENTER - 1);
+    EXPECT_EQ(west_client.last_player_position->y, CENTER);
+    EXPECT_EQ(west_client.last_player_position->z, target_spawn_z[1]);
+    EXPECT_EQ(west_client.last_player_position->z_subcell, 0U);
 }
 
 TEST(GameServerPreviewTest, RejectsPreviewJoinWithoutPreparedTerrainContext)

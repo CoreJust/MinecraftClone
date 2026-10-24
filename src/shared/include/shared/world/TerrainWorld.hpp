@@ -158,6 +158,14 @@ public:
     [[nodiscard]]
     uint16_t sampleSurfaceHeight(uint32_t world_x, uint32_t world_y) const;
 
+    // True only when every integer column in this exact atlas cell has canonical water presence.
+    [[nodiscard]]
+    bool hasWaterPresenceThroughoutAtlasCell(
+        uint32_t origin_x,
+        uint32_t origin_y,
+        uint32_t extent
+    ) const noexcept;
+
     [[nodiscard]]
     std::shared_ptr<RegionalArtifact const> prepareRegion(
         TerrainRegionKey key,
