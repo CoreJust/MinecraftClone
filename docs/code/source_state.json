@@ -210,7 +210,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "7b847f284c4b35d0f3c56366996a2c4fee8d291b48707ccbff44f64767ac9c40"
+      "sources_sha256": "6903eb9275297f373f668fedde2fcd2784190cbe5fe452cb944cb4c46d6a4430"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -247,7 +247,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "a27a833545b5da8c30555bf9105c04b08b0d005cd7cf6d8ad1b63655c9bb164b",
+      "guide_sha256": "ff7f041fd8acb4111309703a472420b28b39fc77ce4321c518f020812c9714d1",
       "id": "gameplay",
       "sources": [
         "src/client/BlockActionPresentation.cpp",
@@ -397,11 +397,11 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "71829ca08e9c9f635ec8cd2894641ec6be038e7fcc785ae074a7219e0a4975da"
+      "sources_sha256": "627dac53a972f08b9f6a8516bdec26d8cd90d14988fae1a69eaf39862b275ba0"
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "ed7eb0ff4e47e6d3f9c4a62cffa50128e1ae8959209d3925074b09f94183f09e",
+      "guide_sha256": "4dfa3f90b4be0783d6295523d7e5313552b6cdb0e65e592c71d0bb11b4811fef",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -974,6 +974,7 @@
         "src/client/include/client/render/DebugHud.hpp",
         "src/client/include/client/render/DepthFormat.hpp",
         "src/client/include/client/render/GuiRenderer.hpp",
+        "src/client/include/client/render/GuiVector.hpp",
         "src/client/include/client/render/HeightTileDrawIndex.hpp",
         "src/client/include/client/render/HeightTileInstanceReaper.hpp",
         "src/client/include/client/render/InstalledShaderAssets.hpp",
@@ -1003,6 +1004,8 @@
         "src/client/render/shaders/adaptive_text.frag",
         "src/client/render/shaders/grid.mesh",
         "src/client/render/shaders/grid.vert",
+        "src/client/render/shaders/gui_vector.frag",
+        "src/client/render/shaders/gui_vector.vert",
         "src/client/render/shaders/map.frag",
         "src/client/render/shaders/map.vert",
         "src/client/render/shaders/player.frag",
@@ -1082,7 +1085,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "bb6f88dae0dc6e013f2585d55419708a2f101e01b2488254b4bb73e13ddfd813"
+      "sources_sha256": "4a367098d33ed0d5da77ce35040e6ee2fa70d54d40e1ee252be72f5cf3ec1edb"
     }
   ],
   "version": 1

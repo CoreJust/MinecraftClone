@@ -54,6 +54,8 @@ if(NOT ANDROID)
         render/shaders/adaptive_text.frag
         render/shaders/map.vert
         render/shaders/map.frag
+        render/shaders/gui_vector.vert
+        render/shaders/gui_vector.frag
     )
 
     add_custom_command(

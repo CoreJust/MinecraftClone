@@ -744,7 +744,7 @@ TEST(GenerationMapPresentationTest, MaximumResolutionIsBoundedAndAllPixelsAreOpa
     }));
 }
 
-TEST(GenerationMapPresentationTest, AnimatorKeepsSixIllustrativePhasesAndReturnsTheExactReadyImage)
+TEST(GenerationMapPresentationTest, AnimatorKeepsItsThirtySecondTimelineAfterRealReadiness)
 {
     auto snapshot = std::make_shared<generation::GenerationSnapshot const>(
         makeSnapshot(generation::GenerationStage::Tectonics));
@@ -767,17 +767,32 @@ TEST(GenerationMapPresentationTest, AnimatorKeepsSixIllustrativePhasesAndReturns
             snapshot, nullptr, final_image, nullptr, clock);
         EXPECT_EQ(frame.phase, PHASES[index]);
         EXPECT_NE(frame.image, nullptr);
+        if (index < 5U) {
+            EXPECT_NE(frame.image, final_image);
+        } else {
+            EXPECT_EQ(frame.image, final_image);
+        }
     }
 
-    client::GenerationMapAnimationClock const ready_clock{
-        .visible_elapsed = std::chrono::milliseconds{ 0 },
+    client::GenerationMapAnimationClock const ready_early_clock{
+        .visible_elapsed = std::chrono::seconds{ 11U },
         .ready = true,
     };
-    client::GenerationMapAnimationFrame const ready = animator.update(
-        snapshot, nullptr, final_image, nullptr, ready_clock);
-    EXPECT_EQ(ready.phase, client::GenerationMapAnimationPhase::Arrival);
-    EXPECT_FLOAT_EQ(ready.phase_progress, 1.0F);
-    EXPECT_EQ(ready.image, final_image);
+    client::GenerationMapAnimationFrame const ready_early = animator.update(
+        snapshot, nullptr, final_image, nullptr, ready_early_clock);
+    EXPECT_EQ(ready_early.phase, client::GenerationMapAnimationPhase::Water);
+    EXPECT_FLOAT_EQ(ready_early.phase_progress, 0.2F);
+    EXPECT_NE(ready_early.image, final_image);
+
+    client::GenerationMapAnimationClock const arrival_clock{
+        .visible_elapsed = std::chrono::seconds{ 30U },
+        .ready = true,
+    };
+    client::GenerationMapAnimationFrame const arrival = animator.update(
+        snapshot, nullptr, final_image, nullptr, arrival_clock);
+    EXPECT_EQ(arrival.phase, client::GenerationMapAnimationPhase::Arrival);
+    EXPECT_FLOAT_EQ(arrival.phase_progress, 1.0F);
+    EXPECT_EQ(arrival.image, final_image);
 }
 
 } // namespace

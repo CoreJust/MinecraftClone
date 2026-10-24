@@ -8,6 +8,8 @@ class AndroidShaderAssetTests(unittest.TestCase):
     REQUIRED_SOURCES = (
         "text.frag",
         "text.vert",
+        "gui_vector.vert",
+        "gui_vector.frag",
         "stone_solid.frag",
         "sky.vert",
         "sky.frag",

@@ -35,6 +35,7 @@ target_sources(mc
             render/DebugHud.hpp
             render/DepthFormat.hpp
             render/GuiRenderer.hpp
+            render/GuiVector.hpp
             render/HeightTileDrawIndex.hpp
             render/HeightTileInstanceReaper.hpp
             render/InstalledShaderAssets.hpp

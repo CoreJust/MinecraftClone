@@ -47,10 +47,16 @@ struct TerrainLodAuthoritySource final {
     bool operator==(TerrainLodAuthoritySource const&) const = default;
 };
 
+struct TerrainLodEditSource final {
+    shared::ChunkCoordinate coordinate;
+    uint64_t revision = 0U;
+};
+
 struct TerrainLodColumnInput final {
     uint32_t x = 0U;
     uint32_t y = 0U;
     std::vector<TerrainLodChunkInput> chunks;
+    std::vector<TerrainLodEditSource> edit_sources;
     std::vector<TerrainLodChunkSource> sources;
     std::vector<shared::AuthoritativeTerrainColumn> authority_profiles;
     std::vector<TerrainLodAuthoritySource> authority_sources;
@@ -88,6 +94,11 @@ std::optional<TerrainLodColumnInput> captureTerrainLodColumn(shared::SparseWorld
 bool terrainLodColumnSourcesCurrent(TerrainLodColumnInput const& column, shared::SparseWorld const& world);
 [[nodiscard]]
 bool terrainLodSourcesCurrent(TerrainLodScene const& scene, shared::SparseWorld const& world);
+[[nodiscard]]
+std::shared_ptr<TerrainLodScene const> buildTerrainLodColumnPatch(
+    shared::TerrainIdentity identity,
+    std::span<std::shared_ptr<TerrainLodColumnInput const> const> columns,
+    std::stop_token const& cancellation = {});
 [[nodiscard]]
 std::shared_ptr<TerrainLodScene const> buildTerrainLodSceneFromColumns(
     shared::TerrainWorld const& world,

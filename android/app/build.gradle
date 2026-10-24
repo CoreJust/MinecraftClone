@@ -52,6 +52,8 @@ def requiredShaderAssets = [
     'sky.frag.spv',
     'map.vert.spv',
     'map.frag.spv',
+    'gui_vector.vert.spv',
+    'gui_vector.frag.spv',
     'trivial.frag.spv',
 ]
 def hudLicenseAssets = file("${buildDir}/generated/hud-licenses")
@@ -81,6 +83,8 @@ def stageFallbackShaders = tasks.register('stageFallbackShaders', Sync) {
         include 'sky.frag'
         include 'map.vert'
         include 'map.frag'
+        include 'gui_vector.vert'
+        include 'gui_vector.frag'
     }
     into(fallbackShaderSources)
 }

@@ -649,3 +649,28 @@ TEST(BlockInteractionTest, CurvedThirdPersonVisibilityUsesRendererSpaceEndpoint)
     ASSERT_TRUE(flat_wall.target.has_value());
     EXPECT_EQ(flat_wall.target->cell, (shared::WorldCoordinate{10, 8, 0}));
 }
+
+TEST(BlockInteractionTest, FirstPersonPlacedBlockAtGlobalSpawnRemainsTargetable)
+{
+    shared::SparseWorld world = makeMaterializedOnlyWorld();
+    shared::Chunk chunk{{.x = 2'048, .y = 2'048, .z = 28}};
+    ASSERT_TRUE(chunk.setBlock({.x = 0U, .y = 2U, .z = 6U}, shared::Block::Stone));
+    ASSERT_TRUE(chunk.setBlock({.x = 0U, .y = 2U, .z = 5U}, shared::Block::Grass));
+    publishChunk(world, std::move(chunk));
+    auto const direction = shared::interactionLookDirection(0.0, -35.0);
+    ASSERT_TRUE(direction);
+    shared::VoxelRay const ray{
+        .origin_x = 32'768.3125, .origin_y = 32'768.3125, .origin_z = 455.625,
+        .direction_x = (*direction)[0], .direction_y = (*direction)[1], .direction_z = (*direction)[2],
+    };
+    auto const raw = shared::traceBlockTarget(world, ray, shared::DEFAULT_BLOCK_REACH, true);
+    ASSERT_EQ(raw.status, shared::BlockTargetStatus::Hit);
+    ASSERT_TRUE(raw.target);
+    ASSERT_EQ(raw.target->cell, (shared::WorldCoordinate{32'768, 32'770, 454}));
+    auto const resolved = shared::resolveInteractionTarget(
+        world, ray, shared::InteractionPerspective::FirstPerson, true);
+    ASSERT_EQ(resolved.status, shared::BlockTargetStatus::Hit);
+    ASSERT_TRUE(resolved.target);
+    EXPECT_EQ(resolved.target->cell, raw.target->cell);
+    EXPECT_EQ(resolved.target->entered_face, raw.target->entered_face);
+}

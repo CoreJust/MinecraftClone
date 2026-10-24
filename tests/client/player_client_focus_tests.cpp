@@ -48,6 +48,86 @@
 namespace client {
 
 struct PlayerClientFocusTestAccess final {
+    static void setIsolationHooks(PlayerClient& client, GameClientBenchmarkHooks const* hooks)
+    {
+        client.m_benchmark_hooks = hooks;
+    }
+
+    static bool injectIsolatedInput(PlayerClient& client)
+    {
+        std::array const keys{GLFW_KEY_M, GLFW_KEY_W};
+        std::array const buttons{GLFW_MOUSE_BUTTON_1};
+        return client.updatePlatformInputSnapshot(keys, buttons, 120.0, 120.0, 2.0);
+    }
+
+    static std::optional<shared::Player> editLatencyPlayer(PlayerClient const& client)
+    {
+        return client.m_world.playerByCharacter(client.m_local_character);
+    }
+
+    static shared::SparseWorld const* editLatencyWorld(PlayerClient const& client)
+    {
+        return client.authoritativeWorld();
+    }
+
+    static std::shared_ptr<TerrainLodScene const> editLatencyScene(PlayerClient const& client)
+    {
+        return client.m_renderer.runtimeInfo().terrain_lod_scene;
+    }
+
+    static uint32_t editLatencyNextSequence(PlayerClient const& client)
+    {
+        return client.m_next_block_action_sequence;
+    }
+
+    static bool editLatencyAim(
+        PlayerClient& client, shared::VoxelRay& ray, shared::BlockTarget& target, std::ostream* diagnostics = nullptr)
+    {
+        auto const player = editLatencyPlayer(client);
+        auto const* world = editLatencyWorld(client);
+        if (!player || !world) {
+            return false;
+        }
+        // Scan real reachable top faces deterministically; fixed spawn slopes need not face +Y.
+        for (double const pitch : {-35.0, -45.0, -55.0, -70.0}) {
+            for (double const yaw : {0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0}) {
+                CameraAngles const angles{.yaw_degrees = yaw, .pitch_degrees = pitch};
+                auto const direction = shared::interactionLookDirection(yaw, pitch);
+                if (!direction) { continue; }
+                shared::VoxelRay const candidate{
+                    .origin_x = shared::playerPositionX(*player) + 0.3125,
+                    .origin_y = shared::playerPositionY(*player) + 0.3125,
+                    .origin_z = shared::playerPositionZ(*player) + shared::INTERACTION_PLAYER_EYE_HEIGHT,
+                    .direction_x = (*direction)[0], .direction_y = (*direction)[1], .direction_z = (*direction)[2]};
+                auto const resolved = shared::resolveInteractionTarget(
+                    *world, candidate, shared::InteractionPerspective::FirstPerson, true);
+                if (diagnostics) {
+                    *diagnostics << "{\"event\":\"target_scan_ray\",\"yaw\":" << yaw << ",\"pitch\":" << pitch
+                        << ",\"status\":" << static_cast<uint32_t>(resolved.status)
+                        << ",\"face\":" << (resolved.target ? static_cast<int>(resolved.target->entered_face) : -1)
+                        << "}\n";
+                }
+                if (resolved.status != shared::BlockTargetStatus::Hit || !resolved.target
+                    || resolved.target->entered_face != shared::BlockFace::PositiveZ) { continue; }
+                auto destination = resolved.target->cell;
+                ++destination.z;
+                if (world->queryBlock(destination).block != shared::Block::Air) { continue; }
+                double const dx = static_cast<double>(destination.x) - shared::playerPositionX(*player);
+                double const dy = static_cast<double>(destination.y) - shared::playerPositionY(*player);
+                bool const overlaps_xy = dx < 0.625 && dx + 1.0 > 0.0 && dy < 0.625 && dy + 1.0 > 0.0;
+                bool const overlaps_z = destination.z < shared::playerPositionZ(*player) + 1.8125
+                    && destination.z + 1 > shared::playerPositionZ(*player);
+                if (overlaps_xy && overlaps_z) { continue; }
+                client.m_camera_perspective = CameraPerspective::FirstPerson;
+                if (!client.m_look_camera.setAngles(angles)) { continue; }
+                ray = candidate;
+                target = *resolved.target;
+                return true;
+            }
+        }
+        return false;
+    }
+
     static bool publishGeneration(PlayerClient& player_client, generation::GenerationProgress const& progress)
     {
         return player_client.m_world_loading.publishGenerationProgress(
@@ -345,6 +425,21 @@ struct PlayerClientFocusTestAccess final {
     static void setWorldMapOpen(PlayerClient& player_client, bool const open)
     {
         player_client.setWorldMapOpen(open, 512.0, 512.0);
+    }
+
+    static S2WorldMapState worldMapState(PlayerClient const& player_client)
+    {
+        return player_client.m_s2_world_map_state;
+    }
+
+    static void pointerInput(PlayerClient& player_client, std::span<int const> buttons, double x, double y)
+    {
+        static_cast<void>(player_client.updatePlatformInputSnapshot({}, buttons, x, y));
+    }
+
+    static void synchronizeLook(PlayerClient& player_client)
+    {
+        player_client.synchronizeContinuousLook();
     }
 
     static bool worldMapOpen(PlayerClient const& player_client) noexcept
@@ -1156,7 +1251,7 @@ TEST(PlayerClientFocusTest, WorldMapOwnsInputAndClosingWithHeldKeysRequiresFresh
     ASSERT_TRUE(waitForFocusState(player_client, true));
 
     static constexpr std::array<int, 1U> MAP_KEY{GLFW_KEY_M};
-    static constexpr std::array<int, 2U> MAP_AND_W_KEYS{GLFW_KEY_M, GLFW_KEY_W};
+    static constexpr std::array<int, 3U> MAP_AND_W_KEYS{GLFW_KEY_M, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_W};
     static constexpr std::array<int, 1U> W_KEY{GLFW_KEY_W};
     static constexpr std::array<int, 0U> NO_KEYS{};
 
@@ -1192,6 +1287,98 @@ TEST(PlayerClientFocusTest, WorldMapOwnsInputAndClosingWithHeldKeysRequiresFresh
     EXPECT_TRUE(client::PlayerClientFocusTestAccess::hasStartTransitionInputs(player_client));
     static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, NO_KEYS));
     EXPECT_FALSE(client::PlayerClientFocusTestAccess::hasStartTransitionInputs(player_client));
+}
+
+TEST(PlayerClientFocusTest, WorldMapWasdAndArrowsPanWithoutSendingGameplayInput)
+{
+    client::PlayerClient player_client;
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client));
+    auto* window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+    client::PlayerClientFocusTestAccess::setWorldMapOpen(player_client, true);
+    for (int const key : {GLFW_KEY_W, GLFW_KEY_A, GLFW_KEY_S, GLFW_KEY_D,
+             GLFW_KEY_UP, GLFW_KEY_LEFT, GLFW_KEY_DOWN, GLFW_KEY_RIGHT}) {
+        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, {}));
+        auto const before = client::PlayerClientFocusTestAccess::worldMapState(player_client);
+        std::array<int, 1U> const keys{key};
+        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, keys));
+        auto const after = client::PlayerClientFocusTestAccess::worldMapState(player_client);
+        bool const horizontal = key == GLFW_KEY_A || key == GLFW_KEY_D || key == GLFW_KEY_LEFT || key == GLFW_KEY_RIGHT;
+        EXPECT_NE(horizontal ? after.center_x : after.center_y, horizontal ? before.center_x : before.center_y) << key;
+        EXPECT_EQ(after.layers, before.layers);
+        auto const input = client::PlayerClientFocusTestAccess::gameplayInput(player_client);
+        EXPECT_EQ(input.x, 0U);
+        EXPECT_EQ(input.y, 0U);
+        EXPECT_EQ(input.z, 0U);
+    }
+}
+
+TEST(PlayerClientFocusTest, WorldMapMouseDragMovesTheMapAndReleaseEndsDragging)
+{
+    client::PlayerClient player_client;
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client));
+    auto* window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+    client::PlayerClientFocusTestAccess::setWorldMapOpen(player_client, true);
+    std::array<int, 1U> const left{GLFW_MOUSE_BUTTON_LEFT};
+    client::PlayerClientFocusTestAccess::pointerInput(player_client, left, 100.0, 100.0);
+    auto const before = client::PlayerClientFocusTestAccess::worldMapState(player_client);
+    client::PlayerClientFocusTestAccess::pointerInput(player_client, left, 200.0, 150.0);
+    auto const after = client::PlayerClientFocusTestAccess::worldMapState(player_client);
+    EXPECT_NE(after.center_x, before.center_x);
+    EXPECT_NE(after.center_y, before.center_y);
+    client::PlayerClientFocusTestAccess::pointerInput(player_client, {}, 300.0, 200.0);
+    EXPECT_EQ(client::PlayerClientFocusTestAccess::worldMapState(player_client).center_x, after.center_x);
+    EXPECT_EQ(client::PlayerClientFocusTestAccess::worldMapState(player_client).center_y, after.center_y);
+}
+
+TEST(PlayerClientFocusTest, WorldMapScrollCallbackZoomsOnlyWhileTheMapOwnsInput)
+{
+    client::PlayerClient player_client;
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client));
+    auto* window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+    auto const callback = glfwSetScrollCallback(window, nullptr);
+    ASSERT_NE(callback, nullptr);
+    glfwSetScrollCallback(window, callback);
+    client::PlayerClientFocusTestAccess::setWorldMapOpen(player_client, true);
+    double const before = client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom;
+    callback(window, 0.0, 1.0);
+    client::PlayerClientFocusTestAccess::servicePlatformEvents(player_client);
+    double const enlarged = client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom;
+    EXPECT_GT(enlarged, before);
+    callback(window, 0.0, -1.0);
+    client::PlayerClientFocusTestAccess::servicePlatformEvents(player_client);
+    EXPECT_LT(client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom, enlarged);
+    client::PlayerClientFocusTestAccess::setWorldMapOpen(player_client, false);
+    callback(window, 0.0, 1.0);
+    client::PlayerClientFocusTestAccess::servicePlatformEvents(player_client);
+    EXPECT_EQ(client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom, before);
+}
+
+TEST(PlayerClientFocusTest, HoldingEitherAltReleasesTheCursorAndBlocksGameplay)
+{
+    client::PlayerClient player_client;
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client));
+    auto* window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+    for (int const alt : {GLFW_KEY_LEFT_ALT, GLFW_KEY_RIGHT_ALT}) {
+        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, {}));
+        client::PlayerClientFocusTestAccess::synchronizeLook(player_client);
+        EXPECT_EQ(glfwGetInputMode(window, GLFW_CURSOR), GLFW_CURSOR_DISABLED);
+        std::array<int, 1U> const keys{alt};
+        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, keys));
+        client::PlayerClientFocusTestAccess::synchronizeLook(player_client);
+        EXPECT_EQ(glfwGetInputMode(window, GLFW_CURSOR), GLFW_CURSOR_NORMAL);
+        auto const input = client::PlayerClientFocusTestAccess::gameplayInput(player_client);
+        EXPECT_EQ(input.x, 0U);
+        EXPECT_EQ(input.y, 0U);
+        EXPECT_EQ(input.z, 0U);
+    }
 }
 
 TEST(PlayerClientFocusTest, ScreenshotPngEncoderWritesRgbaChunksWithValidChecksums)
@@ -2202,7 +2389,8 @@ TEST(PlayerClientFocusTest, LoadingPresentationRendersActualStageAndReadyFrames)
     ASSERT_TRUE(ready_status.initial_sphere_ready);
     ASSERT_NE(ready_status.map_snapshot, nullptr);
 
-    client::PlayerClient player_client{ shared::WorldMode::Flat };
+    client::PlayerClient player_client{shared::WorldMode::Flat, std::nullopt, startupFrameCaptureOptions()};
+    client::PlayerClientFocusTestAccess::restoreOrdinaryStartupAfterCaptureOptIn(player_client);
 
     auto const textPixelCount = [](client::RendererFrameCapture const& capture,
         client::UiTextPlacement const& placement, size_t const text_length, bool const accent) {
@@ -2298,7 +2486,8 @@ TEST(PlayerClientFocusTest, InitialLoadingSuppressesFallbackGridBeforeMapSnapsho
     static constexpr std::array<float, 6U> SAMPLE_Y{{ 0.18F, 0.28F, 0.38F, 0.48F, 0.58F, 0.68F }};
     static constexpr int CHANNEL_TOLERANCE = 3;
 
-    client::PlayerClient player_client;
+    client::PlayerClient player_client{shared::WorldMode::Flat, std::nullopt, startupFrameCaptureOptions()};
+    client::PlayerClientFocusTestAccess::restoreOrdinaryStartupAfterCaptureOptIn(player_client);
     ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginInitialLoading(player_client));
     client::WorldLoadingStatus const status = player_client.worldLoadingStatus();
     ASSERT_EQ(status.state, client::WorldLoadingState::Creating);
@@ -2536,4 +2725,383 @@ TEST(PlayerClientFocusTest, FocusAndMapTransitionsClearBlockEffectsAndPendingRec
     EXPECT_TRUE(Access::acceptSeededParticleReceipt(player_client));
     Access::setWorldMapOpen(player_client, false);
     EXPECT_FALSE(Access::breakInputActive(player_client));
+}
+
+TEST(PlayerClientFocusTest, AuthoritativeEditsReachCompletedNativeFramesWithinThreeFrames)
+{
+    using Clock = std::chrono::steady_clock;
+    using Access = client::PlayerClientFocusTestAccess;
+    static constexpr uint32_t ACTION_COUNT = 6U;
+    static constexpr uint64_t MAXIMUM_FRAMES = 3U;
+    auto const preparation_started_at = Clock::now();
+    auto const configuration = shared::World::canonicalConfiguration();
+    generation::GenerationConfiguration generation_configuration{};
+    generation_configuration.seed = configuration.seed;
+    auto preparation = std::make_shared<server::WorldPreparation>(
+        generation_configuration, configuration.algorithm_version, preparation_started_at);
+    auto const preparation_deadline = preparation_started_at + std::chrono::seconds{120};
+    while (preparation->latest().state == server::WorldPreparationState::Preparing
+        && Clock::now() < preparation_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+    auto const preparation_completed_at = Clock::now();
+    auto const directory = startupEvidenceDirectory() / "native-edit-latency";
+    std::filesystem::create_directories(directory);
+    std::ofstream events{directory / "events.jsonl"};
+    events << "{\"event\":\"default_world_preparation\",\"elapsed_ms\":"
+        << std::chrono::duration_cast<std::chrono::milliseconds>(
+            preparation_completed_at - preparation_started_at).count()
+        << ",\"state\":" << static_cast<uint32_t>(preparation->latest().state)
+        << ",\"timeout_seconds\":120}\n";
+    events.flush();
+    ASSERT_EQ(preparation->latest().state, server::WorldPreparationState::Ready)
+        << "default canonical preparation failed or exceeded its separate setup bound";
+
+    ASSERT_EQ(glfwInit(), GLFW_TRUE);
+    auto player_owner = [] {
+        struct RestoreFocusHint final {
+            ~RestoreFocusHint() { glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE); }
+        } restore_focus_hint;
+        glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
+        return std::make_unique<client::PlayerClient>(shared::WorldMode::Flight, std::nullopt,
+            client::PlayerClientBenchmarkOptions{.enable_diagnostic_frame_capture = true});
+    }();
+    client::PlayerClient& player = *player_owner;
+    Access::restoreOrdinaryStartupAfterCaptureOptIn(player);
+    auto* window = Access::nativeWindow(player);
+    glfwRestoreWindow(window);
+    Access::renderFrame(player);
+    auto const accepted_at = Clock::now();
+    server::GameServer server{0U, {}, shared::WorldMode::Flight, configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, preparation, server::GameServer::BindMode::Loopback};
+    ASSERT_TRUE(server.isValid());
+    std::atomic_bool server_failed{false};
+    std::jthread server_thread{[&](std::stop_token const& stop) {
+        std::atomic_bool stopped{false};
+        std::stop_callback callback{stop, [&] { stopped.store(true); }};
+        try { server.run(stopped); } catch (...) { server_failed.store(true); }
+    }};
+    struct Edit final {
+        uint32_t sequence = 0U;
+        shared::WorldCoordinate cell{};
+        shared::Block material = shared::Block::Air;
+        uint64_t version_before = 0U;
+        uint64_t revision = 0U;
+        uint64_t submitted_at_frame = 0U;
+        uint64_t delta_at_frame = 0U;
+        Clock::time_point submitted_at{};
+        std::optional<Clock::time_point> delta_at;
+        std::optional<Clock::time_point> ack_at;
+        std::optional<client::RendererFrameIdentity> visible_submission;
+        bool pixel_captured = false;
+        uint64_t pixel_hash = 0U;
+    };
+    std::vector<Edit> edits;
+    edits.reserve(ACTION_COUNT);
+    struct FrameScene final {
+        client::RendererFrameIdentity identity;
+        std::shared_ptr<client::TerrainLodScene const> scene;
+    };
+    std::vector<FrameScene> frames;
+    frames.reserve(256U);
+    bool started = false;
+    bool capture_pending = false;
+    std::optional<Clock::time_point> edits_started;
+    uint32_t stable_completed_frames = 0U;
+    uint64_t last_completed = 0U;
+    auto next_status_diagnostic = Clock::now();
+    auto scene_has_revision = [](client::TerrainLodScene const& scene, Edit const& edit) {
+        auto const key = shared::WorldBounds::chunkCoordinate(edit.cell);
+        return std::ranges::any_of(scene.chunk_sources, [&](auto const& source) {
+            return source.coordinate == key && source.edit_revision == edit.revision;
+        });
+    };
+    auto milliseconds = [accepted_at](Clock::time_point time) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(time - accepted_at).count();
+    };
+    client::GameClientBenchmarkHooks hooks{};
+    hooks.isolate_platform_input = true;
+    hooks.input_override = [](uint64_t) { return std::optional<shared::Direction>{shared::Direction{}}; };
+    std::optional<Clock::time_point> target_search_started;
+    uint32_t target_search_failures = 0U;
+    std::optional<shared::VoxelRay> stable_action_ray;
+    std::optional<shared::WorldCoordinate> stable_placement_cell;
+    hooks.deadline = accepted_at + std::chrono::seconds{90};
+    hooks.start_input_override = [&](uint64_t) {
+        auto const status = player.worldLoadingStatus();
+        if (!started && status.state == client::WorldLoadingState::ReadyForStart
+            && status.ready_prompt_frame_rendered_at) {
+            started = true;
+            return true;
+        }
+        return false;
+    };
+    hooks.on_loop = [&](client::GameClientLoopSample const&) {
+        auto const now = Clock::now();
+        auto const progress = Access::frameProgress(player);
+        auto const scene = Access::editLatencyScene(player);
+        auto const* world = Access::editLatencyWorld(player);
+        if (now >= next_status_diagnostic) {
+            auto const status = player.worldLoadingStatus();
+            auto const runtime = Access::runtimeInfo(player);
+            events << "{\"event\":\"readiness\",\"request_elapsed_ms\":" << milliseconds(now)
+                << ",\"state\":" << static_cast<uint32_t>(status.state)
+                << ",\"atlas_ready\":" << status.atlas_ready << ",\"spawn_safe\":" << status.spawn_safe
+                << ",\"has_spawn\":" << status.safe_spawn_position.has_value()
+                << ",\"has_player\":" << Access::editLatencyPlayer(player).has_value()
+                << ",\"initial_ready\":" << status.initial_sphere_ready_chunks
+                << ",\"initial_required\":" << status.initial_sphere_required_chunks
+                << ",\"initial_complete\":" << status.initial_sphere_ready
+                << ",\"playable_ready\":" << status.playable_sphere_ready_chunks
+                << ",\"playable_required\":" << status.playable_sphere_required_chunks
+                << ",\"resident_columns\":" << status.resident_authoritative_columns
+                << ",\"required_columns\":" << status.required_authoritative_columns
+                << ",\"prompt_rendered\":" << status.ready_prompt_frame_rendered_at.has_value()
+                << ",\"start_pending\":" << status.start_pending
+                << ",\"start_ack\":" << status.start_acknowledged_at.has_value()
+                << ",\"terrain_lod_active\":" << runtime.terrain_lod_active
+                << ",\"terrain_lod_leaves\":" << runtime.terrain_lod_leaf_count
+                << ",\"actual_columns\":" << runtime.terrain_lod_actual_column_count
+                << ",\"scene_chunk_sources\":" << (scene ? scene->chunk_sources.size() : 0U)
+                << ",\"scene_authority_sources\":" << (scene ? scene->authority_sources.size() : 0U)
+                << ",\"scene_faces\":" << (scene ? scene->faces.size() : 0U)
+                << ",\"submitted_sequence\":" << (progress.submitted ? progress.submitted->sequence : 0U)
+                << ",\"completed_sequence\":" << (progress.completed ? progress.completed->sequence : 0U)
+                << ",\"capture_state\":" << static_cast<uint32_t>(Access::captureState(player))
+                << ",\"last_presentation_succeeded\":" << Access::lastPresentationSucceeded(player)
+                << ",\"generation_completed\":" << status.generation_completed
+                << ",\"generation_total\":" << status.generation_total << "}\n";
+            events.flush();
+            next_status_diagnostic = now + std::chrono::seconds{1};
+        }
+        if (progress.submitted && scene && (frames.empty()
+                || frames.back().identity.sequence != progress.submitted->sequence)) {
+            frames.push_back({*progress.submitted, scene});
+            if (frames.size() > 256U) { frames.erase(frames.begin()); }
+        }
+        if (player.worldLoadingStatus().state != client::WorldLoadingState::Playing || !world || !scene) {
+            return;
+        }
+        if (auto const& result = player.blockActionStatus(); result) {
+            for (auto& edit : edits) {
+                if (result->sequence != edit.sequence || edit.ack_at) { continue; }
+                if (result->status == shared::BlockActionStatus::Accepted) {
+                    edit.ack_at = now;
+                    events << "{\"event\":\"accepted_result\",\"sequence\":" << edit.sequence
+                        << ",\"server_tick\":" << result->server_tick
+                        << ",\"received_ms\":" << milliseconds(now) << "}\n";
+                } else if (result->status != shared::BlockActionStatus::Progress) {
+                    events << "{\"event\":\"action_rejected\",\"sequence\":" << edit.sequence
+                        << ",\"status\":" << static_cast<uint32_t>(result->status) << "}\n";
+                    ADD_FAILURE() << "real server rejected action sequence " << edit.sequence
+                        << " status " << static_cast<uint32_t>(result->status);
+                    Access::stop(player);
+                }
+            }
+        }
+        for (auto& edit : edits) {
+            auto const query = world->queryBlock(edit.cell);
+            if (!edit.delta_at && world->cellVersion(edit.cell) > edit.version_before && query.block == edit.material) {
+                edit.delta_at = now;
+                edit.delta_at_frame = progress.submitted ? progress.submitted->sequence : 0U;
+                edit.revision = world->editChunkRevision(shared::WorldBounds::chunkCoordinate(edit.cell));
+                events << "{\"event\":\"delta_installed\",\"sequence\":" << edit.sequence
+                    << ",\"revision\":" << edit.revision << ",\"at_ms\":" << milliseconds(now) << "}\n";
+            }
+            if (edit.delta_at && !edit.visible_submission && progress.submitted && scene_has_revision(*scene, edit)) {
+                edit.visible_submission = progress.submitted;
+            }
+            if (edit.visible_submission && !edit.pixel_captured && !capture_pending) {
+                Access::requestFrameCapture(player);
+                capture_pending = true;
+            }
+            if (edit.delta_at && !edit.visible_submission && progress.submitted) {
+                EXPECT_LE(progress.submitted->sequence - edit.delta_at_frame, MAXIMUM_FRAMES)
+                    << "accepted delta waited for unrelated full-scene work, sequence=" << edit.sequence;
+            }
+        }
+        if (auto capture = Access::takeFrameCapture(player)) {
+            capture_pending = false;
+            ASSERT_TRUE(capture->frame_identity) << "native pixels require their exact successful submission identity";
+            auto const frame = std::ranges::find_if(frames, [&](auto const& value) {
+                return value.identity.sequence == capture->frame_identity->sequence
+                    && value.identity.swapchain_generation == capture->frame_identity->swapchain_generation;
+            });
+            ASSERT_NE(frame, frames.end());
+            for (auto& edit : edits) {
+                if (!edit.delta_at || edit.pixel_captured || !scene_has_revision(*frame->scene, edit)) { continue; }
+                edit.pixel_captured = true;
+                uint64_t const total_frames = capture->frame_identity->sequence - edit.submitted_at_frame;
+                uint64_t const delta_frames = capture->frame_identity->sequence - edit.delta_at_frame;
+                EXPECT_LE(delta_frames, MAXIMUM_FRAMES) << "delta-to-native-pixels latency";
+                // Centered native view is stationary and eye-aligned to the submitted ray.
+                std::vector<uint8_t> pixels;
+                for (uint32_t y = capture->height * 45U / 100U; y < capture->height * 55U / 100U; ++y) {
+                    for (uint32_t x = capture->width * 45U / 100U; x < capture->width * 55U / 100U; ++x) {
+                        size_t const offset = (static_cast<size_t>(y) * capture->width + x) * 4U;
+                        pixels.insert(pixels.end(), capture->rgba8.begin() + static_cast<ptrdiff_t>(offset),
+                            capture->rgba8.begin() + static_cast<ptrdiff_t>(offset + 4U));
+                    }
+                }
+                edit.pixel_hash = pixelHash(pixels);
+                EXPECT_TRUE(saveFullFrame(directory / ("action-" + std::to_string(edit.sequence) + ".png"), *capture));
+                events << "{\"event\":\"completed_native_frame\",\"sequence\":" << edit.sequence
+                    << ",\"frame_sequence\":" << capture->frame_identity->sequence
+                    << ",\"submit_to_frame_count\":" << total_frames << ",\"delta_to_frame_count\":" << delta_frames
+                    << ",\"submit_to_readback_ms\":"
+                    << std::chrono::duration_cast<std::chrono::milliseconds>(now - edit.submitted_at).count()
+                    << ",\"delta_to_readback_ms\":"
+                    << std::chrono::duration_cast<std::chrono::milliseconds>(now - *edit.delta_at).count()
+                    << ",\"target_pixel_hash\":" << edit.pixel_hash << "}\n";
+            }
+        }
+        bool const previous_observed = edits.empty() || edits.back().pixel_captured;
+        auto const loaded_status = player.worldLoadingStatus();
+        bool const loaded_world = loaded_status.playable_sphere_ready && loaded_status.required_authoritative_columns > 0U
+            && loaded_status.resident_authoritative_columns >= loaded_status.required_authoritative_columns
+            && Access::runtimeInfo(player).terrain_lod_actual_column_count >= loaded_status.required_authoritative_columns;
+        if (edits.size() < ACTION_COUNT && previous_observed && (!edits.empty() || loaded_world)) {
+            ASSERT_TRUE(progress.submitted);
+            ASSERT_TRUE(progress.completed);
+            ASSERT_TRUE(Access::captureState(player) == client::FrameCaptureState::Ready
+                || Access::captureState(player) == client::FrameCaptureState::Completed);
+            shared::VoxelRay ray;
+            shared::BlockTarget hit;
+            bool target_found = false;
+            if (stable_action_ray) {
+                ray = *stable_action_ray;
+                auto const resolved = shared::resolveInteractionTarget(
+                    *world, ray, shared::InteractionPerspective::FirstPerson, true);
+                target_found = resolved.status == shared::BlockTargetStatus::Hit && resolved.target.has_value();
+                if (target_found) { hit = *resolved.target; }
+                if (!target_found && (target_search_failures == 0U
+                        || (target_search_started && now - *target_search_started > std::chrono::seconds{2}))) {
+                    events << "{\"event\":\"stable_ray_failure\",\"status\":"
+                        << static_cast<uint32_t>(resolved.status)
+                        << ",\"face\":" << (resolved.target ? static_cast<int>(resolved.target->entered_face) : -1);
+                    if (resolved.target) {
+                        events << ",\"hit\":[" << resolved.target->cell.x << ',' << resolved.target->cell.y
+                            << ',' << resolved.target->cell.z << "]";
+                    }
+                    auto log_cell = [&](char const* label, shared::WorldCoordinate const cell) {
+                        auto const query = world->queryBlock(cell);
+                        events << ",\"" << label << "\":{\"cell\":[" << cell.x << ',' << cell.y << ',' << cell.z
+                            << "],\"state\":" << static_cast<uint32_t>(query.state)
+                            << ",\"material\":" << (query.block ? static_cast<int>(*query.block) : -1)
+                            << ",\"cell_version\":" << world->cellVersion(cell)
+                            << ",\"chunk_revision\":" << world->editChunkRevision(shared::WorldBounds::chunkCoordinate(cell))
+                            << '}';
+                    };
+                    if (stable_placement_cell) {
+                        log_cell("placed", *stable_placement_cell);
+                        auto support = *stable_placement_cell;
+                        --support.z;
+                        log_cell("support", support);
+                    }
+                    log_cell("ray_origin_sample", {static_cast<int64_t>(std::floor(ray.origin_x)),
+                        static_cast<int64_t>(std::floor(ray.origin_y)), static_cast<int64_t>(std::floor(ray.origin_z))});
+                    events << ",\"eye\":[" << ray.origin_x << ',' << ray.origin_y << ',' << ray.origin_z
+                        << "],\"direction\":[" << ray.direction_x << ',' << ray.direction_y << ',' << ray.direction_z << ']';
+                    if (auto const pose = Access::editLatencyPlayer(player)) {
+                        events << ",\"player\":[" << shared::playerPositionX(*pose) << ','
+                            << shared::playerPositionY(*pose) << ',' << shared::playerPositionZ(*pose) << ']';
+                    }
+                    events << "}\n";
+                    events.flush();
+                }
+            } else {
+                target_found = Access::editLatencyAim(player, ray, hit,
+                    target_search_failures == 0U ? &events : nullptr);
+                if (target_found) {
+                    stable_action_ray = ray;
+                    stable_placement_cell = hit.cell;
+                    ++stable_placement_cell->z;
+                }
+            }
+            if (!target_found) {
+                target_search_started = target_search_started.value_or(now);
+                ++target_search_failures;
+                if (target_search_failures == 1U || now - *target_search_started > std::chrono::seconds{2}) {
+                    events << "{\"event\":\"target_scan_failed\",\"rays\":32,\"attempts\":"
+                        << target_search_failures << ",\"stable_ray\":" << stable_action_ray.has_value()
+                        << ",\"reason\":\"canonical target resolution failed; see ray diagnostics\"}\n";
+                    events.flush();
+                }
+                if (now - *target_search_started > std::chrono::seconds{2}) {
+                    ADD_FAILURE() << "32-ray canonical target scan failed for two seconds";
+                    Access::stop(player);
+                }
+                return;
+            }
+            target_search_started.reset();
+            auto cell = hit.cell;
+            bool const placing = edits.size() % 2U == 0U;
+            if (placing) { ++cell.z; }
+            ASSERT_TRUE(stable_placement_cell);
+            ASSERT_EQ(cell, *stable_placement_cell)
+                << "fixed real ray must alternate the same placed cell; Break may enter any face";
+            Edit edit;
+            edit.sequence = Access::editLatencyNextSequence(player);
+            edit.cell = cell;
+            edit.material = placing ? shared::Block::Stone : shared::Block::Air;
+            edit.version_before = world->cellVersion(cell);
+            edit.submitted_at = now;
+            edit.submitted_at_frame = progress.submitted ? progress.submitted->sequence : 0U;
+            if (!player.submitBlockAction(placing ? shared::BlockActionKind::PlacePress : shared::BlockActionKind::BreakHold,
+                    ray, hit.cell, shared::Block::Stone)) { return; }
+            edits.push_back(edit);
+            edits_started = edits_started.value_or(now);
+            events << "{\"event\":\"submit\",\"sequence\":" << edit.sequence << ",\"at_ms\":" << milliseconds(now) << "}\n";
+        }
+        if (edits.size() == ACTION_COUNT && std::ranges::all_of(edits, [](auto const& e) { return e.pixel_captured; })) {
+            if (progress.completed && progress.completed->sequence != last_completed) { ++stable_completed_frames; }
+            if (stable_completed_frames >= 6U) { Access::stop(player); }
+        }
+        last_completed = progress.completed ? progress.completed->sequence : 0U;
+        events.flush();
+        if (server_failed.load() || (edits_started && now - *edits_started > std::chrono::seconds{10})) { Access::stop(player); }
+    };
+    player.run(core::Address::localhost(server.port()), '@', &hooks, accepted_at);
+    server_thread.request_stop();
+    server_thread.join();
+    preparation->cancel();
+    EXPECT_FALSE(server_failed.load());
+    ASSERT_EQ(edits.size(), ACTION_COUNT);
+    for (auto const& edit : edits) {
+        EXPECT_TRUE(edit.ack_at);
+        EXPECT_TRUE(edit.delta_at);
+        EXPECT_TRUE(edit.visible_submission);
+        EXPECT_TRUE(edit.pixel_captured);
+    }
+    EXPECT_GE(stable_completed_frames, 6U);
+    for (size_t index = 1U; index < edits.size(); ++index) {
+        EXPECT_NE(edits[index - 1U].pixel_hash, edits[index].pixel_hash)
+            << "place/break must change the actual target-centered native pixels";
+    }
+    auto const* final_world = Access::editLatencyWorld(player);
+    ASSERT_NE(final_world, nullptr);
+    EXPECT_EQ(final_world->queryBlock(edits.back().cell).block, shared::Block::Air);
+    auto const final_scene = Access::editLatencyScene(player);
+    ASSERT_TRUE(final_scene);
+    EXPECT_TRUE(scene_has_revision(*final_scene, edits.back())) << "old full-scene work must not roll back the last edit";
+}
+
+TEST(PlayerClientFocusTest, BenchmarkInputIsolationIgnoresInjectedMapMovementClickAndWheel)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    client::PlayerClient player;
+    client::GameClientBenchmarkHooks hooks{};
+    EXPECT_FALSE(hooks.isolate_platform_input);
+    hooks.isolate_platform_input = true;
+    Access::setIsolationHooks(player, &hooks);
+    EXPECT_FALSE(Access::injectIsolatedInput(player));
+    EXPECT_FALSE(Access::worldMapOpen(player));
+    auto const direction = Access::gameplayInput(player);
+    EXPECT_EQ(direction.x, 0U);
+    EXPECT_EQ(direction.y, 0U);
+    EXPECT_EQ(direction.z, 0U);
+    EXPECT_FALSE(Access::hasStartTransitionInputs(player));
+    Access::setIsolationHooks(player, nullptr);
+    std::array const map_key{GLFW_KEY_M};
+    EXPECT_TRUE(Access::updatePlatformInputSnapshot(player, map_key));
 }

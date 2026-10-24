@@ -23,7 +23,7 @@ class SinglePlayerBundleTest(unittest.TestCase):
         for name in (
             "grid.mesh", "player.mesh", "grid.vert", "player.vert", "player.frag", "stone.vert",
             "stone_indexed_block.vert", "stone.frag", "stone_solid.frag", "sky.vert", "sky.frag",
-            "trivial.frag", "text.vert", "text.frag", "adaptive_text.frag", "map.vert", "map.frag",
+            "trivial.frag", "text.vert", "text.frag", "adaptive_text.frag", "map.vert", "map.frag", "gui_vector.vert", "gui_vector.frag",
         ):
             (runtime / "shaders" / f"{name}.spv").write_bytes(struct.pack("<I", 0x07230203))
         assets = root / "assets"

@@ -1387,9 +1387,11 @@ private:
 
 class TextGlyphBuffer final {
 public:
-    TextGlyphBuffer(VkDevice const device, VkPhysicalDevice const physical_device)
+    TextGlyphBuffer(VkDevice const device, VkPhysicalDevice const physical_device,
+        VkDeviceSize const capacity_bytes = static_cast<VkDeviceSize>(MAXIMUM_TEXT_GLYPH_COUNT) * sizeof(TextGlyph))
         : m_device(device)
         , m_physical_device(physical_device)
+        , m_capacity_bytes(capacity_bytes)
     {
         try {
             VkBufferCreateInfo buffer_info{};
@@ -1453,9 +1455,9 @@ private:
         throw std::runtime_error("Vulkan device has no local memory for text glyphs");
     }
 
-    [[nodiscard]] static constexpr VkDeviceSize byteSize() noexcept
+    [[nodiscard]] VkDeviceSize byteSize() const noexcept
     {
-        return static_cast<VkDeviceSize>(MAXIMUM_TEXT_GLYPH_COUNT) * sizeof(TextGlyph);
+        return m_capacity_bytes;
     }
 
     void reset() noexcept
@@ -1472,6 +1474,7 @@ private:
 
     VkDevice m_device = VK_NULL_HANDLE;
     VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
+    VkDeviceSize m_capacity_bytes;
     VkBuffer m_buffer = VK_NULL_HANDLE;
     VkDeviceMemory m_memory = VK_NULL_HANDLE;
 };
@@ -1996,7 +1999,8 @@ void recordText(
     core::graphics::vulkan::VulkanKernelCache& cache,
     core::kernel::GraphicsProgram const& program,
     VkPipelineLayout const layout,
-    VkFormat const format
+    VkFormat const format,
+    VkCullModeFlags const cull_mode = VK_CULL_MODE_BACK_BIT
 )
 {
     VkFormatProperties properties{};
@@ -2028,7 +2032,7 @@ void recordText(
     VkPipelineRasterizationStateCreateInfo raster{};
     raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     raster.polygonMode = VK_POLYGON_MODE_FILL;
-    raster.cullMode = VK_CULL_MODE_BACK_BIT;
+    raster.cullMode = cull_mode;
     raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     raster.lineWidth = 1.0F;
     VkPipelineMultisampleStateCreateInfo samples{};
@@ -2082,6 +2086,109 @@ void recordText(
     return { device, pipeline };
 }
 
+
+// Shares the text upload ordering contract across submitted frame slots.
+class GuiVectorResources final {
+public:
+    GuiVectorResources(core::graphics::vulkan::VulkanDeviceReference const device,
+        VkPhysicalDevice const physical_device, core::graphics::vulkan::VulkanKernelCache& cache,
+        ShaderAssets const& assets, VkFormat const format)
+        : m_device(device.handle())
+        , m_buffer(device.handle(), physical_device,
+            static_cast<VkDeviceSize>(MAXIMUM_GUI_VECTOR_VERTICES) * sizeof(GuiVectorVertex))
+        , m_descriptors(device.handle(), m_buffer)
+    {
+        try {
+            m_program.emplace(core::kernel::GraphicsProgram::create(
+                { .module = std::make_shared<core::kernel::SpirvModule const>(assets.load("gui_vector.vert.spv")),
+                    .entrypoint = "main", .required_bindings = { { .set = 0U, .binding = 0U } } },
+                { .module = std::make_shared<core::kernel::SpirvModule const>(assets.load("gui_vector.frag.spv")),
+                    .entrypoint = "main", .required_bindings = {} }));
+            VkDescriptorSetLayout const descriptor_layout = m_descriptors.layout();
+            VkPushConstantRange const push{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+                .offset = 0U, .size = sizeof(std::array<float, 2>) };
+            VkPipelineLayoutCreateInfo layout{};
+            layout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+            layout.setLayoutCount = 1U;
+            layout.pSetLayouts = &descriptor_layout;
+            layout.pushConstantRangeCount = 1U;
+            layout.pPushConstantRanges = &push;
+            checkResult(vkCreatePipelineLayout(m_device, &layout, nullptr, &m_layout),
+                "vkCreatePipelineLayout GUI vectors");
+            m_pipeline.emplace(createAdaptiveTextPipeline(device, physical_device, cache,
+                *m_program, m_layout, format, VK_CULL_MODE_NONE));
+        } catch (...) {
+            if (m_layout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(m_device, m_layout, nullptr); }
+            throw;
+        }
+    }
+
+    ~GuiVectorResources()
+    {
+        m_pipeline.reset();
+        if (m_layout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(m_device, m_layout, nullptr); }
+    }
+
+    void upload(VkCommandBuffer const command, std::span<GuiVectorVertex const> const vertices) const
+    {
+        if (vertices.empty()) { return; }
+        VkBuffer const buffer = m_buffer.descriptor().buffer;
+        VkBufferMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.buffer = buffer;
+        barrier.size = vertices.size_bytes();
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, nullptr, 1U, &barrier, 0U, nullptr);
+        auto const bytes = std::as_bytes(vertices);
+        constexpr size_t UPDATE_BYTES = 65'536U;
+        for (size_t offset = 0U; offset < bytes.size(); offset += UPDATE_BYTES) {
+            size_t const count = std::min(UPDATE_BYTES, bytes.size() - offset);
+            vkCmdUpdateBuffer(command, buffer, offset, count, bytes.data() + offset);
+        }
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+            0U, 0U, nullptr, 1U, &barrier, 0U, nullptr);
+    }
+
+    void draw(VkCommandBuffer const command, VkExtent2D const extent, uint32_t const count) const
+    {
+        if (count == 0U) { return; }
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, requiredValue(m_pipeline).handle());
+        VkDescriptorSet const descriptor = m_descriptors.set();
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout, 0U, 1U, &descriptor, 0U, nullptr);
+        std::array<float, 2> const resolution{ static_cast<float>(extent.width), static_cast<float>(extent.height) };
+        vkCmdPushConstants(command, m_layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(resolution), resolution.data());
+        VkRect2D const scissor{ .offset = { 0, 0 }, .extent = extent };
+        vkCmdSetScissor(command, 0U, 1U, &scissor);
+        vkCmdDraw(command, count, 1U, 0U, 0U);
+    }
+
+private:
+    VkDevice m_device;
+    TextGlyphBuffer m_buffer;
+    TextDescriptorSet m_descriptors;
+    std::optional<core::kernel::GraphicsProgram> m_program;
+    VkPipelineLayout m_layout = VK_NULL_HANDLE;
+    std::optional<core::graphics::vulkan::VulkanPipeline> m_pipeline;
+};
+
+[[nodiscard]] bool replaceGuiVectorTriangles(std::vector<GuiVectorVertex>& target,
+    std::span<GuiVectorVertex const> const vertices)
+{
+    if (vertices.size() > MAXIMUM_GUI_VECTOR_VERTICES || vertices.size() % 3U != 0U
+        || !std::ranges::all_of(vertices, [](GuiVectorVertex const& vertex) {
+            return std::isfinite(vertex.position[0]) && std::isfinite(vertex.position[1]);
+        })) {
+        return false;
+    }
+    target.assign(vertices.begin(), vertices.end());
+    return true;
+}
 
 [[nodiscard]] bool hasAdaptiveGlyphs(std::span<TextBatch const> const batches)
 {
@@ -2566,7 +2673,8 @@ struct VulkanRenderer::Impl final {
         acquireDiagnosticQuerySlot();
         m_current_depth_target = &depthTargetFor(frame->image());
         m_current_scene_target = nullptr;
-        if (hasAdaptiveGlyphs(m_gui_renderer.batches())) {
+        if (hasAdaptiveGlyphs(m_gui_renderer.batches())
+            || (!m_gui_vector_triangles.empty() && !m_context->info().srgb)) {
             auto& scene = m_scene_targets[frame->image()];
             if (!scene.texture) {
                 scene.texture = std::make_unique<MapImageTexture>(requiredValue(m_resources).device(),
@@ -2604,11 +2712,12 @@ struct VulkanRenderer::Impl final {
                 map.recorded_revision = 0U;
             }
         }
+        m_capture_readback_identity.reset();
         if (m_frame_completion_tracking) {
-            static_cast<void>(m_frame_progress_tracker.recordSubmission(
+            m_capture_readback_identity = m_frame_progress_tracker.recordSubmission(
                 frame->slotIndex(),
                 frame->swapchainGeneration()
-            ));
+            );
         }
         m_successful_presentation_id = frame->presentationId();
         m_successful_presentation_swapchain_generation = frame->swapchainGeneration();
@@ -2666,6 +2775,11 @@ struct VulkanRenderer::Impl final {
         m_gui_text.clear();
     }
 
+    [[nodiscard]] bool setGuiVectorTriangles(std::span<GuiVectorVertex const> const vertices)
+    {
+        return replaceGuiVectorTriangles(m_gui_vector_triangles, vertices);
+    }
+
     [[nodiscard]] bool setMapImage(
         uint32_t const width,
         uint32_t const height,
@@ -2707,6 +2821,7 @@ struct VulkanRenderer::Impl final {
     {
         if (m_frame_completion_tracking != enabled) {
             m_frame_progress_tracker.resetProgress();
+            m_capture_readback_identity.reset();
         }
         m_frame_progress_tracker.setRetiredHistoryEnabled(enabled && retain_retired_history);
         m_frame_completion_tracking = enabled;
@@ -2830,6 +2945,38 @@ struct VulkanRenderer::Impl final {
         if (scene != m_pending_terrain_lod_scene && !beginPendingTerrainLodScene(std::move(scene))) {
             return false;
         }
+        return uploadPendingTerrainLodScene(deadline);
+    }
+
+    [[nodiscard]] bool replaceTerrainLodGroups(
+        std::shared_ptr<TerrainLodScene const> patch,
+        std::chrono::steady_clock::time_point const deadline
+    )
+    {
+        if (!patch || !m_terrain_lod_scene || patch->identity != m_terrain_lod_scene->identity
+            || patch->session_join_epoch != m_terrain_lod_scene->session_join_epoch
+            || patch->coverage_epoch != m_terrain_lod_scene->coverage_epoch) {
+            return false;
+        }
+        if (patch != m_pending_terrain_lod_patch || m_terrain_lod_patch_base != m_terrain_lod_scene) {
+            auto plan = detail::terrainLodReplacementPlan(*m_terrain_lod_scene, m_terrain_lod_ranges, *patch);
+            if (plan.scene->faces.size() > MAXIMUM_RENDERED_STONE_FACE_COUNT) {
+                throw std::invalid_argument("terrain LOD replacement exceeds renderer face capacity");
+            }
+            discardPendingTerrainLodScene();
+            m_pending_terrain_lod_patch = std::move(patch);
+            m_terrain_lod_patch_base = m_terrain_lod_scene;
+            m_pending_terrain_field = m_active_terrain_field;
+            m_pending_terrain_lod_scene = std::move(plan.scene);
+            m_pending_terrain_lod_ranges = std::move(plan.ranges);
+            m_pending_terrain_lod_reusable = std::move(plan.reusable);
+            m_pending_terrain_lod_uploaded = std::move(plan.uploaded);
+        }
+        return uploadPendingTerrainLodScene(deadline);
+    }
+
+    [[nodiscard]] bool uploadPendingTerrainLodScene(std::chrono::steady_clock::time_point const deadline)
+    {
         static constexpr uint32_t UPLOAD_FACE_BUDGET = 32'768U;
         uint32_t remaining_budget = UPLOAD_FACE_BUDGET;
         for (uint32_t index = 0U; index < m_pending_terrain_lod_ranges.size(); ++index) {
@@ -2941,6 +3088,8 @@ struct VulkanRenderer::Impl final {
         m_pending_terrain_lod_ranges.clear();
         m_pending_terrain_lod_reusable.clear();
         m_pending_terrain_lod_uploaded.clear();
+        m_pending_terrain_lod_patch.reset();
+        m_terrain_lod_patch_base.reset();
         m_chunk_scene_enabled = true;
         ++m_occlusion_mesh_generation;
     }
@@ -2959,6 +3108,8 @@ struct VulkanRenderer::Impl final {
         m_pending_terrain_lod_ranges.clear();
         m_pending_terrain_lod_reusable.clear();
         m_pending_terrain_lod_uploaded.clear();
+        m_pending_terrain_lod_patch.reset();
+        m_terrain_lod_patch_base.reset();
     }
 
     void clearTerrainLodScene()
@@ -3399,6 +3550,7 @@ struct VulkanRenderer::Impl final {
             .height = info.extent.height,
             .srgb_encoded = true,
             .rgba8 = std::vector<uint8_t>(readback->begin(), readback->end()),
+            .frame_identity = m_capture_readback_identity,
         };
         m_capture_requested = false;
         m_capture_state = FrameCaptureState::Completed;
@@ -3931,6 +4083,7 @@ private:
         if (!m_text_glyph_upload.empty()) {
             requiredValue(m_text_glyph_buffer).update(command, m_text_glyph_upload);
         }
+        requiredValue(m_gui_vectors).upload(command, m_gui_vector_triangles);
         uint32_t const gui_text_first_instance = static_cast<uint32_t>(m_world_text_batch.glyphs.size());
         DepthTarget& depth_target = *m_current_depth_target;
         detail::recordDepthAttachmentBarrier(
@@ -4203,7 +4356,7 @@ private:
             recordSceneBarrier(command, m_current_scene_target->texture->image(), true, true);
             m_current_scene_target->initialized = true;
         }
-        if (!m_gui_renderer.empty()) {
+        if (!m_gui_renderer.empty() || !m_gui_vector_triangles.empty()) {
             VkMemoryBarrier color_barrier{};
             color_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             color_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
@@ -4251,6 +4404,7 @@ private:
                 recordSceneComposite(command, *m_current_scene_target->texture,
                     linear_overlay != nullptr ? m_overlay_composite_pipeline : m_scene_composite_pipeline, scene_copy);
             }
+            requiredValue(m_gui_vectors).draw(command, extent, static_cast<uint32_t>(m_gui_vector_triangles.size()));
             uint32_t first_instance = gui_text_first_instance;
             for (TextBatch const& text : m_gui_renderer.batches()) {
                 bool const adaptive = hasAdaptiveGlyphs(std::span<TextBatch const>{ &text, 1U });
@@ -4898,6 +5052,8 @@ private:
         );
         VkFormat const hud_format = m_context->info().srgb
             ? requiredValue(m_resources).format() : VK_FORMAT_R8G8B8A8_SRGB;
+        m_gui_vectors.emplace(device, requiredValue(m_resources).physicalDevice(), requiredValue(m_kernel_cache),
+            m_shader_assets, hud_format);
         m_adaptive_text_pipeline.emplace(createAdaptiveTextPipeline(device,
             requiredValue(m_resources).physicalDevice(), requiredValue(m_kernel_cache),
             *m_adaptive_text_program, m_adaptive_text_layout, hud_format));
@@ -4932,6 +5088,7 @@ private:
         destroyDepthTargets(device);
         m_current_scene_target = nullptr;
         m_scene_targets.clear();
+        m_gui_vectors.reset();
         m_adaptive_text_pipeline.reset();
         if (m_kernel_cache.has_value()) {
             requiredValue(m_kernel_cache).invalidate(requiredValue(m_resources).deviceReference().identity());
@@ -5169,6 +5326,7 @@ private:
     {
         // Native recreation discards queued readbacks; a pending request needs a fresh frame.
         m_capture_readback_eligible = false;
+        m_capture_readback_identity.reset();
         if (m_last_capture.has_value()) {
             m_capture_state = FrameCaptureState::Completed;
             return;
@@ -5300,9 +5458,12 @@ private:
     bool m_capture_requested = false;
     bool m_capture_readback_eligible = false;
     uint32_t m_capture_readback_slot = 0U;
+    std::optional<RendererFrameIdentity> m_capture_readback_identity;
     uint64_t m_capture_requested_after_submission = 0U;
     DebugHudState m_debug_hud_state;
     DebugHudText m_debug_hud_text;
+    std::vector<GuiVectorVertex> m_gui_vector_triangles;
+    std::optional<GuiVectorResources> m_gui_vectors;
     TextRenderer m_debug_hud_presentation;
     TextRenderer m_gui_text;
     TextRenderer m_world_text;
@@ -5325,6 +5486,8 @@ private:
     std::vector<StoneDrawRange> m_terrain_lod_ranges;
     detail::TerrainLodUploadPlanner m_terrain_lod_upload_planner;
     std::shared_ptr<TerrainLodScene const> m_pending_terrain_lod_scene;
+    std::shared_ptr<TerrainLodScene const> m_pending_terrain_lod_patch;
+    std::shared_ptr<TerrainLodScene const> m_terrain_lod_patch_base;
     std::vector<StoneDrawRange> m_pending_terrain_lod_ranges;
     std::vector<std::optional<uint32_t>> m_pending_terrain_lod_reusable;
     std::vector<uint32_t> m_pending_terrain_lod_uploaded;
@@ -5582,6 +5745,8 @@ public:
                     .depth_write_enabled = false,
                 }
             );
+            m_gui_vectors.emplace(reference, m_device->physicalDevice(), m_cache, shader_assets,
+                VK_FORMAT_R8G8B8A8_UNORM);
             m_adaptive_pipeline.emplace(createAdaptiveTextPipeline(reference, m_device->physicalDevice(), m_cache,
                 *m_adaptive_text_program, m_adaptive_layout, VK_FORMAT_R8G8B8A8_UNORM));
             m_map_pipeline = m_cache.pipelineFor(reference, *m_map_program,
@@ -5670,6 +5835,16 @@ public:
         m_stone_face_buffer.upload(0U, faces);
     }
 
+    void uploadGuiVectors(VkCommandBuffer const command, std::span<GuiVectorVertex const> const vertices) const
+    {
+        requiredValue(m_gui_vectors).upload(command, vertices);
+    }
+
+    void drawGuiVectors(VkCommandBuffer const command, VkExtent2D const extent, uint32_t const count) const
+    {
+        requiredValue(m_gui_vectors).draw(command, extent, count);
+    }
+
     void uploadTextGlyphs(VkCommandBuffer const command, std::span<TextGlyph const> const glyphs) const
     {
         requiredValue(m_text_glyph_buffer).update(command, glyphs);
@@ -5681,6 +5856,7 @@ private:
         if (!m_device || m_device->handle() == VK_NULL_HANDLE) {
             return;
         }
+        m_gui_vectors.reset();
         m_adaptive_pipeline.reset();
         m_cache.invalidate(m_device->identity());
         m_scene_texture.reset();
@@ -5829,6 +6005,7 @@ private:
     StoneTextureBuffer m_stone_texture_buffer;
     std::shared_ptr<CanonicalTerrainFieldBuffer> m_canonical_terrain_field;
     StoneDescriptorSet m_stone_descriptors;
+    std::optional<GuiVectorResources> m_gui_vectors;
     std::optional<TextGlyphBuffer> m_text_glyph_buffer;
     std::optional<TextDescriptorSet> m_text_descriptors;
     VkPipelineLayout m_grid_layout = VK_NULL_HANDLE;
@@ -5909,6 +6086,10 @@ struct VulkanOffscreenRenderer::Impl final {
         static_cast<void>(m_gui_text.submit(text, color, placement));
     }
     void clearGuiText() noexcept { m_gui_text.clear(); }
+    [[nodiscard]] bool setGuiVectorTriangles(std::span<GuiVectorVertex const> const vertices)
+    {
+        return replaceGuiVectorTriangles(m_gui_vector_triangles, vertices);
+    }
     [[nodiscard]] bool setMapImage(uint32_t const width, uint32_t const height,
         std::span<std::array<uint8_t, 4> const> const rgba8)
     {
@@ -5960,6 +6141,7 @@ private:
             self.m_map_layout = resources.uploadMap(recording.command_buffer, self.m_map_image, self.m_map_layout);
             self.m_map_uploaded_revision = self.m_map_image.revision();
         }
+        resources.uploadGuiVectors(recording.command_buffer, self.m_gui_vector_triangles);
         if (!self.m_text_glyph_upload.empty()) {
             resources.uploadTextGlyphs(recording.command_buffer, self.m_text_glyph_upload);
         }
@@ -6070,7 +6252,7 @@ private:
             recordSceneBarrier(recording.command_buffer, resources.scene().image(), true, true);
             self.m_scene_initialized = true;
         }
-        if (!self.m_gui_renderer.empty()) {
+        if (!self.m_gui_renderer.empty() || !self.m_gui_vector_triangles.empty()) {
             VkMemoryBarrier color_barrier{};
             color_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             color_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
@@ -6112,6 +6294,8 @@ private:
             if (self.m_has_adaptive) {
                 resources.drawMap(recording.command_buffer, recording.extent);
             }
+            resources.drawGuiVectors(recording.command_buffer, recording.extent,
+                static_cast<uint32_t>(self.m_gui_vector_triangles.size()));
             uint32_t gui_text_draw_count = 0U;
             uint32_t first_instance = 0U;
             for (TextBatch const& text : self.m_gui_renderer.batches()) {
@@ -6145,6 +6329,7 @@ private:
     std::vector<StoneFaceInstance> m_stone_faces;
     DebugHudState m_debug_hud_state;
     DebugHudText m_debug_hud_text;
+    std::vector<GuiVectorVertex> m_gui_vector_triangles;
     GuiRenderer m_gui_renderer;
     TextRenderer m_gui_text;
     MapImageData m_map_image;
@@ -6269,6 +6454,11 @@ void VulkanRenderer::addGuiText(std::string_view const text, TextPlacement const
     m_impl->addGuiText(text, placement, color);
 }
 
+bool VulkanRenderer::setGuiVectorTriangles(std::span<GuiVectorVertex const> const vertices)
+{
+    return m_impl->setGuiVectorTriangles(vertices);
+}
+
 void VulkanRenderer::clearGuiText() noexcept
 {
     m_impl->clearGuiText();
@@ -6366,6 +6556,14 @@ bool VulkanRenderer::upsertTerrainLodScene(
 )
 {
     return m_impl->upsertTerrainLodScene(std::move(scene), deadline);
+}
+
+bool VulkanRenderer::replaceTerrainLodGroups(
+    std::shared_ptr<TerrainLodScene const> patch,
+    std::chrono::steady_clock::time_point const deadline
+)
+{
+    return m_impl->replaceTerrainLodGroups(std::move(patch), deadline);
 }
 
 void VulkanRenderer::clearTerrainLodScene()
@@ -6470,6 +6668,11 @@ RendererFrameCapture VulkanOffscreenRenderer::render(
 void VulkanOffscreenRenderer::addGuiText(std::string_view const text, TextPlacement const placement, TextColor const color)
 {
     m_impl->addGuiText(text, placement, color);
+}
+
+bool VulkanOffscreenRenderer::setGuiVectorTriangles(std::span<GuiVectorVertex const> const vertices)
+{
+    return m_impl->setGuiVectorTriangles(vertices);
 }
 
 void VulkanOffscreenRenderer::clearGuiText() noexcept { m_impl->clearGuiText(); }

@@ -3,6 +3,7 @@
 #include <client/Camera.hpp>
 #include <client/render/BlockInteractionEffects.hpp>
 #include <client/render/DebugHud.hpp>
+#include <client/render/GuiVector.hpp>
 #include <client/render/MapImageDraw.hpp>
 #include <client/render/PresentationFrameProgress.hpp>
 #include <client/render/ShaderAssets.hpp>
@@ -205,6 +206,8 @@ struct RendererFrameCapture final {
     // Describes the captured pixel transfer, independent of the render-target format.
     bool srgb_encoded = false;
     std::vector<uint8_t> rgba8;
+    // Known only when completion tracking identified this exact submitted readback.
+    std::optional<RendererFrameIdentity> frame_identity;
 };
 
 class VulkanRenderer final : core::NonCopyable, core::NonMovable {
@@ -246,6 +249,9 @@ public:
     void setGuiText(std::string_view text, TextColor color = {});
     void addGuiText(std::string_view text, TextPlacement placement, TextColor color = {});
     void clearGuiText() noexcept;
+    // Replaces one framebuffer-pixel triangle batch; empty clears. Invalid/nonfinite
+    // vertices, non-triangle counts or counts above 65536 preserve the prior batch.
+    [[nodiscard]] bool setGuiVectorTriangles(std::span<GuiVectorVertex const> vertices);
     // On the renderer's owning thread, copies one opaque row-major RGBA8 image
     // up to 512-by-512 pixels; render() uploads changes, not identical images.
     [[nodiscard]]
@@ -280,6 +286,12 @@ public:
     [[nodiscard]]
     bool upsertTerrainLodScene(
         std::shared_ptr<TerrainLodScene const> scene,
+        std::chrono::steady_clock::time_point deadline
+    );
+    // Replace existing exact groups atomically; empty group ranges remove their geometry.
+    [[nodiscard]]
+    bool replaceTerrainLodGroups(
+        std::shared_ptr<TerrainLodScene const> patch,
         std::chrono::steady_clock::time_point deadline
     );
     void clearTerrainLodScene();
@@ -334,6 +346,9 @@ public:
     );
     void addGuiText(std::string_view text, TextPlacement placement, TextColor color = {});
     void clearGuiText() noexcept;
+    // Replaces one framebuffer-pixel triangle batch; empty clears. Invalid/nonfinite
+    // vertices, non-triangle counts or counts above 65536 preserve the prior batch.
+    [[nodiscard]] bool setGuiVectorTriangles(std::span<GuiVectorVertex const> vertices);
     [[nodiscard]] bool setMapImage(uint32_t width, uint32_t height,
         std::span<std::array<uint8_t, 4> const> rgba8);
     void setCamera(CameraPose pose) noexcept;

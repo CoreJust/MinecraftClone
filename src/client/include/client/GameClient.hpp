@@ -53,6 +53,7 @@ struct GameClientLoopSample final {
 };
 
 struct GameClientBenchmarkHooks final {
+    bool isolate_platform_input = false;
     std::optional<std::chrono::steady_clock::time_point> deadline;
     std::function<bool()> should_stop;
     std::function<bool()> is_uncapped_phase;

@@ -968,6 +968,39 @@ TEST(TerrainLodPresentationTest, ReplicatedSparseOverlayEditsRenderExactHoleAndP
     EXPECT_FALSE(client::terrainLodColumnSourcesCurrent(*captured, world));
 }
 
+TEST(TerrainLodPresentationTest, ExactReplacementMatchesFullSceneAfterAuthoritativeEdit)
+{
+    auto const terrain = presentationWorld(256U);
+    shared::SparseWorld world{{}, shared::SparseWorldGenerationMode::MaterializedOnly};
+    ASSERT_TRUE(world.setTerrainIdentity(terrain->identity()));
+    for (auto const offset :
+         {std::array{0, 0}, std::array{-1, 0}, std::array{1, 0}, std::array{0, -1}, std::array{0, 1}}) {
+        ASSERT_TRUE(world.publishAuthoritativeSurface(
+            terrain->sampleSurface({.x = 1 + offset[0], .y = 1 + offset[1], .z = 0})));
+    }
+    auto before = client::captureTerrainLodColumn(world, 1U, 1U);
+    ASSERT_TRUE(before.has_value());
+    shared::WorldCoordinate const placed{17, 17, 900};
+    ASSERT_TRUE(world.applyEditDelta(placed, shared::Block::Snow, 0U, 1U, 1U));
+    EXPECT_FALSE(client::terrainLodColumnSourcesCurrent(*before, world));
+    auto captured = client::captureTerrainLodColumn(world, 1U, 1U);
+    ASSERT_TRUE(captured.has_value());
+    std::array const columns{std::make_shared<client::TerrainLodColumnInput const>(*captured)};
+    auto const full = client::buildTerrainLodSceneFromColumns(*terrain, 16U, 16U, columns);
+    auto const patch = client::buildTerrainLodColumnPatch(terrain->identity(), columns);
+    ASSERT_EQ(patch->groups.size(), 1U);
+    EXPECT_EQ(patch->groups.front().extent, 16U);
+    EXPECT_EQ(profileSceneFaces(*patch), profileSceneFaces(*full));
+    EXPECT_TRUE(client::terrainLodSourcesCurrent(*patch, world));
+    ASSERT_TRUE(world.applyEditDelta(placed, shared::Block::Air, 1U, 2U, 2U));
+    EXPECT_FALSE(client::terrainLodSourcesCurrent(*patch, world));
+    captured = client::captureTerrainLodColumn(world, 1U, 1U);
+    ASSERT_TRUE(captured.has_value());
+    std::array const removed{std::make_shared<client::TerrainLodColumnInput const>(*captured)};
+    auto const removal = client::buildTerrainLodColumnPatch(terrain->identity(), removed);
+    EXPECT_EQ(profileSceneFaces(*removal), denseReferenceFaces(*captured));
+}
+
 TEST(TerrainLodPresentationTest, WrappedNeighborOverlayEditInvalidatesCapturedChunkFaces)
 {
     auto const terrain = presentationWorld(256U);

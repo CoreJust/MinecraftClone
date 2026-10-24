@@ -645,7 +645,9 @@ BlockTargetResult resolveInteractionTarget(
     if (!std::isfinite(eye_distance) || eye_distance > DEFAULT_BLOCK_REACH + 1e-9) {
         return {.status = BlockTargetStatus::Miss};
     }
-    if (eye_distance == 0.0) {
+    // A first-person candidate was already traced from this eye along the same curved ray.
+    // Reconstructing its endpoint can round back into the candidate at large coordinates.
+    if (perspective == InteractionPerspective::FirstPerson || eye_distance == 0.0) {
         return candidate;
     }
 

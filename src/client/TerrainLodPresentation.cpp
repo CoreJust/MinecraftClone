@@ -430,6 +430,10 @@ captureTerrainLodColumn(shared::SparseWorld const& world, uint32_t const x, uint
             }
             result.authority_sources.push_back(
                 {coordinate, identity->identity, identity->revision, identity->content_hash});
+            for (int32_t z = 0; z < 64; ++z) {
+                shared::ChunkCoordinate const chunk_coordinate{coordinate.x, coordinate.y, z};
+                result.edit_sources.push_back({chunk_coordinate, world.editChunkRevision(chunk_coordinate)});
+            }
         }
         for (uint32_t row = 0U; row < 18U; ++row) {
             for (uint32_t col = 0U; col < 18U; ++col) {
@@ -585,6 +589,64 @@ bool terrainLodSourcesCurrent(TerrainLodScene const& scene, shared::SparseWorld 
     return true;
 }
 
+namespace {
+TerrainLodActualColumn meshColumn(TerrainLodColumnInput const& column, std::stop_token const& cancellation)
+{
+    TerrainLodActualColumn output{
+        .x = column.x,
+        .y = column.y,
+        .meshes = {},
+        .faces = {},
+        .edge_heights = column.edge_heights,
+    };
+    if (!column.authority_profiles.empty()) {
+        output.faces = meshAuthorityProfiles(column, cancellation);
+    }
+    output.meshes.reserve(column.chunks.size());
+    for (TerrainLodChunkInput const& input : column.chunks) {
+        if (cancellation.stop_requested()) {
+            throw std::runtime_error("terrain LOD chunk meshing cancelled");
+        }
+        shared::ChunkMesher mesher;
+        output.meshes.push_back(mesher.update(input.chunk, input.neighbors));
+    }
+    return output;
+}
+} // namespace
+
+std::shared_ptr<TerrainLodScene const> buildTerrainLodColumnPatch(
+    shared::TerrainIdentity const identity,
+    std::span<std::shared_ptr<TerrainLodColumnInput const> const> const columns,
+    std::stop_token const& cancellation)
+{
+    auto scene = std::make_shared<TerrainLodScene>();
+    scene->identity = identity;
+    for (auto const& input : columns) {
+        auto column = meshColumn(*input, cancellation);
+        uint32_t const first = static_cast<uint32_t>(scene->faces.size());
+        scene->faces.insert(scene->faces.end(), column.faces.begin(), column.faces.end());
+        for (auto const& mesh : column.meshes) {
+            for (auto const& face : mesh.faces) {
+                scene->faces.push_back(StoneFaceInstance::fromChunkFace(mesh.coordinate, face));
+            }
+        }
+        scene->groups.push_back({
+            .range = {first, static_cast<uint32_t>(scene->faces.size()) - first},
+            .origin_x = column.x * 16U,
+            .origin_y = column.y * 16U,
+            .extent = 16U,
+            .minimum_z = 0,
+            .maximum_z = 1'024,
+        });
+        scene->chunk_sources.insert(scene->chunk_sources.end(), input->sources.begin(), input->sources.end());
+        scene->authority_sources.insert(
+            scene->authority_sources.end(), input->authority_sources.begin(), input->authority_sources.end());
+        scene->leaves.push_back({.level = shared::TerrainLodLevel::L3, .x = column.x, .y = column.y});
+    }
+    scene->actual_column_count = static_cast<uint32_t>(columns.size());
+    return scene;
+}
+
 std::shared_ptr<TerrainLodScene const> buildTerrainLodSceneFromColumns(
     shared::TerrainWorld const& world,
     uint32_t const center_x,
@@ -594,27 +656,8 @@ std::shared_ptr<TerrainLodScene const> buildTerrainLodSceneFromColumns(
 {
     std::vector<TerrainLodActualColumn> actual;
     actual.reserve(columns.size());
-    for (auto const& input_column : columns) {
-        TerrainLodColumnInput const& column = *input_column;
-        TerrainLodActualColumn output{
-            .x = column.x,
-            .y = column.y,
-            .meshes = {},
-            .faces = {},
-            .edge_heights = column.edge_heights,
-        };
-        if (!column.authority_profiles.empty()) {
-            output.faces = meshAuthorityProfiles(column, cancellation);
-        }
-        output.meshes.reserve(column.chunks.size());
-        for (TerrainLodChunkInput const& input : column.chunks) {
-            if (cancellation.stop_requested()) {
-                throw std::runtime_error("terrain LOD chunk meshing cancelled");
-            }
-            shared::ChunkMesher mesher;
-            output.meshes.push_back(mesher.update(input.chunk, input.neighbors));
-        }
-        actual.push_back(std::move(output));
+    for (auto const& input : columns) {
+        actual.push_back(meshColumn(*input, cancellation));
     }
     auto scene =
         std::const_pointer_cast<TerrainLodScene>(buildTerrainLodScene(world, center_x, center_y, actual, cancellation));

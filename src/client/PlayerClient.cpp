@@ -53,6 +53,7 @@
 #include <system_error>
 #include <thread>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 
 namespace client {
@@ -243,10 +244,26 @@ constexpr int32_t HEIGHT_TILE_WORLD_EXTENT = static_cast<int32_t>(
     shared::WorldExtent::WIDTH / shared::HEIGHT_TILE_SIDE_LENGTH
 );
 
+std::unordered_map<GLFWwindow*, double>& pendingWindowScrollDeltas()
+{
+    static std::unordered_map<GLFWwindow*, double> deltas;
+    return deltas;
+}
+
+void recordWindowScroll(GLFWwindow* window, double, double y_offset) noexcept
+{
+    auto const entry = pendingWindowScrollDeltas().find(window);
+    if (entry != pendingWindowScrollDeltas().end() && std::isfinite(y_offset)) {
+        entry->second = std::clamp(entry->second + y_offset, -64.0, 64.0);
+    }
+}
+
 [[nodiscard]] bool systemShortcutModifierPressed(GLFWwindow* const window) noexcept
 {
     return glfwGetKey(window, GLFW_KEY_LEFT_SUPER) == GLFW_PRESS
-        || glfwGetKey(window, GLFW_KEY_RIGHT_SUPER) == GLFW_PRESS;
+        || glfwGetKey(window, GLFW_KEY_RIGHT_SUPER) == GLFW_PRESS
+        || glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS
+        || glfwGetKey(window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS;
 }
 
 void addOutlinedGuiText(
@@ -1374,6 +1391,8 @@ private:
 
 PlayerClient::~PlayerClient()
 {
+    glfwSetScrollCallback(m_window.nativeHandle(), nullptr);
+    pendingWindowScrollDeltas().erase(m_window.nativeHandle());
     m_terrain_lod.reset(&m_renderer);
     m_preview_cache_retirement_reaper->extractAll(*this);
     drainPreviewCacheRetirements();
@@ -1590,6 +1609,8 @@ PlayerClient::PlayerClient(
         projection.vertical_fov_degrees = plan.vertical_fov_degrees;
         static_cast<void>(m_camera.setProjection(projection));
     }
+    pendingWindowScrollDeltas().emplace(m_window.nativeHandle(), 0.0);
+    glfwSetScrollCallback(m_window.nativeHandle(), recordWindowScroll);
 }
 
 bool PlayerClient::requestDiagnosticFrameCapture(std::filesystem::path image_path)
@@ -4032,7 +4053,12 @@ void PlayerClient::synchronizeContinuousLook() noexcept
         worldLoadingStatus().state,
         focused,
         systemShortcutModifierPressed(window)
+            || m_pressed_loading_keys.contains(GLFW_KEY_LEFT_ALT)
+            || m_pressed_loading_keys.contains(GLFW_KEY_RIGHT_ALT)
     );
+    if (m_continuous_look_active && !capture) {
+        captureStartTransitionInputs();
+    }
     if (!capture) {
         releaseActiveBreakAction();
         m_pending_block_actions.fill({});
@@ -4093,9 +4119,18 @@ bool PlayerClient::updatePlatformInputSnapshot(
     std::span<int const> const pressed_keys,
     std::span<int const> const pressed_mouse_buttons,
     double const cursor_x,
-    double const cursor_y
+    double const cursor_y,
+    double const scroll_delta
 )
 {
+    if (m_benchmark_hooks && m_benchmark_hooks->isolate_platform_input) {
+        m_pressed_loading_keys.clear();
+        m_pressed_loading_mouse_buttons.clear();
+        m_window_focused = false;
+        m_continuous_look_active = false;
+        m_has_cursor_position = false;
+        return false;
+    }
     std::array<bool, GLFW_KEY_LAST + 1U> key_was_pressed{};
     for (int const key : m_pressed_loading_keys) {
         if (key >= 0 && key <= GLFW_KEY_LAST) {
@@ -4143,8 +4178,11 @@ bool PlayerClient::updatePlatformInputSnapshot(
         captureStartTransitionInputs();
         return new_input_edge;
     }
-    if (!focused || systemShortcutModifierPressed(window)) {
+    if (!focused || glfwGetKey(window, GLFW_KEY_LEFT_SUPER) == GLFW_PRESS
+        || glfwGetKey(window, GLFW_KEY_RIGHT_SUPER) == GLFW_PRESS
+        || is_pressed(GLFW_KEY_LEFT_SUPER) || is_pressed(GLFW_KEY_RIGHT_SUPER)) {
         releaseActiveBreakAction();
+        m_s2_world_map_drag_cursor.reset();
         return new_input_edge;
     }
 
@@ -4167,12 +4205,11 @@ bool PlayerClient::updatePlatformInputSnapshot(
                 m_s2_world_map_dirty = true;
             }
         };
-        static constexpr std::array<std::pair<int, S2WorldMapAction>, 8U> LAYER_KEYS{{
+        static constexpr std::array<std::pair<int, S2WorldMapAction>, 7U> LAYER_KEYS{{
             {GLFW_KEY_P, S2WorldMapAction::TogglePlates},
             {GLFW_KEY_H, S2WorldMapAction::ToggleHeights},
             {GLFW_KEY_T, S2WorldMapAction::ToggleTemperature},
             {GLFW_KEY_B, S2WorldMapAction::ToggleBiomes},
-            {GLFW_KEY_W, S2WorldMapAction::ToggleWind},
             {GLFW_KEY_C, S2WorldMapAction::ToggleCurrents},
             {GLFW_KEY_O, S2WorldMapAction::ToggleMoisture},
             {GLFW_KEY_Q, S2WorldMapAction::TogglePrecipitation},
@@ -4182,21 +4219,51 @@ bool PlayerClient::updatePlatformInputSnapshot(
                 apply_action(action);
             }
         }
-        if (is_pressed(GLFW_KEY_UP)) {
-            apply_action(S2WorldMapAction::PanUp, is_pressed(GLFW_KEY_LEFT_SHIFT)
-                || is_pressed(GLFW_KEY_RIGHT_SHIFT));
+        bool const control = is_pressed(GLFW_KEY_LEFT_CONTROL) || is_pressed(GLFW_KEY_RIGHT_CONTROL);
+        bool const fast = is_pressed(GLFW_KEY_LEFT_SHIFT) || is_pressed(GLFW_KEY_RIGHT_SHIFT);
+        if (control && is_pressed(GLFW_KEY_W) && !was_pressed(GLFW_KEY_W)) {
+            apply_action(S2WorldMapAction::ToggleWind);
         }
-        if (is_pressed(GLFW_KEY_DOWN)) {
-            apply_action(S2WorldMapAction::PanDown, is_pressed(GLFW_KEY_LEFT_SHIFT)
-                || is_pressed(GLFW_KEY_RIGHT_SHIFT));
+        if (is_pressed(GLFW_KEY_UP) || (is_pressed(GLFW_KEY_W) && !control)) {
+            apply_action(S2WorldMapAction::PanUp, fast);
         }
-        if (is_pressed(GLFW_KEY_LEFT)) {
-            apply_action(S2WorldMapAction::PanLeft, is_pressed(GLFW_KEY_LEFT_SHIFT)
-                || is_pressed(GLFW_KEY_RIGHT_SHIFT));
+        if (is_pressed(GLFW_KEY_DOWN) || is_pressed(GLFW_KEY_S)) {
+            apply_action(S2WorldMapAction::PanDown, fast);
         }
-        if (is_pressed(GLFW_KEY_RIGHT)) {
-            apply_action(S2WorldMapAction::PanRight, is_pressed(GLFW_KEY_LEFT_SHIFT)
-                || is_pressed(GLFW_KEY_RIGHT_SHIFT));
+        if (is_pressed(GLFW_KEY_LEFT) || is_pressed(GLFW_KEY_A)) {
+            apply_action(S2WorldMapAction::PanLeft, fast);
+        }
+        if (is_pressed(GLFW_KEY_RIGHT) || is_pressed(GLFW_KEY_D)) {
+            apply_action(S2WorldMapAction::PanRight, fast);
+        }
+        if (std::isfinite(scroll_delta) && scroll_delta != 0.0) {
+            m_s2_world_map_state.zoom = std::clamp(m_s2_world_map_state.zoom + 0.25 * scroll_delta, 1.0, 6.0);
+            m_s2_world_map_state.overview = false;
+        }
+        bool const dragging = is_mouse_pressed(GLFW_MOUSE_BUTTON_LEFT)
+            && !m_start_transition_mouse_buttons.contains(GLFW_MOUSE_BUTTON_LEFT)
+            && std::isfinite(cursor_x) && std::isfinite(cursor_y);
+        if (dragging) {
+            if (m_s2_world_map_drag_cursor) {
+                uint32_t width = 0U;
+                uint32_t height = 0U;
+                m_window.framebufferSize(width, height);
+                double const pixels = static_cast<double>(std::max(width, height)) * m_s2_world_map_state.zoom;
+                if (pixels > 0.0) {
+                    double const period = static_cast<double>(generation::WORLD_SIZE_BLOCKS);
+                    auto const wrap = [period](double value) {
+                        return std::fmod(std::fmod(value, period) + period, period);
+                    };
+                    m_s2_world_map_state.center_x = wrap(m_s2_world_map_state.center_x
+                        - (cursor_x - (*m_s2_world_map_drag_cursor)[0]) * period / pixels);
+                    m_s2_world_map_state.center_y = wrap(m_s2_world_map_state.center_y
+                        - (cursor_y - (*m_s2_world_map_drag_cursor)[1]) * period / pixels);
+                    m_s2_world_map_state.overview = false;
+                }
+            }
+            m_s2_world_map_drag_cursor = std::array<double, 2U>{cursor_x, cursor_y};
+        } else {
+            m_s2_world_map_drag_cursor.reset();
         }
         if (is_pressed(GLFW_KEY_EQUAL) && !was_pressed(GLFW_KEY_EQUAL)) {
             apply_action(S2WorldMapAction::ZoomIn);
@@ -4229,6 +4296,12 @@ bool PlayerClient::updatePlatformInputSnapshot(
         && cursor_y < m_s2_minimap_bounds[1] + m_s2_minimap_bounds[3];
     if (map_key_edge || (minimap_click_edge && minimap_contains_cursor)) {
         setWorldMapOpen(true, player_x, player_y);
+        return new_input_edge;
+    }
+    if (glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS
+        || glfwGetKey(window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS
+        || is_pressed(GLFW_KEY_LEFT_ALT) || is_pressed(GLFW_KEY_RIGHT_ALT)) {
+        releaseActiveBreakAction();
         return new_input_edge;
     }
     updateBlockActionInput(
@@ -4676,6 +4749,7 @@ void PlayerClient::setWorldMapOpen(bool const open, double const player_x, doubl
         m_s2_world_map_state.overview = false;
     }
     m_s2_world_map_open = open;
+    m_s2_world_map_drag_cursor.reset();
     m_input_actions.reset();
     m_has_cursor_position = false;
     captureStartTransitionInputs();
@@ -4683,6 +4757,8 @@ void PlayerClient::setWorldMapOpen(bool const open, double const player_x, doubl
 
 void PlayerClient::resetWorldMapSource()
 {
+    m_s2_map_vector_triangles.clear();
+    static_cast<void>(m_renderer.setGuiVectorTriangles({}));
     if (m_s2_minimap_lod_worker) {
         m_s2_minimap_lod_worker->invalidate();
     }
@@ -4694,6 +4770,7 @@ void PlayerClient::resetWorldMapSource()
     m_s2_minimap_bounds = {};
     m_s2_world_map_dirty = true;
     m_s2_world_map_open = false;
+    m_s2_world_map_drag_cursor.reset();
     m_s2_map_view_in_slot_one = false;
     m_renderer.clearMapImage(0U);
     m_renderer.clearMapImage(1U);
@@ -4702,6 +4779,7 @@ void PlayerClient::resetWorldMapSource()
 
 void PlayerClient::updatePlayingMapPresentation()
 {
+    m_s2_map_vector_triangles.clear();
     bool const map_ui_enabled = !m_benchmark.has_value() && !m_capture.has_value();
     auto const world = map_ui_enabled ? terrainLodWorld() : nullptr;
     auto const root_lod = world ? terrainLodRoot() : nullptr;
@@ -4810,7 +4888,7 @@ void PlayerClient::updatePlayingMapPresentation()
         S2MapOverlayLayout const overlay = buildS2WorldMapOverlay(
             m_s2_world_map_state, m_s2_world_map_image ? &*m_s2_world_map_image : nullptr,
             world.get(), player_x, player_y, framebuffer_width, framebuffer_height,
-            dpi_scale, world_map_text
+            dpi_scale, world_map_text, m_s2_map_vector_triangles
         );
         auto const view = composeS2WorldMapView(
             m_s2_world_map_image ? &*m_s2_world_map_image : nullptr,
@@ -4863,12 +4941,6 @@ void PlayerClient::updatePlayingMapPresentation()
     m_renderer.setDebugHudEnabled(m_debug_hud_enabled && !m_s2_world_map_open);
 
     if (!m_s2_world_map_open && layout.show_minimap && m_s2_minimap_lod && player) {
-        static constexpr TextColor MARKER_COLOR{
-            .red = 1.0F,
-            .green = 0.80F,
-            .blue = 0.32F,
-            .alpha = 1.0F,
-        };
         static constexpr TextColor CARDINAL_COLOR{
             .red = 1.0F, .green = 0.89F, .blue = 0.60F, .alpha = 1.0F,
         };
@@ -4891,7 +4963,7 @@ void PlayerClient::updatePlayingMapPresentation()
             heading,
             layout.minimap_bounds
         );
-        static constexpr std::string_view MINIMAP_CAPTION = "Terrain L1";
+        static constexpr std::string_view MINIMAP_CAPTION = "Terrain";
         m_renderer.addGuiText(MINIMAP_CAPTION, {
             .position = { layout.minimap_bounds[0] + (layout.minimap_bounds[2]
                 - static_cast<float>(MINIMAP_CAPTION.size()) * 8.0F * dpi_scale) * 0.5F,
@@ -4899,11 +4971,7 @@ void PlayerClient::updatePlayingMapPresentation()
             .scale = 0.5F * dpi_scale,
         }, TextColor{ .red = 0.90F, .green = 0.92F, .blue = 0.84F, .alpha = 1.0F });
         if (marker.visible) {
-            addOutlinedGuiText(m_renderer, std::string(1U, marker.direction_glyph), {
-                .position = { marker.x - 8.0F * hud_layout.glyph_scale,
-                    marker.y - 16.0F * hud_layout.glyph_scale, 0.0F },
-                .scale = hud_layout.glyph_scale,
-            }, MARKER_COLOR, hud_layout.outline_offset_pixels);
+            appendS2MinimapPointerTriangles(marker, layout.minimap_bounds, dpi_scale, m_s2_map_vector_triangles);
             std::string heading_label = std::to_string(
                 static_cast<unsigned>(std::lround(marker.heading_degrees)) % 360U
             );
@@ -4931,6 +4999,7 @@ void PlayerClient::updatePlayingMapPresentation()
     for (TextLabel const& label : world_map_text.labels()) {
         m_renderer.addGuiText(label.value, label.placement, label.color);
     }
+    static_cast<void>(m_renderer.setGuiVectorTriangles(m_s2_map_vector_triangles));
 }
 
 void PlayerClient::captureStartTransitionInputs()
@@ -5166,6 +5235,9 @@ void PlayerClient::updateLoadingPresentation(WorldLoadingStatus const& status)
 }
 
 shared::Direction PlayerClient::input() {
+    if (m_benchmark_hooks && m_benchmark_hooks->isolate_platform_input) {
+        return {};
+    }
     ++m_movement_diagnostic_samples;
     m_movement_diagnostic_sampled_at = std::chrono::steady_clock::now();
     m_movement_diagnostic_direction = {};
@@ -5379,6 +5451,15 @@ void PlayerClient::observeMovementDiagnostics()
 void PlayerClient::servicePlatformEvents() {
     m_window.pollEvents();
     GLFWwindow* const window = m_window.nativeHandle();
+    if (m_benchmark_hooks && m_benchmark_hooks->isolate_platform_input) {
+        static_cast<void>(updatePlatformInputSnapshot({}, {}, 0.0, 0.0, 0.0));
+        pendingWindowScrollDeltas().at(window) = 0.0;
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        if (m_window.shouldClose()) {
+            m_running = false;
+        }
+        return;
+    }
     bool const system_shortcut_modifier_pressed = systemShortcutModifierPressed(window);
     bool const screenshot_key_pressed = glfwGetKey(window, GLFW_KEY_F2) == GLFW_PRESS;
     if (m_screenshot_capture_key_latch.update(screenshot_key_pressed)
@@ -5406,11 +5487,13 @@ void PlayerClient::servicePlatformEvents() {
     float content_scale_x = 1.0F;
     float content_scale_y = 1.0F;
     glfwGetWindowContentScale(window, &content_scale_x, &content_scale_y);
+    double const scroll_delta = std::exchange(pendingWindowScrollDeltas().at(window), 0.0);
     bool const new_input_edge = updatePlatformInputSnapshot(
         std::span<int const>{ pressed_keys.data(), pressed_key_count },
         std::span<int const>{ pressed_mouse_buttons.data(), pressed_mouse_button_count },
         cursor_x * static_cast<double>(content_scale_x),
-        cursor_y * static_cast<double>(content_scale_y)
+        cursor_y * static_cast<double>(content_scale_y),
+        scroll_delta
     );
     if (!map_was_open && !m_s2_world_map_open && glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         m_running = false;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <client/render/GuiVector.hpp>
 #include <client/render/MapImageDraw.hpp>
 #include <client/render/TextRenderer.hpp>
 
@@ -48,6 +49,14 @@ struct S2WorldMapState final {
     };
 };
 
+struct S2PlateMotion final {
+    int16_t id = 0;
+    float x = 0.0F;
+    float y = 0.0F;
+    float vector_x = 0.0F;
+    float vector_y = 0.0F;
+};
+
 struct S2MapImage final {
     uint32_t width = 0U;
     uint32_t height = 0U;
@@ -60,6 +69,7 @@ struct S2MapImage final {
     uint32_t ice_snow_count = 0U;
     uint32_t ice_water_count = 0U;
     bool has_display_ice_mask = false;
+    std::vector<S2PlateMotion> plate_motions;
     std::vector<std::array<uint8_t, 4U>> rgba;
 };
 
@@ -117,7 +127,6 @@ struct S2MinimapMarker final {
     float x = 0.0F;
     float y = 0.0F;
     double heading_degrees = 0.0;
-    char direction_glyph = '^';
     bool visible = false;
 };
 
@@ -170,7 +179,15 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
     uint32_t width,
     uint32_t height,
     float dpi_scale,
-    TextRenderer& output
+    TextRenderer& output,
+    std::vector<GuiVectorVertex>& vector_triangles
+);
+
+void appendS2MinimapPointerTriangles(
+    S2MinimapMarker const& marker,
+    std::array<float, 4U> const& minimap_bounds,
+    float dpi_scale,
+    std::vector<GuiVectorVertex>& vector_triangles
 );
 
 [[nodiscard]]

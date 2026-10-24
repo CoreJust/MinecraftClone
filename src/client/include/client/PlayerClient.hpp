@@ -15,6 +15,7 @@
 #include "TerrainLodRuntime.hpp"
 #include "WorldLoading.hpp"
 #include "render/DebugHud.hpp"
+#include "render/GuiVector.hpp"
 #include "render/InstalledShaderAssets.hpp"
 #include "render/PresentationFrameProgress.hpp"
 #include "render/VulkanRenderer.hpp"
@@ -647,7 +648,8 @@ private:
         std::span<int const> pressed_keys,
         std::span<int const> pressed_mouse_buttons,
         double cursor_x,
-        double cursor_y
+        double cursor_y,
+        double scroll_delta = 0.0
     );
     void setWorldMapOpen(bool open, double player_x, double player_y);
     void updatePlayingMapPresentation();
@@ -865,6 +867,8 @@ private:
     std::unique_ptr<PreviewMeshWorkerPool> m_preview_mesh_workers;
     std::unique_ptr<S2MinimapLodWorker> m_s2_minimap_lod_worker;
     S2WorldMapState m_s2_world_map_state{};
+    std::vector<GuiVectorVertex> m_s2_map_vector_triangles;
+    std::optional<std::array<double, 2U>> m_s2_world_map_drag_cursor;
     std::optional<shared::TerrainIdentity> m_s2_map_identity;
     uint64_t m_s2_map_join_epoch = 0U;
     std::optional<S2MapImage> m_s2_world_map_image;

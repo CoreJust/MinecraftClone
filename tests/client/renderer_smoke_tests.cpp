@@ -4,6 +4,7 @@
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/StoneFaceCapacity.hpp>
 #include <client/render/StoneIndirectDraws.hpp>
+#include <client/render/TerrainLodUploadPlan.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/world/ChunkMesher.hpp>
@@ -42,6 +43,52 @@
 #include <vector>
 
 namespace {
+
+TEST(RendererSmokeTest, ExactTerrainReplacementPreservesUnrelatedRangesAndRemovesEmptyGroup)
+{
+    client::TerrainLodScene active;
+    active.faces = {{.z = 1}, {.z = 2}, {.z = 3}};
+    active.groups = {
+        {.range = {0U, 1U}, .extent = 16U},
+        {.range = {1U, 1U}, .origin_x = 16U, .extent = 16U},
+        {.range = {2U, 1U}, .origin_x = 32U, .extent = 32U},
+    };
+    std::array<client::StoneIndirectDraws::Range, 3> const ranges{{{10U, 1U}, {20U, 1U}, {30U, 1U}}};
+    client::TerrainLodScene patch;
+    patch.faces = {{.z = 4}, {.z = 5}};
+    patch.groups = {
+        {.range = {0U, 2U}, .extent = 16U},
+        {.range = {2U, 0U}, .origin_x = 16U, .extent = 16U},
+    };
+    auto const plan = client::detail::terrainLodReplacementPlan(active, ranges, patch);
+    ASSERT_TRUE(plan.scene);
+    EXPECT_EQ(plan.scene->faces, (std::vector<client::StoneFaceInstance>{{.z = 4}, {.z = 5}, {.z = 3}}));
+    EXPECT_EQ(plan.scene->groups[1].range.instance_count, 0U);
+    EXPECT_FALSE(plan.reusable[0]);
+    EXPECT_FALSE(plan.reusable[1]);
+    ASSERT_EQ(plan.reusable[2], 2U);
+    EXPECT_EQ(plan.ranges[2].first_instance, 30U);
+    EXPECT_EQ(plan.ranges[2].instance_count, 1U);
+    EXPECT_EQ(plan.uploaded, (std::vector<uint32_t>{0U, 0U, 1U}));
+    client::detail::validateTerrainLodGroups(*plan.scene);
+    EXPECT_EQ(active.faces[0].z, 1);
+}
+
+TEST(RendererSmokeTest, ExactTerrainReplacementRejectsStaleCoverageAndUnknownKeys)
+{
+    client::TerrainLodScene active;
+    active.groups = {{.range = {0U, 0U}, .extent = 16U}};
+    std::array<client::StoneIndirectDraws::Range, 1> const ranges{};
+    auto patch = active;
+    ++patch.coverage_epoch;
+    EXPECT_THROW(static_cast<void>(client::detail::terrainLodReplacementPlan(active, ranges, patch)), std::invalid_argument);
+    patch = active;
+    patch.groups[0].origin_x = 16U;
+    EXPECT_THROW(static_cast<void>(client::detail::terrainLodReplacementPlan(active, ranges, patch)), std::invalid_argument);
+    patch = active;
+    patch.groups[0].extent = 32U;
+    EXPECT_THROW(static_cast<void>(client::detail::terrainLodReplacementPlan(active, ranges, patch)), std::invalid_argument);
+}
 
 TEST(RendererSmokeTest, DisabledTerrainOcclusionRetainsEveryRange)
 {
@@ -1434,7 +1481,10 @@ TEST(RendererSmokeTest, RuntimeSceneAndHudReceiptAdvanceOnlyAfterSubmission)
     EXPECT_EQ(first_receipt.terrain_lod_scene, first);
     EXPECT_FALSE(first_receipt.debug_hud_enabled);
 
-    ASSERT_TRUE(publish(second));
+    while (!renderer.replaceTerrainLodGroups(second, deadline)) {
+        ASSERT_LT(std::chrono::steady_clock::now(), deadline);
+        std::this_thread::yield();
+    }
     renderer.setDebugHudEnabled(true);
     auto const undrawn_receipt = renderer.runtimeInfo();
     EXPECT_EQ(undrawn_receipt.submitted_frame_count, first_receipt.submitted_frame_count);
@@ -1443,7 +1493,8 @@ TEST(RendererSmokeTest, RuntimeSceneAndHudReceiptAdvanceOnlyAfterSubmission)
     ASSERT_TRUE(submit());
     auto const second_receipt = renderer.runtimeInfo();
     EXPECT_GT(second_receipt.submitted_frame_count, first_receipt.submitted_frame_count);
-    EXPECT_EQ(second_receipt.terrain_lod_scene, second);
+    ASSERT_TRUE(second_receipt.terrain_lod_scene);
+    EXPECT_EQ(second_receipt.terrain_lod_scene->faces, second->faces);
     EXPECT_TRUE(second_receipt.debug_hud_enabled);
     EXPECT_EQ(first_receipt.terrain_lod_scene, first);
     EXPECT_EQ(renderer.validationErrorCount(), 0U);
@@ -2764,6 +2815,46 @@ TEST(RendererSmokeTest, AdaptiveGlyphSamplesTheSameFrameSceneAcrossOverlappingHu
     EXPECT_EQ(renderer.validationErrorCount(), 0U);
 }
 
+TEST(RendererSmokeTest, GuiVectorTrianglesBlendAboveMapAndBelowTextAndClearWithoutStalePixels)
+{
+    client::InstalledShaderAssets const shaders;
+    client::VulkanOffscreenRenderer renderer{shaders, true};
+    renderer.setDebugHudEnabled(false);
+    std::array<std::array<uint8_t, 4>, 1U> const map{{{0U, 0U, 0U, 255U}}};
+    ASSERT_TRUE(renderer.setMapImage(1U, 1U, map));
+    renderer.addGuiText("M", {.position = {250.0F, 180.0F, 0.0F}});
+    auto const baseline = renderer.render({});
+    std::array<client::GuiVectorVertex, 3U> const triangle{{
+        {{100.0F, 100.0F}, {255U, 0U, 0U, 128U}},
+        {{500.0F, 100.0F}, {255U, 0U, 0U, 128U}},
+        {{100.0F, 450.0F}, {255U, 0U, 0U, 128U}},
+    }};
+    ASSERT_TRUE(renderer.setGuiVectorTriangles(triangle));
+    auto const composed = renderer.render({});
+    auto const pixel = [](auto const& image, uint32_t x, uint32_t y, uint32_t channel) {
+        return image.rgba8[(static_cast<size_t>(y) * image.width + x) * 4U + channel];
+    };
+    EXPECT_GT(pixel(composed, 150U, 150U, 0U), pixel(baseline, 150U, 150U, 0U));
+    EXPECT_LT(pixel(composed, 150U, 150U, 0U), 255U);
+    EXPECT_EQ(pixel(composed, 150U, 150U, 1U), pixel(baseline, 150U, 150U, 1U));
+    size_t white_text_pixels = 0U;
+    for (uint32_t y = 180U; y < 212U; ++y) {
+        for (uint32_t x = 250U; x < 266U; ++x) {
+            if (pixel(baseline, x, y, 0U) > 245U && pixel(baseline, x, y, 1U) > 245U) {
+                ++white_text_pixels;
+                EXPECT_GE(pixel(composed, x, y, 1U), 245U);
+                EXPECT_GE(pixel(composed, x, y, 2U), 245U);
+            }
+        }
+    }
+    EXPECT_GT(white_text_pixels, 10U);
+    EXPECT_FALSE(renderer.setGuiVectorTriangles(std::span{triangle}.first(2U)));
+    EXPECT_EQ(renderer.render({}).rgba8, composed.rgba8);
+    ASSERT_TRUE(renderer.setGuiVectorTriangles({}));
+    EXPECT_EQ(renderer.render({}).rgba8, baseline.rgba8);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
 TEST(RendererSmokeTest, AdaptiveOffscreenGlyphPreservesRawLinearAlphaAndFixedStyle)
 {
     client::InstalledShaderAssets const shaders;
@@ -2900,6 +2991,64 @@ TEST(RendererSmokeTest, BlockEffectsShowTargetCracksAndAcceptedParticlesWithScen
     auto const cleared = capture();
     ASSERT_TRUE(cleared);
     EXPECT_EQ(cleared->rgba8, baseline->rgba8);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, ExactTerrainReplacementRemovesAndRestoresVisibleGeometry)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 320U, .height = 240U, .title = "Exact terrain group replacement",
+        },
+    };
+    client::InstalledShaderAssets const shaders;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window, {.require_validation = true, .enable_frame_capture = true}),
+        shaders, {.require_validation = true, .enable_frame_capture = true},
+    };
+    renderer.setDebugHudEnabled(false);
+    renderer.setFallbackSceneEnabled(false);
+    renderer.setCamera({.position = {32'768.5, 32'768.0, 64.5}}, {.vertical_fov_degrees = 1.0});
+    auto scene = std::make_shared<client::TerrainLodScene>();
+    scene->faces = {client::StoneFaceInstance::fromChunkFace({2'048, 2'064, 4}, {
+        .local_origin = {0U, 0U, 0U}, .direction = shared::FaceDirection::NegativeY,
+        .material = shared::Block::Stone,
+    })};
+    scene->groups = {{.range = {0U, 1U}, .origin_x = 32'768U, .origin_y = 33'024U,
+        .extent = 16U, .minimum_z = 64, .maximum_z = 65}};
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+    while (!renderer.upsertTerrainLodScene(scene, deadline)) {
+        ASSERT_LT(std::chrono::steady_clock::now(), deadline);
+        std::this_thread::yield();
+    }
+    auto capture = [&]() -> std::optional<client::RendererFrameCapture> {
+        renderer.requestFrameCapture();
+        for (uint32_t attempt = 0U; attempt < 20U && std::chrono::steady_clock::now() < deadline; ++attempt) {
+            if (!window.nextFrame()) { return std::nullopt; }
+            static_cast<void>(renderer.render({}, deadline));
+            auto result = renderer.takeFrameCapture();
+            if (result) { return result; }
+        }
+        return std::nullopt;
+    };
+    auto const before = capture();
+    ASSERT_TRUE(before);
+    auto empty = std::make_shared<client::TerrainLodScene>(*scene);
+    empty->faces.clear();
+    empty->groups[0].range.instance_count = 0U;
+    ASSERT_TRUE(renderer.replaceTerrainLodGroups(empty, deadline));
+    auto const removed = capture();
+    ASSERT_TRUE(removed);
+    EXPECT_NE(removed->rgba8, before->rgba8);
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, 0U);
+    while (!renderer.replaceTerrainLodGroups(scene, deadline)) {
+        ASSERT_LT(std::chrono::steady_clock::now(), deadline);
+        std::this_thread::yield();
+    }
+    auto const restored = capture();
+    ASSERT_TRUE(restored);
+    EXPECT_EQ(restored->rgba8, before->rgba8);
     EXPECT_EQ(renderer.validationErrorCount(), 0U);
 }
 

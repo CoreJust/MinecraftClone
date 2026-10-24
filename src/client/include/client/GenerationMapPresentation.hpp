@@ -46,6 +46,7 @@ struct GenerationMapAnimationClock final
     // Elapsed for one world identity; the caller pauses it while the loading view is hidden.
     std::chrono::milliseconds visible_elapsed{};
     bool reduced_motion = false;
+    // Authoritative readiness does not advance the desktop illustrative timeline.
     bool ready = false;
 };
 

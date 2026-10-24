@@ -1131,15 +1131,16 @@ bool World::moveFlightPlayer(
         struct HorizontalCandidate final {
             int64_t x;
             int64_t y;
+            int64_t z;
         };
         auto const resolveHorizontal = [&](int64_t const delta, bool const on_x_axis) {
-            HorizontalCandidate candidate{ .x = start_x, .y = start_y };
+            HorizontalCandidate candidate{ .x = start_x, .y = start_y, .z = start_z };
             if (delta == 0) {
                 return candidate;
             }
             int64_t const axis_steps = std::max<int64_t>(
                 1,
-                (absolute(delta) + SWEEP_STRIDE - 1) / SWEEP_STRIDE
+                (std::max(absolute(delta), absolute(delta_z)) + SWEEP_STRIDE - 1) / SWEEP_STRIDE
             );
             for (int64_t step = 1; step <= axis_steps; ++step) {
                 int64_t const sample_x = on_x_axis
@@ -1152,6 +1153,7 @@ bool World::moveFlightPlayer(
                 }
                 candidate.x = sample_x;
                 candidate.y = sample_y;
+                candidate.z = sample_z;
             }
             return candidate;
         };
@@ -1162,9 +1164,11 @@ bool World::moveFlightPlayer(
             if (delta_x == 0) {
                 resolved_x = y_candidate.x;
                 resolved_y = y_candidate.y;
+                resolved_z = y_candidate.z;
             } else if (delta_y == 0) {
                 resolved_x = x_candidate.x;
                 resolved_y = x_candidate.y;
+                resolved_z = x_candidate.z;
             } else {
                 // Never compose two independently clear axis paths after the
                 // combined diagonal was blocked: that L-shaped fallback can
@@ -1176,23 +1180,25 @@ bool World::moveFlightPlayer(
                     ? x_candidate : y_candidate;
                 resolved_x = selected.x;
                 resolved_y = selected.y;
+                resolved_z = selected.z;
             }
         }
 
-        if (!direct_path_clear && delta_z != 0) {
+        int64_t const remaining_delta_z = target_z - resolved_z;
+        if (!direct_path_clear && remaining_delta_z != 0) {
             int64_t const starting_surface = m_collision_world == nullptr
                 ? terrainSurfaceUnderPlayer(resolved_x, resolved_y) : 0;
             int64_t const vertical_steps = std::max<int64_t>(
                 1,
-                (absolute(delta_z) + SWEEP_STRIDE - 1) / SWEEP_STRIDE
+                (absolute(remaining_delta_z) + SWEEP_STRIDE - 1) / SWEEP_STRIDE
             );
-            int64_t last_z = start_z;
+            int64_t last_z = resolved_z;
             for (int64_t step = 1; step <= vertical_steps; ++step) {
-                int64_t sample_z = start_z + delta_z * step / vertical_steps;
+                int64_t sample_z = resolved_z + remaining_delta_z * step / vertical_steps;
                 int64_t const surface = m_collision_world == nullptr
                     ? terrainSurfaceUnderPlayer(resolved_x, resolved_y) : 0;
                 if (sample_z < surface) {
-                    if (delta_z > 0) {
+                    if (remaining_delta_z > 0) {
                         // The player may have advanced onto a higher terrain
                         // column during the horizontal sweep. Keep ascending
                         // until the body clears that column instead of freezing

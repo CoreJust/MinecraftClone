@@ -1,4 +1,4 @@
-Run [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-distance CHUNKS]`, `--player-client`/`--bot-client` (use `--address IP:PORT`). No args/`--local-game` owns/shuts down server/window. Local play uses ephemeral loopback; explicit ports retain semantics. T0 precedes preparation. `--player-client-2d --address IP:PORT --replay stationary|ordinary-turning --seconds 1..120 --evidence DIR` records logical CPU column-map frames; graphics-free `mc_column_map` omits selector.
+Run [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-distance CHUNKS]`, `--player-client`/`--bot-client` (use `--address IP:PORT`). No args/`--local-game` owns server/window lifetime; local play uses ephemeral loopback; explicit ports are unchanged. T0 precedes preparation. `--player-client-2d --address IP:PORT --replay stationary|ordinary-turning --seconds 1..120 --evidence DIR` records logical CPU column-map frames; graphics-free `mc_column_map` omits selector.
 
 ## Shared simulation
 
@@ -6,7 +6,7 @@ Run [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-di
 
 ## Deterministic scenario plans
 
-[Scenario.hpp](../../src/shared/include/shared/scenario/Scenario.hpp) defines bounded CoreLang `@version(0.1.5)` plans. Hosts validate combined backend-comparison program/resource budgets prepublication; rejection starts no runner/world mutation. `flat3d-v1` stores position/yaw/pitch/roll (Z=0; yaw 0 faces +Y, positive +X). Evidence separates replay IDs, inputs, 100-ms ticks and presentation cadence; vertical camera defaults to zero ([scripting guide](../scripting/README.md)).
+[Scenario.hpp](../../src/shared/include/shared/scenario/Scenario.hpp) defines bounded CoreLang `@version(0.1.5)` plans. Hosts validate combined backend-comparison program/resource budgets prepublication; rejection starts no runner/world mutation. `flat3d-v1` stores position/yaw/pitch/roll (Z=0; yaw 0 faces +Y, positive +X). Evidence separates replay IDs, inputs, ticks and presentation; vertical camera defaults to zero ([scripting guide](../scripting/README.md)).
 
 ## Permissions
 
@@ -29,8 +29,7 @@ Capabilities 0/1/3 are valid; invalid input and stale ACKs cannot mutate state.
 
 [GameServer](../../src/server/GameServer.cpp) defaults to port `20040`. Polls drain
 ≤256 events/1 ms; active/idle waits are 1/5 ms. Ticks serialize one action/player;
-idle gravity advances revisions without inventing ACKs. Invalid joins,
-duplicate characters and pre-join inputs fail; disconnects remove players.
+idle gravity advances revisions without inventing ACKs. Invalid joins, duplicate characters and pre-join inputs fail; disconnects remove players.
 
 Sequenced intents validate session, accepted eye aim, reach, visibility,
 mode/rights and cell version. Hard vetoes win. Breaks lose credit on target,
@@ -60,8 +59,7 @@ identity gate publication. Dense 48/80 delivery and ACK-gated promotion stay
 separate. See [Generation](GENERATION.md#bounded-materialized-prefetch).
 
 Prepared Flight joins without an explicit spawn use nearest safe dry land
-near world center, with wrapped distance and deterministic ties. Support stays
-asynchronous; explicit spawns retain coordinates and validation. See
+near world center, with wrapped distance and deterministic ties. Support stays asynchronous; explicit spawns retain validation. See
 [nearest-land spawn](GENERATION.md#nearest-land-prepared-spawn).
 
 Preview meshes grow from near-camera connected coverage and publish after a
@@ -95,14 +93,12 @@ full 640 profile route from generic 320 geometry and x200 stress. T0 never reset
 camera-relative WASD. LMB breaks while held; RMB places once; B cycles blocks, G
 requests mode.
 F5 cycles views without changing input/interest; first-person hides the body.
-Camera collision-clips; R reloads rendering.
+Camera collision-clips; R reloads.
 
 ## Canonical chunks and mesh
 
 `Chunk` validates materials/identity. `SparseWorld` remote reads preserve Unknown
-without generation. Base profiles describe solid layered columns; edit manifests
-fence missing affected Z sections. Collision/support queries share authoritative
-columns and retained edits. Dense-cache churn leaves unedited tile identity
+without generation. Base profiles describe solid columns; edit manifests fence missing Z sections. Collision/support share authoritative columns and edits. Dense-cache churn leaves unedited tile identity
 stable; edits/deletion/profile replacement invalidate it.
 
 Voxels advance cell/chunk versions. Receipt-gated deltas/snapshots retain

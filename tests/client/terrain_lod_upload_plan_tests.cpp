@@ -135,3 +135,40 @@ TEST(TerrainLodUploadPlanTest, AsyncPlannerSnapshotsActiveRangesWithoutOwningRen
     EXPECT_EQ(result->ranges[0].first_instance, 100U);
     EXPECT_EQ(result->uploaded, (std::vector<uint32_t>{ 1U }));
 }
+
+TEST(TerrainLodUploadPlanTest, ExactReplacementPublishesCurrentDependencyProvenance)
+{
+    client::TerrainLodScene active;
+    active.faces.resize(1U);
+    active.groups = {{.range = {0U, 1U}, .extent = 16U}};
+    client::TerrainLodChunkSource const old_chunk{{0, 0, 0}, {10U, 20U}, 0U};
+    client::TerrainLodChunkSource const updated_chunk{{0, 0, 0}, {11U, 21U}, 1U};
+    client::TerrainLodChunkSource const introduced_chunk{{2, 0, 9}, {12U, 22U}, 3U};
+    client::TerrainLodChunkSource const unrelated_chunk{{9, 0, 0}, {13U, 23U}, 4U};
+    client::TerrainLodAuthoritySource const old_authority{
+        {0, 0, 0}, {.revision = 1U, .seed = 7U, .configuration_identity = "before"}, 10U, 20U};
+    client::TerrainLodAuthoritySource const updated_authority{
+        {0, 0, 0}, {.revision = 2U, .seed = 8U, .configuration_identity = "after"}, 11U, 21U};
+    client::TerrainLodAuthoritySource const introduced_authority{
+        {2, 0, 0}, {.revision = 3U, .seed = 9U, .configuration_identity = "introduced"}, 12U, 22U};
+    client::TerrainLodAuthoritySource const unrelated_authority{
+        {9, 0, 0}, {.revision = 4U, .seed = 10U, .configuration_identity = "retained"}, 13U, 23U};
+    // Shared boundary dependencies can occur repeatedly in captured columns.
+    active.chunk_sources = {unrelated_chunk, old_chunk, old_chunk};
+    active.authority_sources = {unrelated_authority, old_authority, old_authority};
+    client::TerrainLodScene patch;
+    patch.faces.resize(1U);
+    patch.faces.front().z = 1;
+    patch.groups = active.groups;
+    patch.chunk_sources = {introduced_chunk, updated_chunk, updated_chunk};
+    patch.authority_sources = {introduced_authority, updated_authority, updated_authority};
+    std::array const ranges{client::StoneIndirectDraws::Range{100U, 1U}};
+    auto const plan = client::detail::terrainLodReplacementPlan(active, ranges, patch);
+    ASSERT_NE(plan.scene, nullptr);
+    EXPECT_EQ(plan.scene->chunk_sources,
+        (std::vector<client::TerrainLodChunkSource>{updated_chunk, introduced_chunk, unrelated_chunk}));
+    EXPECT_EQ(plan.scene->authority_sources,
+        (std::vector<client::TerrainLodAuthoritySource>{updated_authority, introduced_authority, unrelated_authority}));
+    EXPECT_EQ(active.chunk_sources, (std::vector<client::TerrainLodChunkSource>{unrelated_chunk, old_chunk, old_chunk}));
+    EXPECT_EQ(plan.scene->faces, patch.faces);
+}

@@ -1200,17 +1200,9 @@ struct AnimationPhaseState final
 [[nodiscard]]
 AnimationPhaseState animationPhase(GenerationMapAnimationClock const& clock) noexcept
 {
-    if (clock.ready)
-    {
-        return {
-            .phase = GenerationMapAnimationPhase::Arrival,
-            .phase_index = 5U,
-            .progress = 1.0F,
-        };
-    }
     int64_t const nonnegative_milliseconds = std::max<int64_t>(clock.visible_elapsed.count(), 0);
     static constexpr int64_t PHASE_DURATION_MILLISECONDS = 5'000;
-    static constexpr int64_t ANIMATION_DURATION_MILLISECONDS = PHASE_DURATION_MILLISECONDS * 5;
+    static constexpr int64_t ANIMATION_DURATION_MILLISECONDS = PHASE_DURATION_MILLISECONDS * 6;
     if (nonnegative_milliseconds >= ANIMATION_DURATION_MILLISECONDS)
     {
         return {
@@ -1899,7 +1891,7 @@ GenerationMapAnimationFrame GenerationMapAnimator::update(
         .phase = phase.phase,
         .phase_progress = phase.progress,
     };
-    if (clock.ready || (phase.phase == GenerationMapAnimationPhase::Arrival && final_image != nullptr))
+    if (phase.phase == GenerationMapAnimationPhase::Arrival && final_image != nullptr)
     {
         frame.image = std::move(final_image);
         return frame;

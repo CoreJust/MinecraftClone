@@ -249,95 +249,10 @@ void setPixel(S2MapImage& image, int32_t const x, int32_t const y, Color const c
     };
 }
 
-void line(S2MapImage& image, int32_t x0, int32_t y0, int32_t x1, int32_t y1, Color const color) noexcept
-{
-    int32_t const dx = std::abs(x1 - x0);
-    int32_t const sx = x0 < x1 ? 1 : -1;
-    int32_t const dy = -std::abs(y1 - y0);
-    int32_t const sy = y0 < y1 ? 1 : -1;
-    int32_t error = dx + dy;
-    while (true) {
-        setPixel(image, x0, y0, color);
-        if (x0 == x1 && y0 == y1) {
-            break;
-        }
-        int32_t const twice_error = 2 * error;
-        if (twice_error >= dy) {
-            error += dy;
-            x0 += sx;
-        }
-        if (twice_error <= dx) {
-            error += dx;
-            y0 += sy;
-        }
-    }
-}
-
-void outlinedLine(S2MapImage& image, int32_t const x0, int32_t const y0, int32_t const x1, int32_t const y1,
-    Color const color) noexcept
-{
-    for (int32_t offset = -1; offset <= 1; ++offset) {
-        line(image, x0 + offset, y0, x1 + offset, y1, VECTOR_OUTLINE_COLOR);
-        line(image, x0, y0 + offset, x1, y1 + offset, VECTOR_OUTLINE_COLOR);
-    }
-    line(image, x0, y0, x1, y1, color);
-}
-
-void drawArrow(
-    S2MapImage& image,
-    int32_t const x,
-    int32_t const y,
-    float const u,
-    float const v,
-    Color const color,
-    bool const double_head = false
-) noexcept
-{
-    float const magnitude = std::hypot(u, v);
-    if (!std::isfinite(magnitude)) {
-        return;
-    }
-    if (magnitude < 1.0e-6F) {
-        setPixel(image, x, y, color);
-        setPixel(image, x + 1, y, color);
-        setPixel(image, x, y + 1, color);
-        setPixel(image, x + 1, y + 1, color);
-        return;
-    }
-    float const dx = u / magnitude;
-    float const dy = v / magnitude;
-    constexpr int32_t HALF_LENGTH = 4;
-    int32_t const start_x = static_cast<int32_t>(std::lround(x - dx * HALF_LENGTH));
-    int32_t const start_y = static_cast<int32_t>(std::lround(y - dy * HALF_LENGTH));
-    int32_t const end_x = static_cast<int32_t>(std::lround(x + dx * HALF_LENGTH));
-    int32_t const end_y = static_cast<int32_t>(std::lround(y + dy * HALF_LENGTH));
-    outlinedLine(image, start_x, start_y, end_x, end_y, color);
-    float const scale = static_cast<float>(image.width) / 1'280.0F;
-    std::array<float, 2U> const head_offsets{0.0F, 4.0F * scale};
-    for (size_t head = 0U; head < (double_head ? head_offsets.size() : 1U); ++head) {
-        float const offset = head_offsets[head];
-        int32_t const tip_x = static_cast<int32_t>(std::lround(end_x - dx * offset));
-        int32_t const tip_y = static_cast<int32_t>(std::lround(end_y - dy * offset));
-        float const wing_length = 4.0F * scale;
-        float const wing_width = 3.0F * scale;
-        int32_t const wing1_x = static_cast<int32_t>(std::lround(tip_x - dx * wing_length - dy * wing_width));
-        int32_t const wing1_y = static_cast<int32_t>(std::lround(tip_y - dy * wing_length + dx * wing_width));
-        int32_t const wing2_x = static_cast<int32_t>(std::lround(tip_x - dx * wing_length + dy * wing_width));
-        int32_t const wing2_y = static_cast<int32_t>(std::lround(tip_y - dy * wing_length - dx * wing_width));
-        outlinedLine(image, tip_x, tip_y, wing1_x, wing1_y, color);
-        outlinedLine(image, tip_x, tip_y, wing2_x, wing2_y, color);
-    }
-}
-
 [[nodiscard]]
 std::vector<AxisSegment> splitAxis(float start, float extent)
 {
     std::vector<AxisSegment> result;
-    if (extent >= 1.0F) {
-        result.push_back({.source_start = 0.0F, .source_extent = 1.0F,
-            .destination_fraction = 0.0F, .destination_extent = 1.0F});
-        return result;
-    }
     start = static_cast<float>(wrapUnit(start));
     float const first_extent = std::min(extent, 1.0F - start);
     result.push_back({.source_start = start, .source_extent = first_extent,
@@ -532,6 +447,595 @@ float sanitizedDpi(float const dpi_scale) noexcept
         : 1.0F;
 }
 
+using ScreenPoint = std::array<float, 2U>;
+using PixelColor = std::array<uint8_t, 4U>;
+
+struct ScreenRect final {
+    float left = 0.0F;
+    float top = 0.0F;
+    float right = 0.0F;
+    float bottom = 0.0F;
+};
+
+[[nodiscard]]
+PixelColor pixelColor(Color const color, uint8_t const alpha = 255U) noexcept
+{
+    return {
+        static_cast<uint8_t>(std::clamp(std::lround(color[0U]), 0L, 255L)),
+        static_cast<uint8_t>(std::clamp(std::lround(color[1U]), 0L, 255L)),
+        static_cast<uint8_t>(std::clamp(std::lround(color[2U]), 0L, 255L)),
+        alpha,
+    };
+}
+
+[[nodiscard]]
+bool intersects(ScreenRect const& left, ScreenRect const& right) noexcept
+{
+    return left.left < right.right && left.right > right.left
+        && left.top < right.bottom && left.bottom > right.top;
+}
+
+[[nodiscard]]
+bool contains(ScreenRect const& outer, ScreenRect const& inner) noexcept
+{
+    return inner.left >= outer.left && inner.top >= outer.top
+        && inner.right <= outer.right && inner.bottom <= outer.bottom;
+}
+
+constexpr size_t MAX_GUI_TRIANGLE_VERTICES =
+    MAXIMUM_GUI_VECTOR_VERTICES - MAXIMUM_GUI_VECTOR_VERTICES % 3U;
+
+void emitTriangle(
+    std::vector<GuiVectorVertex>& output,
+    ScreenPoint const a,
+    ScreenPoint const b,
+    ScreenPoint const c,
+    PixelColor const color_a,
+    PixelColor const color_b,
+    PixelColor const color_c
+)
+{
+    output.push_back({.position = a, .rgba = color_a});
+    output.push_back({.position = b, .rgba = color_b});
+    output.push_back({.position = c, .rgba = color_c});
+}
+
+void emitSolidQuad(
+    std::vector<GuiVectorVertex>& output,
+    ScreenPoint const a,
+    ScreenPoint const b,
+    ScreenPoint const c,
+    ScreenPoint const d,
+    PixelColor const color
+)
+{
+    emitTriangle(output, a, b, c, color, color, color);
+    emitTriangle(output, a, c, d, color, color, color);
+}
+
+void emitFringeQuad(
+    std::vector<GuiVectorVertex>& output,
+    ScreenPoint const outer_a,
+    ScreenPoint const outer_b,
+    ScreenPoint const inner_b,
+    ScreenPoint const inner_a,
+    PixelColor color
+)
+{
+    PixelColor const transparent{color[0U], color[1U], color[2U], 0U};
+    emitTriangle(output, outer_a, outer_b, inner_b, transparent, transparent, color);
+    emitTriangle(output, outer_a, inner_b, inner_a, transparent, color, color);
+}
+
+[[nodiscard]]
+ScreenPoint offsetPoint(ScreenPoint const point, ScreenPoint const direction, float const amount) noexcept
+{
+    return {point[0U] + direction[0U] * amount, point[1U] + direction[1U] * amount};
+}
+
+[[nodiscard]]
+bool emitStroke(
+    std::vector<GuiVectorVertex>& output,
+    ScreenPoint const start,
+    ScreenPoint const end,
+    float const width,
+    PixelColor const color
+)
+{
+    float const dx = end[0U] - start[0U];
+    float const dy = end[1U] - start[1U];
+    float const length = std::hypot(dx, dy);
+    if (!std::isfinite(length) || length < 1.0e-4F) {
+        return false;
+    }
+    constexpr size_t STROKE_VERTEX_COUNT = 18U;
+    if (output.size() + STROKE_VERTEX_COUNT > MAX_GUI_TRIANGLE_VERTICES) {
+        return false;
+    }
+    ScreenPoint const normal{-dy / length, dx / length};
+    float const outer_half = width * 0.5F;
+    float const core_half = std::max(0.0F, outer_half - 0.55F);
+    ScreenPoint const outer_left_start = offsetPoint(start, normal, outer_half);
+    ScreenPoint const outer_left_end = offsetPoint(end, normal, outer_half);
+    ScreenPoint const inner_left_start = offsetPoint(start, normal, core_half);
+    ScreenPoint const inner_left_end = offsetPoint(end, normal, core_half);
+    ScreenPoint const outer_right_start = offsetPoint(start, normal, -outer_half);
+    ScreenPoint const outer_right_end = offsetPoint(end, normal, -outer_half);
+    ScreenPoint const inner_right_start = offsetPoint(start, normal, -core_half);
+    ScreenPoint const inner_right_end = offsetPoint(end, normal, -core_half);
+
+    emitSolidQuad(output, inner_left_start, inner_left_end, inner_right_end, inner_right_start, color);
+    emitFringeQuad(output, outer_left_start, outer_left_end, inner_left_end, inner_left_start, color);
+    emitFringeQuad(output, outer_right_end, outer_right_start, inner_right_start, inner_right_end, color);
+    return true;
+}
+
+[[nodiscard]]
+bool appendScreenArrow(
+    std::vector<GuiVectorVertex>& output,
+    ScreenPoint const center,
+    float const direction_x,
+    float const direction_y,
+    float const length,
+    Color const color,
+    bool const double_head,
+    ScreenRect const& viewport,
+    std::span<ScreenRect const> const excluded_rectangles
+)
+{
+    float const magnitude = std::hypot(direction_x, direction_y);
+    if (!std::isfinite(magnitude) || !std::isfinite(length) || length <= 0.0F) {
+        return false;
+    }
+    PixelColor const foreground = pixelColor(color);
+    PixelColor const outline = pixelColor(VECTOR_OUTLINE_COLOR);
+    if (magnitude < 1.0e-10F) {
+        ScreenRect const bounds{center[0U], center[1U], center[0U] + 2.0F, center[1U] + 2.0F};
+        if (!contains(viewport, bounds)
+            || std::any_of(excluded_rectangles.begin(), excluded_rectangles.end(), [&](ScreenRect const& rect) {
+                return intersects(bounds, rect);
+            })
+            || output.size() + 6U > MAX_GUI_TRIANGLE_VERTICES) {
+            return false;
+        }
+        emitSolidQuad(output, center, {center[0U] + 2.0F, center[1U]},
+            {center[0U] + 2.0F, center[1U] + 2.0F}, {center[0U], center[1U] + 2.0F}, foreground);
+        return true;
+    }
+
+    ScreenPoint const direction{direction_x / magnitude, direction_y / magnitude};
+    ScreenPoint const perpendicular{-direction[1U], direction[0U]};
+    ScreenPoint const start = offsetPoint(center, direction, -length * 0.5F);
+    ScreenPoint const end = offsetPoint(center, direction, length * 0.5F);
+    std::array<ScreenPoint, 8U> bounds_points{};
+    size_t bounds_point_count = 0U;
+    bounds_points[bounds_point_count++] = start;
+    bounds_points[bounds_point_count++] = end;
+    size_t const head_count = double_head ? 2U : 1U;
+    for (size_t head = 0U; head < head_count; ++head) {
+        float const offset = head == 0U ? 0.0F : 4.0F;
+        ScreenPoint const tip = offsetPoint(end, direction, -offset);
+        bounds_points[bounds_point_count++] = tip;
+        bounds_points[bounds_point_count++] = offsetPoint(
+            offsetPoint(tip, direction, -4.0F), perpendicular, -3.0F);
+        bounds_points[bounds_point_count++] = offsetPoint(
+            offsetPoint(tip, direction, -4.0F), perpendicular, 3.0F);
+    }
+    float left = bounds_points[0U][0U];
+    float right = left;
+    float top = bounds_points[0U][1U];
+    float bottom = top;
+    for (size_t index = 1U; index < bounds_point_count; ++index) {
+        left = std::min(left, bounds_points[index][0U]);
+        right = std::max(right, bounds_points[index][0U]);
+        top = std::min(top, bounds_points[index][1U]);
+        bottom = std::max(bottom, bounds_points[index][1U]);
+    }
+    constexpr float EDGE_MARGIN = 2.25F;
+    ScreenRect const bounds{left - EDGE_MARGIN, top - EDGE_MARGIN, right + EDGE_MARGIN, bottom + EDGE_MARGIN};
+    if (!contains(viewport, bounds)
+        || std::any_of(excluded_rectangles.begin(), excluded_rectangles.end(), [&](ScreenRect const& rect) {
+            return intersects(bounds, rect);
+        })) {
+        return false;
+    }
+
+    size_t const stroke_count = 3U + (double_head ? 2U : 0U);
+    size_t const required_vertices = stroke_count * 2U * 18U;
+    if (output.size() + required_vertices > MAX_GUI_TRIANGLE_VERTICES) {
+        return false;
+    }
+    auto stroke = [&](ScreenPoint const from, ScreenPoint const to) {
+        static_cast<void>(emitStroke(output, from, to, 3.5F, outline));
+        static_cast<void>(emitStroke(output, from, to, 1.5F, foreground));
+    };
+    stroke(start, end);
+    for (size_t head = 0U; head < head_count; ++head) {
+        float const offset = head == 0U ? 0.0F : 4.0F;
+        ScreenPoint const tip = offsetPoint(end, direction, -offset);
+        ScreenPoint const wing_base = offsetPoint(tip, direction, -4.0F);
+        stroke(tip, offsetPoint(wing_base, perpendicular, -3.0F));
+        stroke(tip, offsetPoint(wing_base, perpendicular, 3.0F));
+    }
+    return true;
+}
+
+struct GridSampleRange final {
+    uint32_t first = 0U;
+    uint32_t end = 0U;
+};
+
+[[nodiscard]]
+GridSampleRange mapGridSampleRange(
+    float const source_start,
+    float const source_extent,
+    uint32_t const resolution,
+    uint32_t const step,
+    float const offset
+) noexcept
+{
+    double const source_start_pixel = static_cast<double>(source_start) * resolution - 0.5;
+    double const source_end_pixel = static_cast<double>(source_start + source_extent) * resolution - 0.5;
+    int64_t const minimum = std::clamp<int64_t>(static_cast<int64_t>(std::ceil(source_start_pixel)), 0, resolution);
+    int64_t const maximum = std::clamp<int64_t>(static_cast<int64_t>(std::ceil(source_end_pixel)), 0, resolution);
+    uint32_t const grid_origin = static_cast<uint32_t>(std::floor(static_cast<float>(step) * offset));
+    int64_t first = grid_origin;
+    if (first < minimum) {
+        first += ((minimum - first + step - 1U) / step) * step;
+    }
+    return {
+        .first = static_cast<uint32_t>(std::min<int64_t>(first, resolution)),
+        .end = static_cast<uint32_t>(maximum),
+    };
+}
+
+template <typename TVisitor>
+void forEachVisibleMapGridSample(
+    S2MapLayout const& map_layout,
+    uint32_t const resolution,
+    uint32_t const step,
+    float const offset,
+    TVisitor&& visitor
+)
+{
+    for (uint32_t draw_index = 0U; draw_index < map_layout.world_draw_count; ++draw_index) {
+        MapImageDraw const& draw = map_layout.world_draws[draw_index];
+        if (!validMapImageDraw(draw) || draw.image != 0U) {
+            continue;
+        }
+        GridSampleRange const x_range = mapGridSampleRange(
+            draw.source[0U], draw.source[2U], resolution, step, offset);
+        GridSampleRange const y_range = mapGridSampleRange(
+            draw.source[1U], draw.source[3U], resolution, step, offset);
+        for (uint32_t y = y_range.first; y < y_range.end; y += step) {
+            float const v = (static_cast<float>(y) + 0.5F) / static_cast<float>(resolution);
+            if (v < draw.source[1U] || v >= draw.source[1U] + draw.source[3U]) {
+                continue;
+            }
+            for (uint32_t x = x_range.first; x < x_range.end; x += step) {
+                float const u = (static_cast<float>(x) + 0.5F) / static_cast<float>(resolution);
+                if (u < draw.source[0U] || u >= draw.source[0U] + draw.source[2U]) {
+                    continue;
+                }
+                ScreenPoint const screen{
+                    draw.destination[0U] + (u - draw.source[0U]) / draw.source[2U] * draw.destination[2U],
+                    draw.destination[1U] + (v - draw.source[1U]) / draw.source[3U] * draw.destination[3U],
+                };
+                ScreenRect viewport{
+                    draw.destination[0U],
+                    draw.destination[1U],
+                    draw.destination[0U] + draw.destination[2U],
+                    draw.destination[1U] + draw.destination[3U],
+                };
+                if (draw.scissor[2U] != 0U) {
+                    viewport.left = std::max(viewport.left, static_cast<float>(draw.scissor[0U]));
+                    viewport.top = std::max(viewport.top, static_cast<float>(draw.scissor[1U]));
+                    viewport.right = std::min(viewport.right,
+                        static_cast<float>(draw.scissor[0U] + draw.scissor[2U]));
+                    viewport.bottom = std::min(viewport.bottom,
+                        static_cast<float>(draw.scissor[1U] + draw.scissor[3U]));
+                }
+                visitor(x, y, u, v, screen, viewport);
+            }
+        }
+    }
+}
+
+[[nodiscard]]
+bool appendPointerTriangles(
+    std::vector<GuiVectorVertex>& output,
+    ScreenPoint const center,
+    double const heading_degrees,
+    float const reach,
+    ScreenRect const& viewport
+)
+{
+    constexpr size_t POINTER_VERTEX_COUNT = 78U;
+    if (!std::isfinite(heading_degrees) || !std::isfinite(reach) || reach <= 0.0F
+        || output.size() + POINTER_VERTEX_COUNT > MAX_GUI_TRIANGLE_VERTICES) {
+        return false;
+    }
+    double const angle = heading_degrees * (3.141'592'653'589'793'238'46 / 180.0);
+    float const cosine = static_cast<float>(std::cos(angle));
+    float const sine = static_cast<float>(std::sin(angle));
+    std::array<ScreenPoint, 4U> points{{
+        {0.0F, -reach}, {reach * 0.65F, reach * 0.70F},
+        {0.0F, reach * 0.35F}, {-reach * 0.65F, reach * 0.70F},
+    }};
+    for (ScreenPoint& point : points) {
+        ScreenPoint const local = point;
+        point = {
+            center[0U] + local[0U] * cosine - local[1U] * sine,
+            center[1U] + local[0U] * sine + local[1U] * cosine,
+        };
+    }
+    ScreenRect bounds{points[0U][0U], points[0U][1U], points[0U][0U], points[0U][1U]};
+    for (size_t index = 0U; index < points.size(); ++index) {
+        bounds.left = std::min(bounds.left, points[index][0U] - 2.0F);
+        bounds.right = std::max(bounds.right, points[index][0U] + 2.0F);
+        bounds.top = std::min(bounds.top, points[index][1U] - 2.0F);
+        bounds.bottom = std::max(bounds.bottom, points[index][1U] + 2.0F);
+    }
+    if (!contains(viewport, bounds)) {
+        return false;
+    }
+
+    PixelColor const dark = pixelColor({16.0F, 33.0F, 43.0F});
+    PixelColor const accent = pixelColor({255.0F, 224.0F, 128.0F});
+    for (size_t index = 0U; index < points.size(); ++index) {
+        size_t const next = (index + 1U) % points.size();
+        if (!emitStroke(output, points[index], points[next], 4.0F, dark)) {
+            return false;
+        }
+    }
+    emitTriangle(output, points[0U], points[1U], points[2U], accent, accent, accent);
+    emitTriangle(output, points[0U], points[2U], points[3U], accent, accent, accent);
+    return true;
+}
+
+struct PlateAccumulator final {
+    double sum_x = 0.0;
+    double sum_y = 0.0;
+    double center_x = 0.0;
+    double center_y = 0.0;
+    double nearest_distance = std::numeric_limits<double>::infinity();
+    uint32_t count = 0U;
+    uint32_t center_index = 0U;
+};
+
+void buildPlateMotions(
+    S2MapImage& image,
+    std::span<int16_t const> plate_ids,
+    std::span<float const> vector_x,
+    std::span<float const> vector_y,
+    uint32_t const resolution
+)
+{
+    if (plate_ids.empty() || plate_ids.size() != vector_x.size() || plate_ids.size() != vector_y.size()) {
+        return;
+    }
+    int16_t const maximum_id = *std::max_element(plate_ids.begin(), plate_ids.end());
+    if (maximum_id < 0) {
+        return;
+    }
+    std::vector<PlateAccumulator> plates(static_cast<size_t>(maximum_id) + 1U);
+    for (size_t index = 0U; index < plate_ids.size(); ++index) {
+        int16_t const id = plate_ids[index];
+        if (id < 0) {
+            continue;
+        }
+        PlateAccumulator& plate = plates[static_cast<size_t>(id)];
+        plate.sum_x += static_cast<double>(index % resolution);
+        plate.sum_y += static_cast<double>(index / resolution);
+        ++plate.count;
+    }
+    for (PlateAccumulator& plate : plates) {
+        if (plate.count > 0U) {
+            plate.center_x = plate.sum_x / static_cast<double>(plate.count);
+            plate.center_y = plate.sum_y / static_cast<double>(plate.count);
+        }
+    }
+    for (size_t index = 0U; index < plate_ids.size(); ++index) {
+        int16_t const id = plate_ids[index];
+        if (id < 0) {
+            continue;
+        }
+        PlateAccumulator& plate = plates[static_cast<size_t>(id)];
+        double const x = static_cast<double>(index % resolution);
+        double const y = static_cast<double>(index / resolution);
+        double const dx = x - plate.center_x;
+        double const dy = y - plate.center_y;
+        double const distance = dx * dx + dy * dy;
+        if (distance < plate.nearest_distance) {
+            plate.nearest_distance = distance;
+            plate.center_index = static_cast<uint32_t>(index);
+        }
+    }
+    size_t const plate_count = static_cast<size_t>(std::count_if(
+        plates.begin(), plates.end(), [](PlateAccumulator const& plate) { return plate.count > 0U; }));
+    image.plate_motions.reserve(plate_count);
+    for (size_t id = 0U; id < plates.size(); ++id) {
+        PlateAccumulator const& plate = plates[id];
+        if (plate.count == 0U) {
+            continue;
+        }
+        image.plate_motions.push_back({
+            .id = static_cast<int16_t>(id),
+            .x = (static_cast<float>(plate.center_index % resolution) + 0.5F) / static_cast<float>(resolution),
+            .y = (static_cast<float>(plate.center_index / resolution) + 0.5F) / static_cast<float>(resolution),
+            .vector_x = vector_x[plate.center_index],
+            .vector_y = vector_y[plate.center_index],
+        });
+    }
+}
+
+[[nodiscard]]
+bool mapPointForSource(
+    S2MapLayout const& map_layout,
+    float const source_x,
+    float const source_y,
+    ScreenPoint& screen,
+    ScreenRect& viewport
+) noexcept
+{
+    uint32_t const draw_count = std::min<uint32_t>(map_layout.world_draw_count,
+        static_cast<uint32_t>(map_layout.world_draws.size()));
+    for (uint32_t draw_index = 0U; draw_index < draw_count; ++draw_index) {
+        MapImageDraw const& draw = map_layout.world_draws[draw_index];
+        if (!validMapImageDraw(draw) || draw.image != 0U
+            || source_x < draw.source[0U] || source_x >= draw.source[0U] + draw.source[2U]
+            || source_y < draw.source[1U] || source_y >= draw.source[1U] + draw.source[3U]) {
+            continue;
+        }
+        screen = {
+            draw.destination[0U] + (source_x - draw.source[0U]) / draw.source[2U] * draw.destination[2U],
+            draw.destination[1U] + (source_y - draw.source[1U]) / draw.source[3U] * draw.destination[3U],
+        };
+        viewport = {
+            draw.destination[0U],
+            draw.destination[1U],
+            draw.destination[0U] + draw.destination[2U],
+            draw.destination[1U] + draw.destination[3U],
+        };
+        if (draw.scissor[2U] != 0U) {
+            ScreenRect const scissor{
+                static_cast<float>(draw.scissor[0U]),
+                static_cast<float>(draw.scissor[1U]),
+                static_cast<float>(draw.scissor[0U] + draw.scissor[2U]),
+                static_cast<float>(draw.scissor[1U] + draw.scissor[3U]),
+            };
+            viewport.left = std::max(viewport.left, scissor.left);
+            viewport.top = std::max(viewport.top, scissor.top);
+            viewport.right = std::min(viewport.right, scissor.right);
+            viewport.bottom = std::min(viewport.bottom, scissor.bottom);
+        }
+        return true;
+    }
+    return false;
+}
+
+void appendWorldMapVectors(
+    S2WorldMapState const& state,
+    S2MapImage const& image,
+    generation::GlobalAtlas const& atlas,
+    S2MapLayout const& map_layout,
+    S2MapOverlayLayout const& overlay_layout,
+    uint32_t const width,
+    uint32_t const height,
+    float const dpi_scale,
+    TextRenderer& text,
+    std::vector<GuiVectorVertex>& output
+)
+{
+    uint32_t const resolution = atlas.configuration.resolution;
+    size_t const atlas_size = static_cast<size_t>(resolution) * resolution;
+    if ((resolution != 256U && resolution != 512U) || atlas_size == 0U) {
+        return;
+    }
+    bool const show_wind = state.layers[static_cast<size_t>(S2WorldMapLayer::Wind)]
+        && image.available_layers[static_cast<size_t>(S2WorldMapLayer::Wind)]
+        && atlas.wind_u.size() == atlas_size && atlas.wind_v.size() == atlas_size;
+    bool const show_currents = state.layers[static_cast<size_t>(S2WorldMapLayer::Currents)]
+        && image.available_layers[static_cast<size_t>(S2WorldMapLayer::Currents)]
+        && atlas.current_u.size() == atlas_size && atlas.current_v.size() == atlas_size
+        && atlas.ocean_mask.size() == atlas_size;
+    bool const show_plates = state.layers[static_cast<size_t>(S2WorldMapLayer::Plates)]
+        && image.available_layers[static_cast<size_t>(S2WorldMapLayer::Plates)];
+    if (!show_wind && !show_currents && !show_plates) {
+        return;
+    }
+
+    std::array<ScreenRect, 15U> exclusions{};
+    size_t exclusion_count = 0U;
+    auto append_exclusions = [&](auto const& rectangles, uint32_t const count) {
+        uint32_t const bounded_count = std::min<uint32_t>(count, static_cast<uint32_t>(rectangles.size()));
+        for (uint32_t index = 0U; index < bounded_count && exclusion_count < exclusions.size(); ++index) {
+            auto const& bounds = rectangles[index].bounds;
+            exclusions[exclusion_count++] = {
+                bounds[0U], bounds[1U], bounds[0U] + bounds[2U], bounds[1U] + bounds[3U],
+            };
+        }
+    };
+    append_exclusions(overlay_layout.panels, overlay_layout.panel_count);
+    append_exclusions(overlay_layout.heat_strips, overlay_layout.heat_strip_count);
+    append_exclusions(overlay_layout.color_chips, overlay_layout.color_chip_count);
+    std::span<ScreenRect const> const excluded_rectangles(exclusions.data(), exclusion_count);
+
+    float const logical_width = static_cast<float>(width) / dpi_scale;
+    float const logical_height = static_cast<float>(height) / dpi_scale;
+    bool const compact = logical_height < 500.0F || logical_width < 1'080.0F;
+    float const tile_size = state.overview
+        ? std::min(logical_width, logical_height)
+        : std::max(logical_width, logical_height) * static_cast<float>(std::clamp(state.zoom, 1.0, 6.0));
+    uint32_t step = std::max(3U, static_cast<uint32_t>(std::lround(
+        static_cast<float>(resolution) * (compact ? 41.0F : 53.0F) / tile_size)));
+    size_t const vertices_per_sample = (show_wind ? 108U : 0U) + (show_currents ? 180U : 0U);
+    size_t const plate_vertex_reserve = show_plates
+        ? std::min(image.plate_motions.size() * 108U, size_t{8'192U})
+        : 0U;
+    while (vertices_per_sample != 0U) {
+        size_t const sample_axis = (resolution + step - 1U) / step;
+        size_t const estimated_vertices = sample_axis * sample_axis * vertices_per_sample;
+        if (estimated_vertices + plate_vertex_reserve <= MAX_GUI_TRIANGLE_VERTICES || step >= resolution) {
+            break;
+        }
+        ++step;
+    }
+
+    if (show_wind) {
+        forEachVisibleMapGridSample(map_layout, resolution, step, 0.25F,
+            [&](uint32_t const x, uint32_t const y, float const, float const, ScreenPoint const screen,
+                ScreenRect const& viewport) {
+                size_t const index = static_cast<size_t>(y) * resolution + x;
+                static_cast<void>(appendScreenArrow(output, screen,
+                    atlas.wind_u[index], atlas.wind_v[index], (compact ? 13.0F : 18.0F) * dpi_scale,
+                    WIND_COLOR, false, viewport, excluded_rectangles));
+            });
+    }
+    if (show_currents) {
+        forEachVisibleMapGridSample(map_layout, resolution, step, 0.70F,
+            [&](uint32_t const x, uint32_t const y, float const, float const, ScreenPoint const screen,
+                ScreenRect const& viewport) {
+                size_t const index = static_cast<size_t>(y) * resolution + x;
+                if (atlas.ocean_mask[index] == 0U) {
+                    return;
+                }
+                static_cast<void>(appendScreenArrow(output, screen,
+                    atlas.current_u[index], atlas.current_v[index], (compact ? 13.0F : 18.0F) * dpi_scale,
+                    CURRENT_COLOR, true, viewport, excluded_rectangles));
+            });
+    }
+
+    if (!show_plates) {
+        return;
+    }
+    for (S2PlateMotion const& plate : image.plate_motions) {
+        ScreenPoint screen{};
+        ScreenRect viewport{};
+        if (!mapPointForSource(map_layout, plate.x, plate.y, screen, viewport)) {
+            continue;
+        }
+        ScreenPoint const center{screen[0U], screen[1U] - 10.0F * dpi_scale};
+        float const length = (compact ? 17.0F : 24.0F) * dpi_scale;
+        static_cast<void>(appendScreenArrow(output, center, plate.vector_x, plate.vector_y, length,
+            PLATE_COLOR, false, viewport, excluded_rectangles));
+
+        std::string const label = "P" + std::to_string(plate.id);
+        ScreenRect const label_bounds{
+            screen[0U] - 8.0F * dpi_scale,
+            screen[1U] + 4.0F * dpi_scale,
+            screen[0U] - 8.0F * dpi_scale + static_cast<float>(label.size()) * 8.0F * dpi_scale,
+            screen[1U] + 20.0F * dpi_scale,
+        };
+        bool const panel_overlap = std::any_of(excluded_rectangles.begin(), excluded_rectangles.end(),
+            [&](ScreenRect const& rect) { return intersects(label_bounds, rect); });
+        if (contains(viewport, label_bounds) && !panel_overlap) {
+            submitMapText(text, label, {235.0F, 201.0F, 248.0F}, screen[0U] / dpi_scale - 8.0F,
+                screen[1U] / dpi_scale + 4.0F, dpi_scale, true);
+        }
+    }
+}
+
 } // namespace
 
 std::optional<S2MapImage> rasterizeS2WorldMap(
@@ -595,6 +1099,10 @@ std::optional<S2MapImage> rasterizeS2WorldMap(
         moisture_valid,
         precipitation_valid,
     };
+    if (state.layers[static_cast<size_t>(S2WorldMapLayer::Plates)]
+        && image.available_layers[static_cast<size_t>(S2WorldMapLayer::Plates)]) {
+        buildPlateMotions(image, atlas->plate_id, atlas->plate_vx, atlas->plate_vy, resolution);
+    }
 
     auto const layer = [&image](S2WorldMapLayer value) {
         return image.available_layers[static_cast<size_t>(value)];
@@ -742,26 +1250,6 @@ std::optional<S2MapImage> rasterizeS2WorldMap(
         }
     }
 
-    uint32_t const vector_step = std::max(8U, image.width / 18U);
-    for (uint32_t y = vector_step / 2U; y < image.height; y += vector_step) {
-        uint32_t const source_y = y * resolution / image.height;
-        for (uint32_t x = vector_step / 2U; x < image.width; x += vector_step) {
-            uint32_t const source_x = x * resolution / image.width;
-            size_t const index = atlasIndex(source_x, source_y);
-            if (state.layers[static_cast<size_t>(S2WorldMapLayer::Wind)] && wind_valid) {
-                drawArrow(image, static_cast<int32_t>(x), static_cast<int32_t>(y),
-                    atlas->wind_u[index], atlas->wind_v[index], WIND_COLOR);
-            }
-            if (state.layers[static_cast<size_t>(S2WorldMapLayer::Currents)] && current_valid && waterAt(source_x, source_y)) {
-                drawArrow(image, static_cast<int32_t>(x), static_cast<int32_t>(y),
-                    atlas->current_u[index], atlas->current_v[index], CURRENT_COLOR, true);
-            }
-            if (state.layers[static_cast<size_t>(S2WorldMapLayer::Plates)] && plate_vectors_valid) {
-                drawArrow(image, static_cast<int32_t>(x), static_cast<int32_t>(y),
-                    atlas->plate_vx[index], atlas->plate_vy[index], PLATE_COLOR);
-            }
-        }
-    }
     return image;
 }
 
@@ -912,15 +1400,35 @@ S2MinimapMarker layoutS2MinimapMarker(
     if (heading < 0.0) {
         heading += 360.0;
     }
-    uint32_t const octant = static_cast<uint32_t>(std::lround(heading / 45.0)) % 8U;
-    constexpr std::array<char, 8U> DIRECTION_GLYPHS{'^', '/', '>', '\\', 'v', '/', '<', '\\'};
     return {
         .x = minimap_bounds[0] + static_cast<float>(local_x / local_lod.extent) * minimap_bounds[2],
         .y = minimap_bounds[1] + static_cast<float>(local_y / local_lod.extent) * minimap_bounds[3],
         .heading_degrees = heading,
-        .direction_glyph = DIRECTION_GLYPHS[octant],
         .visible = true,
     };
+}
+
+void appendS2MinimapPointerTriangles(
+    S2MinimapMarker const& marker,
+    std::array<float, 4U> const& minimap_bounds,
+    float const requested_dpi_scale,
+    std::vector<GuiVectorVertex>& vector_triangles
+)
+{
+    if (!marker.visible || minimap_bounds[2U] <= 0.0F || minimap_bounds[3U] <= 0.0F) {
+        return;
+    }
+    float const dpi_scale = sanitizedDpi(requested_dpi_scale);
+    float const logical_size = minimap_bounds[2U] / dpi_scale;
+    float const reach = (logical_size < 160.0F ? 9.0F : 11.0F) * dpi_scale;
+    ScreenRect const bounds{
+        minimap_bounds[0U],
+        minimap_bounds[1U],
+        minimap_bounds[0U] + minimap_bounds[2U],
+        minimap_bounds[1U] + minimap_bounds[3U],
+    };
+    static_cast<void>(appendPointerTriangles(
+        vector_triangles, {marker.x, marker.y}, marker.heading_degrees, reach, bounds));
 }
 
 S2MapLayout layoutS2Map(
@@ -1005,10 +1513,12 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
     uint32_t const width,
     uint32_t const height,
     float const requested_dpi_scale,
-    TextRenderer& output
+    TextRenderer& output,
+    std::vector<GuiVectorVertex>& vector_triangles
 )
 {
     output.clear();
+    vector_triangles.clear();
     S2MapOverlayLayout layout;
     if (width == 0U || height == 0U) {
         return layout;
@@ -1098,7 +1608,7 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
         static_cast<float>(width) / dpi_scale - static_cast<float>(help.size()) * 8.0F - 12.0F, 8.0F);
 
     static constexpr std::array<std::string_view, S2_WORLD_MAP_LAYER_COUNT> KEYS{
-        "P", "H", "T", "B", "W", "C", "O", "Q",
+        "P", "H", "T", "B", "Ctrl+W", "C", "O", "Q",
     };
     static constexpr std::array<std::string_view, S2_WORLD_MAP_LAYER_COUNT> SHORT_NAMES{
         "Plate", "Height", "Temp", "Biomes", "Wind", "Curr", "Moist", "Rain",
@@ -1118,7 +1628,7 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
         std::string const label = std::string(KEYS[index]) + " " + std::string(SHORT_NAMES[index]) + " " + status;
         outlined(label, available && state.layers[index] ? LAYER_COLORS[index] : Color{147.0F, 167.0F, 170.0F},
             cursor, 32.0F);
-        cursor += static_cast<float>((SHORT_NAMES[index].size() + 6U) * 8U + 12U);
+        cursor += static_cast<float>(label.size() * 8U + 12U);
     }
 
     float const column_width = heat_count > 0U
@@ -1277,11 +1787,20 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
         }
     }
 
-    outlined("Arrows pan  Shift faster  +/- zoom  M/Esc Close",
-        {215.0F, 223.0F, 205.0F}, 12.0F, static_cast<float>(height) / dpi_scale - 24.0F);
+    float const logical_width = static_cast<float>(width) / dpi_scale;
+    float const logical_height = static_cast<float>(height) / dpi_scale;
+    if (logical_width < 720.0F) {
+        outlined("WASD/arrows pan  Drag pan  Shift fast  Wheel zoom",
+            {215.0F, 223.0F, 205.0F}, 12.0F, logical_height - 40.0F);
+        outlined("+/- zoom  Ctrl+W Wind  M/Esc Close",
+            {215.0F, 223.0F, 205.0F}, 12.0F, logical_height - 24.0F);
+    } else {
+        outlined("WASD/arrows pan  Drag pan  Shift faster  Wheel zoom  +/- zoom  Ctrl+W Wind  M/Esc Close",
+            {215.0F, 223.0F, 205.0F}, 12.0F, logical_height - 24.0F);
+    }
 
+    S2MapLayout const map_layout = layoutS2Map(state, width, height, true, false, dpi_scale);
     if (image && std::isfinite(player_x) && std::isfinite(player_y)) {
-        S2MapLayout const map_layout = layoutS2Map(state, width, height, true, false, dpi_scale);
         float const player_u = static_cast<float>(wrapWorld(player_x) / WORLD_SIZE);
         float const player_v = static_cast<float>(wrapWorld(player_y) / WORLD_SIZE);
         for (uint32_t draw_index = 0U; draw_index < map_layout.world_draw_count; ++draw_index) {
@@ -1299,6 +1818,10 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
             outlined("+", {255.0F, 228.0F, 154.0F}, player_logical_x - 8.0F, player_logical_y - 16.0F, 2.0F);
             outlined("YOU", {255.0F, 228.0F, 154.0F}, player_logical_x + 12.0F, player_logical_y + 8.0F);
         }
+    }
+    if (image && atlas && sample_source_matches) {
+        appendWorldMapVectors(state, *image, *atlas, map_layout, layout,
+            width, height, dpi_scale, output, vector_triangles);
     }
     return layout;
 }

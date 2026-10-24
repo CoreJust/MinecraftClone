@@ -32,6 +32,87 @@ TerrainLodRuntime::~TerrainLodRuntime()
     }
 }
 
+void TerrainLodRuntime::updateEditedColumns(
+    shared::SparseWorld const& actual,
+    VulkanRenderer& renderer,
+    std::chrono::steady_clock::time_point const deadline,
+    uint64_t const join_epoch,
+    uint64_t const coverage_epoch)
+{
+    if (m_patch_job.valid()) {
+        if (m_patch_job.wait_for(std::chrono::seconds{0}) != std::future_status::ready) {
+            return;
+        }
+        try {
+            m_patch = m_patch_job.get();
+        } catch (std::exception const& error) {
+            CORE_ERROR("Terrain edit preparation failed: {}", error.what());
+            m_patch_columns.clear();
+        }
+    }
+    if (m_patch) {
+        bool const current = m_active && m_world && m_patch->identity == m_world->identity()
+            && m_patch->session_join_epoch == join_epoch && m_patch->coverage_epoch == coverage_epoch
+            && terrainLodSourcesCurrent(*m_patch, actual);
+        if (current && !renderer.replaceTerrainLodGroups(m_patch, deadline)) {
+            return;
+        }
+        if (current) {
+            for (auto const& column : m_patch_columns) {
+                auto const previous = std::ranges::find_if(m_presented_columns, [&](auto const& entry) {
+                    return entry->x == column->x && entry->y == column->y;
+                });
+                if (previous != m_presented_columns.end()) {
+                    *previous = column;
+                }
+            }
+            CORE_INFO("Terrain edit groups published: columns={} surface_revision={}",
+                m_patch_columns.size(), actual.authoritativeSurfaceRevision());
+            m_dirty = true;
+        }
+        m_patch.reset();
+        m_patch_columns.clear();
+    }
+    if (!m_active || !m_world || m_presented_join_epoch != join_epoch
+        || m_presented_coverage_epoch != coverage_epoch) {
+        return;
+    }
+    if (m_edit_checked_revision == actual.authoritativeSurfaceRevision()) {
+        return;
+    }
+    // Only edits enter this lane. Ordinary streamed surface replacement keeps
+    // using the background scene path, regardless of its discovery backlog.
+    for (auto const& column : m_presented_columns) {
+        bool const edited = std::ranges::any_of(column->edit_sources, [&](auto const& stamp) {
+            return actual.editChunkRevision(stamp.coordinate) != stamp.revision;
+        }) || std::ranges::any_of(column->sources, [&](auto const& stamp) {
+            return actual.editChunkRevision(stamp.coordinate) != stamp.edit_revision;
+        });
+        if (!edited) {
+            continue;
+        }
+        auto captured = captureTerrainLodColumn(actual, column->x, column->y);
+        if (!captured) {
+            m_patch_columns.clear();
+            return;
+        }
+        m_patch_columns.push_back(std::make_shared<TerrainLodColumnInput const>(std::move(*captured)));
+    }
+    if (m_patch_columns.empty()) {
+        m_edit_checked_revision = actual.authoritativeSurfaceRevision();
+        return;
+    }
+    auto columns = m_patch_columns;
+    auto const identity = m_world->identity();
+    m_patch_job = std::async(std::launch::async,
+        [columns = std::move(columns), identity, join_epoch, coverage_epoch] {
+            auto patch = std::const_pointer_cast<TerrainLodScene>(buildTerrainLodColumnPatch(identity, columns));
+            patch->session_join_epoch = join_epoch;
+            patch->coverage_epoch = coverage_epoch;
+            return std::shared_ptr<TerrainLodScene const>{std::move(patch)};
+        });
+}
+
 void TerrainLodRuntime::reportDiagnostics()
 {
     auto const now = std::chrono::steady_clock::now();
@@ -78,6 +159,10 @@ void TerrainLodRuntime::reset(VulkanRenderer* const renderer)
     m_world.reset();
     m_pending.reset();
     m_columns.clear();
+    m_presented_columns.clear();
+    m_edit_checked_revision = 0U;
+    m_patch.reset();
+    m_patch_columns.clear();
     m_plan.reset();
     m_discovery_initialized = false;
     m_center_x = 0U;
@@ -108,6 +193,8 @@ void TerrainLodRuntime::update(
     if (source != m_world) {
         m_cancellation.request_stop();
         m_pending.reset();
+        m_presented_columns.clear();
+        m_patch.reset();
         if (m_world) {
             m_columns.clear();
             m_plan.reset();
@@ -144,6 +231,7 @@ void TerrainLodRuntime::update(
             if (source && m_job_world == source && candidate->identity == source->identity()) {
                 m_pending = std::move(candidate);
                 m_pending_ticket = m_job_ticket;
+                m_pending_columns = m_job_columns;
             }
         } catch (std::exception const& error) {
             if (!m_cancellation.stop_requested()) {
@@ -152,6 +240,10 @@ void TerrainLodRuntime::update(
             }
         }
     }
+    uint64_t const join_epoch = session && source && session->terrain == source->identity() ? session->join_epoch : 0U;
+    if (actual && player) {
+        updateEditedColumns(*actual, renderer, deadline, join_epoch, coverage_epoch.value_or(0U));
+    }
     if (m_pending && player) {
         std::vector<TerrainLodColumnKey> rendered;
         for (auto const leaf : m_pending->leaves) {
@@ -159,7 +251,9 @@ void TerrainLodRuntime::update(
                 rendered.push_back({leaf.x, leaf.y});
             }
         }
-        bool const sources_current = actual && terrainLodSourcesCurrent(*m_pending, *actual);
+        bool const sources_current = actual && terrainLodSourcesCurrent(*m_pending, *actual)
+            && m_pending->session_join_epoch == join_epoch
+            && m_pending->coverage_epoch == coverage_epoch.value_or(0U);
         auto const issue = m_plan.publicationIssue(m_pending_ticket, rendered);
         if (!sources_current || issue.failure != TerrainLodPublicationFailure::None) {
             m_source_rejected += sources_current ? 0U : 1U;
@@ -172,7 +266,7 @@ void TerrainLodRuntime::update(
             m_pending.reset();
             m_discovery_initialized = false;
             m_dirty = true;
-        } else if (renderer.upsertTerrainLodScene(m_pending, deadline)) {
+        } else if (!m_patch_job.valid() && !m_patch && renderer.upsertTerrainLodScene(m_pending, deadline)) {
             if (!m_active || (!m_actual_reported && m_pending->actual_column_count != 0U)) {
                 CORE_INFO(
                     "Terrain LOD scene active: model={} leaves={} faces={} "
@@ -187,6 +281,14 @@ void TerrainLodRuntime::update(
             ++m_published;
             ++m_diagnostic_events;
             m_plan.presented(rendered);
+            m_presented_columns.clear();
+            for (auto const& column : m_pending_columns) {
+                if (std::ranges::find(rendered, TerrainLodColumnKey{column->x, column->y}) != rendered.end()) {
+                    m_presented_columns.push_back(column);
+                }
+            }
+            m_presented_join_epoch = m_pending->session_join_epoch;
+            m_presented_coverage_epoch = m_pending->coverage_epoch;
             m_pending.reset();
             m_active = true;
         }
@@ -265,6 +367,7 @@ void TerrainLodRuntime::update(
             }
         }
     }
+    m_job_columns = columns;
     m_cancellation = std::stop_source{};
     auto const cancellation = m_cancellation.get_token();
     m_job_world = source;

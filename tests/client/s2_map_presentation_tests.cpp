@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -17,7 +18,10 @@
 
 namespace {
 
-std::shared_ptr<shared::TerrainWorld const> mapWorld(bool const complete_layers = true)
+std::shared_ptr<shared::TerrainWorld const> mapWorld(
+    bool const complete_layers = true,
+    bool const all_ocean = false
+)
 {
     auto atlas = std::make_shared<generation::GlobalAtlas>();
     atlas->configuration.resolution = 256U;
@@ -26,8 +30,8 @@ std::shared_ptr<shared::TerrainWorld const> mapWorld(bool const complete_layers 
     atlas->elevation.assign(count, 1.0F);
     atlas->temperature.assign(count, 8.0F);
     atlas->precipitation.assign(count, 0.25F);
-    atlas->water_level.assign(count, 0.0F);
-    atlas->ocean_mask.assign(count, 0U);
+    atlas->water_level.assign(count, all_ocean ? 2.0F : 0.0F);
+    atlas->ocean_mask.assign(count, all_ocean ? 1U : 0U);
     atlas->lake_mask.assign(count, 0U);
     atlas->river_mask.assign(count, 0U);
     if (complete_layers) {
@@ -185,7 +189,107 @@ TEST(S2MapPresentationTest, MinimapUsesTheSuppliedLocalProjectionAndHeading)
     EXPECT_TRUE(east.visible);
     EXPECT_EQ(north.x, east.x);
     EXPECT_EQ(north.y, east.y);
-    EXPECT_NE(north.direction_glyph, east.direction_glyph);
+    EXPECT_DOUBLE_EQ(north.heading_degrees, 0.0);
+    EXPECT_DOUBLE_EQ(east.heading_degrees, 90.0);
+}
+
+TEST(S2MapPresentationTest, MinimapPointerIsAHeadingRotatedFilledScreenShape)
+{
+    client::S2MinimapMarker north{.x = 60.0F, .y = 70.0F, .heading_degrees = 0.0, .visible = true};
+    client::S2MinimapMarker east = north;
+    east.heading_degrees = 90.0;
+    std::vector<client::GuiVectorVertex> north_triangles;
+    std::vector<client::GuiVectorVertex> east_triangles;
+
+    client::appendS2MinimapPointerTriangles(north, {10.0F, 20.0F, 100.0F, 100.0F}, 1.0F, north_triangles);
+    client::appendS2MinimapPointerTriangles(east, {10.0F, 20.0F, 100.0F, 100.0F}, 1.0F, east_triangles);
+
+    ASSERT_EQ(north_triangles.size(), 78U);
+    ASSERT_EQ(east_triangles.size(), north_triangles.size());
+    EXPECT_NE(north_triangles.front().position, east_triangles.front().position);
+    float north_tip_y = north_triangles.front().position[1U];
+    float east_tip_x = east_triangles.front().position[0U];
+    for (auto const& vertex : north_triangles) {
+        north_tip_y = std::min(north_tip_y, vertex.position[1U]);
+        EXPECT_TRUE(std::isfinite(vertex.position[0U]));
+        EXPECT_TRUE(std::isfinite(vertex.position[1U]));
+    }
+    for (auto const& vertex : east_triangles) {
+        east_tip_x = std::max(east_tip_x, vertex.position[0U]);
+    }
+    EXPECT_LT(north_tip_y, 62.0F);
+    EXPECT_GT(north_tip_y, 59.0F);
+    EXPECT_GT(east_tip_x, 68.0F);
+    EXPECT_LT(east_tip_x, 71.0F);
+    EXPECT_TRUE(std::all_of(north_triangles.end() - 6, north_triangles.end(), [](auto const& vertex) {
+        return vertex.rgba == (std::array<uint8_t, 4U>{255U, 224U, 128U, 255U});
+    }));
+}
+
+TEST(S2MapPresentationTest, WindAndCurrentArrowsAreScreenOverlaysNotRasterPixels)
+{
+    auto const world = mapWorld(true, true);
+    auto const lod = shared::buildTerrainLod(*world, shared::TerrainLodLevel::L0);
+    client::S2WorldMapState raster_state;
+    auto const base = client::rasterizeS2WorldMap(*world, *lod, raster_state);
+    raster_state.layers[static_cast<size_t>(client::S2WorldMapLayer::Wind)] = true;
+    raster_state.layers[static_cast<size_t>(client::S2WorldMapLayer::Currents)] = true;
+    auto const vector_layers = client::rasterizeS2WorldMap(*world, *lod, raster_state);
+    ASSERT_TRUE(base);
+    ASSERT_TRUE(vector_layers);
+    EXPECT_EQ(vector_layers->rgba, base->rgba);
+
+    client::TextRenderer labels;
+    std::vector<client::GuiVectorVertex> triangles;
+    auto const overlay = client::buildS2WorldMapOverlay(
+        raster_state, &*vector_layers, world.get(), 32'768.0, 32'768.0,
+        1'280U, 676U, 1.0F, labels, triangles);
+
+    ASSERT_FALSE(triangles.empty());
+    ASSERT_EQ(triangles.size() % 3U, 0U);
+    EXPECT_LE(triangles.size(), client::MAXIMUM_GUI_VECTOR_VERTICES - 1U);
+    EXPECT_TRUE(std::any_of(triangles.begin(), triangles.end(), [](auto const& vertex) {
+        return vertex.rgba == (std::array<uint8_t, 4U>{99U, 219U, 212U, 255U});
+    }));
+    EXPECT_TRUE(std::any_of(triangles.begin(), triangles.end(), [](auto const& vertex) {
+        return vertex.rgba == (std::array<uint8_t, 4U>{220U, 238U, 247U, 255U});
+    }));
+    for (auto const& vertex : triangles) {
+        EXPECT_TRUE(std::isfinite(vertex.position[0U]));
+        EXPECT_TRUE(std::isfinite(vertex.position[1U]));
+        EXPECT_GE(vertex.position[0U], 0.0F);
+        EXPECT_LT(vertex.position[0U], 1'280.0F);
+        EXPECT_GE(vertex.position[1U], 0.0F);
+        EXPECT_LT(vertex.position[1U], 676.0F);
+        for (uint32_t panel_index = 0U; panel_index < overlay.panel_count; ++panel_index) {
+            auto const& bounds = overlay.panels[panel_index].bounds;
+            EXPECT_FALSE(vertex.position[0U] >= bounds[0U] && vertex.position[0U] < bounds[0U] + bounds[2U]
+                && vertex.position[1U] >= bounds[1U] && vertex.position[1U] < bounds[1U] + bounds[3U]);
+        }
+    }
+}
+
+TEST(S2MapPresentationTest, PlateMotionAndNamesUseTheScreenOverlayBatch)
+{
+    auto const world = mapWorld();
+    auto const lod = shared::buildTerrainLod(*world, shared::TerrainLodLevel::L0);
+    client::S2WorldMapState state;
+    state.layers.fill(false);
+    state.layers[static_cast<size_t>(client::S2WorldMapLayer::Plates)] = true;
+    auto const image = client::rasterizeS2WorldMap(*world, *lod, state);
+    ASSERT_TRUE(image);
+    ASSERT_EQ(image->plate_motions.size(), 1U);
+
+    client::TextRenderer labels;
+    std::vector<client::GuiVectorVertex> triangles;
+    static_cast<void>(client::buildS2WorldMapOverlay(
+        state, &*image, world.get(), 32'768.0, 32'768.0,
+        1'280U, 676U, 1.0F, labels, triangles));
+
+    EXPECT_FALSE(triangles.empty());
+    EXPECT_TRUE(std::any_of(labels.labels().begin(), labels.labels().end(), [](client::TextLabel const& label) {
+        return label.value == "P1";
+    }));
 }
 
 TEST(S2MapPresentationTest, MinimapLocalLodStitchesAcrossBothWorldWrapSeams)
@@ -236,6 +340,27 @@ TEST(S2MapPresentationTest, MapLayoutWrapsTheCloseViewAndFitsOneUnrepeatedOvervi
     ASSERT_TRUE(hidpi_minimap.show_minimap);
     EXPECT_EQ(hidpi_minimap.minimap_bounds,
         (std::array<float, 4U>{2'108.0F, 88.0F, 384.0F, 384.0F}));
+}
+
+TEST(S2MapPresentationTest, FullPeriodHorizontalViewPreservesWrappedPanOffset)
+{
+    client::S2WorldMapState state{
+        .center_x = static_cast<double>(generation::WORLD_SIZE_BLOCKS) * 0.25,
+        .center_y = static_cast<double>(generation::WORLD_SIZE_BLOCKS) * 0.5,
+        .zoom = 1.0,
+    };
+
+    client::S2MapLayout const layout = client::layoutS2Map(state, 1'200U, 800U, true, false);
+
+    ASSERT_EQ(layout.world_draw_count, 2U);
+    EXPECT_FLOAT_EQ(layout.world_draws[0].source[0], 0.75F);
+    EXPECT_FLOAT_EQ(layout.world_draws[0].source[2], 0.25F);
+    EXPECT_FLOAT_EQ(layout.world_draws[0].destination[0], 0.0F);
+    EXPECT_FLOAT_EQ(layout.world_draws[0].destination[2], 300.0F);
+    EXPECT_FLOAT_EQ(layout.world_draws[1].source[0], 0.0F);
+    EXPECT_FLOAT_EQ(layout.world_draws[1].source[2], 0.75F);
+    EXPECT_FLOAT_EQ(layout.world_draws[1].destination[0], 300.0F);
+    EXPECT_FLOAT_EQ(layout.world_draws[1].destination[2], 900.0F);
 }
 
 TEST(S2MapPresentationTest, WorldMapViewComposesWrappedRasterAndOpaqueCanvas)

@@ -239,6 +239,21 @@ public:
 
 private:
     void reportDiagnostics();
+    void updateEditedColumns(
+        shared::SparseWorld const& actual,
+        VulkanRenderer& renderer,
+        std::chrono::steady_clock::time_point deadline,
+        uint64_t join_epoch,
+        uint64_t coverage_epoch);
+    std::future<std::shared_ptr<TerrainLodScene const>> m_patch_job;
+    std::shared_ptr<TerrainLodScene const> m_patch;
+    std::vector<std::shared_ptr<TerrainLodColumnInput const>> m_patch_columns;
+    std::vector<std::shared_ptr<TerrainLodColumnInput const>> m_presented_columns;
+    std::vector<std::shared_ptr<TerrainLodColumnInput const>> m_job_columns;
+    std::vector<std::shared_ptr<TerrainLodColumnInput const>> m_pending_columns;
+    uint64_t m_edit_checked_revision = 0U;
+    uint64_t m_presented_join_epoch = 0U;
+    uint64_t m_presented_coverage_epoch = 0U;
     std::chrono::steady_clock::time_point m_diagnostic_reported{};
     std::chrono::steady_clock::time_point m_job_started{};
     std::chrono::microseconds m_last_job_duration{0};

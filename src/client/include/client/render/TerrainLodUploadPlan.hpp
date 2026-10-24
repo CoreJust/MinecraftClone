@@ -117,6 +117,81 @@ struct TerrainLodUploadPlan final {
     std::exception_ptr failure;
 };
 
+// Existing group indices remain stable; only explicit patch keys lose GPU reuse.
+[[nodiscard]] inline TerrainLodUploadPlan terrainLodReplacementPlan(
+    TerrainLodScene const& active,
+    std::span<StoneIndirectDraws::Range const> active_ranges,
+    TerrainLodScene const& patch
+)
+{
+    if (active.identity != patch.identity || active.session_join_epoch != patch.session_join_epoch
+        || active.coverage_epoch != patch.coverage_epoch || active_ranges.size() != active.groups.size()) {
+        throw std::invalid_argument("terrain LOD replacement identity does not match active scene");
+    }
+    validateTerrainLodGroups(patch);
+    using Key = std::tuple<uint32_t, uint32_t, uint32_t>;
+    std::map<Key, uint32_t> replacement_groups;
+    for (uint32_t index = 0U; index < patch.groups.size(); ++index) {
+        auto const& group = patch.groups[index];
+        if (group.extent != 16U) {
+            throw std::invalid_argument("terrain LOD replacement requires exact groups");
+        }
+        replacement_groups.emplace(Key{group.origin_x, group.origin_y, group.extent}, index);
+    }
+    auto merged = std::make_shared<TerrainLodScene>(active);
+    // Geometry and its captured dependency identities publish together. Shared
+    // boundary sources can repeat; the patch supersedes every old occurrence.
+    auto merge_sources = []<typename Source>(
+        std::vector<Source>& sources, std::vector<Source> const& replacements) {
+        std::map<std::tuple<int32_t, int32_t, int32_t>, Source> by_coordinate;
+        for (auto const& source : sources) {
+            by_coordinate.insert_or_assign(
+                std::tuple{source.coordinate.x, source.coordinate.y, source.coordinate.z}, source);
+        }
+        for (auto const& source : replacements) {
+            by_coordinate.insert_or_assign(
+                std::tuple{source.coordinate.x, source.coordinate.y, source.coordinate.z}, source);
+        }
+        sources.clear();
+        sources.reserve(by_coordinate.size());
+        for (auto& [coordinate, source] : by_coordinate) {
+            static_cast<void>(coordinate);
+            sources.push_back(std::move(source));
+        }
+    };
+    merge_sources(merged->chunk_sources, patch.chunk_sources);
+    merge_sources(merged->authority_sources, patch.authority_sources);
+    merged->faces.clear();
+    TerrainLodUploadPlan result;
+    result.ranges.resize(active.groups.size());
+    result.reusable.resize(active.groups.size());
+    result.uploaded.resize(active.groups.size());
+    for (uint32_t index = 0U; index < active.groups.size(); ++index) {
+        auto const& old_group = active.groups[index];
+        auto const found = replacement_groups.find(Key{old_group.origin_x, old_group.origin_y, old_group.extent});
+        auto const* source = &active;
+        auto group = old_group;
+        if (found != replacement_groups.end()) {
+            source = &patch;
+            group = patch.groups[found->second];
+            replacement_groups.erase(found);
+        } else {
+            result.reusable[index] = index;
+            result.ranges[index] = active_ranges[index];
+            result.uploaded[index] = group.range.instance_count;
+        }
+        auto const faces = terrainLodGroupFaces(*source, group);
+        group.range.first_instance = static_cast<uint32_t>(merged->faces.size());
+        merged->faces.insert(merged->faces.end(), faces.begin(), faces.end());
+        merged->groups[index] = group;
+    }
+    if (!replacement_groups.empty()) {
+        throw std::invalid_argument("terrain LOD replacement group is not presented");
+    }
+    result.scene = std::move(merged);
+    return result;
+}
+
 class TerrainLodUploadPlanner final {
 public:
     [[nodiscard]]
