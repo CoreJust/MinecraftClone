@@ -1061,6 +1061,47 @@ TEST(FlightWorldTest, CreativeFlightWithCollisionKeepsMovingAcrossFlatAuthoritat
     EXPECT_DOUBLE_EQ(shared::playerPositionZ(after), 386.0);
 }
 
+TEST(FlightWorldTest, CreativeFlightKeepsHorizontalMotionWhileDescendingIntoFlatGround)
+{
+    static constexpr uint32_t HORIZONTAL_TICKS = 10U;
+    static constexpr uint32_t HORIZONTAL_DELTA_SUBCELLS_PER_TICK =
+        shared::MOVEMENT_SUBCELLS_PER_TICK * 127U / 180U;
+    static constexpr double EXPECTED_HORIZONTAL_DELTA = static_cast<double>(
+        HORIZONTAL_TICKS * HORIZONTAL_DELTA_SUBCELLS_PER_TICK
+    ) / shared::SUBCELLS_PER_CELL;
+
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(publishMovementTestSurface(collision_world, false));
+    auto const support = collision_world.authoritativeColumn(4U, 4U);
+    ASSERT_TRUE(support.has_value());
+    EXPECT_EQ(support->highest_solid_z, 385U);
+    EXPECT_EQ(collision_world.queryBlock({ .x = 4, .y = 4, .z = 386 }).block, shared::Block::Air);
+
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 386 });
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+    shared::Player const before = requiredValue(world.player(1U));
+
+    for (uint32_t tick = 0U; tick < HORIZONTAL_TICKS; ++tick) {
+        ASSERT_TRUE(world.movePlayer(1U, {
+            .x = 127U,
+            .y = 0U,
+            .z = static_cast<uint8_t>(-127),
+            .accelerated = false,
+            .speedup = 5U,
+        }, shared::TICK)) << "horizontal input stopped while Shift-style descent met flat ground at tick " << tick;
+        EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), 386.0);
+    }
+
+    shared::Player const after = requiredValue(world.player(1U));
+    EXPECT_NEAR(
+        shared::playerPositionX(after) - shared::playerPositionX(before),
+        EXPECTED_HORIZONTAL_DELTA,
+        1e-9
+    );
+}
+
 TEST(FlightWorldTest, OneBlockStepNeedsFlightLiftOrGroundedJump)
 {
     shared::SparseWorld collision_world;

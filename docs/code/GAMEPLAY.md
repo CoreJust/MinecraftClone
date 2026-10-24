@@ -2,7 +2,7 @@ Run [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-di
 
 ## Shared simulation
 
-[World.hpp](../../src/shared/include/shared/world/World.hpp) sets 100-ms ticks, normalized XYZ, 10,000-subcell remainders, four-bit palette; `World` owns lifecycle/replication. Flat: 32×32. Flight wraps XY, bounds Z, spawns aloft. Entity Z 0–65,535; terrain 0–1,023. Empty high-flight coverage is Ready without chunks. Flight/bypass select terrain/body collision; walking adds gravity/jumps; takeoff preserves impulse. Footprints: Flat 2×2, Flight 10/16; spawns enforce separation.
+[World](../../src/shared/include/shared/world/World.hpp) sets 100-ms ticks, normalized XYZ, 10,000-subcell remainders, four-bit palette; it owns lifecycle/replication. Flat: 32×32. Flight wraps XY, spawns aloft. Entity Z 0–65,535; terrain 0–1,023. Empty high-flight coverage: Ready without chunks. Flight/bypass select terrain/body collision; walking adds gravity/jumps; takeoff preserves impulse. Footprints: Flat 2×2, Flight 10/16; spawns enforce separation. Shift descent defers terrain only after bounds, other-player and start-height checks; vertical sweep resolves support.
 
 ## Deterministic scenario plans
 

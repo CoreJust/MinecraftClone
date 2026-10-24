@@ -1133,6 +1133,30 @@ bool World::moveFlightPlayer(
             int64_t y;
             int64_t z;
         };
+        // Defer terrain-only descent collisions while retaining player checks at the sampled height.
+        auto const canDeferDescendingTerrainCollision = [&](int64_t const sample_x,
+            int64_t const sample_y,
+            int64_t const sample_z) {
+            if (delta_z >= 0) {
+                return false;
+            }
+            PlayerPosition const sample = positionFromSubcells(
+                static_cast<int32_t>(sample_x),
+                static_cast<int32_t>(sample_y),
+                static_cast<int32_t>(sample_z)
+            );
+            PlayerPosition normalized = sample;
+            normalized.x = wrapFlightCell(normalized.x);
+            normalized.y = wrapFlightCell(normalized.y);
+            return isFlightPositionInBounds(normalized)
+                && canPlayerBeAt(
+                    static_cast<uint32_t>(normalized.x * SUBCELLS_PER_CELL + normalized.x_subcell),
+                    static_cast<uint32_t>(normalized.y * SUBCELLS_PER_CELL + normalized.y_subcell),
+                    sample_z,
+                    player.id
+                )
+                && canFlightPlayerBeAt(player, sample_x, sample_y, start_z);
+        };
         auto const resolveHorizontal = [&](int64_t const delta, bool const on_x_axis) {
             HorizontalCandidate candidate{ .x = start_x, .y = start_y, .z = start_z };
             if (delta == 0) {
@@ -1147,9 +1171,12 @@ bool World::moveFlightPlayer(
                     ? start_x + delta * step / axis_steps : start_x;
                 int64_t const sample_y = on_x_axis
                     ? start_y : start_y + delta * step / axis_steps;
-                int64_t const sample_z = start_z + delta_z * step / axis_steps;
+                int64_t sample_z = start_z + delta_z * step / axis_steps;
                 if (!canFlightPlayerBeAt(player, sample_x, sample_y, sample_z)) {
-                    break;
+                    if (!canDeferDescendingTerrainCollision(sample_x, sample_y, sample_z)) {
+                        break;
+                    }
+                    sample_z = start_z;
                 }
                 candidate.x = sample_x;
                 candidate.y = sample_y;

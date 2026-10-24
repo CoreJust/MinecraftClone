@@ -19592,5 +19592,43 @@
     "blocker": "",
     "motivation": "Show current terrain with a representative striking scene during initial loading.",
     "baseline_commit": "ae74ffed2e9138c6bcada184058ee7b1b4ff0bc4"
+  },
+  {
+    "id": "MC-AI-0550",
+    "title": "Restore horizontal flight while Shift presses into flat ground",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Reproduce exact horizontal-plus-descent on flat ground; retain safe support while allowing horizontal movement; preserve walls, ceilings, wrapped seams and prior upward-diagonal behavior. Keep query/collision/prediction agreement; verify RED/GREEN. This task closes the local native/headless milestone only; Windows runtime and owner acceptance remain open under MC-AI-0483.",
+    "evidence": "Owner report: playtest-feedback-20261024/MC-AI-0550-request.txt (SHA-256 ce46e035c3f9eeffd311c45ed5733b8df40a6a44f782cd090d9b243c2cd5011a). The isolated Release RED control failed at tick 0 with no position change; the final Release FlightWorldTest suite passed 54/54, including the Shift-plus-WASD flat-ground regression and wall, ceiling, wrapped-player seam and diagonal-flight controls. Receipt and raw logs/XML are under task-0550-shift/receipt.json and task-0550-shift/temp/. Build and git diff --check passed. Windows runtime and owner acceptance remain open on parent MC-AI-0483; no Windows runtime was run.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Owner found a precise remaining ground-stall trigger in delivered MC-0.1.1-2.exe.",
+    "context": "WASD works in Flight; holding Shift simultaneously stops motion until release. Shift maps descent independently of Ctrl acceleration.\n\nClosure boundary: local native/headless movement only. Windows runtime and owner acceptance remain open under MC-AI-0483; this task has no Windows runtime evidence.",
+    "complexity": "medium",
+    "created_at": "2026-10-24",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Flight horizontal resolution now defers a descending terrain collision only when the interpolated sample is in bounds and clear of other players, and the horizontal candidate is clear at its starting height. The existing vertical sweep still resolves against support. The focused regression failed at tick 0 before the fix and the Release FlightWorld suite passed 54/54 after it. Windows runtime/owner acceptance remains open under MC-AI-0483.",
+    "plan": [],
+    "product_changes": [
+      "Restore horizontal flight movement while holding Shift and WASD over flat ground without bypassing terrain or player collision."
+    ],
+    "code_changes": [
+      "src/shared/world/World.cpp: defer only safe terrain-only descending sweep collisions.",
+      "tests/core/flight_world_tests.cpp: add the flat-ground Shift-plus-horizontal regression.",
+      "docs/code/GAMEPLAY.md: document the bounded descending-flight fallback."
+    ],
+    "baseline_commit": "44625fbcc50d6fb9725c6c82745562f78d48efc7",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
