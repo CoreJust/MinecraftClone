@@ -33,4 +33,4 @@ The project Codex config selects `gpt-6-luna`; an explicit task/app model overri
 
 `ai-dev` forks `dev` at `79b2687`; `ai-main` forks `main` at `28010a9`. They were created locally on 2026-09-09. Existing staged/unstaged source work was preserved and is not a released snapshot. The initial debug build and 136 CTest tests passed; interactive rendering and cross-platform checks were not established by that run.
 
-No game features are implemented by this setup. The tools validate documentation, task state, and delivery evidence; they do not guarantee autonomous correctness. Start by establishing snapshot 3's runtime baseline, then work through small acceptance-driven slices.
+This initial-state note records repository setup on 2026-09-09; its branch and test details are historical. For current work, run `python3 script/ai_tasks.py ready`, choose a task it reports as ready in the current hierarchy from [current.json](current.json), and read that task plus its linked guide before editing.

@@ -1,9 +1,11 @@
 import importlib.util
+import io
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 from pathlib import Path
 
@@ -65,21 +67,68 @@ class AiSetupTests(unittest.TestCase):
 
     def test_doctor_is_read_only(self):
         ai_setup = load_module()
+        vcpkg_root = self.root / "vcpkg"
+        toolchain = vcpkg_root / "scripts/buildsystems/vcpkg.cmake"
+        toolchain.parent.mkdir(parents=True)
+        toolchain.write_text("# test fixture\n", encoding="utf-8")
         before = subprocess.run(
             ["git", "config", "--local", "--get", "core.hooksPath"],
             cwd=self.root,
             text=True,
             capture_output=True,
         )
-        self.assertNotEqual(ai_setup.doctor(self.root), None)
+        result, _, _ = self.run_doctor(ai_setup, vcpkg_root)
         after = subprocess.run(
             ["git", "config", "--local", "--get", "core.hooksPath"],
             cwd=self.root,
             text=True,
             capture_output=True,
         )
+        self.assertEqual(result, 0)
         self.assertEqual(before.returncode, after.returncode)
         self.assertEqual(before.stdout, after.stdout)
+
+    def run_doctor(self, ai_setup, vcpkg_root):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(ai_setup.shutil, "which", side_effect=lambda name: f"/tools/{name}"),
+            mock.patch.dict(os.environ, {}, clear=False),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            os.environ.pop("VCPKG_ROOT", None)
+            if vcpkg_root is not None:
+                os.environ["VCPKG_ROOT"] = str(vcpkg_root)
+            result = ai_setup.doctor(self.root)
+        return result, stdout.getvalue(), stderr.getvalue()
+
+    def test_doctor_fails_when_vcpkg_root_is_missing(self):
+        ai_setup = load_module()
+        result, _, stderr = self.run_doctor(ai_setup, None)
+        self.assertEqual(result, 1)
+        self.assertIn("VCPKG_ROOT is not set", stderr)
+        self.assertIn("scripts/buildsystems/vcpkg.cmake", stderr)
+
+    def test_doctor_fails_when_vcpkg_toolchain_is_missing(self):
+        ai_setup = load_module()
+        invalid_root = self.root / "vcpkg-without-toolchain"
+        invalid_root.mkdir()
+        result, _, stderr = self.run_doctor(ai_setup, invalid_root)
+        self.assertEqual(result, 1)
+        self.assertIn("VCPKG_ROOT does not contain the required toolchain", stderr)
+        self.assertIn(str(invalid_root / "scripts/buildsystems/vcpkg.cmake"), stderr)
+
+    def test_doctor_accepts_vcpkg_root_with_toolchain(self):
+        ai_setup = load_module()
+        vcpkg_root = self.root / "valid-vcpkg"
+        toolchain = vcpkg_root / "scripts/buildsystems/vcpkg.cmake"
+        toolchain.parent.mkdir(parents=True)
+        toolchain.write_text("# test fixture\n", encoding="utf-8")
+        result, stdout, stderr = self.run_doctor(ai_setup, vcpkg_root)
+        self.assertEqual(result, 0, stderr)
+        self.assertIn(f"VCPKG_ROOT: {vcpkg_root}", stdout)
+        self.assertEqual(stderr, "")
 
     def test_install_rejects_missing_required_hook(self):
         (self.root / ".githooks/pre-merge-commit").unlink()

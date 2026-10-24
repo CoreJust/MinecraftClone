@@ -64,12 +64,35 @@ def install_hooks(root: Path) -> int:
 
 def doctor(root: Path) -> int:
     branch = git(root, "branch", "--show-current")
+    vcpkg_root = os.environ.get("VCPKG_ROOT", "").strip()
+    vcpkg_toolchain = (
+        Path(vcpkg_root) / "scripts" / "buildsystems" / "vcpkg.cmake"
+        if vcpkg_root
+        else None
+    )
+    vcpkg_toolchain_valid = vcpkg_toolchain is not None and vcpkg_toolchain.is_file()
     print(f"Python: {sys.version.split()[0]} ({sys.executable})")
     print(f"CMake: {shutil.which('cmake') or 'missing'}")
     print(f"Ninja: {shutil.which('ninja') or 'missing'}")
-    print(f"VCPKG_ROOT: {'set' if os.environ.get('VCPKG_ROOT') else 'missing'}")
+    print(f"VCPKG_ROOT: {vcpkg_root or 'missing'}")
     print(f"Branch: {branch.stdout.strip() if branch.returncode == 0 else 'unavailable'}")
-    return int(sys.version_info < (3, 12) or not shutil.which("cmake") or not shutil.which("ninja"))
+    if not vcpkg_root:
+        print(
+            "VCPKG_ROOT is not set; set it to a vcpkg checkout containing "
+            "scripts/buildsystems/vcpkg.cmake.",
+            file=sys.stderr,
+        )
+    elif not vcpkg_toolchain_valid:
+        print(
+            f"VCPKG_ROOT does not contain the required toolchain: {vcpkg_toolchain}",
+            file=sys.stderr,
+        )
+    return int(
+        sys.version_info < (3, 12)
+        or not shutil.which("cmake")
+        or not shutil.which("ninja")
+        or not vcpkg_toolchain_valid
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

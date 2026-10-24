@@ -18776,7 +18776,7 @@
     "id": "MC-AI-0527",
     "title": "Correct desktop setup preflight and current build guidance",
     "kind": "bug",
-    "status": "active",
+    "status": "done",
     "priority": "P1",
     "route": "luna",
     "milestone": "ED-011-S2",
@@ -18784,7 +18784,7 @@
       "MC-AI-0482"
     ],
     "acceptance": "Read-only prerequisite doctor fails missing/invalid vcpkg toolchain; exact dependency acquisition/build-prefix guide and source-derived package examples; current selection guidance replaces obsolete Snapshot-3 imperative.",
-    "evidence": "",
+    "evidence": "Rebased source candidate `/Users/core-just/.codex/task-evidence/mc-s2-20261024/task-0527/prepared/task-0527-source-v2.patch` (SHA-256 c962bdba5631beb9e3f152cc352814937893b2987cae2c2c2673ef865b1d5de6) applies to base 4b86547c9024a5d5699603623f9ff7dcb4f64dfd. Focused `script.tests.test_ai_setup` passed 9/9; isolated `ai_docs refresh` and `ai_docs check` passed. The guide matches the locked vcpkg revision, dependency lock, helper flags/triplets, CMake prefix/provenance paths; packaging examples match source identity 0.1.1:1. No build was run. The separate ENV-002 clean-prefix supplier-gated proof remains open.",
     "blocker": "",
     "owner": "codex",
     "level": "basic",
@@ -18793,20 +18793,22 @@
     "context": "W10; ENV-001..004",
     "complexity": "medium",
     "created_at": "2026-10-24",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Added fail-fast checks for a missing vcpkg root/toolchain, documented the exact desktop acquisition and private package prefix flow, updated package examples to the source identity, and replaced obsolete Snapshot-3 entry guidance with current task selection.",
     "plan": [
       "Read-only prerequisite doctor fails missing/invalid vcpkg toolchain; exact dependency acquisition/build-prefix guide and source-derived package examples; current selection guidance replaces obsolete Snapshot-3 imperative."
     ],
     "product_changes": [],
-    "code_changes": [],
-    "baseline_commit": "",
+    "code_changes": [
+      "The read-only setup doctor now rejects an unset VCPKG_ROOT or a root without scripts/buildsystems/vcpkg.cmake; focused tests cover missing, invalid, valid, and read-only cases."
+    ],
+    "baseline_commit": "4b86547c9024a5d5699603623f9ff7dcb4f64dfd",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
-    "docs_review": "Checked the plans against the audit and accepted S2 scope; ownership, acceptance and evidence limits retained. No implemented contract changed.",
-    "environment_review": "No build/runtime/CI or external mutation. Standard repository-local commit hooks installed for this isolated checkout.",
-    "backlog_review": "Only existing0483/0516 specifications elaborated; new0522 records this completed planning work, not implementation completion."
+    "docs_review": "The dependency guide was checked against dependencies.lock.json, script/ci/acquire.py, CMakePresets.json and the CMake provenance modules. Package examples match ProjectInfo.hpp and build_snapshot.py. Isolated ai_docs refresh/check passed on the rebased candidate.",
+    "environment_review": "Only focused Python tests and documentation checks ran; no CMake build, runtime, CI, private dependency acquisition, or remote action was performed. ENV-002 clean-desktop dependency resolution and mismatched-package provenance proof remain unproven because supplier access was not available; no clean-prefix success is claimed.",
+    "backlog_review": "Only MC-AI-0527 metadata was merged onto base 4b86547c9024a5d5699603623f9ff7dcb4f64dfd; generated metadata is rendered and checked in this isolated copy. No commit SHA is assigned in this evidence-only preparation."
   },
   {
     "id": "MC-AI-0528",
