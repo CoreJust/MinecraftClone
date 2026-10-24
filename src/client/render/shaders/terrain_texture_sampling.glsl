@@ -1,4 +1,4 @@
-layout(set = 0, binding = 1) uniform samplerBuffer terrain_texture_atlas;
+layout(set = 0, binding = 1) uniform sampler2DArray terrain_texture_atlas;
 
 layout(push_constant) uniform StoneOutputPushConstants {
     mat4 projection_view;
@@ -8,15 +8,13 @@ layout(push_constant) uniform StoneOutputPushConstants {
     vec4 surface;
 } terrain_output;
 
-const uint kTerrainTileSize = 16u;
-const uint kTerrainPixelsPerTile = 256u;
 const uint kTerrainFaceCount = 6u;
 const uint kTerrainMaterialCount = 7u;
 const uint kGrassMaterial = 2u;
 const uint kGrassSideOverlayTile = 42u;
 const vec3 kGrassTintSrgb = vec3(145.0, 189.0, 89.0) / 255.0;
 
-// The atlas view is UNORM, so decode PNG RGB before linear-light blending and shading.
+// Terrain texture samples are decoded from the sRGB image format by Vulkan.
 vec3 srgbToLinear(vec3 encoded) {
     const bvec3 low_range = lessThanEqual(encoded, vec3(0.04045));
     const vec3 linear_low = encoded / 12.92;
@@ -37,13 +35,8 @@ vec3 encodeTerrainOutput(vec3 linear_color) {
 }
 
 vec4 sampleTerrainTexture(uint tile_index, vec2 uv) {
-    const uvec2 pixel = min(
-        uvec2(fract(uv) * float(kTerrainTileSize)),
-        uvec2(kTerrainTileSize - 1u)
-    );
-    const uint texel_index = tile_index * kTerrainPixelsPerTile
-        + pixel.y * kTerrainTileSize + pixel.x;
-    return texelFetch(terrain_texture_atlas, int(texel_index));
+    // Keep UVs unwrapped so the sampler can derive the correct minification footprint.
+    return texture(terrain_texture_atlas, vec3(uv, float(tile_index)));
 }
 
 vec3 sampleTerrainMaterial(uint material_id, uint face_direction, vec2 uv) {
@@ -52,13 +45,13 @@ vec3 sampleTerrainMaterial(uint material_id, uint face_direction, vec2 uv) {
     }
     const uint tile_index = material_id * kTerrainFaceCount + face_direction;
     const vec4 base_texel = sampleTerrainTexture(tile_index, uv);
-    vec3 color = srgbToLinear(base_texel.rgb);
+    vec3 color = base_texel.rgb;
     if (material_id == kGrassMaterial) {
         const vec3 grass_tint = srgbToLinear(kGrassTintSrgb);
         if (face_direction < 4u) {
             const vec4 overlay_texel = sampleTerrainTexture(kGrassSideOverlayTile, uv);
-            const vec3 overlay_color = srgbToLinear(overlay_texel.rgb) * grass_tint;
-            color = mix(color, overlay_color, overlay_texel.a);
+            const vec3 overlay_color = overlay_texel.rgb * grass_tint;
+            color = color * (1.0 - overlay_texel.a) + overlay_color;
         } else if (face_direction == 5u) {
             color *= grass_tint;
         }

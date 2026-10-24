@@ -1,4 +1,5 @@
 #include <client/render/InstalledShaderAssets.hpp>
+#include <client/render/TerrainTextureMipChain.hpp>
 #include <client/render/TerrainTextures.hpp>
 
 #include <core/common/Defer.hpp>
@@ -7,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -217,6 +219,75 @@ TEST(ShaderAssetsTest, TerrainTextureAtlasPreservesGrassFaceMappingAndOverlayAlp
     ];
     EXPECT_EQ(static_cast<uint8_t>(overlay_first_pixel >> 24U), 255U);
     EXPECT_EQ(static_cast<uint8_t>(overlay_transparent_pixel >> 24U), 0U);
+}
+
+TEST(ShaderAssetsTest, TerrainTextureMipChainFiltersInLinearLight)
+{
+    namespace terrain_textures = client::render::terrain_textures;
+    static constexpr uint32_t CHECKER_TILE = 0U;
+    static constexpr uint32_t BASE_TEXEL_COUNT = 16U * 16U;
+    std::array<uint32_t, terrain_textures::TILE_COUNT * BASE_TEXEL_COUNT> source{};
+    auto const pack_rgba = [](uint8_t const red, uint8_t const green, uint8_t const blue, uint8_t const alpha) {
+        return static_cast<uint32_t>(red) | (static_cast<uint32_t>(green) << 8U)
+            | (static_cast<uint32_t>(blue) << 16U) | (static_cast<uint32_t>(alpha) << 24U);
+    };
+    source[CHECKER_TILE * BASE_TEXEL_COUNT] = pack_rgba(255U, 255U, 255U, 255U);
+    source[CHECKER_TILE * BASE_TEXEL_COUNT + 1U] = pack_rgba(0U, 0U, 0U, 255U);
+    source[CHECKER_TILE * BASE_TEXEL_COUNT + 16U] = pack_rgba(0U, 0U, 0U, 255U);
+    source[CHECKER_TILE * BASE_TEXEL_COUNT + 17U] = pack_rgba(255U, 255U, 255U, 255U);
+
+    terrain_textures::MipChain const chain = terrain_textures::makeMipChain(source);
+
+    ASSERT_EQ(chain[1U].extent, 8U);
+    ASSERT_EQ(chain[1U].rgba8.size(), terrain_textures::TILE_COUNT * 8U * 8U * 4U);
+    EXPECT_EQ(chain[1U].rgba8[0U], 188U);
+    EXPECT_EQ(chain[1U].rgba8[1U], 188U);
+    EXPECT_EQ(chain[1U].rgba8[2U], 188U);
+    EXPECT_EQ(chain[1U].rgba8[3U], 255U);
+}
+
+TEST(ShaderAssetsTest, TerrainTextureMipChainKeepsAdjacentTilesIndependent)
+{
+    namespace terrain_textures = client::render::terrain_textures;
+    static constexpr uint32_t BASE_TEXEL_COUNT = 16U * 16U;
+    static constexpr uint32_t RED_TILE = 15U;
+    static constexpr uint32_t GREEN_TILE = 16U;
+    std::array<uint32_t, terrain_textures::TILE_COUNT * BASE_TEXEL_COUNT> source{};
+    auto const pack_rgba = [](uint8_t const red, uint8_t const green, uint8_t const blue, uint8_t const alpha) {
+        return static_cast<uint32_t>(red) | (static_cast<uint32_t>(green) << 8U)
+            | (static_cast<uint32_t>(blue) << 16U) | (static_cast<uint32_t>(alpha) << 24U);
+    };
+    std::fill_n(source.begin() + RED_TILE * BASE_TEXEL_COUNT, BASE_TEXEL_COUNT,
+        pack_rgba(255U, 0U, 0U, 255U));
+    std::fill_n(source.begin() + GREEN_TILE * BASE_TEXEL_COUNT, BASE_TEXEL_COUNT,
+        pack_rgba(0U, 255U, 0U, 255U));
+
+    terrain_textures::MipChain const chain = terrain_textures::makeMipChain(source);
+
+    ASSERT_EQ(chain[4U].extent, 1U);
+    size_t const red_pixel = static_cast<size_t>(RED_TILE) * 4U;
+    size_t const green_pixel = static_cast<size_t>(GREEN_TILE) * 4U;
+    EXPECT_EQ(chain[4U].rgba8[red_pixel], 255U);
+    EXPECT_EQ(chain[4U].rgba8[red_pixel + 1U], 0U);
+    EXPECT_EQ(chain[4U].rgba8[green_pixel], 0U);
+    EXPECT_EQ(chain[4U].rgba8[green_pixel + 1U], 255U);
+}
+
+TEST(ShaderAssetsTest, TerrainTextureMipChainPremultipliesGrassOverlayAlpha)
+{
+    namespace terrain_textures = client::render::terrain_textures;
+    static constexpr uint32_t BASE_TEXEL_COUNT = 16U * 16U;
+    static constexpr uint32_t OVERLAY_TILE = terrain_textures::GRASS_SIDE_OVERLAY_TILE_INDEX;
+    std::array<uint32_t, terrain_textures::TILE_COUNT * BASE_TEXEL_COUNT> source{};
+    source[OVERLAY_TILE * BASE_TEXEL_COUNT] = 0xFFFF'FFFFU;
+
+    terrain_textures::MipChain const chain = terrain_textures::makeMipChain(source);
+
+    size_t const overlay_pixel = static_cast<size_t>(OVERLAY_TILE) * 8U * 8U * 4U;
+    EXPECT_EQ(chain[1U].rgba8[overlay_pixel], 137U);
+    EXPECT_EQ(chain[1U].rgba8[overlay_pixel + 1U], 137U);
+    EXPECT_EQ(chain[1U].rgba8[overlay_pixel + 2U], 137U);
+    EXPECT_EQ(chain[1U].rgba8[overlay_pixel + 3U], 64U);
 }
 
 TEST(ShaderAssetsTest, PropagatesDeterministicKernelProgramDiagnostics)

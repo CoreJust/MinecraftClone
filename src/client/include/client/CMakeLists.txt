@@ -44,6 +44,7 @@ target_sources(mc
             render/StoneIndirectDraws.hpp
             render/TerrainTextures.hpp
             render/TerrainLodUploadPlan.hpp
+            render/TerrainTextureMipChain.hpp
             render/TextRenderer.hpp
             render/MapImageData.hpp
             render/MapImageDraw.hpp

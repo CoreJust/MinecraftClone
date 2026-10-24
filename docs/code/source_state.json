@@ -397,7 +397,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "960db32d23120fb11e538cd0a36cc160ea65ab3c1b0ef36fa40dbe67a9ec57ce"
+      "sources_sha256": "0e11a059e74a67c0880adb8f4b3133825db420cb36c11df87dab3023b07a776f"
     },
     {
       "guide": "docs/code/GENERATION.md",
@@ -966,7 +966,7 @@
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "a0dc5792313fa6bff2e924420168eebbe5ba2f02021f6fa34a0346e4a5aaadd8",
+      "guide_sha256": "102679f55b367e0726de4065876cdba42dae45280ad562f42058ab551ab5e7f9",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -985,6 +985,7 @@
         "src/client/include/client/render/StoneFaceCapacity.hpp",
         "src/client/include/client/render/StoneIndirectDraws.hpp",
         "src/client/include/client/render/TerrainLodUploadPlan.hpp",
+        "src/client/include/client/render/TerrainTextureMipChain.hpp",
         "src/client/include/client/render/TerrainTextures.hpp",
         "src/client/include/client/render/TextRenderer.hpp",
         "src/client/include/client/render/VulkanFrustum.hpp",
@@ -1085,7 +1086,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "4af11747e04dbf5d2db8feebd30925541fcb74ca93126f84e921fbc4295340bf"
+      "sources_sha256": "6f9efac8fbb8250e8d1b034ad9273c1b216baf813aca6ad7ab6c3d287c147363"
     }
   ],
   "version": 1

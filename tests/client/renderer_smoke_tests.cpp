@@ -2139,6 +2139,260 @@ TEST(RendererSmokeTest, GlfwCursorCaptureSupportsContinuousCameraLook)
     EXPECT_EQ(glfwGetInputMode(window.nativeHandle(), GLFW_CURSOR), GLFW_CURSOR_NORMAL);
 }
 
+[[nodiscard]] std::vector<shared::ChunkMesh> distantDirtTerrainMeshes()
+{
+    static constexpr uint32_t CHUNK_WIDTH = 12U;
+    std::vector<shared::ChunkMesh> result;
+    result.reserve(CHUNK_WIDTH * CHUNK_WIDTH);
+    for (uint32_t chunk_y = 0U; chunk_y < CHUNK_WIDTH; ++chunk_y) {
+        for (uint32_t chunk_x = 0U; chunk_x < CHUNK_WIDTH; ++chunk_x) {
+            uint64_t const chunk_id = static_cast<uint64_t>(chunk_y) * CHUNK_WIDTH + chunk_x + 1U;
+            shared::ChunkMesh mesh{
+                .coordinate = { .x = static_cast<int32_t>(chunk_x), .y = static_cast<int32_t>(chunk_y), .z = 0 },
+                .content_identity = { .revision = 1U, .content_hash = chunk_id },
+                .faces = {},
+            };
+            mesh.faces.reserve(shared::Chunk::FACE_BLOCK_COUNT);
+            for (uint32_t y = 0U; y < shared::Chunk::SIDE_LENGTH; ++y) {
+                for (uint32_t x = 0U; x < shared::Chunk::SIDE_LENGTH; ++x) {
+                    mesh.faces.push_back({
+                        .local_origin = {
+                            .x = static_cast<uint8_t>(x),
+                            .y = static_cast<uint8_t>(y),
+                            .z = 0U,
+                        },
+                        .direction = shared::FaceDirection::PositiveZ,
+                        .material = shared::Block::Dirt,
+                    });
+                }
+            }
+            result.push_back(std::move(mesh));
+        }
+    }
+    return result;
+}
+
+[[nodiscard]] std::optional<client::RendererFrameCapture> captureDistantDirtFrame(
+    core::platform::glfw::GlfwWindow const& window,
+    client::VulkanRenderer& renderer,
+    std::chrono::steady_clock::time_point const deadline
+)
+{
+    renderer.requestFrameCapture();
+    for (uint32_t frame = 0U; frame < 12U && std::chrono::steady_clock::now() < deadline; ++frame) {
+        if (!window.nextFrame()) {
+            return std::nullopt;
+        }
+        static_cast<void>(renderer.render({}, deadline));
+        if (std::optional<client::RendererFrameCapture> capture = renderer.takeFrameCapture(); capture.has_value()) {
+            return capture;
+        }
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] bool isDirtPixel(client::RendererFrameCapture const& capture, size_t pixel_index) noexcept
+{
+    size_t const offset = pixel_index * 4U;
+    uint8_t const red = capture.rgba8[offset];
+    uint8_t const green = capture.rgba8[offset + 1U];
+    uint8_t const blue = capture.rgba8[offset + 2U];
+    return red > green && green > blue && red > static_cast<uint32_t>(blue) + 16U;
+}
+
+struct TerrainTexturePanMetrics final {
+    uint64_t dirt_pixel_pair_count = 0U;
+    double mean_rgb_delta = 0.0;
+    uint32_t p95_rgb_delta = 0U;
+};
+
+[[nodiscard]] TerrainTexturePanMetrics measureDistantDirtPan(
+    std::span<client::RendererFrameCapture const> captures
+)
+{
+    std::vector<uint32_t> pixel_deltas;
+    uint64_t total_delta = 0U;
+    for (size_t frame = 1U; frame < captures.size(); ++frame) {
+        client::RendererFrameCapture const& previous = captures[frame - 1U];
+        client::RendererFrameCapture const& current = captures[frame];
+        if (previous.width != current.width || previous.height != current.height) {
+            return {};
+        }
+        size_t const pixel_count = static_cast<size_t>(current.width) * current.height;
+        for (size_t pixel = 0U; pixel < pixel_count; ++pixel) {
+            if (!isDirtPixel(previous, pixel) || !isDirtPixel(current, pixel)) {
+                continue;
+            }
+            size_t const offset = pixel * 4U;
+            uint32_t const delta = static_cast<uint32_t>(std::abs(
+                static_cast<int32_t>(previous.rgba8[offset]) - current.rgba8[offset]))
+                + static_cast<uint32_t>(std::abs(
+                    static_cast<int32_t>(previous.rgba8[offset + 1U]) - current.rgba8[offset + 1U]))
+                + static_cast<uint32_t>(std::abs(
+                    static_cast<int32_t>(previous.rgba8[offset + 2U]) - current.rgba8[offset + 2U]));
+            total_delta += delta;
+            pixel_deltas.push_back(delta);
+        }
+    }
+    if (pixel_deltas.empty()) {
+        return {};
+    }
+    std::ranges::sort(pixel_deltas);
+    return {
+        .dirt_pixel_pair_count = pixel_deltas.size(),
+        .mean_rgb_delta = static_cast<double>(total_delta) / static_cast<double>(pixel_deltas.size()),
+        .p95_rgb_delta = pixel_deltas[(pixel_deltas.size() - 1U) * 95U / 100U],
+    };
+}
+
+TEST(RendererSmokeTest, DistantDirtPanCapturesTemporalFilteringEvidence)
+{
+    static constexpr uint32_t LOGICAL_WIDTH = 320U;
+    static constexpr uint32_t LOGICAL_HEIGHT = 240U;
+    static constexpr uint32_t PAN_FRAME_COUNT = 9U;
+    static constexpr uint32_t WARMUP_FRAME_COUNT = 8U;
+    static constexpr uint32_t PERF_FRAME_COUNT = 40U;
+    static constexpr uint32_t PERF_ATTEMPT_LIMIT = 80U;
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 30 };
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = LOGICAL_WIDTH,
+            .height = LOGICAL_HEIGHT,
+            .title = "MinecraftClone distant dirt texture sampling",
+        },
+    };
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window,
+            { .require_validation = true, .enable_frame_capture = true }
+        ),
+        shader_assets,
+        { .require_validation = true, .enable_frame_capture = true },
+    };
+    renderer.setDebugHudEnabled(false);
+    std::vector<shared::ChunkMesh> const terrain = distantDirtTerrainMeshes();
+    renderer.setChunkMeshes(terrain);
+    client::CameraPose const base_camera{
+        .position = { 96.0, -64.0, 40.0 },
+        .angles = { .pitch_degrees = -15.0 },
+    };
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    std::vector<client::RendererFrameCapture> captures;
+    captures.reserve(PAN_FRAME_COUNT);
+    char const* const capture_prefix = std::getenv("MC_TERRAIN_DIRT_PAN_CAPTURE_PREFIX");
+    for (uint32_t frame = 0U; frame < PAN_FRAME_COUNT; ++frame) {
+        client::CameraPose camera = base_camera;
+        camera.angles.yaw_degrees = (static_cast<double>(frame) - 4.0) * 0.04;
+        renderer.setCamera(camera);
+        std::optional<client::RendererFrameCapture> capture = captureDistantDirtFrame(window, renderer, deadline);
+        ASSERT_TRUE(capture.has_value()) << "failed to capture pan frame " << frame;
+        if (capture_prefix != nullptr && capture_prefix[0] != '\0') {
+            std::string output_path{ capture_prefix };
+            output_path += "-";
+            output_path += std::to_string(frame);
+            output_path += ".ppm";
+            auto const written = testsupport::writePpm(
+                {
+                    .width = capture->width,
+                    .height = capture->height,
+                    .srgb_encoded = capture->srgb_encoded,
+                    .pixels = capture->rgba8,
+                },
+                std::filesystem::path{ output_path },
+                "distant dirt texture pan"
+            );
+            ASSERT_TRUE(written.has_value()) << written.error();
+        }
+        captures.push_back(std::move(*capture));
+    }
+
+    TerrainTexturePanMetrics const pan_metrics = measureDistantDirtPan(captures);
+    ASSERT_GT(pan_metrics.dirt_pixel_pair_count, 0U);
+    RecordProperty("distant_dirt_pan_frame_count", std::to_string(PAN_FRAME_COUNT));
+    RecordProperty("distant_dirt_pan_mean_rgb_delta", std::to_string(pan_metrics.mean_rgb_delta));
+    RecordProperty("distant_dirt_pan_p95_rgb_delta", std::to_string(pan_metrics.p95_rgb_delta));
+    RecordProperty("distant_dirt_pan_pixel_pair_count", std::to_string(pan_metrics.dirt_pixel_pair_count));
+
+    renderer.setCamera(base_camera);
+    uint32_t warmup_frames = 0U;
+    while (warmup_frames < WARMUP_FRAME_COUNT && std::chrono::steady_clock::now() < deadline) {
+        ASSERT_TRUE(window.nextFrame());
+        if (renderer.render({}, deadline)) {
+            ++warmup_frames;
+        }
+    }
+    ASSERT_EQ(warmup_frames, WARMUP_FRAME_COUNT);
+
+    std::vector<std::chrono::nanoseconds> cpu_frame_durations;
+    std::vector<std::chrono::nanoseconds> cpu_scene_record_durations;
+    std::vector<std::chrono::nanoseconds> gpu_terrain_durations;
+    cpu_frame_durations.reserve(PERF_FRAME_COUNT);
+    cpu_scene_record_durations.reserve(PERF_FRAME_COUNT);
+    uint64_t previous_gpu_sample_id = 0U;
+    for (uint32_t attempt = 0U;
+         attempt < PERF_ATTEMPT_LIMIT && cpu_frame_durations.size() < PERF_FRAME_COUNT
+             && std::chrono::steady_clock::now() < deadline;
+         ++attempt) {
+        ASSERT_TRUE(window.nextFrame());
+        if (!renderer.render({}, deadline)) {
+            continue;
+        }
+        client::RendererRuntimeInfo const runtime = renderer.runtimeInfo();
+        cpu_frame_durations.push_back(runtime.cpu_frame_duration);
+        cpu_scene_record_durations.push_back(runtime.cpu_stone_scene_record_duration);
+        if (runtime.diagnostic_gpu_terrain_duration.has_value()
+            && runtime.diagnostic_gpu_sample_attempt_id != previous_gpu_sample_id) {
+            gpu_terrain_durations.push_back(*runtime.diagnostic_gpu_terrain_duration);
+            previous_gpu_sample_id = runtime.diagnostic_gpu_sample_attempt_id;
+        }
+    }
+    ASSERT_EQ(cpu_frame_durations.size(), PERF_FRAME_COUNT);
+
+    for (uint32_t frame = 0U; frame < 4U; ++frame) {
+        ASSERT_TRUE(window.nextFrame());
+        static_cast<void>(renderer.render({}, deadline));
+        client::RendererRuntimeInfo const sample = renderer.runtimeInfo();
+        if (sample.diagnostic_gpu_terrain_duration.has_value()
+            && sample.diagnostic_gpu_sample_attempt_id != previous_gpu_sample_id) {
+            gpu_terrain_durations.push_back(*sample.diagnostic_gpu_terrain_duration);
+            previous_gpu_sample_id = sample.diagnostic_gpu_sample_attempt_id;
+        }
+    }
+    ASSERT_TRUE(renderer.waitForSubmittedFrames(deadline));
+    client::RendererRuntimeInfo const runtime = renderer.runtimeInfo();
+    auto const percentile = [](std::vector<std::chrono::nanoseconds> samples, size_t percentile_index) {
+        std::ranges::sort(samples);
+        return samples[(samples.size() - 1U) * percentile_index / 100U];
+    };
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+    RecordProperty("distant_dirt_present_mode", std::to_string(static_cast<uint32_t>(runtime.present_mode)));
+    RecordProperty("distant_dirt_pipeline_path", std::to_string(static_cast<uint32_t>(runtime.pipeline_path)));
+    RecordProperty("distant_dirt_cpu_frame_median_ns", std::to_string(percentile(cpu_frame_durations, 50U).count()));
+    RecordProperty("distant_dirt_cpu_frame_p95_ns", std::to_string(percentile(cpu_frame_durations, 95U).count()));
+    RecordProperty(
+        "distant_dirt_cpu_scene_record_median_ns",
+        std::to_string(percentile(cpu_scene_record_durations, 50U).count())
+    );
+    RecordProperty(
+        "distant_dirt_cpu_scene_record_p95_ns",
+        std::to_string(percentile(cpu_scene_record_durations, 95U).count())
+    );
+    RecordProperty("distant_dirt_gpu_timestamp_enabled", runtime.diagnostic_gpu_timestamps_enabled ? "true" : "false");
+    RecordProperty("distant_dirt_gpu_timestamp_reason", std::string{ runtime.diagnostic_gpu_timestamp_reason });
+    RecordProperty("distant_dirt_gpu_terrain_sample_count", std::to_string(gpu_terrain_durations.size()));
+    if (!gpu_terrain_durations.empty()) {
+        RecordProperty(
+            "distant_dirt_gpu_terrain_median_ns",
+            std::to_string(percentile(gpu_terrain_durations, 50U).count())
+        );
+        RecordProperty(
+            "distant_dirt_gpu_terrain_p95_ns",
+            std::to_string(percentile(gpu_terrain_durations, 95U).count())
+        );
+    }
+}
+
 TEST(RendererSmokeTest, NormalRendererDisplaysCanonicalTerrainTextures)
 {
     static constexpr uint32_t LOGICAL_WIDTH = 320U;
@@ -2217,8 +2471,8 @@ TEST(RendererSmokeTest, NormalRendererDisplaysCanonicalTerrainTextures)
 
 TEST(RendererSmokeTest, GrassBlockUsesVanillaTopSideAndBottomTextures)
 {
-    static constexpr uint32_t LOGICAL_WIDTH = 320U;
-    static constexpr uint32_t LOGICAL_HEIGHT = 240U;
+    static constexpr uint32_t LOGICAL_WIDTH = 640U;
+    static constexpr uint32_t LOGICAL_HEIGHT = 480U;
     static constexpr uint32_t MAX_CAPTURE_FRAMES = 12U;
     static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
     core::platform::glfw::GlfwWindow window{

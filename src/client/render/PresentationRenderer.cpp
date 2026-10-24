@@ -13,6 +13,7 @@
 #include <client/render/StoneFaceCapacity.hpp>
 #include <client/render/StoneIndirectDraws.hpp>
 #include <client/render/TerrainLodUploadPlan.hpp>
+#include <client/render/TerrainTextureMipChain.hpp>
 #include <client/render/TerrainTextures.hpp>
 #include <client/render/TextRenderer.hpp>
 #include <client/render/VulkanFrustum.hpp>
@@ -81,6 +82,102 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+namespace client::render::terrain_textures {
+namespace {
+
+[[nodiscard]] float srgbToLinear(uint8_t const encoded) noexcept
+{
+    float const value = static_cast<float>(encoded) / 255.0F;
+    return value <= 0.040'45F ? value / 12.92F : std::pow((value + 0.055F) / 1.055F, 2.4F);
+}
+
+[[nodiscard]] uint8_t linearToSrgb(float const linear) noexcept
+{
+    float const value = std::clamp(linear, 0.0F, 1.0F);
+    float const encoded = value <= 0.003'130'8F ? value * 12.92F : 1.055F * std::pow(value, 1.0F / 2.4F) - 0.055F;
+    return static_cast<uint8_t>(std::lround(encoded * 255.0F));
+}
+
+void accumulateLinearPixel(
+    std::array<float, 3>& color_sum,
+    float& alpha_sum,
+    MipLevel const& source,
+    size_t const input
+)
+{
+    for (size_t channel = 0U; channel < color_sum.size(); ++channel) {
+        color_sum[channel] += srgbToLinear(source.rgba8[input + channel]);
+    }
+    alpha_sum += static_cast<float>(source.rgba8[input + 3U]) / 255.0F;
+}
+
+[[nodiscard]] MipLevel makeBaseMip(std::span<uint32_t const> source)
+{
+    MipLevel result{ .extent = TILE_SIZE };
+    result.rgba8.resize(source.size() * 4U);
+    for (uint32_t tile = 0U; tile < TILE_COUNT; ++tile) {
+        bool const premultiply_alpha = tile == GRASS_SIDE_OVERLAY_TILE_INDEX;
+        for (uint32_t pixel = 0U; pixel < PIXELS_PER_TILE; ++pixel) {
+            uint32_t const packed = source[static_cast<size_t>(tile) * PIXELS_PER_TILE + pixel];
+            uint8_t const alpha = static_cast<uint8_t>(packed >> 24U);
+            size_t const output = (static_cast<size_t>(tile) * PIXELS_PER_TILE + pixel) * 4U;
+            for (uint32_t channel = 0U; channel < 3U; ++channel) {
+                uint8_t const encoded = static_cast<uint8_t>(packed >> (channel * 8U));
+                result.rgba8[output + channel] = premultiply_alpha
+                    ? linearToSrgb(srgbToLinear(encoded) * (static_cast<float>(alpha) / 255.0F))
+                    : encoded;
+            }
+            result.rgba8[output + 3U] = alpha;
+        }
+    }
+    return result;
+}
+
+[[nodiscard]] MipLevel makeNextMip(MipLevel const& previous)
+{
+    MipLevel current{ .extent = previous.extent / 2U };
+    current.rgba8.resize(static_cast<size_t>(TILE_COUNT) * current.extent * current.extent * 4U);
+    uint32_t const pixels_per_tile = current.extent * current.extent;
+    for (uint32_t tile = 0U; tile < TILE_COUNT; ++tile) {
+        for (uint32_t pixel = 0U; pixel < pixels_per_tile; ++pixel) {
+            uint32_t const x = pixel % current.extent;
+            uint32_t const y = pixel / current.extent;
+            size_t const output = (static_cast<size_t>(tile) * pixels_per_tile + pixel) * 4U;
+            float alpha_sum = 0.0F;
+            std::array<float, 3> color_sum{};
+            for (uint32_t sample = 0U; sample < 4U; ++sample) {
+                uint32_t const source_x = x * 2U + sample % 2U;
+                uint32_t const source_y = y * 2U + sample / 2U;
+                size_t const input = ((static_cast<size_t>(tile) * previous.extent + source_y)
+                    * previous.extent + source_x) * 4U;
+                accumulateLinearPixel(color_sum, alpha_sum, previous, input);
+            }
+            for (size_t channel = 0U; channel < color_sum.size(); ++channel) {
+                current.rgba8[output + channel] = linearToSrgb(color_sum[channel] * 0.25F);
+            }
+            current.rgba8[output + 3U] = static_cast<uint8_t>(std::lround(alpha_sum * 255.0F * 0.25F));
+        }
+    }
+    return current;
+}
+
+} // namespace
+
+MipChain makeMipChain(std::span<uint32_t const> source)
+{
+    if (source.size() != static_cast<size_t>(TILE_COUNT) * PIXELS_PER_TILE) {
+        throw std::invalid_argument("terrain texture source does not contain every tile pixel");
+    }
+    MipChain levels{};
+    levels[0U] = makeBaseMip(source);
+    for (uint32_t level = 1U; level < MIP_LEVEL_COUNT; ++level) {
+        levels[level] = makeNextMip(levels[level - 1U]);
+    }
+    return levels;
+}
+
+} // namespace client::render::terrain_textures
 
 namespace client {
 namespace {
@@ -632,81 +729,253 @@ public:
         : m_device(device)
         , m_physical_device(physical_device)
     {
-        VkPhysicalDeviceProperties device_properties{};
-        vkGetPhysicalDeviceProperties(m_physical_device, &device_properties);
-        uint64_t const texel_count = static_cast<uint64_t>(render::terrain_textures::TILE_COUNT)
-            * render::terrain_textures::PIXELS_PER_TILE;
-        if (texel_count > device_properties.limits.maxTexelBufferElements) {
-            throw std::runtime_error("Vulkan device cannot expose the terrain texture atlas as a texel buffer");
-        }
-        VkBufferCreateInfo buffer_info{};
-        buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        buffer_info.size = sizeof(render::terrain_textures::RGBA8);
-        buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT;
-        buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        checkResult(vkCreateBuffer(m_device, &buffer_info, nullptr, &m_buffer), "vkCreateBuffer terrain textures");
-        VkMemoryRequirements requirements{};
-        vkGetBufferMemoryRequirements(m_device, m_buffer, &requirements);
-        VkPhysicalDeviceMemoryProperties properties{};
-        vkGetPhysicalDeviceMemoryProperties(m_physical_device, &properties);
-        uint32_t memory_type = properties.memoryTypeCount;
-        for (uint32_t index = 0U; index < properties.memoryTypeCount; ++index) {
-            VkMemoryPropertyFlags constexpr required =
-                static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-                | static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-            if ((requirements.memoryTypeBits & (1U << index)) != 0U
-                && (properties.memoryTypes[index].propertyFlags & required) == required) {
-                memory_type = index;
-                break;
-            }
-        }
-        if (memory_type == properties.memoryTypeCount) {
+        try {
+            createUploadBuffer();
+            createImage();
+            createImageView();
+            createSampler();
+        } catch (...) {
             reset();
-            throw std::runtime_error("Vulkan device has no coherent host-visible memory for terrain textures");
+            throw;
         }
-        VkMemoryAllocateInfo allocation{};
-        allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocation.allocationSize = requirements.size;
-        allocation.memoryTypeIndex = memory_type;
-        checkResult(vkAllocateMemory(m_device, &allocation, nullptr, &m_memory), "vkAllocateMemory terrain textures");
-        checkResult(vkBindBufferMemory(m_device, m_buffer, m_memory, 0U), "vkBindBufferMemory terrain textures");
-        void* mapped = nullptr;
-        checkResult(vkMapMemory(m_device, m_memory, 0U, sizeof(render::terrain_textures::RGBA8), 0U, &mapped),
-            "vkMapMemory terrain textures");
-        std::memcpy(mapped, render::terrain_textures::RGBA8.data(), sizeof(render::terrain_textures::RGBA8));
-        vkUnmapMemory(m_device, m_memory);
-        VkBufferViewCreateInfo view_info{};
-        view_info.sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO;
-        view_info.buffer = m_buffer;
-        view_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-        view_info.range = sizeof(render::terrain_textures::RGBA8);
-        checkResult(vkCreateBufferView(m_device, &view_info, nullptr, &m_view),
-            "vkCreateBufferView terrain textures");
     }
 
     ~StoneTextureBuffer() { reset(); }
     StoneTextureBuffer(StoneTextureBuffer const&) = delete;
     StoneTextureBuffer& operator=(StoneTextureBuffer const&) = delete;
 
-    [[nodiscard]] VkBufferView const& view() const noexcept { return m_view; }
+    [[nodiscard]] VkImageView view() const noexcept { return m_view; }
+    [[nodiscard]] VkSampler sampler() const noexcept { return m_sampler; }
+
+    void recordUpload(VkCommandBuffer const command) const
+    {
+        if (m_uploaded) {
+            return;
+        }
+        VkImageMemoryBarrier to_transfer{};
+        to_transfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        to_transfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        to_transfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        to_transfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        to_transfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        to_transfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        to_transfer.image = m_image;
+        to_transfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        to_transfer.subresourceRange.levelCount = render::terrain_textures::MIP_LEVEL_COUNT;
+        to_transfer.subresourceRange.layerCount = render::terrain_textures::TILE_COUNT;
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0U, 0U, nullptr, 0U, nullptr, 1U, &to_transfer);
+
+        std::array<VkBufferImageCopy, render::terrain_textures::MIP_LEVEL_COUNT> copies{};
+        VkDeviceSize offset = 0U;
+        uint32_t extent = render::terrain_textures::TILE_SIZE;
+        for (uint32_t level = 0U; level < render::terrain_textures::MIP_LEVEL_COUNT; ++level) {
+            VkBufferImageCopy& copy = copies[level];
+            copy.bufferOffset = offset;
+            copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            copy.imageSubresource.mipLevel = level;
+            copy.imageSubresource.layerCount = render::terrain_textures::TILE_COUNT;
+            copy.imageExtent = { extent, extent, 1U };
+            offset += static_cast<VkDeviceSize>(render::terrain_textures::TILE_COUNT) * extent * extent * 4U;
+            extent /= 2U;
+        }
+        vkCmdCopyBufferToImage(command, m_upload_buffer, m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            static_cast<uint32_t>(copies.size()), copies.data());
+
+        VkImageMemoryBarrier to_shader{};
+        to_shader.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        to_shader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        to_shader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        to_shader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        to_shader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        to_shader.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        to_shader.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        to_shader.image = m_image;
+        to_shader.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        to_shader.subresourceRange.levelCount = render::terrain_textures::MIP_LEVEL_COUNT;
+        to_shader.subresourceRange.layerCount = render::terrain_textures::TILE_COUNT;
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0U, 0U, nullptr, 0U, nullptr, 1U, &to_shader);
+    }
+
+    void markUploaded() noexcept { m_uploaded = true; }
     void destroy() noexcept { reset(); }
 
 private:
+    void createUploadBuffer()
+    {
+        render::terrain_textures::MipChain const levels = render::terrain_textures::makeMipChain(
+            render::terrain_textures::RGBA8);
+        for (render::terrain_textures::MipLevel const& level : levels) {
+            m_upload_size += level.rgba8.size();
+        }
+        VkBufferCreateInfo const buffer_info{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = m_upload_size,
+            .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        };
+        checkResult(vkCreateBuffer(m_device, &buffer_info, nullptr, &m_upload_buffer),
+            "vkCreateBuffer terrain texture mip upload");
+        VkMemoryRequirements requirements{};
+        vkGetBufferMemoryRequirements(m_device, m_upload_buffer, &requirements);
+        std::optional<uint32_t> const memory_type = findHostVisibleCoherentMemoryType(
+            m_physical_device, requirements.memoryTypeBits);
+        if (!memory_type.has_value()) {
+            throw std::runtime_error("Vulkan device has no coherent host-visible memory for terrain texture upload");
+        }
+        VkMemoryAllocateInfo const allocation{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = requirements.size,
+            .memoryTypeIndex = *memory_type,
+        };
+        checkResult(vkAllocateMemory(m_device, &allocation, nullptr, &m_upload_memory),
+            "vkAllocateMemory terrain texture mip upload");
+        checkResult(vkBindBufferMemory(m_device, m_upload_buffer, m_upload_memory, 0U),
+            "vkBindBufferMemory terrain texture mip upload");
+        void* mapped = nullptr;
+        checkResult(vkMapMemory(m_device, m_upload_memory, 0U, m_upload_size, 0U, &mapped),
+            "vkMapMemory terrain texture mip upload");
+        auto* destination = static_cast<uint8_t*>(mapped);
+        for (render::terrain_textures::MipLevel const& level : levels) {
+            std::memcpy(destination, level.rgba8.data(), level.rgba8.size());
+            destination += level.rgba8.size();
+        }
+        vkUnmapMemory(m_device, m_upload_memory);
+    }
+
+    void createImage()
+    {
+        static constexpr VkFormat TERRAIN_FORMAT = VK_FORMAT_R8G8B8A8_SRGB;
+        VkFormatProperties format_properties{};
+        vkGetPhysicalDeviceFormatProperties(m_physical_device, TERRAIN_FORMAT, &format_properties);
+        VkFormatFeatureFlags constexpr REQUIRED_FORMAT_FEATURES = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT
+            | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+        if ((format_properties.optimalTilingFeatures & REQUIRED_FORMAT_FEATURES) != REQUIRED_FORMAT_FEATURES) {
+            throw std::runtime_error("Vulkan device cannot linearly sample sRGB terrain textures");
+        }
+        VkPhysicalDeviceProperties device_properties{};
+        vkGetPhysicalDeviceProperties(m_physical_device, &device_properties);
+        if (render::terrain_textures::TILE_COUNT > device_properties.limits.maxImageArrayLayers) {
+            throw std::runtime_error("Vulkan device cannot expose every terrain tile in one texture array");
+        }
+        VkImageUsageFlags constexpr USAGE = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        VkImageFormatProperties image_properties{};
+        checkResult(vkGetPhysicalDeviceImageFormatProperties(m_physical_device, TERRAIN_FORMAT, VK_IMAGE_TYPE_2D,
+            VK_IMAGE_TILING_OPTIMAL, USAGE, 0U, &image_properties),
+            "vkGetPhysicalDeviceImageFormatProperties terrain textures");
+        if (render::terrain_textures::TILE_SIZE > image_properties.maxExtent.width
+            || render::terrain_textures::TILE_SIZE > image_properties.maxExtent.height
+            || render::terrain_textures::MIP_LEVEL_COUNT > image_properties.maxMipLevels
+            || render::terrain_textures::TILE_COUNT > image_properties.maxArrayLayers) {
+            throw std::runtime_error("Vulkan terrain texture array exceeds image format limits");
+        }
+        VkImageCreateInfo const image_info{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = TERRAIN_FORMAT,
+            .extent = { render::terrain_textures::TILE_SIZE, render::terrain_textures::TILE_SIZE, 1U },
+            .mipLevels = render::terrain_textures::MIP_LEVEL_COUNT,
+            .arrayLayers = render::terrain_textures::TILE_COUNT,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = USAGE,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        };
+        checkResult(vkCreateImage(m_device, &image_info, nullptr, &m_image), "vkCreateImage terrain textures");
+        VkMemoryRequirements requirements{};
+        vkGetImageMemoryRequirements(m_device, m_image, &requirements);
+        VkPhysicalDeviceMemoryProperties memory_properties{};
+        vkGetPhysicalDeviceMemoryProperties(m_physical_device, &memory_properties);
+        std::optional<uint32_t> memory_type;
+        for (uint32_t index = 0U; index < memory_properties.memoryTypeCount; ++index) {
+            if ((requirements.memoryTypeBits & (1U << index)) != 0U
+                && (memory_properties.memoryTypes[index].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0U) {
+                memory_type = index;
+                break;
+            }
+        }
+        if (!memory_type.has_value()) {
+            for (uint32_t index = 0U; index < memory_properties.memoryTypeCount; ++index) {
+                if ((requirements.memoryTypeBits & (1U << index)) != 0U) {
+                    memory_type = index;
+                    break;
+                }
+            }
+        }
+        if (!memory_type.has_value()) {
+            throw std::runtime_error("Vulkan device has no compatible memory for terrain textures");
+        }
+        VkMemoryAllocateInfo const allocation{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = requirements.size,
+            .memoryTypeIndex = *memory_type,
+        };
+        checkResult(vkAllocateMemory(m_device, &allocation, nullptr, &m_image_memory),
+            "vkAllocateMemory terrain textures");
+        checkResult(vkBindImageMemory(m_device, m_image, m_image_memory, 0U), "vkBindImageMemory terrain textures");
+    }
+
+    void createImageView()
+    {
+        VkImageViewCreateInfo const info{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = m_image,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY,
+            .format = VK_FORMAT_R8G8B8A8_SRGB,
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .levelCount = render::terrain_textures::MIP_LEVEL_COUNT,
+                .layerCount = render::terrain_textures::TILE_COUNT,
+            },
+        };
+        checkResult(vkCreateImageView(m_device, &info, nullptr, &m_view), "vkCreateImageView terrain textures");
+    }
+
+    void createSampler()
+    {
+        VkSamplerCreateInfo const info{
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter = VK_FILTER_NEAREST,
+            .minFilter = VK_FILTER_LINEAR,
+            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+            .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .minLod = 0.0F,
+            .maxLod = static_cast<float>(render::terrain_textures::MIP_LEVEL_COUNT - 1U),
+        };
+        checkResult(vkCreateSampler(m_device, &info, nullptr, &m_sampler), "vkCreateSampler terrain textures");
+    }
+
     void reset() noexcept
     {
-        if (m_view != VK_NULL_HANDLE) vkDestroyBufferView(m_device, m_view, nullptr);
-        if (m_buffer != VK_NULL_HANDLE) vkDestroyBuffer(m_device, m_buffer, nullptr);
-        if (m_memory != VK_NULL_HANDLE) vkFreeMemory(m_device, m_memory, nullptr);
+        if (m_sampler != VK_NULL_HANDLE) vkDestroySampler(m_device, m_sampler, nullptr);
+        if (m_view != VK_NULL_HANDLE) vkDestroyImageView(m_device, m_view, nullptr);
+        if (m_image != VK_NULL_HANDLE) vkDestroyImage(m_device, m_image, nullptr);
+        if (m_image_memory != VK_NULL_HANDLE) vkFreeMemory(m_device, m_image_memory, nullptr);
+        if (m_upload_buffer != VK_NULL_HANDLE) vkDestroyBuffer(m_device, m_upload_buffer, nullptr);
+        if (m_upload_memory != VK_NULL_HANDLE) vkFreeMemory(m_device, m_upload_memory, nullptr);
+        m_sampler = VK_NULL_HANDLE;
         m_view = VK_NULL_HANDLE;
-        m_buffer = VK_NULL_HANDLE;
-        m_memory = VK_NULL_HANDLE;
+        m_image = VK_NULL_HANDLE;
+        m_image_memory = VK_NULL_HANDLE;
+        m_upload_buffer = VK_NULL_HANDLE;
+        m_upload_memory = VK_NULL_HANDLE;
+        m_uploaded = false;
     }
 
     VkDevice m_device = VK_NULL_HANDLE;
     VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
-    VkBuffer m_buffer = VK_NULL_HANDLE;
-    VkDeviceMemory m_memory = VK_NULL_HANDLE;
-    VkBufferView m_view = VK_NULL_HANDLE;
+    VkBuffer m_upload_buffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_upload_memory = VK_NULL_HANDLE;
+    VkDeviceSize m_upload_size = 0U;
+    VkImage m_image = VK_NULL_HANDLE;
+    VkDeviceMemory m_image_memory = VK_NULL_HANDLE;
+    VkImageView m_view = VK_NULL_HANDLE;
+    VkSampler m_sampler = VK_NULL_HANDLE;
+    bool m_uploaded = false;
 };
 
 class CanonicalTerrainFieldBuffer final {
@@ -830,7 +1099,7 @@ public:
             bindings[0].descriptorCount = 1U;
             bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
             bindings[1].binding = 1U;
-            bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
+            bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             bindings[1].descriptorCount = 1U;
             bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
             bindings[2].binding = 2U;
@@ -847,7 +1116,7 @@ public:
             );
             std::array<VkDescriptorPoolSize, 2> pool_sizes{
                 VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2U},
-                VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1U},
+                VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1U},
             };
             VkDescriptorPoolCreateInfo pool_info{};
             pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -875,13 +1144,18 @@ public:
             write.descriptorCount = 1U;
             write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             write.pBufferInfo = &buffer_info;
+            VkDescriptorImageInfo const texture_info{
+                .sampler = texture.sampler(),
+                .imageView = texture.view(),
+                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            };
             VkWriteDescriptorSet texture_write{};
             texture_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             texture_write.dstSet = m_set;
             texture_write.dstBinding = 1U;
             texture_write.descriptorCount = 1U;
-            texture_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
-            texture_write.pTexelBufferView = &texture.view();
+            texture_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            texture_write.pImageInfo = &texture_info;
             VkDescriptorBufferInfo const field_info = field.descriptor();
             VkWriteDescriptorSet field_write{};
             field_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2701,6 +2975,7 @@ struct VulkanRenderer::Impl final {
         std::chrono::steady_clock::time_point const complete_present_started_at =
             std::chrono::steady_clock::now();
         m_context->complete(*frame);
+        requiredValue(m_stone_texture_buffer).markUploaded();
         m_capture_readback_eligible = !m_occlusion_oracle_frame;
         m_capture_readback_slot = frame->slotIndex();
         m_last_submitted_terrain_lod_scene = m_terrain_lod_scene;
@@ -4065,6 +4340,7 @@ private:
 
     void record(VkCommandBuffer const command)
     {
+        requiredValue(m_stone_texture_buffer).recordUpload(command);
         prepareOcclusionQueries(command);
         if (m_current_diagnostic_query_pool != VK_NULL_HANDLE) {
             vkCmdResetQueryPool(command, m_current_diagnostic_query_pool, 0U, 2U);
@@ -5810,6 +6086,8 @@ public:
     [[nodiscard]] VkPipelineLayout guiTextLayout() const noexcept { return m_gui_text_layout; }
     [[nodiscard]] VkDescriptorSet textDescriptorSet() const noexcept { return requiredValue(m_text_descriptors).set(); }
     [[nodiscard]] VkPipeline stonePipeline() const noexcept { return m_stone_pipeline; }
+    void recordStoneTextureUpload(VkCommandBuffer const command) const { m_stone_texture_buffer.recordUpload(command); }
+    void markStoneTextureUploaded() noexcept { m_stone_texture_buffer.markUploaded(); }
     [[nodiscard]] VkBuffer stoneQuadIndices() const noexcept
     {
         return m_stone_quad_indices ? m_stone_quad_indices->handle() : VK_NULL_HANDLE;
@@ -6072,6 +6350,7 @@ struct VulkanOffscreenRenderer::Impl final {
             );
         }
         m_target->recordAndReadback(m_resources, &Impl::record, this, remaining(deadline));
+        m_resources->markStoneTextureUploaded();
         std::span<uint8_t const> const readback = m_target->readback();
         return {
             .width = OFFSCREEN_WIDTH,
@@ -6137,6 +6416,7 @@ private:
     {
         Impl& self = *static_cast<Impl*>(user_data);
         OffscreenDrawResources& resources = *self.m_resources;
+        resources.recordStoneTextureUpload(recording.command_buffer);
         if (!self.m_map_image.empty() && self.m_map_uploaded_revision != self.m_map_image.revision()) {
             self.m_map_layout = resources.uploadMap(recording.command_buffer, self.m_map_image, self.m_map_layout);
             self.m_map_uploaded_revision = self.m_map_image.revision();

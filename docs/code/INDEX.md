@@ -975,6 +975,7 @@ Files:
 - [`src/client/include/client/render/StoneFaceCapacity.hpp`](../../src/client/include/client/render/StoneFaceCapacity.hpp)
 - [`src/client/include/client/render/StoneIndirectDraws.hpp`](../../src/client/include/client/render/StoneIndirectDraws.hpp)
 - [`src/client/include/client/render/TerrainLodUploadPlan.hpp`](../../src/client/include/client/render/TerrainLodUploadPlan.hpp)
+- [`src/client/include/client/render/TerrainTextureMipChain.hpp`](../../src/client/include/client/render/TerrainTextureMipChain.hpp)
 - [`src/client/include/client/render/TerrainTextures.hpp`](../../src/client/include/client/render/TerrainTextures.hpp)
 - [`src/client/include/client/render/TextRenderer.hpp`](../../src/client/include/client/render/TextRenderer.hpp)
 - [`src/client/include/client/render/VulkanFrustum.hpp`](../../src/client/include/client/render/VulkanFrustum.hpp)

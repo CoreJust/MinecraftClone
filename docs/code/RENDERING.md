@@ -48,9 +48,11 @@ simulation and GUI stay flat. Captures remain open.
 
 Blocks carry material IDs; flagged smooth triangles pack temperatures. The
 [pinned vanilla atlas](../../assets/textures/terrain/README.md) repeats per block:
-tinted Grass tops, layered sides, Dirt bottoms. Decode sRGB before lighting; encode
-once in shader for UNORM or hardware for sRGB attachments. Capture `srgb_encoded`
-labels pixel encoding; offscreen data is raw linear.
+tinted Grass tops, layered sides, Dirt bottoms. Each isolated sRGB array layer has
+five mips (16x16 to 1x1), built from linear-light color averages. Grass-side overlay
+color is premultiplied before filtering. Nearest magnification and trilinear
+minification. Decode sRGB before lighting; encode for UNORM in shader or use sRGB
+attachments. Capture `srgb_encoded` labels pixel encoding; offscreen stays linear.
 
 Two RGBA8 map slots (≤512²) support eight nearest-sampled cropped/scissored draws;
 unchanged uploads skip. Preparing/Connecting show a backdrop; generation pairs real
