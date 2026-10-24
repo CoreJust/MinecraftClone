@@ -253,9 +253,9 @@ public:
         std::span<std::array<uint8_t, 4> const> rgba8
     );
     void clearMapImage() noexcept;
-    // Completion tracking is opt-in for loading screens. Toggling clears the
-    // progress snapshot; while enabled, IDs advance after successful submits.
-    void setFrameCompletionTracking(bool enabled) noexcept;
+    // Completion tracking is opt-in for loading screens. Retired history is
+    // disabled by default and must be explicitly requested by diagnostics.
+    void setFrameCompletionTracking(bool enabled, bool retainRetiredHistory = false) noexcept;
     // Fence-confirmed progress, identified by renderer sequence and swapchain
     // generation. A false render() result leaves the submitted ID unchanged.
     [[nodiscard]] RendererFrameProgress frameProgress() const noexcept;

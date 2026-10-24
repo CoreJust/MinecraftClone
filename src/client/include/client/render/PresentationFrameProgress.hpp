@@ -66,6 +66,17 @@ public:
         m_submissions_by_slot.try_emplace(frame_slot);
     }
 
+    void setRetiredHistoryEnabled(bool const enabled) noexcept
+    {
+        if (m_retain_retired_history == enabled) {
+            return;
+        }
+        m_retain_retired_history = enabled;
+        if (!enabled) {
+            std::vector<RendererRetiredFrameCompletion>{}.swap(m_retired_completions);
+        }
+    }
+
     // Only call after the presentation backend has completed every submitted fence.
     void observeRecreationCompleted(std::chrono::steady_clock::time_point const observed_at)
     {
@@ -74,8 +85,13 @@ public:
             if (!submission) {
                 continue;
             }
-            m_retired_completions.push_back({ *submission, frame_slot, observed_at });
+            if (m_retain_retired_history) {
+                m_retired_completions.push_back({ *submission, frame_slot, observed_at });
+            }
             observeCompletedSlot(frame_slot);
+        }
+        if (!m_retain_retired_history) {
+            return;
         }
         using CompletionOffset = std::vector<RendererRetiredFrameCompletion>::difference_type;
         std::sort(
@@ -146,6 +162,7 @@ public:
 
 private:
     RendererFrameProgress m_progress;
+    bool m_retain_retired_history = false;
     std::vector<RendererRetiredFrameCompletion> m_retired_completions;
     std::unordered_map<uint32_t, std::optional<RendererFrameIdentity>> m_submissions_by_slot;
     uint64_t m_next_sequence = 1U;

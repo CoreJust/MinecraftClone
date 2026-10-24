@@ -19003,5 +19003,46 @@
     "docs_review": "Updated the seeded-world execution section with exact adapter bounds and the static-preflight trust limitation; no runtime watchdog or fuel guarantee is implied.",
     "environment_review": "Focused native tests are recorded in the evidence logs. Full S2 integration remains pending in the parent lane.",
     "backlog_review": "Closed only MC-AI-0533 in this candidate. Its parent MC-AI-0483 remains active; unrelated backlog records are unchanged."
+  },
+  {
+    "id": "MC-AI-0536",
+    "title": "Bound ordinary HUD frame-retirement tracking while retaining benchmark evidence",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Repeated ordinary HUD swapchain recreation retains bounded state and truthful unique completed-frame timing; the benchmark opt-in preserves every required retired completion and its ordering. Focused regressions and existing consumers pass.",
+    "evidence": "focused.xml tracker4/4PASS and native-correction/tests.xml ordinary+benchmark2/2PASS, native result exit0/source_drift[]/binary_unchangedtrue. Both completion identity/timestamp and empty ordinary history are asserted; benchmark retention still passes. Shared native candidate evidence, not isolated export build; full S2 qualification remains open.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Keep the accepted always-visible measured FPS HUD bounded through repeated swapchain recreation.",
+    "context": "PresentationFrameProgressTracker accumulates retired frame completions and runtimeInfo copies the growing vector. GameBenchmark uses a persistent consumer index, so retain its explicit diagnostic history contract while ordinary HUD tracking only needs the latest unique completion.",
+    "complexity": "medium",
+    "created_at": "2026-10-24",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Bounded ordinary retirement tracking and explicitly retained ordered benchmark fence receipts.",
+    "plan": [
+      "Use an explicit history capture policy tied to the concrete benchmark consumer; preserve ordinary frame identities and completed timestamps.",
+      "Test repeated recreation without history and the benchmark history ordering contract."
+    ],
+    "product_changes": [
+      "Ordinary completion tracking stays bounded across recreation; benchmark history remains explicit."
+    ],
+    "code_changes": [
+      "PresentationFrameProgressTracker appends and sorts retired completion receipts only when explicitly enabled; ordinary completion progress remains current and unique across repeated recreation.",
+      "VulkanRenderer exposes the opt-in and forwards it to the tracker; PlayerClient forwards capture_frame_completion for the concrete GameBenchmark consumer.",
+      "Ordinary Playing keeps completion tracking enabled without retained history; its native regression checks completed identity/timestamp and empty history."
+    ],
+    "baseline_commit": "66ad9963dfcd21c829727941885b9acb219763a0",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Reviewed tracker/API/caller code against the narrow RENDERING guide correction.",
+    "environment_review": "Focused4/4 and native shared-candidate consumer evidence; no isolated export build or aggregate qualification claim.",
+    "backlog_review": "Only536 tracking scope closes. Ordinary enablement/native regression are included here so this prerequisite is used; parent0483, UI feature completion and full platform/aggregate gates remain open."
   }
 ]

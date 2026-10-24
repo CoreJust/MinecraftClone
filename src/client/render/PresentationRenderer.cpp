@@ -2419,11 +2419,12 @@ struct VulkanRenderer::Impl final {
         m_map_image_data.clear();
     }
 
-    void setFrameCompletionTracking(bool const enabled) noexcept
+    void setFrameCompletionTracking(bool const enabled, bool const retain_retired_history) noexcept
     {
         if (m_frame_completion_tracking != enabled) {
             m_frame_progress_tracker.resetProgress();
         }
+        m_frame_progress_tracker.setRetiredHistoryEnabled(enabled && retain_retired_history);
         m_frame_completion_tracking = enabled;
     }
 
@@ -5727,9 +5728,9 @@ void VulkanRenderer::clearMapImage() noexcept
     m_impl->clearMapImage();
 }
 
-void VulkanRenderer::setFrameCompletionTracking(bool const enabled) noexcept
+void VulkanRenderer::setFrameCompletionTracking(bool const enabled, bool const retain_retired_history) noexcept
 {
-    m_impl->setFrameCompletionTracking(enabled);
+    m_impl->setFrameCompletionTracking(enabled, retain_retired_history);
 }
 
 RendererFrameProgress VulkanRenderer::frameProgress() const noexcept

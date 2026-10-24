@@ -57,8 +57,8 @@ nearest-sampled updates with aspect-fitted letterboxing beneath GUI text. Deskto
 hides the fallback grid/platform until Playing, including before map arrival. `map.vert`/`map.frag` ship for
 desktop and Android. Loading callers may
 enable `VulkanRenderer::setFrameCompletionTracking(true)` and read `frameProgress()`.
-Submitted/completed IDs pair renderer sequences with swapchain generations.
-While enabled, failures leave submission unchanged; toggling clears progress.
+Submitted/completed IDs pair sequences with swapchain generations.
+Failures leave submission unchanged; toggling clears progress.
 Completion needs a successful submitted-frame fence observation or completed
 readback fence wait.
 `beforeRecreate` records retired submission/slot receipts only after CoreCpp
@@ -66,7 +66,7 @@ completes every submitted fence. All receipts from that observation share its
 time; prompt readiness cannot credit earlier display time, including a zero
 remaining budget. Re-arm after generation changes; present IDs alone prove no
 GPU completion.
-Benchmarks opt in; ordinary play keeps tracking off.
+Benchmarks explicitly retain ordered retired receipts via `capture_frame_completion`; ordinary tracking keeps latest progress only. Disabling tracking releases history.
 
 CPU retirement transfers cache/queue, slot and draw-index ownership
 to CoreCpp workers; removal and eight-frame GPU quarantine remain

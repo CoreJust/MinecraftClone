@@ -3889,6 +3889,7 @@ void PlayerClient::updateLoadingPresentation(WorldLoadingStatus const& status)
     m_renderer.setFallbackSceneEnabled(status.state == WorldLoadingState::Playing);
     if (status.state == WorldLoadingState::Playing) {
         m_renderer.setFrameCompletionTracking(
+            !m_benchmark || m_benchmark->capture_frame_completion,
             m_benchmark && m_benchmark->capture_frame_completion
         );
         m_loading_prompt_frame.reset();

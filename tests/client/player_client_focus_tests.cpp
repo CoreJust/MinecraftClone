@@ -855,7 +855,7 @@ TEST(PlayerClientFocusTest, BenchmarkRetainsFenceConfirmedFramesAfterPlayingTran
     EXPECT_GT(playing_progress.completed->sequence, last_loading_sequence);
 }
 
-TEST(PlayerClientFocusTest, NormalPlayingFramesDoNotCollectCompletionDiagnostics)
+TEST(PlayerClientFocusTest, NormalPlayingFramesObserveCompletionsWithoutRetainingHistory)
 {
     static constexpr uint32_t MAX_RENDER_ATTEMPTS = 8U;
     static constexpr std::chrono::seconds RENDER_TIMEOUT{ 5 };
@@ -877,10 +877,14 @@ TEST(PlayerClientFocusTest, NormalPlayingFramesDoNotCollectCompletionDiagnostics
     }
 
     client::RendererRuntimeInfo const runtime = client::PlayerClientFocusTestAccess::runtimeInfo(player_client);
+    client::RendererFrameProgress const progress = client::PlayerClientFocusTestAccess::frameProgress(player_client);
     ASSERT_TRUE(presented);
     EXPECT_GT(runtime.submitted_frame_count, 0U);
-    EXPECT_FALSE(runtime.diagnostic_presentation_acquire.captured);
-    EXPECT_FALSE(client::PlayerClientFocusTestAccess::frameProgress(player_client).completed.has_value());
+    EXPECT_TRUE(runtime.diagnostic_presentation_acquire.captured);
+    ASSERT_TRUE(progress.completed.has_value());
+    EXPECT_TRUE(progress.completed_observed_at.has_value());
+    EXPECT_EQ(progress.completed->swapchain_generation, runtime.current_swapchain_generation);
+    EXPECT_TRUE(runtime.retired_frame_completions.empty());
 }
 
 TEST(PlayerClientFocusTest, OrdinaryPlayingFramesKeepPresentingAfterRepeatedScreenshotHints)
