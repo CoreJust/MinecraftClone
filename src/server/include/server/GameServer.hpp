@@ -206,6 +206,26 @@ private:
         uint32_t acknowledged_input_sequence = 0;
         uint32_t state_revision = 1;
         std::deque<shared::ClientInputMessage> pending_inputs;
+        std::deque<shared::ClientBlockActionMessage> pending_block_actions;
+        std::deque<shared::ServerBlockActionResultMessage> block_action_results;
+        std::optional<uint32_t> last_block_action_sequence;
+        shared::GameMode game_mode = shared::GameMode::Creative;
+        struct BreakHold final {
+            shared::ClientBlockActionMessage action;
+            shared::WorldCoordinate target{};
+            shared::Block material = shared::Block::Air;
+            uint64_t cell_version = 0U;
+            uint64_t started_tick = 0U;
+            uint64_t renewed_tick = 0U;
+            uint8_t effective_actions = 0U;
+            uint64_t policy_generation = 0U;
+        };
+        std::optional<BreakHold> break_hold;
+        ChunkKeySet pending_edit_snapshots;
+        std::unordered_map<uint64_t, uint32_t> edit_delivery_bytes;
+        uint64_t next_edit_delivery_token = 1U;
+        std::optional<uint64_t> inflight_edit_snapshot;
+        uint32_t maximum_edit_snapshot_bytes = 0U;
         bool has_received_sequence = false;
         bool action_consumed_this_tick = false;
         uint32_t materialization_admission_failures = 0U;
@@ -288,7 +308,7 @@ private:
     void send(shared::Message message);
     void sendTo(std::optional<core::ClientId> const client_id, shared::Message message);
     [[nodiscard]]
-    uint32_t remainingTerrainDeliveryBytes(core::ClientId client_id) const noexcept;
+    uint32_t remainingTerrainDeliveryBytes(core::ClientId client_id, bool reserve_edit_snapshot = true) const noexcept;
     void sendHeightTileTo(std::optional<core::ClientId> const client_id, shared::Message message);
     void startHeightTileStream(core::ClientId client_id);
     [[nodiscard]]
@@ -376,6 +396,15 @@ private:
         shared::ClientInputMessage input,
         bool acknowledge_input = true
     );
+    void processBlockActions(PlayerReplication& replication);
+    [[nodiscard]] shared::EffectiveInteractionRights interactionRights(
+        PlayerReplication const& replication, std::optional<shared::GameMode> mode = std::nullopt
+    ) const;
+    void publishBlockEdit(shared::WorldCoordinate coordinate, uint64_t from_revision);
+    [[nodiscard]] bool sendEditManifest(PlayerReplication& replication, shared::ChunkCoordinate column);
+    [[nodiscard]] bool sendEditState(PlayerReplication& replication, shared::Message message);
+    [[nodiscard]] bool canPublishBlockEdit(shared::WorldCoordinate coordinate) const;
+    void processEditSnapshots(PlayerReplication& replication);
     [[nodiscard]] std::vector<shared::PolicySubject> permissionSubjects() const;
     [[nodiscard]]
     bool canApplyPublishedPermissions(
@@ -425,6 +454,10 @@ private:
     std::shared_ptr<WorldPreparation> m_world_preparation;
     std::unique_ptr<shared::SparseWorld> m_physics_world;
     bool m_prepared_world_initialized = false;
+    uint64_t m_authority_tick = 0U;
+    uint64_t m_edit_manifest_sequence = 0U;
+    uint64_t m_next_server_session_nonce = 1U;
+    bool m_local_mode_requests = false;
     shared::WorldGenerationCoordinator m_world_generation;
     std::shared_ptr<shared::TerrainGenerator const> m_terrain_generator;
     shared::WorldGenerationPlan m_generation_plan;

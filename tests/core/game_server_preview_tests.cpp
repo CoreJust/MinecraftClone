@@ -71,6 +71,68 @@ std::shared_ptr<shared::TerrainWorld const> preparedTerrainWorld()
     return terrain_world;
 }
 
+shared::SparseWorldOptions preparedCollisionWorldOptions(
+    shared::WorldConfiguration const& configuration,
+    uint64_t const max_resident_chunks
+)
+{
+    return {
+        .seed = configuration.seed,
+        .max_resident_chunks = max_resident_chunks,
+        .revision = configuration.algorithm_version,
+    };
+}
+
+bool materializePlayerBody(shared::SparseWorld& collision_world, shared::Player const& player)
+{
+    int64_t const x_subcells = static_cast<int64_t>(player.x) * shared::SUBCELLS_PER_CELL + player.x_subcell;
+    int64_t const y_subcells = static_cast<int64_t>(player.y) * shared::SUBCELLS_PER_CELL + player.y_subcell;
+    int64_t const z_subcells = static_cast<int64_t>(player.z) * shared::SUBCELLS_PER_CELL + player.z_subcell;
+    int64_t const first_x = x_subcells / shared::SUBCELLS_PER_CELL;
+    int64_t const last_x = (x_subcells + shared::World::PLAYER_WIDTH_SUBCELLS - 1)
+        / shared::SUBCELLS_PER_CELL;
+    int64_t const first_y = y_subcells / shared::SUBCELLS_PER_CELL;
+    int64_t const last_y = (y_subcells + shared::World::PLAYER_WIDTH_SUBCELLS - 1)
+        / shared::SUBCELLS_PER_CELL;
+    int64_t const first_z = z_subcells / shared::SUBCELLS_PER_CELL;
+    int64_t const last_z = (z_subcells + shared::World::PLAYER_HEIGHT_SUBCELLS - 1)
+        / shared::SUBCELLS_PER_CELL;
+    for (int64_t z = first_z; z <= last_z
+        && z < static_cast<int64_t>(shared::WorldExtent::DEPTH); ++z) {
+        for (int64_t y = first_y; y <= last_y; ++y) {
+            for (int64_t x = first_x; x <= last_x; ++x) {
+                if (!collision_world.blockAt({
+                        .x = static_cast<int64_t>(shared::WorldBounds::wrapHorizontal(x)),
+                        .y = static_cast<int64_t>(shared::WorldBounds::wrapHorizontal(y)),
+                        .z = z,
+                    }).has_value()) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+bool materializeFlightCollisionPath(
+    shared::World const& forecast_world,
+    shared::PlayerId const player_id,
+    shared::Direction const direction,
+    shared::SparseWorld& collision_world
+)
+{
+    for (shared::ChunkCoordinate const coordinate : forecast_world.flightCollisionChunks(player_id, direction)) {
+        if (!collision_world.blockAt({
+                .x = static_cast<int64_t>(coordinate.x) * shared::Chunk::SIDE_LENGTH,
+                .y = static_cast<int64_t>(coordinate.y) * shared::Chunk::SIDE_LENGTH,
+                .z = static_cast<int64_t>(coordinate.z) * shared::Chunk::SIDE_LENGTH,
+            }).has_value()) {
+            return false;
+        }
+    }
+    return true;
+}
+
 class PreviewClient final : public core::Client {
 public:
     static constexpr uint32_t MAX_TRACKED_INPUTS = 512U;
@@ -458,6 +520,21 @@ private:
             return;
         }
         messages.push_back(*message);
+        auto acknowledge_edit = [this](shared::TerrainSessionIdentity const& identity, uint64_t const token) {
+            if (session == identity && token != 0U) {
+                static_cast<void>(send(shared::encodeMessage(shared::ClientEditDeliveryAckMessage{
+                    .session = identity, .delivery_token = token,
+                }), 0U, core::SendMode{core::SendMode::Reliable}));
+            }
+        };
+        if (auto const* manifest = std::get_if<shared::ServerEditedColumnManifestMessage>(&*message)) {
+            acknowledge_edit(manifest->session, manifest->delivery_token);
+        } else if (auto const* delta = std::get_if<shared::ServerBlockDeltaMessage>(&*message)) {
+            acknowledge_edit(delta->session, delta->delivery_token);
+        } else if (auto const* snapshot = std::get_if<shared::ServerEditChunkSnapshotMessage>(&*message)) {
+            acknowledge_edit(snapshot->session, snapshot->delivery_token);
+        }
+
         if (auto const* const response = std::get_if<shared::JoinResponseMessage>(&*message)) {
             join_accepted = response->accepted;
         } else if (auto const* const preparation =
@@ -1511,6 +1588,19 @@ TEST(GameServerPreviewTest, PreparedWorldStreamsConnectedNearChunksBeforeFarCove
     shared::World forecast_world{shared::WorldMode::Flight, world_configuration};
     shared::PlayerId const forecast_player_id = 1U;
     forecast_world.spawnPlayer(forecast_player_id, '@', normal_center);
+    std::shared_ptr<shared::TerrainWorld const> const prepared_world = preparation->readyWorld();
+    ASSERT_NE(prepared_world, nullptr);
+    shared::SparseWorld forecast_collision_world{
+        preparedCollisionWorldOptions(
+            world_configuration,
+            shared::MAX_FOUR_PLAYER_MATERIALIZED_INTEREST_CHUNK_KEYS
+        ),
+        prepared_world,
+    };
+    forecast_world.setCollisionWorld(&forecast_collision_world);
+    auto const forecast_player = forecast_world.player(forecast_player_id);
+    ASSERT_TRUE(forecast_player.has_value());
+    ASSERT_TRUE(materializePlayerBody(forecast_collision_world, *forecast_player));
     ASSERT_TRUE(forecast_world.setPlayerMovementCapabilities(
         forecast_player_id,
         latest_normal_position->movement_capabilities
@@ -1523,6 +1613,12 @@ TEST(GameServerPreviewTest, PreparedWorldStreamsConnectedNearChunksBeforeFarCove
         .speedup = 30U,
         .view_x = 127,
     };
+    ASSERT_TRUE(materializeFlightCollisionPath(
+        forecast_world,
+        forecast_player_id,
+        first_accelerated_input,
+        forecast_collision_world
+    ));
     std::optional<shared::PlayerPosition> const first_accelerated_center =
         forecast_world.forecastFlightPlayerPosition(forecast_player_id, first_accelerated_input);
     ASSERT_TRUE(first_accelerated_center.has_value());
@@ -2359,9 +2455,28 @@ TEST(GameServerPreviewTest, FlightPrewarmsTheNextNearFootprintBeforeRadialTiles)
             .y_subcell = first_position.y_subcell,
             .z_subcell = first_position.z_subcell,
         });
+        shared::WorldConfiguration const world_configuration = shared::World::canonicalConfiguration();
+        std::shared_ptr<shared::TerrainWorld const> const terrain_world = preparedTerrainWorld();
+        shared::SparseWorld forecast_collision_world{
+            preparedCollisionWorldOptions(
+                world_configuration,
+                shared::SparseWorldOptions::DEFAULT_MAX_RESIDENT_CHUNKS
+            ),
+            terrain_world,
+        };
+        forecast_world.setCollisionWorld(&forecast_collision_world);
+        auto const forecast_player = forecast_world.player(FORECAST_PLAYER_ID);
+        ASSERT_TRUE(forecast_player.has_value());
+        ASSERT_TRUE(materializePlayerBody(forecast_collision_world, *forecast_player));
         ASSERT_TRUE(forecast_world.setPlayerMovementCapabilities(
             FORECAST_PLAYER_ID,
             first_position.movement_capabilities
+        ));
+        ASSERT_TRUE(materializeFlightCollisionPath(
+            forecast_world,
+            FORECAST_PLAYER_ID,
+            MOVEMENT,
+            forecast_collision_world
         ));
         std::optional<shared::PlayerPosition> const forecast_position = forecast_world.forecastFlightPlayerPosition(
             FORECAST_PLAYER_ID,
@@ -5457,6 +5572,22 @@ TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceipts
         static_cast<void>(client.poll(std::chrono::milliseconds{1}));
     }
     ASSERT_TRUE(started());
+    ASSERT_TRUE(client.session.has_value());
+    ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientBlockActionMessage{
+        .session = *client.session, .sequence = 1U, .kind = shared::BlockActionKind::RequestMode,
+        .requested_mode = shared::GameMode::Spectator,
+    }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+    bool spectator_accepted = false;
+    auto const mode_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (!spectator_accepted && std::chrono::steady_clock::now() < mode_deadline) {
+        static_cast<void>(client.poll(std::chrono::milliseconds{1}));
+        spectator_accepted = std::ranges::any_of(client.messages, [](auto const& message) {
+            auto const* result = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return result && result->sequence == 1U && result->mode == shared::GameMode::Spectator
+                && result->status == shared::BlockActionStatus::Accepted;
+        });
+    }
+    ASSERT_TRUE(spectator_accepted);
     client.acknowledge_materialized_batches = false;
     client.acknowledge_authoritative_batches = false;
     client.acknowledge_preview_batches = false;

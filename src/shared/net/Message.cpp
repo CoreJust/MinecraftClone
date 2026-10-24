@@ -43,6 +43,13 @@ enum class MessageType : uint8_t {
     ServerChunkCoverage = 16,
     ServerAuthoritativeTerrainBatch = 17,
     ClientAuthoritativeTerrainAck = 18,
+    ClientBlockAction = 19,
+    ServerBlockActionResult = 20,
+    ServerBlockDelta = 21,
+    ClientChunkResync = 22,
+    ServerEditChunkSnapshot = 23,
+    ServerEditedColumnManifest = 24,
+    ClientEditDeliveryAck = 25,
 };
 
 [[nodiscard]]
@@ -124,7 +131,7 @@ void appendGenerationConfiguration(
 [[nodiscard]]
 uint64_t terrainSessionEncodedSize(TerrainSessionIdentity const& session) noexcept
 {
-    return 8U + 22U + session.terrain.configuration_identity.size() + 31U;
+    return 16U + 22U + session.terrain.configuration_identity.size() + 31U;
 }
 
 [[nodiscard]]
@@ -241,6 +248,7 @@ void appendTerrainIdentity(std::vector<uint8_t>& bytes, TerrainIdentity const& i
 void appendTerrainSession(std::vector<uint8_t>& bytes, TerrainSessionIdentity const& session)
 {
     appendUint64(bytes, session.join_epoch);
+    appendUint64(bytes, session.server_nonce);
     appendTerrainIdentity(bytes, session.terrain);
     appendGenerationConfiguration(bytes, session.configuration);
 }
@@ -302,6 +310,118 @@ void appendHeightTileRemoval(std::vector<uint8_t>& bytes, ServerRemoveHeightTile
 
 struct MessageEncoder final {
     std::vector<uint8_t> bytes;
+
+    std::vector<uint8_t> operator()(ClientBlockActionMessage const& message)
+    {
+        begin(MessageType::ClientBlockAction, terrainSessionEncodedSize(message.session) + 26U);
+        appendTerrainSession(bytes, message.session);
+        appendUint32(bytes, message.sequence);
+        bytes.push_back(static_cast<uint8_t>(message.kind));
+        appendUint16(bytes, static_cast<uint16_t>(message.aim_x));
+        appendUint16(bytes, static_cast<uint16_t>(message.aim_y));
+        appendUint16(bytes, static_cast<uint16_t>(message.aim_z));
+        appendChunkCoordinate(bytes, {
+            static_cast<int32_t>(message.target_hint.x),
+            static_cast<int32_t>(message.target_hint.y),
+            static_cast<int32_t>(message.target_hint.z),
+        });
+        bytes.push_back(static_cast<uint8_t>(message.material));
+        bytes.push_back(static_cast<uint8_t>(message.requested_mode));
+        bytes.push_back(static_cast<uint8_t>(message.perspective));
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ServerBlockActionResultMessage const& message)
+    {
+        begin(MessageType::ServerBlockActionResult, terrainSessionEncodedSize(message.session) + 41U);
+        appendTerrainSession(bytes, message.session);
+        appendUint32(bytes, message.sequence);
+        bytes.push_back(static_cast<uint8_t>(message.status));
+        appendUint64(bytes, message.server_tick);
+        appendChunkCoordinate(bytes, {
+            static_cast<int32_t>(message.target.x),
+            static_cast<int32_t>(message.target.y),
+            static_cast<int32_t>(message.target.z),
+        });
+        appendUint64(bytes, message.cell_version);
+        appendUint16(bytes, message.completed_intervals);
+        appendUint16(bytes, message.required_intervals);
+        bytes.push_back(static_cast<uint8_t>(message.mode));
+        bytes.push_back(message.effective_actions);
+        bytes.push_back(message.break_materials);
+        bytes.push_back(message.place_materials);
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ServerBlockDeltaMessage const& message)
+    {
+        begin(MessageType::ServerBlockDelta, terrainSessionEncodedSize(message.session) + 45U);
+        appendTerrainSession(bytes, message.session);
+        appendChunkCoordinate(bytes, {
+            static_cast<int32_t>(message.coordinate.x),
+            static_cast<int32_t>(message.coordinate.y),
+            static_cast<int32_t>(message.coordinate.z),
+        });
+        appendUint64(bytes, message.delivery_token);
+        appendUint64(bytes, message.from_revision);
+        appendUint64(bytes, message.to_revision);
+        appendUint64(bytes, message.cell_version);
+        bytes.push_back(static_cast<uint8_t>(message.material));
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ClientChunkResyncMessage const& message)
+    {
+        begin(MessageType::ClientChunkResync, terrainSessionEncodedSize(message.session) + 12U);
+        appendTerrainSession(bytes, message.session);
+        appendChunkCoordinate(bytes, message.coordinate);
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ServerEditChunkSnapshotMessage const& message)
+    {
+        auto encoded = encodeMessage(ServerMaterializedChunkBatchMessage{
+            .session = message.session, .coverage_epoch = 1U, .delivery_token = 1U,
+            .chunks = {message.chunk},
+        });
+        begin(MessageType::ServerEditChunkSnapshot, encodedEditChunkSnapshotSize(message) - 3U);
+        appendUint64(bytes, message.delivery_token);
+        appendUint64(bytes, message.revision);
+        appendUint16(bytes, static_cast<uint16_t>(message.edits.size()));
+        for (auto const& edit : message.edits) {
+            uint16_t const packed = static_cast<uint16_t>(edit.coordinate.x
+                | (edit.coordinate.y << 4U) | (edit.coordinate.z << 8U)
+                | (static_cast<uint16_t>(edit.material) << 12U));
+            appendUint16(bytes, packed);
+            appendUint64(bytes, edit.cell_version);
+        }
+        bytes.insert(bytes.end(), encoded.begin(), encoded.end());
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ServerEditedColumnManifestMessage const& message)
+    {
+        begin(MessageType::ServerEditedColumnManifest,
+            terrainSessionEncodedSize(message.session) + 29U + message.chunks.size() * 9U);
+        appendTerrainSession(bytes, message.session);
+        appendChunkCoordinate(bytes, message.column);
+        appendUint64(bytes, message.delivery_token);
+        appendUint64(bytes, message.watermark);
+        bytes.push_back(static_cast<uint8_t>(message.chunks.size()));
+        for (auto const& chunk : message.chunks) {
+            bytes.push_back(chunk.z);
+            appendUint64(bytes, chunk.revision);
+        }
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ClientEditDeliveryAckMessage const& message)
+    {
+        begin(MessageType::ClientEditDeliveryAck, terrainSessionEncodedSize(message.session) + 8U);
+        appendTerrainSession(bytes, message.session);
+        appendUint64(bytes, message.delivery_token);
+        return std::move(bytes);
+    }
 
     void begin(MessageType const type, uint64_t const payload_size)
     {
@@ -890,13 +1010,14 @@ std::optional<generation::GenerationConfiguration> readGenerationConfiguration(M
 std::optional<TerrainSessionIdentity> readTerrainSession(MessageReader& reader)
 {
     auto const join_epoch = reader.readUint64();
+    auto const server_nonce = reader.readUint64();
     auto const terrain = readTerrainIdentity(reader);
     auto const configuration = readGenerationConfiguration(reader);
-    if (!join_epoch || !terrain || !configuration) {
+    if (!join_epoch || !server_nonce || !terrain || !configuration) {
         return std::nullopt;
     }
     return TerrainSessionIdentity{
-        .join_epoch = *join_epoch,
+        .join_epoch = *join_epoch, .server_nonce = *server_nonce,
         .terrain = *terrain,
         .configuration = *configuration,
     };
@@ -1076,7 +1197,7 @@ bool isValidUtf8(std::string const& value) noexcept
 [[nodiscard]]
 bool isValidTerrainSessionIdentity(TerrainSessionIdentity const& session) noexcept
 {
-    if (session.join_epoch == 0U || !isValidTerrainIdentity(session.terrain)
+    if (session.join_epoch == 0U || session.server_nonce == 0U || !isValidTerrainIdentity(session.terrain)
         || session.terrain.seed != session.configuration.seed) {
         return false;
     }
@@ -1244,6 +1365,65 @@ bool isValidMessage(Message const& message) noexcept
                 && isValidDirection(value.direction.z)
                 && isValidDirection(static_cast<uint8_t>(value.direction.view_x))
                 && isValidDirection(static_cast<uint8_t>(value.direction.view_y));
+        } else if constexpr (std::is_same_v<Value, ClientBlockActionMessage>) {
+            auto const normalized = WorldBounds::normalize(value.target_hint);
+            return isValidTerrainSessionIdentity(value.session) && value.sequence != 0U
+                && value.kind <= BlockActionKind::RequestMode
+                && value.requested_mode <= GameMode::Survival
+                && value.perspective <= InteractionPerspective::ThirdPersonFront
+                && normalized && *normalized == value.target_hint && isValidBlock(value.material)
+                && (value.kind == BlockActionKind::BreakRelease || value.kind == BlockActionKind::RequestMode
+                    || value.aim_x != 0 || value.aim_y != 0 || value.aim_z != 0);
+        } else if constexpr (std::is_same_v<Value, ServerBlockActionResultMessage>) {
+            return isValidTerrainSessionIdentity(value.session)
+                && (value.sequence != 0U || value.status == BlockActionStatus::Accepted)
+                && value.status <= BlockActionStatus::InvalidMode && value.mode <= GameMode::Survival
+                && value.effective_actions < (1U << INTERACTION_ACTION_COUNT)
+                && value.break_materials < (1U << 7U) && value.place_materials < (1U << 7U);
+        } else if constexpr (std::is_same_v<Value, ServerBlockDeltaMessage>) {
+            auto const normalized = WorldBounds::normalize(value.coordinate);
+            return isValidTerrainSessionIdentity(value.session) && normalized && *normalized == value.coordinate
+                && value.from_revision != std::numeric_limits<uint64_t>::max()
+                && value.to_revision == value.from_revision + 1U && value.cell_version != 0U
+                && value.cell_version <= value.to_revision && isValidBlock(value.material);
+        } else if constexpr (std::is_same_v<Value, ClientEditDeliveryAckMessage>) {
+            return isValidTerrainSessionIdentity(value.session) && value.delivery_token != 0U;
+        } else if constexpr (std::is_same_v<Value, ClientChunkResyncMessage>) {
+            return isValidTerrainSessionIdentity(value.session) && WorldBounds::isValidChunk(value.coordinate);
+        } else if constexpr (std::is_same_v<Value, ServerEditChunkSnapshotMessage>) {
+            if (!isValidTerrainSessionIdentity(value.session) || value.edits.size() > Chunk::BLOCK_COUNT
+                || !materializeChunkPayload(value.chunk)) {
+                return false;
+            }
+            std::array<bool, Chunk::BLOCK_COUNT> seen{};
+            for (auto const& edit : value.edits) {
+                if (edit.coordinate.x >= Chunk::SIDE_LENGTH || edit.coordinate.y >= Chunk::SIDE_LENGTH
+                    || edit.coordinate.z >= Chunk::SIDE_LENGTH || !isValidBlock(edit.material)
+                    || edit.cell_version == 0U || edit.cell_version > value.revision) {
+                    return false;
+                }
+                size_t const index = edit.coordinate.x + Chunk::SIDE_LENGTH
+                    * (edit.coordinate.y + Chunk::SIDE_LENGTH * edit.coordinate.z);
+                if (seen[index]) {
+                    return false;
+                }
+                seen[index] = true;
+            }
+            return true;
+        } else if constexpr (std::is_same_v<Value, ServerEditedColumnManifestMessage>) {
+            if (!isValidTerrainSessionIdentity(value.session) || !WorldBounds::isValidChunk(value.column)
+                || value.column.z != 0 || value.chunks.size() > 64U) {
+                return false;
+            }
+            std::array<bool, 64> seen{};
+            for (auto const& chunk : value.chunks) {
+                if (chunk.z >= seen.size() || seen[chunk.z] || chunk.revision == 0U
+                    || chunk.revision > value.watermark) {
+                    return false;
+                }
+                seen[chunk.z] = true;
+            }
+            return true;
         } else if constexpr (std::is_same_v<Value, ClientHeightTileCreditMessage>) {
             if (value.world_revision == 0U || value.credits == 0U
                 || value.credits > HEIGHT_TILE_DELIVERY_WINDOW
@@ -1569,6 +1749,13 @@ uint64_t encodedMaterializedChunkBatchSize(ServerMaterializedChunkBatchMessage c
         size += 21U + (std::holds_alternative<DenseChunkData>(payload.data) ? Chunk::BLOCK_COUNT : 1U);
     }
     return size;
+}
+
+uint64_t encodedEditChunkSnapshotSize(ServerEditChunkSnapshotMessage const& message) noexcept
+{
+    uint64_t const chunk_bytes = 21U
+        + (std::holds_alternative<DenseChunkData>(message.chunk.data) ? Chunk::BLOCK_COUNT : 1U);
+    return 21U + 3U + terrainSessionEncodedSize(message.session) + 17U + chunk_bytes + message.edits.size() * 10U;
 }
 
 uint64_t encodedAuthoritativeTerrainBatchSize(ServerAuthoritativeTerrainBatchMessage const& message) noexcept
@@ -1920,6 +2107,166 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
                     .actual_radius_blocks = *actual_radius_blocks,
                     .visual_lod_radius_blocks = *visual_lod_radius_blocks,
                 };
+            }
+            break;
+        }
+        case MessageType::ClientBlockAction: {
+            auto const session = readTerrainSession(reader);
+            auto const sequence = reader.readUint32();
+            auto const kind = reader.readUint8();
+            auto const x = reader.readUint16();
+            auto const y = reader.readUint16();
+            auto const z = reader.readUint16();
+            auto const target = readChunkCoordinate(reader);
+            auto const material = reader.readUint8();
+            auto const mode = reader.readUint8();
+            auto const perspective = reader.readUint8();
+            if (session && sequence && kind && x && y && z && target && material && mode && perspective) {
+                message = ClientBlockActionMessage{
+                    .session = *session, .sequence = *sequence,
+                    .kind = static_cast<BlockActionKind>(*kind),
+                    .aim_x = std::bit_cast<int16_t>(*x), .aim_y = std::bit_cast<int16_t>(*y),
+                    .aim_z = std::bit_cast<int16_t>(*z),
+                    .target_hint = {target->x, target->y, target->z},
+                    .material = static_cast<Block>(*material), .requested_mode = static_cast<GameMode>(*mode),
+                    .perspective = static_cast<InteractionPerspective>(*perspective),
+                };
+            }
+            break;
+        }
+        case MessageType::ServerBlockActionResult: {
+            auto const session = readTerrainSession(reader);
+            auto const sequence = reader.readUint32();
+            auto const status = reader.readUint8();
+            auto const tick = reader.readUint64();
+            auto const target = readChunkCoordinate(reader);
+            auto const version = reader.readUint64();
+            auto const completed = reader.readUint16();
+            auto const required = reader.readUint16();
+            auto const mode = reader.readUint8();
+            auto const actions = reader.readUint8();
+            auto const breaking = reader.readUint8();
+            auto const placing = reader.readUint8();
+            if (
+                session
+                && sequence
+                && status
+                && tick
+                && target
+                && version
+                && completed
+                && required
+                && mode
+                && actions
+                && breaking
+                && placing
+            ) {
+                message = ServerBlockActionResultMessage{
+                    .session = *session, .sequence = *sequence, .status = static_cast<BlockActionStatus>(*status),
+                    .server_tick = *tick, .target = {target->x, target->y, target->z},
+                    .cell_version = *version, .completed_intervals = *completed, .required_intervals = *required,
+                    .mode = static_cast<GameMode>(*mode), .effective_actions = *actions,
+                    .break_materials = *breaking, .place_materials = *placing,
+                };
+            }
+            break;
+        }
+        case MessageType::ServerBlockDelta: {
+            auto const session = readTerrainSession(reader);
+            auto const coordinate = readChunkCoordinate(reader);
+            auto const token = reader.readUint64();
+            auto const from = reader.readUint64();
+            auto const to = reader.readUint64();
+            auto const version = reader.readUint64();
+            auto const material = reader.readUint8();
+            if (session && coordinate && token && from && to && version && material) {
+                message = ServerBlockDeltaMessage{
+                    .session = *session, .coordinate = {coordinate->x, coordinate->y, coordinate->z},
+                    .from_revision = *from, .to_revision = *to, .cell_version = *version,
+                    .material = static_cast<Block>(*material), .delivery_token = *token,
+                };
+            }
+            break;
+        }
+        case MessageType::ClientChunkResync: {
+            auto const session = readTerrainSession(reader);
+            auto const coordinate = readChunkCoordinate(reader);
+            if (session && coordinate) {
+                message = ClientChunkResyncMessage{.session = *session, .coordinate = *coordinate};
+            }
+            break;
+        }
+        case MessageType::ServerEditChunkSnapshot: {
+            auto const token = reader.readUint64();
+            auto const revision = reader.readUint64();
+            auto const count = reader.readUint16();
+            if (!token || !revision || !count || *count > Chunk::BLOCK_COUNT) {
+                break;
+            }
+            std::vector<EditCellPayload> edits;
+            for (uint16_t index = 0U; index < *count; ++index) {
+                auto const packed = reader.readUint16();
+                auto const version = reader.readUint64();
+                if (!packed || !version) {
+                    break;
+                }
+                edits.push_back({{
+                    static_cast<uint8_t>(*packed & 15U),
+                    static_cast<uint8_t>((*packed >> 4U) & 15U),
+                    static_cast<uint8_t>((*packed >> 8U) & 15U)},
+                    static_cast<Block>(*packed >> 12U), *version});
+            }
+            if (edits.size() != *count) {
+                break;
+            }
+            std::vector<uint8_t> nested;
+            while (auto const byte = reader.readUint8()) {
+                nested.push_back(*byte);
+            }
+            if (nested.size() < 3U || nested[2] != static_cast<uint8_t>(MessageType::ServerMaterializedChunkBatch)) {
+                break;
+            }
+            auto const decoded = decodeMessage(nested);
+            auto const* batch = decoded ? std::get_if<ServerMaterializedChunkBatchMessage>(&*decoded) : nullptr;
+            if (revision && batch && batch->chunks.size() == 1U) {
+                message = ServerEditChunkSnapshotMessage{
+                    .session = batch->session, .revision = *revision, .chunk = batch->chunks.front(),
+                    .edits = std::move(edits), .delivery_token = *token,
+                };
+            }
+            break;
+        }
+        case MessageType::ServerEditedColumnManifest: {
+            auto const session = readTerrainSession(reader);
+            auto const column = readChunkCoordinate(reader);
+            auto const token = reader.readUint64();
+            auto const watermark = reader.readUint64();
+            auto const count = reader.readUint8();
+            if (!session || !column || !token || !watermark || !count || *count > 64U) {
+                break;
+            }
+            std::vector<EditedChunkRequirement> chunks;
+            for (uint8_t index = 0U; index < *count; ++index) {
+                auto const z = reader.readUint8();
+                auto const revision = reader.readUint64();
+                if (!z || !revision) {
+                    break;
+                }
+                chunks.push_back({*z, *revision});
+            }
+            if (chunks.size() == *count) {
+                message = ServerEditedColumnManifestMessage{
+                    .session = *session, .column = *column, .watermark = *watermark,
+                    .chunks = std::move(chunks), .delivery_token = *token,
+                };
+            }
+            break;
+        }
+        case MessageType::ClientEditDeliveryAck: {
+            auto const session = readTerrainSession(reader);
+            auto const token = reader.readUint64();
+            if (session && token) {
+                message = ClientEditDeliveryAckMessage{.session = *session, .delivery_token = *token};
             }
             break;
         }

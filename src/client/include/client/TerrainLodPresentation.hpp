@@ -35,6 +35,7 @@ struct TerrainLodChunkInput final {
 struct TerrainLodChunkSource final {
     shared::ChunkCoordinate coordinate;
     shared::ChunkContentIdentity identity;
+    uint64_t edit_revision = 0U;
     bool operator==(TerrainLodChunkSource const&) const = default;
 };
 

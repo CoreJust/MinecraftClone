@@ -874,7 +874,7 @@ TEST(TerrainLodPresentationTest, ProfileFacesMatchDenseMesherAndDenseEditCavityE
         }
         auto capture = client::captureTerrainLodColumn(world, 1U, 1U);
         ASSERT_TRUE(capture.has_value());
-        EXPECT_TRUE(capture->chunks.empty());
+        EXPECT_EQ(capture->chunks.size(), world.editedChunks().size());
         EXPECT_EQ(capture->authority_sources.size(), 5U);
         EXPECT_TRUE(client::terrainLodColumnSourcesCurrent(*capture, world));
         auto const input = std::make_shared<client::TerrainLodColumnInput const>(std::move(*capture));
@@ -888,6 +888,126 @@ TEST(TerrainLodPresentationTest, ProfileFacesMatchDenseMesherAndDenseEditCavityE
         EXPECT_FALSE(client::terrainLodSourcesCurrent(*scene, world));
         EXPECT_FALSE(client::terrainLodColumnSourcesCurrent(*input, world));
     }
+}
+
+TEST(TerrainLodPresentationTest, ReplicatedSparseOverlayEditsRenderExactHoleAndPlacedBlockFaces)
+{
+    auto const terrain = presentationWorld(256U, true);
+    shared::SparseWorld world{{}, shared::SparseWorldGenerationMode::MaterializedOnly};
+    ASSERT_TRUE(world.setTerrainIdentity(terrain->identity()));
+    for (auto const offset :
+         {std::array{0, 0}, std::array{-1, 0}, std::array{1, 0}, std::array{0, -1}, std::array{0, 1}}) {
+        ASSERT_TRUE(world.publishAuthoritativeSurface(
+            terrain->sampleSurface({.x = 1 + offset[0], .y = 1 + offset[1], .z = 0})));
+    }
+
+    shared::WorldCoordinate const hole{17, 17, 20};
+    shared::WorldCoordinate const placed{17, 17, 900};
+    auto const hole_base = world.queryBlock(hole);
+    auto const placed_base = world.queryBlock(placed);
+    ASSERT_TRUE(hole_base.block.has_value());
+    ASSERT_TRUE(shared::isSolidBlock(*hole_base.block));
+    ASSERT_EQ(placed_base.block, shared::Block::Air);
+    ASSERT_TRUE(world.applyEditDelta(hole, shared::Block::Air, 0U, 1U, 1U));
+    ASSERT_TRUE(world.applyEditDelta(placed, shared::Block::Snow, 0U, 1U, 1U));
+    EXPECT_EQ(world.residentChunkCount(), 0U);
+
+    auto const captured = client::captureTerrainLodColumn(world, 1U, 1U);
+    ASSERT_TRUE(captured.has_value());
+    ASSERT_EQ(captured->chunks.size(), 2U);
+    ASSERT_TRUE(client::terrainLodColumnSourcesCurrent(*captured, world));
+    auto const input = std::make_shared<client::TerrainLodColumnInput const>(*captured);
+    std::array const columns{input};
+    auto const scene = client::buildTerrainLodSceneFromColumns(*terrain, 16U, 16U, columns);
+    EXPECT_EQ(profileSceneFaces(*scene), denseReferenceFaces(*input));
+
+    auto const assertCapturedChunk = [&](shared::WorldCoordinate const coordinate, shared::Block const material) {
+        shared::ChunkCoordinate const chunk_coordinate = shared::WorldBounds::chunkCoordinate(coordinate);
+        auto const effective = world.effectiveChunkSnapshot(chunk_coordinate);
+        ASSERT_TRUE(effective.has_value());
+        auto const input = std::ranges::find_if(captured->chunks, [&](client::TerrainLodChunkInput const& chunk) {
+            return chunk.chunk.coordinate() == chunk_coordinate;
+        });
+        ASSERT_NE(input, captured->chunks.end());
+        EXPECT_EQ(input->chunk.contentIdentity(), effective->contentIdentity());
+        EXPECT_EQ(input->chunk.blockAt(shared::WorldBounds::blockCoordinate(coordinate)), material);
+        for (auto const& face : input->neighbors.faces) {
+            EXPECT_TRUE(face.has_value());
+        }
+
+        auto const source = std::ranges::find_if(captured->sources, [&](client::TerrainLodChunkSource const& value) {
+            return value.coordinate == chunk_coordinate;
+        });
+        ASSERT_NE(source, captured->sources.end());
+        EXPECT_EQ(source->identity, effective->contentIdentity());
+        EXPECT_EQ(source->edit_revision, world.editChunkRevision(chunk_coordinate));
+
+        shared::ChunkMesher mesher;
+        shared::ChunkMesh const mesh = mesher.update(input->chunk, input->neighbors);
+        shared::BlockCoordinate const local = shared::WorldBounds::blockCoordinate(coordinate);
+        if (material == shared::Block::Air) {
+            auto const below = world.queryBlock({coordinate.x, coordinate.y, coordinate.z - 1});
+            ASSERT_TRUE(below.block.has_value());
+            ASSERT_TRUE(shared::isSolidBlock(*below.block));
+            EXPECT_TRUE(std::ranges::any_of(mesh.faces, [&](shared::MeshFace const& face) {
+                return face.local_origin.x == local.x && face.local_origin.y == local.y
+                    && face.local_origin.z == local.z - 1U
+                    && face.direction == shared::FaceDirection::PositiveZ && face.material == *below.block;
+            }));
+        } else {
+            EXPECT_TRUE(std::ranges::any_of(mesh.faces, [&](shared::MeshFace const& face) {
+                return face.local_origin == local && face.direction == shared::FaceDirection::PositiveZ
+                    && face.material == material;
+            }));
+        }
+    };
+    assertCapturedChunk(hole, shared::Block::Air);
+    assertCapturedChunk(placed, shared::Block::Snow);
+
+    ASSERT_TRUE(world.applyEditDelta(hole, *hole_base.block, 1U, 2U, 2U));
+    EXPECT_FALSE(client::terrainLodColumnSourcesCurrent(*captured, world));
+}
+
+TEST(TerrainLodPresentationTest, WrappedNeighborOverlayEditInvalidatesCapturedChunkFaces)
+{
+    auto const terrain = presentationWorld(256U);
+    shared::SparseWorld world{{}, shared::SparseWorldGenerationMode::MaterializedOnly};
+    ASSERT_TRUE(world.setTerrainIdentity(terrain->identity()));
+    for (auto const offset :
+         {std::array{0, 0}, std::array{-1, 0}, std::array{1, 0}, std::array{0, -1}, std::array{0, 1}}) {
+        int32_t const x = (offset[0] + 4'096) % 4'096;
+        ASSERT_TRUE(world.publishAuthoritativeSurface(
+            terrain->sampleSurface({.x = x, .y = 1 + offset[1], .z = 0})));
+    }
+
+    shared::WorldCoordinate const center_block{0, 17, 900};
+    shared::WorldCoordinate const wrapped_neighbor{65'535, 17, 900};
+    ASSERT_EQ(world.queryBlock(center_block).block, shared::Block::Air);
+    ASSERT_EQ(world.queryBlock(wrapped_neighbor).block, shared::Block::Air);
+    ASSERT_TRUE(world.applyEditDelta(center_block, shared::Block::Stone, 0U, 1U, 1U));
+
+    auto const before_neighbor_edit = client::captureTerrainLodColumn(world, 0U, 1U);
+    ASSERT_TRUE(before_neighbor_edit.has_value());
+    ASSERT_EQ(before_neighbor_edit->chunks.size(), 1U);
+    ASSERT_TRUE(client::terrainLodColumnSourcesCurrent(*before_neighbor_edit, world));
+    ASSERT_TRUE(world.applyEditDelta(wrapped_neighbor, shared::Block::Stone, 0U, 1U, 1U));
+    EXPECT_FALSE(client::terrainLodColumnSourcesCurrent(*before_neighbor_edit, world));
+
+    auto const after_neighbor_edit = client::captureTerrainLodColumn(world, 0U, 1U);
+    ASSERT_TRUE(after_neighbor_edit.has_value());
+    auto const center_chunk = std::ranges::find_if(after_neighbor_edit->chunks, [](client::TerrainLodChunkInput const& chunk) {
+        return chunk.chunk.coordinate() == shared::ChunkCoordinate{.x = 0, .y = 1, .z = 56};
+    });
+    ASSERT_NE(center_chunk, after_neighbor_edit->chunks.end());
+    ASSERT_TRUE(center_chunk->neighbors.faces[0].has_value());
+    EXPECT_EQ((*center_chunk->neighbors.faces[0])[4U * 16U + 1U], shared::Block::Stone);
+}
+
+TEST(TerrainLodPresentationTest, SparseOverlayWithUnknownBaseCannotCaptureAsReady)
+{
+    shared::SparseWorld world{{}, shared::SparseWorldGenerationMode::MaterializedOnly};
+    ASSERT_TRUE(world.applyEditDelta({17, 17, 900}, shared::Block::Snow, 0U, 1U, 1U));
+    EXPECT_FALSE(client::captureTerrainLodColumn(world, 1U, 1U).has_value());
 }
 
 TEST(TerrainLodPresentationTest, OrdinaryProfileBottomUsesOneExactTexturedRectangleIncludingPeriodicEdge)

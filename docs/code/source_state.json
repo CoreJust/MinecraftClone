@@ -37,7 +37,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "c7404945568bee6869d586cfb79fdef790cef2009e7bcf254e8cff4003c4bc03"
+      "sources_sha256": "f4cd8eb95d0422d0a82fd53a9446a6eab159ef8ed099f33fc542aeb898cfe5b1"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -246,7 +246,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "df7c2ce552599cd66215d99915574591a4315f796434c94c62aa05e4a8842cd0",
+      "guide_sha256": "45db840759601919de59060ed1b642e0f49b86a67117cc9267a7ca2e09c3611d",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -389,7 +389,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "352927e7576024a98a7925d7d6b20c8c78b50fb92a017c4b29a6a753f26e339b"
+      "sources_sha256": "3ed456ee40fe48cf4011f63f9a5fc3e9d95726d8e60d615c26f2f3490f8c9ff4"
     },
     {
       "guide": "docs/code/GENERATION.md",
@@ -1065,7 +1065,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "e9a3bf470092108bd74d687333cda860e84f995a5ed70a9d40ca5d3f35098dff"
+      "sources_sha256": "0723c5c9304bdaf2526d59644b30d9ad15655b695d28c2c4d4136fba25ba6947"
     }
   ],
   "version": 1

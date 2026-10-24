@@ -71,6 +71,135 @@ uint32_t wrap(int64_t const value)
     return static_cast<uint32_t>((value % PERIOD + PERIOD) % PERIOD);
 }
 
+std::optional<shared::Chunk> currentChunkSnapshot(
+    shared::SparseWorld const& world,
+    shared::ChunkCoordinate const coordinate
+)
+{
+    if (shared::Chunk const* const resident = world.residentChunk(coordinate)) {
+        return *resident;
+    }
+    return world.effectiveChunkSnapshot(coordinate);
+}
+
+bool addChunkSource(
+    TerrainLodColumnInput& column,
+    shared::SparseWorld const& world,
+    shared::ChunkCoordinate const coordinate,
+    shared::Chunk const& chunk
+)
+{
+    TerrainLodChunkSource const source{
+        .coordinate = coordinate,
+        .identity = chunk.contentIdentity(),
+        .edit_revision = world.editChunkRevision(coordinate),
+    };
+    for (TerrainLodChunkSource const& existing : column.sources) {
+        if (existing.coordinate == coordinate) {
+            return existing == source;
+        }
+    }
+    column.sources.push_back(source);
+    return true;
+}
+
+shared::ChunkCoordinate adjacentChunkCoordinate(
+    shared::ChunkCoordinate const coordinate,
+    uint32_t const edge
+)
+{
+    auto const normal = shared::faceNormal(static_cast<shared::FaceDirection>(edge));
+    uint32_t const chunk_period = PERIOD / 16U;
+    return {
+        .x = static_cast<int32_t>((static_cast<int64_t>(coordinate.x) + normal[0] + chunk_period) % chunk_period),
+        .y = static_cast<int32_t>((static_cast<int64_t>(coordinate.y) + normal[1] + chunk_period) % chunk_period),
+        .z = coordinate.z + normal[2],
+    };
+}
+
+bool captureNeighborFace(
+    TerrainLodColumnInput& column,
+    shared::SparseWorld const& world,
+    shared::ChunkCoordinate const coordinate,
+    uint32_t const edge,
+    shared::ChunkNeighborFaces& neighbors
+)
+{
+    std::array<shared::Block, shared::Chunk::FACE_BLOCK_COUNT> blocks;
+    blocks.fill(shared::Block::Air);
+    shared::ChunkCoordinate const adjacent = adjacentChunkCoordinate(coordinate, edge);
+    if (adjacent.z >= 0 && adjacent.z < 64) {
+        auto neighbor = currentChunkSnapshot(world, adjacent);
+        if (!neighbor || !addChunkSource(column, world, adjacent, *neighbor)) {
+            return false;
+        }
+        for (uint32_t v = 0U; v < 16U; ++v) {
+            for (uint32_t u = 0U; u < 16U; ++u) {
+                auto const block = neighbor->blockAt(neighborFaceCoordinate(edge, u, v));
+                if (!block) {
+                    return false;
+                }
+                blocks[v * 16U + u] = *block;
+            }
+        }
+    }
+    neighbors.faces[edge] = blocks;
+    return true;
+}
+
+bool captureEditedChunks(
+    TerrainLodColumnInput& column,
+    shared::SparseWorld const& world
+)
+{
+    for (uint32_t z = 0U; z < 64U; ++z) {
+        shared::ChunkCoordinate const coordinate{
+            .x = static_cast<int32_t>(column.x),
+            .y = static_cast<int32_t>(column.y),
+            .z = static_cast<int32_t>(z),
+        };
+        if (world.editChunkRevision(coordinate) == 0U) {
+            continue;
+        }
+        auto chunk = currentChunkSnapshot(world, coordinate);
+        if (!chunk || !addChunkSource(column, world, coordinate, *chunk)) {
+            return false;
+        }
+        shared::ChunkNeighborFaces neighbors;
+        for (uint32_t edge = 0U; edge < 6U; ++edge) {
+            if (!captureNeighborFace(column, world, coordinate, edge, neighbors)) {
+                return false;
+            }
+        }
+        column.chunks.push_back({.chunk = std::move(*chunk), .neighbors = std::move(neighbors)});
+    }
+    return true;
+}
+
+bool chunkSourceCurrent(TerrainLodChunkSource const& source, shared::SparseWorld const& world)
+{
+    if (world.editChunkRevision(source.coordinate) != source.edit_revision) {
+        return false;
+    }
+    shared::SparseBlockQuery const probe = world.queryBlock({
+        static_cast<int64_t>(source.coordinate.x) * shared::Chunk::SIDE_LENGTH,
+        static_cast<int64_t>(source.coordinate.y) * shared::Chunk::SIDE_LENGTH,
+        static_cast<int64_t>(source.coordinate.z) * shared::Chunk::SIDE_LENGTH,
+    });
+    if (probe.state != shared::GenerationState::Materialized || !probe.block) {
+        return false;
+    }
+    auto const current = currentChunkSnapshot(world, source.coordinate);
+    return current && current->contentIdentity() == source.identity;
+}
+
+bool authoritySourceCurrent(TerrainLodAuthoritySource const& source, shared::SparseWorld const& world)
+{
+    return world.hasAuthoritativeSurface(source.coordinate)
+        && world.matchesAuthoritativeTileIdentity(
+            source.coordinate, source.identity, source.revision, source.content_hash);
+}
+
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 double distanceToCell(uint32_t const origin, uint32_t const extent, uint32_t const center)
 {
@@ -140,6 +269,15 @@ std::vector<StoneFaceInstance> meshAuthorityProfiles(
 {
     std::vector<StoneFaceInstance> faces;
     faces.reserve(512U);
+    uint64_t full_chunk_mask = 0U;
+    for (TerrainLodChunkInput const& input : column.chunks) {
+        shared::ChunkCoordinate const coordinate = input.chunk.coordinate();
+        if (coordinate.x == static_cast<int32_t>(column.x)
+            && coordinate.y == static_cast<int32_t>(column.y)
+            && coordinate.z >= 0 && coordinate.z < 64) {
+            full_chunk_mask |= uint64_t{1} << static_cast<uint32_t>(coordinate.z);
+        }
+    }
     auto const emit =
         [&](
             uint32_t x,
@@ -180,10 +318,14 @@ std::vector<StoneFaceInstance> meshAuthorityProfiles(
                             .dense_section_mask;
             }
             scan_mask |= (scan_mask << 1U) | (scan_mask >> 1U);
+            scan_mask |= full_chunk_mask;
             uint64_t remaining = scan_mask;
             while (remaining != 0U) {
                 uint32_t const section = static_cast<uint32_t>(std::countr_zero(remaining));
                 remaining &= remaining - 1U;
+                if ((full_chunk_mask & (uint64_t{1} << section)) != 0U) {
+                    continue;
+                }
                 for (uint32_t z = section * 16U; z < (section + 1U) * 16U; ++z) {
                     auto const material = own.materialAt(static_cast<uint16_t>(z));
                     if (!shared::isSolidBlock(material)) {
@@ -309,6 +451,9 @@ captureTerrainLodColumn(shared::SparseWorld const& world, uint32_t const x, uint
             result.edge_heights[2][along] = result.authority_profiles[18U + along + 1U].highest_solid_z + 1U;
             result.edge_heights[3][along] = result.authority_profiles[16U * 18U + along + 1U].highest_solid_z + 1U;
         }
+        if (!captureEditedChunks(result, world)) {
+            return std::nullopt;
+        }
         return result;
     }
     std::array<bool, 64> surface_chunks{};
@@ -378,7 +523,11 @@ captureTerrainLodColumn(shared::SparseWorld const& world, uint32_t const x, uint
                     neighbors.faces[edge] = blocks;
                     continue;
                 }
-                sources.push_back({.coordinate = adjacent, .identity = neighbor->contentIdentity()});
+                sources.push_back({
+                    .coordinate = adjacent,
+                    .identity = neighbor->contentIdentity(),
+                    .edit_revision = world.editChunkRevision(adjacent),
+                });
                 for (uint32_t v = 0U; v < 16U; ++v) {
                     for (uint32_t u = 0U; u < 16U; ++u) {
                         shared::BlockCoordinate const local = neighborFaceCoordinate(edge, u, v);
@@ -395,7 +544,11 @@ captureTerrainLodColumn(shared::SparseWorld const& world, uint32_t const x, uint
         if (!complete) {
             return std::nullopt;
         }
-        result.sources.push_back({.coordinate = coordinate, .identity = chunk->contentIdentity()});
+        result.sources.push_back({
+            .coordinate = coordinate,
+            .identity = chunk->contentIdentity(),
+            .edit_revision = world.editChunkRevision(coordinate),
+        });
         result.sources.insert(result.sources.end(), sources.begin(), sources.end());
         result.chunks.push_back({.chunk = *chunk, .neighbors = neighbors});
     }
@@ -405,14 +558,12 @@ captureTerrainLodColumn(shared::SparseWorld const& world, uint32_t const x, uint
 bool terrainLodColumnSourcesCurrent(TerrainLodColumnInput const& column, shared::SparseWorld const& world)
 {
     for (auto const& source : column.sources) {
-        auto const* chunk = world.residentChunk(source.coordinate);
-        if (chunk == nullptr || chunk->contentIdentity() != source.identity) {
+        if (!chunkSourceCurrent(source, world)) {
             return false;
         }
     }
     for (auto const& source : column.authority_sources) {
-        if (!world.matchesAuthoritativeTileIdentity(
-                source.coordinate, source.identity, source.revision, source.content_hash)) {
+        if (!authoritySourceCurrent(source, world)) {
             return false;
         }
     }
@@ -422,14 +573,12 @@ bool terrainLodColumnSourcesCurrent(TerrainLodColumnInput const& column, shared:
 bool terrainLodSourcesCurrent(TerrainLodScene const& scene, shared::SparseWorld const& world)
 {
     for (TerrainLodChunkSource const& source : scene.chunk_sources) {
-        shared::Chunk const* const chunk = world.residentChunk(source.coordinate);
-        if (chunk == nullptr || chunk->contentIdentity() != source.identity) {
+        if (!chunkSourceCurrent(source, world)) {
             return false;
         }
     }
     for (auto const& source : scene.authority_sources) {
-        if (!world.matchesAuthoritativeTileIdentity(
-                source.coordinate, source.identity, source.revision, source.content_hash)) {
+        if (!authoritySourceCurrent(source, world)) {
             return false;
         }
     }

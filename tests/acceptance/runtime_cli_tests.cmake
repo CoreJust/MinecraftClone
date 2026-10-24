@@ -180,10 +180,10 @@ file(WRITE "${valid_scenario}" [=[@version(0.1.5)
 pub fn scenario() {
     profile("flight3d-v1")
     seed(42u64)
-    playerXYZ("alice", '@'c8, 4i32, 4i32, 0i32, 0i16, 0i16, 0i16)
+    playerXYZ("alice", '@'c8, 4i32, 4i32, 10i32, 0i16, 0i16, 0i16)
     moveXYZ("alice", 1i8, 0i8, 0i8)
     wait(10u64)
-    expectXYZ("alice", 9i32, 4i32, 0i32)
+    expectXYZ("alice", 9i32, 4i32, 10i32)
 }
 ]=])
 execute_process(

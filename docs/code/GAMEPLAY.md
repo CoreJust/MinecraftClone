@@ -14,36 +14,35 @@ Bypass requires flight ([POLICY.md](POLICY.md)). [`BlockInteraction.hpp`](../../
 
 ## Wire protocol
 
-[Message.hpp](../../src/shared/include/shared/net/Message.hpp) defines versioned
-little-endian messages. Protocol20 carries authoritative-profile batches
-and acknowledgements bound to session, coverage epoch and delivery token;
-previews are not required. Each XY profile certifies all terrain Z. Dense
-materialized delivery retains separate credits/receipts. Bulk uses channel 1,
-control 0; peer/class pending caps are 49,152/16,384 bytes, including old-epoch debt. Coverage advertises
-actual 640 and visual 320 radii; collision/start cache uses dense 48, prefetched 80.
-Inputs carry XYZ direction/heading/sequence; positions carry coordinates,
-subcells, palette/ACK. Only capability bytes 0/1/3 are valid; stale ACK state
-cannot mutate prediction. Invalid input fails before mutation.
+[Message.hpp](../../src/shared/include/shared/net/Message.hpp) defines Protocol 21:
+server-authoritative action intents/results, revisioned deltas, sparse edit
+snapshots and complete edited-column manifests. Sessions carry a server nonce;
+terrain deliveries also validate coverage epoch and delivery token. Profiles
+certify generated base columns; explicit edits require every manifested Z-chunk
+revision. Dense delivery retains separate credits/receipts. Bulk/control use
+channels 1/0; peer/class pending caps are 49,152/16,384 bytes including old-epoch
+debt. Coverage advertises actual 640/visual 320; dense collision/start caches use
+48/80. Inputs carry XYZ/heading/sequence; positions carry subcells/palette/ACK.
+Capabilities 0/1/3 are valid; invalid input and stale ACKs cannot mutate state.
 
 ## Server authority
 
-[GameServer](../../src/server/GameServer.cpp) defaults to port `20040`.
-Cancellation-aware polls drain ≤256 events/1 ms; active/idle waits are 1/5 ms;
-ticks share one action permit/player with neutral physics; idle gravity advances
-revision without inventing input ACKs. Invalid joins, duplicate characters and pre-join
-inputs fail; positions carry revisions/ACKs; disconnects broadcast removals.
+[GameServer](../../src/server/GameServer.cpp) defaults to port `20040`. Polls drain
+≤256 events/1 ms; active/idle waits are 1/5 ms. Ticks serialize one action/player;
+idle gravity advances revisions without inventing ACKs. Invalid joins,
+duplicate characters and pre-join inputs fail; disconnects remove players.
 
-Preview batches carry ≤64 operations/10,118 bytes. Eight credits share 34,356 bytes below
-ENet's 65,536-byte window; ready/dispatched tiles cap at 128. Receipts flush
-before rendering; ACKs refill restored keys. Mixed batches reserve ≤half for
-removals; additions use free plus released residency; a lone queue may use full
-capacity. Priority resets on interest/heading/ACK changes; popped keys recheck it.
+Sequenced intents validate session, accepted eye aim, reach, visibility,
+mode/rights and cell version. Hard vetoes win. Breaks lose credit on target,
+version/policy changes, release or lease expiry. Placement needs a fresh press
+and rejects body overlap. Duplicates cannot recommit. Loopback mode
+requests use the local grant; remote requests require `minecraft:mode.change`.
 
-Preview near coverage is a wrapped 225-tile square prioritized before far work.
-Preview cancellation excludes authority job IDs. Authority delivery inspects a
-bounded connected frontier: missing/disconnected entries rotate, unknown work
-is fairly revisited. Session/epoch validation, rejected-key retry, replay-safe
-ACK credits and inflight ownership remain separate from queue order.
+Preview batches retain ≤64 operations/10,118 bytes, 128 ready/dispatched tiles
+and eight credits sharing 34,356 bytes below ENet's 65,536-byte window. Removals
+reserve capacity; interest/heading/ACK changes reorder work. Missing or
+disconnected authority entries rotate fairly. Preview cancellation excludes
+authority jobs. Session/epoch checks, replay-safe credits and ownership remain separate.
 
 ## Terrain-v2 preparation and authority
 
@@ -95,13 +94,15 @@ Camera is distance-bounded and collision-clipped; R reloads renderer.
 
 ## Canonical chunks and mesh
 
-`Chunk` validates material IDs and terrain identity. `SparseWorld` remote reads
-preserve Unknown without creating generators; exact profiles represent all Z.
-Gravity support queries the same authoritative columns as body collision,
-including retained edits, and retains terrain steps. Canonical tile identity
-ignores unedited dense-cache admission/eviction but changes for edits, deletion
-and profile replacement. `ChunkMesher` suppresses neighbor seams; caches require
-exact blocks, neighbors and authoritative identity.
+`Chunk` validates materials/identity. `SparseWorld` remote reads preserve Unknown
+without generation. Base profiles describe solid layered columns; edit manifests
+fence missing affected Z sections. Collision/support queries share authoritative
+columns and retained edits. Dense-cache churn leaves unedited tile identity
+stable; edits/deletion/profile replacement invalidate it.
 
-Air/base-reset overrides survive eviction. Versions reject stale updates. The
-65,536-unit cap counts stored cells (minimum one per chunk); rejection is atomic.
+Changed voxels advance cell/chunk versions. Receipt-gated deltas and atomic
+snapshots retain Air/base-reset overrides across eviction and base arrival;
+stale updates fail and bounded resync repairs gaps. The 65,536-unit cap counts
+stored cells, minimum one/chunk; admission is atomic. `ChunkMesher` suppresses
+seams. Terrain LOD composes effective edited chunks with base profiles and
+invalidates captures on local/boundary-neighbor revisions.

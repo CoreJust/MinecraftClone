@@ -52,7 +52,8 @@ std::vector<uint8_t> validV20ClientStartPacket()
 {
     generation::GenerationConfiguration const configuration{};
     std::string const identity = terrainConfigurationIdentity();
-    std::vector<uint8_t> bytes{ shared::PROTOCOL_MAGIC, 20U, 14U };
+    std::vector<uint8_t> bytes{ shared::PROTOCOL_MAGIC, shared::PROTOCOL_VERSION, 14U };
+    appendUint64(bytes, 1U);
     appendUint64(bytes, 1U);
     appendUint32(bytes, generation::TERRAIN_VERSION);
     appendUint64(bytes, 1U);
@@ -967,7 +968,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' }),
         (std::vector<uint8_t>{
-            0x4D, 20, 0, '@', 0,
+            0x4D, 21, 0, '@', 0,
             1, 0, 0, 0,
             42, 0, 0, 0, 0, 0, 0, 0,
             16, 16, 16,
@@ -977,15 +978,15 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = true }),
-        (std::vector<uint8_t>{ 0x4D, 20, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 })
+        (std::vector<uint8_t>{ 0x4D, 21, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = false }),
-        (std::vector<uint8_t>{ 0x4D, 20, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0 })
+        (std::vector<uint8_t>{ 0x4D, 21, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ClientInputMessage{ .direction = { 129, 127, 1 }, .sequence = 0x7856'3412U }),
-        (std::vector<uint8_t>{ 0x4D, 20, 2, 129, 127, 1, 0, 5, 0, 0, 0, 127, 18, 52, 86, 120 })
+        (std::vector<uint8_t>{ 0x4D, 21, 2, 129, 127, 1, 0, 5, 0, 0, 0, 127, 18, 52, 86, 120 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerPlayerPositionMessage{
@@ -994,7 +995,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
             .acknowledged_input_sequence = 0x7856'3412U, .state_revision = 0x1234'5678U,
         }),
         (std::vector<uint8_t>{
-            0x4D, 20, 4, '#', 7, 0,
+            0x4D, 21, 4, '#', 7, 0,
             30, 0, 0, 0,
             2, 0, 0, 0,
             12, 0, 0, 0,
@@ -1005,7 +1006,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerRemovePlayerMessage{ .ch = '$' }),
-        (std::vector<uint8_t>{ 0x4D, 20, 5, '$' })
+        (std::vector<uint8_t>{ 0x4D, 21, 5, '$' })
     );
     auto const descriptor = heightTileDescriptorMessage();
     auto const descriptor_packet = shared::encodeMessage(descriptor);
@@ -1293,7 +1294,7 @@ TEST(MessageTest, MapsExactDiskCardinalitiesToEverySupportedRadius)
         shared::heightTileInterestCount(257U),
     };
 
-    EXPECT_EQ(shared::PROTOCOL_VERSION, 20U);
+    EXPECT_EQ(shared::PROTOCOL_VERSION, 21U);
     EXPECT_EQ(shared::HEIGHT_TILE_BATCH_CAPACITY, 64U);
     EXPECT_EQ(shared::HEIGHT_TILE_RESIDENCY_RECEIPT_KEY_CAPACITY, 128U);
     EXPECT_EQ(
@@ -1433,6 +1434,126 @@ TEST(MessageTest, TerrainDeliverySizesMatchTheCompleteWireFrames)
         profiles.tiles.push_back(tile);
         EXPECT_EQ(shared::encodedAuthoritativeTerrainBatchSize(profiles), shared::encodeMessage(profiles).size());
     }
+}
+
+TEST(MessageTest, BlockActionIntentKeepsSessionSequenceAimAndPressIdentity)
+{
+    shared::ClientBlockActionMessage request{
+        .session = terrainSessionIdentity(), .sequence = 41U,
+        .kind = shared::BlockActionKind::PlacePress,
+        .aim_x = 0, .aim_y = 32'767, .aim_z = -100,
+        .target_hint = { 4, 5, 6 }, .material = shared::Block::Stone,
+    };
+    auto const decoded = shared::decodeMessage(shared::encodeMessage(request));
+    ASSERT_TRUE(decoded);
+    auto const& result = std::get<shared::ClientBlockActionMessage>(*decoded);
+    EXPECT_EQ(result.session, request.session);
+    EXPECT_EQ(result.sequence, request.sequence);
+    EXPECT_EQ(result.kind, request.kind);
+    EXPECT_EQ(result.aim_z, request.aim_z);
+    EXPECT_EQ(result.target_hint, request.target_hint);
+    EXPECT_EQ(result.material, request.material);
+    request.sequence = 0U;
+    EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(request)));
+}
+
+TEST(MessageTest, LiveEditFramesPreserveChunkContinuityAndCompleteVerticalManifest)
+{
+    shared::ServerBlockDeltaMessage delta{
+        .session = terrainSessionIdentity(), .coordinate = {4, 5, 6},
+        .from_revision = 7U, .to_revision = 8U, .cell_version = 3U,
+        .material = shared::Block::Air,
+    };
+    auto decoded = shared::decodeMessage(shared::encodeMessage(delta));
+    ASSERT_TRUE(decoded);
+    auto const& received = std::get<shared::ServerBlockDeltaMessage>(*decoded);
+    EXPECT_EQ(received.coordinate, delta.coordinate);
+    EXPECT_EQ(received.from_revision, 7U);
+    EXPECT_EQ(received.to_revision, 8U);
+    EXPECT_EQ(received.cell_version, 3U);
+    EXPECT_EQ(received.material, shared::Block::Air);
+    delta.to_revision = 9U;
+    EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(delta)));
+
+    shared::ServerEditedColumnManifestMessage manifest{
+        .session = terrainSessionIdentity(), .column = {0, 0, 0},
+        .watermark = 8U, .chunks = {{0U, 5U}, {63U, 8U}},
+    };
+    decoded = shared::decodeMessage(shared::encodeMessage(manifest));
+    ASSERT_TRUE(decoded);
+    EXPECT_EQ(std::get<shared::ServerEditedColumnManifestMessage>(*decoded).chunks, manifest.chunks);
+    manifest.chunks.push_back({63U, 9U});
+    EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(manifest)));
+}
+
+TEST(MessageTest, CurrentEditSnapshotPreservesAirAndRevision)
+{
+    shared::ServerEditChunkSnapshotMessage snapshot{
+        .session = terrainSessionIdentity(), .revision = 12U,
+        .chunk = uniformChunkPayload({0, 0, 63}, shared::Block::Air),
+        .edits = {{{1U, 2U, 3U}, shared::Block::Air, 9U}},
+    };
+    auto const decoded = shared::decodeMessage(shared::encodeMessage(snapshot));
+    ASSERT_TRUE(decoded);
+    auto const& received = std::get<shared::ServerEditChunkSnapshotMessage>(*decoded);
+    EXPECT_EQ(received.revision, 12U);
+    EXPECT_EQ(received.edits, snapshot.edits);
+    EXPECT_EQ(received.chunk.content_hash, snapshot.chunk.content_hash);
+    auto const chunk = shared::materializeChunkPayload(received.chunk);
+    ASSERT_TRUE(chunk);
+    EXPECT_EQ(chunk->contentIdentity().content_hash, snapshot.chunk.content_hash);
+}
+
+TEST(MessageTest, EffectiveInteractionStateAndEditReceiptsRoundTrip)
+{
+    shared::ServerBlockActionResultMessage state{
+        .session = terrainSessionIdentity(), .sequence = 0U,
+        .status = shared::BlockActionStatus::Accepted, .server_tick = 12U,
+        .mode = shared::GameMode::Creative, .effective_actions = 21U,
+        .break_materials = 126U, .place_materials = 110U,
+    };
+    auto decoded = shared::decodeMessage(shared::encodeMessage(state));
+    ASSERT_TRUE(decoded);
+    auto const& result = std::get<shared::ServerBlockActionResultMessage>(*decoded);
+    EXPECT_EQ(result.mode, state.mode);
+    EXPECT_EQ(result.break_materials, 126U);
+    EXPECT_EQ(result.place_materials, 110U);
+    state.status = shared::BlockActionStatus::Denied;
+    EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(state)));
+    shared::ClientEditDeliveryAckMessage receipt{.session = terrainSessionIdentity(), .delivery_token = 9U};
+    decoded = shared::decodeMessage(shared::encodeMessage(receipt));
+    ASSERT_TRUE(decoded);
+    EXPECT_EQ(std::get<shared::ClientEditDeliveryAckMessage>(*decoded).delivery_token, 9U);
+    receipt.delivery_token = 0U;
+    EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(receipt)));
+}
+
+TEST(MessageTest, CompleteDenseEditSnapshotFitsTheExistingTerrainByteWindow)
+{
+    static constexpr uint32_t TERRAIN_BYTE_WINDOW = 49'152U;
+    shared::ServerEditChunkSnapshotMessage snapshot{
+        .session = terrainSessionIdentity(), .revision = shared::Chunk::BLOCK_COUNT,
+        .chunk = denseChunkPayload({0, 0, 0}), .edits = {}, .delivery_token = 1U,
+    };
+    auto const chunk = shared::materializeChunkPayload(snapshot.chunk);
+    ASSERT_TRUE(chunk);
+    for (uint8_t z = 0U; z < shared::Chunk::SIDE_LENGTH; ++z) {
+        for (uint8_t y = 0U; y < shared::Chunk::SIDE_LENGTH; ++y) {
+            for (uint8_t x = 0U; x < shared::Chunk::SIDE_LENGTH; ++x) {
+                snapshot.edits.push_back({{x, y, z}, *chunk->blockAt({x, y, z}), 1U});
+            }
+        }
+    }
+    auto bytes = shared::encodeMessage(snapshot);
+    EXPECT_LT(bytes.size(), TERRAIN_BYTE_WINDOW);
+    auto const decoded = shared::decodeMessage(bytes);
+    ASSERT_TRUE(decoded);
+    EXPECT_EQ(std::get<shared::ServerEditChunkSnapshotMessage>(*decoded).edits, snapshot.edits);
+    snapshot.edits.clear();
+    bytes = shared::encodeMessage(snapshot);
+    ASSERT_GT(bytes.size(), 23U);
+    bytes[23U] = 23U;
+    EXPECT_FALSE(shared::decodeMessage(bytes));
 }
 
 TEST(MessageTest, AuthoritativeDeepOceanKeepsCanonicalEmptyGroundIntervalAboveSolidHeight)

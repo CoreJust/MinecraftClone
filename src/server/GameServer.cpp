@@ -43,11 +43,24 @@
 #include <string_view>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <variant>
 
 namespace {
+
+uint8_t allowedInteractionMaterials(shared::EffectiveInteractionRights const& rights, bool const breaking)
+{
+    uint8_t materials = 0U;
+    for (uint8_t value = 1U; value <= static_cast<uint8_t>(shared::Block::Ice); ++value) {
+        shared::Block const block = static_cast<shared::Block>(value);
+        if (breaking ? rights.canBreak(block) : rights.canPlace(block)) {
+            materials |= static_cast<uint8_t>(1U << value);
+        }
+    }
+    return materials;
+}
 
 [[nodiscard]]
 shared::PolicyDiagnostic policyDiagnostic(
@@ -719,6 +732,28 @@ shared::GenerationPriorityScores generationPriorityScores(
 }
 
 [[nodiscard]]
+std::vector<shared::ChunkCoordinate> missingFlightCollisionChunks(
+    shared::World const& world,
+    shared::SparseWorld const& physics_world,
+    shared::PlayerId const player_id,
+    shared::Direction const direction
+)
+{
+    std::vector<shared::ChunkCoordinate> missing;
+    for (shared::ChunkCoordinate const coordinate : world.flightCollisionChunks(player_id, direction)) {
+        shared::WorldCoordinate const origin{
+            .x = static_cast<int64_t>(coordinate.x) * shared::Chunk::SIDE_LENGTH,
+            .y = static_cast<int64_t>(coordinate.y) * shared::Chunk::SIDE_LENGTH,
+            .z = static_cast<int64_t>(coordinate.z) * shared::Chunk::SIDE_LENGTH,
+        };
+        if (physics_world.queryBlock(origin).state != shared::GenerationState::Materialized) {
+            missing.push_back(coordinate);
+        }
+    }
+    return missing;
+}
+
+[[nodiscard]]
 uint64_t nextHeightTileToken(uint64_t& next_token) noexcept
 {
     uint64_t const token = next_token;
@@ -728,7 +763,6 @@ uint64_t nextHeightTileToken(uint64_t& next_token) noexcept
     }
     return token;
 }
-
 
 } // namespace
 
@@ -779,6 +813,7 @@ GameServer::GameServer(
     , m_spawn_points{checkedSpawnPoints(std::move(spawn_points), world_mode)}
     , m_height_tile_interest_orders{shared::prepareHeightTileInterestOrders(render_distance)}
 {
+    m_local_mode_requests = bind_mode == BindMode::Loopback;
     if (m_world_preparation != nullptr && world_mode != shared::WorldMode::Flight) {
         throw std::invalid_argument{ "prepared terrain sessions require flight mode" };
     }
@@ -1175,6 +1210,7 @@ uint64_t GameServer::tickImpl(
     std::atomic_bool const* const stop_requested
 )
 {
+    ++m_authority_tick;
     for (PlayerReplication& replication : m_player_replications) {
         replication.action_consumed_this_tick = false;
     }
@@ -1197,6 +1233,10 @@ uint64_t GameServer::tickImpl(
                 }, false));
             }
         }
+    }
+    for (PlayerReplication& replication : m_player_replications) {
+        processBlockActions(replication);
+        processEditSnapshots(replication);
     }
     if (m_world.mode() == shared::WorldMode::Flight) {
         for (PlayerReplication const& replication : m_player_replications) {
@@ -1607,6 +1647,12 @@ void GameServer::activatePreparedJoin(PendingTerrainJoin join, shared::PlayerPos
         .scheduled_chunks = {},
         .inflight_chunk_deliveries = {},
     });
+    shared::ServerEditChunkSnapshotMessage maximum_snapshot{
+        .session = join.session, .revision = 0U,
+        .chunk = {.data = shared::DenseChunkData{}}, .edits = {},
+    };
+    m_player_replications.back().maximum_edit_snapshot_bytes = static_cast<uint32_t>(
+        shared::encodedEditChunkSnapshotSize(maximum_snapshot) + shared::Chunk::BLOCK_COUNT * 10U);
     if (m_permissions_published) {
         auto const refreshed = refreshPublishedPermissions();
         if (!refreshed) {
@@ -1624,10 +1670,16 @@ void GameServer::activatePreparedJoin(PendingTerrainJoin join, shared::PlayerPos
             return;
         }
     }
-    auto const spawned_player = m_world.player(id);
+    auto spawned_player = m_world.player(id);
     if (!spawned_player) {
         return;
     }
+    auto const initial_rights = interactionRights(*playerReplication(id));
+    spawned_player->movement_capabilities.bits = static_cast<uint8_t>(
+        (initial_rights.allows(shared::InteractionAction::Flight) ? 1U : 0U)
+        | (initial_rights.allows(shared::InteractionAction::CollisionBypass) ? 2U : 0U));
+    // Initial spawn already owns pose admission; publish the selected mode's capabilities with it.
+    static_cast<void>(m_world.applyReplicatedPlayerState(*spawned_player));
     CORE_INFO("Player '{}' spawned at canonical safe position x {}, y {}, z {}", join.character,
         spawned_player->x, spawned_player->y, spawned_player->z);
     resetChunkCoverage(*playerReplication(id), spawn, true);
@@ -2732,6 +2784,15 @@ void GameServer::startPreparedWorld(
         return;
     }
     replication->world_started = true;
+    auto const rights = interactionRights(*replication);
+    shared::ServerBlockActionResultMessage state{
+        .session = start.session, .sequence = 0U, .status = shared::BlockActionStatus::Accepted,
+        .server_tick = m_authority_tick, .mode = replication->game_mode,
+        .effective_actions = rights.actions.bits,
+    };
+    state.break_materials = allowedInteractionMaterials(rights, true);
+    state.place_materials = allowedInteractionMaterials(rights, false);
+    sendTo(client_id, state);
     sendTo(client_id, shared::ServerStartWorldAckMessage{
         .session = start.session,
         .accepted = true,
@@ -2942,6 +3003,10 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
                     m_world.configuration(),
                     m_world_preparation->configuration()
                 );
+                if (m_next_server_session_nonce == std::numeric_limits<uint64_t>::max()) {
+                    throw std::overflow_error{"server terrain session identities exhausted"};
+                }
+                session.server_nonce = m_next_server_session_nonce++;
             } catch (std::exception const& error) {
                 CORE_ERROR("Rejected terrain join because its accepted identity is invalid: {}", error.what());
                 reject_join();
@@ -3024,7 +3089,14 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
                 return;
             }
         }
-        auto const spawned_player = m_world.player(id);
+        auto spawned_player = m_world.player(id);
+        if (spawned_player && m_world.mode() == shared::WorldMode::Flight) {
+            auto const initial_rights = interactionRights(*playerReplication(id));
+            spawned_player->movement_capabilities.bits = static_cast<uint8_t>(
+                (initial_rights.allows(shared::InteractionAction::Flight) ? 1U : 0U)
+                | (initial_rights.allows(shared::InteractionAction::CollisionBypass) ? 2U : 0U));
+            static_cast<void>(m_world.applyReplicatedPlayerState(*spawned_player));
+        }
         if (!spawned_player.has_value()) {
             CORE_ERROR("Spawned player {} is missing from the world", id);
             m_world.despawnPlayer(id);
@@ -3054,6 +3126,41 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
         }
         if (join_request->wants_previews) {
             startHeightTileStream(id);
+        }
+    } else if (auto const* action = std::get_if<shared::ClientBlockActionMessage>(msg_ptr)) {
+        PlayerReplication* const replication = playerReplication(id);
+        if (!replication) {
+            return;
+        }
+        if (action->kind == shared::BlockActionKind::BreakRelease) {
+            std::erase_if(replication->pending_block_actions, [](auto const& pending) {
+                return pending.kind == shared::BlockActionKind::BreakHold;
+            });
+        }
+        if (replication->pending_block_actions.size() < PlayerReplication::MAX_PENDING_INPUTS) {
+            replication->pending_block_actions.push_back(*action);
+        } else {
+            sendTo(id, shared::ServerBlockActionResultMessage{
+                .session = action->session, .sequence = action->sequence,
+                .status = shared::BlockActionStatus::RateLimited, .server_tick = m_authority_tick,
+                .mode = replication->game_mode,
+            });
+        }
+    } else if (auto const* receipt = std::get_if<shared::ClientEditDeliveryAckMessage>(msg_ptr)) {
+        PlayerReplication* const replication = playerReplication(id);
+        if (replication && replication->terrain_session == receipt->session) {
+            replication->edit_delivery_bytes.erase(receipt->delivery_token);
+            if (replication->inflight_edit_snapshot == receipt->delivery_token) {
+                replication->inflight_edit_snapshot.reset();
+            }
+        }
+    } else if (auto const* resync = std::get_if<shared::ClientChunkResyncMessage>(msg_ptr)) {
+        PlayerReplication* const replication = playerReplication(id);
+        if (replication && replication->terrain_session == resync->session
+            && replication->pending_edit_snapshots.size() < PlayerReplication::MAX_PENDING_INPUTS
+            && (replication->required_interest_chunks.contains(resync->coordinate)
+                || replication->authoritative_interest_columns.contains({resync->coordinate.x, resync->coordinate.y, 0}))) {
+            replication->pending_edit_snapshots.insert(resync->coordinate);
         }
     } else if (auto* client_input = std::get_if<shared::ClientInputMessage>(msg_ptr)) {
         auto const player = m_world.player(id);
@@ -3094,6 +3201,384 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
     }
 }
 
+shared::EffectiveInteractionRights GameServer::interactionRights(
+    PlayerReplication const& replication, std::optional<shared::GameMode> const mode
+) const
+{
+    shared::InteractionPolicy policy;
+    policy.soft_actions.set(shared::InteractionAction::ChangeMode, m_local_mode_requests);
+    if (m_permissions_published) {
+        auto const snapshot = m_permission_host.snapshot();
+        auto const capabilities = snapshot ? snapshot->capabilities() : nullptr;
+        if (capabilities) {
+            std::array<std::string_view, shared::INTERACTION_ACTION_COUNT> const keys{
+                "minecraft:block.break", "minecraft:block.place", "minecraft:flight", "minecraft:collision-bypass",
+                "minecraft:block.quick-break", "minecraft:mode.change",
+            };
+            for (uint8_t index = 0U; index < keys.size(); ++index) {
+                auto const key = capabilityKey(m_permission_registry, keys[index]);
+                if (key) {
+                    policy.soft_actions.set(static_cast<shared::InteractionAction>(index), capabilities->allows({
+                        shared::PolicyCapabilityQuery::SubjectId{replication.id},
+                        shared::PolicyCapabilityQuery::CapabilityKeyId{*key},
+                    }));
+                }
+            }
+            std::array<std::string_view, 7> const materials{
+                "air", "stone", "grass", "dirt", "bedrock", "snow", "ice",
+            };
+            for (uint8_t material = 0U; material < materials.size(); ++material) {
+                for (bool const breaking : {true, false}) {
+                    std::string const key_name = std::string{breaking ? "minecraft:block.break." : "minecraft:block.place."}
+                        + std::string{materials[material]};
+                    auto const key = capabilityKey(m_permission_registry, key_name);
+                    if (key && !capabilities->allows({
+                            shared::PolicyCapabilityQuery::SubjectId{replication.id},
+                            shared::PolicyCapabilityQuery::CapabilityKeyId{*key},
+                        })) {
+                        (breaking ? policy.break_materials : policy.place_materials).blacklist.push_back(
+                            static_cast<shared::Block>(material));
+                    }
+                }
+            }
+        }
+    }
+    return shared::effectiveInteractionRights(mode.value_or(replication.game_mode), policy);
+}
+
+void GameServer::processBlockActions(PlayerReplication& replication)
+{
+    std::optional<shared::ClientBlockActionMessage> action;
+    if (!replication.pending_block_actions.empty()) {
+        action = replication.pending_block_actions.front();
+        replication.pending_block_actions.pop_front();
+    }
+    auto const player = m_world.player(replication.id);
+    if (!player || !m_physics_world) {
+        replication.break_hold.reset();
+        return;
+    }
+    auto rights = interactionRights(replication);
+    auto finish = [&](shared::ClientBlockActionMessage const& request, shared::BlockActionStatus const status,
+                      shared::WorldCoordinate const target = {}, uint16_t const completed = 0U,
+                      uint16_t const required = 0U) {
+        shared::ServerBlockActionResultMessage result{
+            .session = request.session, .sequence = request.sequence, .status = status,
+            .server_tick = m_authority_tick, .target = target,
+            .cell_version = m_physics_world->cellVersion(target),
+            .completed_intervals = completed, .required_intervals = required,
+            .mode = replication.game_mode, .effective_actions = rights.actions.bits,
+            .break_materials = allowedInteractionMaterials(rights, true),
+            .place_materials = allowedInteractionMaterials(rights, false),
+        };
+        if (replication.block_action_results.size() == PlayerReplication::MAX_PENDING_INPUTS) {
+            replication.block_action_results.pop_front();
+        }
+        replication.block_action_results.push_back(result);
+        sendTo(replication.id, result);
+    };
+    if (action) {
+        if (!replication.terrain_session || *replication.terrain_session != action->session || !replication.world_started) {
+            finish(*action, shared::BlockActionStatus::WrongSession);
+            return;
+        }
+        if (replication.last_block_action_sequence
+            && !shared::isNewerSequence(action->sequence, *replication.last_block_action_sequence)) {
+            auto const cached = std::find_if(replication.block_action_results.rbegin(),
+                replication.block_action_results.rend(), [&](auto const& result) {
+                    return result.sequence == action->sequence;
+                });
+            if (cached != replication.block_action_results.rend()) {
+                sendTo(replication.id, *cached);
+            } else {
+                finish(*action, shared::BlockActionStatus::StaleSequence);
+            }
+            action.reset();
+        } else {
+            replication.last_block_action_sequence = action->sequence;
+        }
+    }
+    if (action && action->kind == shared::BlockActionKind::BreakRelease) {
+        replication.break_hold.reset();
+        finish(*action, shared::BlockActionStatus::Cancelled);
+        return;
+    }
+    if (action && action->kind == shared::BlockActionKind::RequestMode) {
+        replication.break_hold.reset();
+        if (!rights.allows(shared::InteractionAction::ChangeMode)) {
+            finish(*action, shared::BlockActionStatus::Denied);
+            return;
+        }
+        auto const next_rights = interactionRights(replication, action->requested_mode);
+        shared::MovementCapabilities const movement{.bits = static_cast<uint8_t>(
+            (next_rights.allows(shared::InteractionAction::Flight) ? 1U : 0U)
+            | (next_rights.allows(shared::InteractionAction::CollisionBypass) ? 2U : 0U))};
+        if (!m_world.canSetPlayerMovementCapabilities(replication.id, movement)) {
+            finish(*action, shared::BlockActionStatus::InvalidMode);
+            return;
+        }
+        replication.game_mode = action->requested_mode;
+        rights = next_rights;
+        static_cast<void>(m_world.setPlayerMovementCapabilities(replication.id, movement));
+        ++replication.state_revision;
+        send(playerPositionMessage(*m_world.player(replication.id), replication));
+        finish(*action, shared::BlockActionStatus::Accepted);
+        return;
+    }
+    if (!action && !replication.break_hold) {
+        return;
+    }
+    if (!action && m_authority_tick - replication.break_hold->renewed_tick >= 3U) {
+        auto const expired = replication.break_hold->action;
+        replication.break_hold.reset();
+        finish(expired, shared::BlockActionStatus::Cancelled);
+        return;
+    }
+    auto const request = action ? *action : replication.break_hold->action;
+    shared::VoxelRay const ray{
+        .origin_x = shared::playerPositionX(*player) + 0.3125,
+        .origin_y = shared::playerPositionY(*player) + 0.3125,
+        .origin_z = shared::playerPositionZ(*player) + shared::INTERACTION_PLAYER_EYE_HEIGHT,
+        .direction_x = static_cast<double>(request.aim_x),
+        .direction_y = static_cast<double>(request.aim_y),
+        .direction_z = static_cast<double>(request.aim_z),
+    };
+    auto const hit = shared::resolveInteractionTarget(*m_physics_world, ray, request.perspective,
+        m_terrain_world != nullptr);
+    if (!hit.target || hit.status != shared::BlockTargetStatus::Hit) {
+        replication.break_hold.reset();
+        finish(request, shared::BlockActionStatus::UnknownTarget);
+        return;
+    }
+    auto const target = *hit.target;
+    if (request.target_hint != target.cell) {
+        replication.break_hold.reset();
+        finish(request, shared::BlockActionStatus::TargetMismatch, target.cell);
+        return;
+    }
+    if (request.kind == shared::BlockActionKind::PlacePress) {
+        replication.break_hold.reset();
+        if (!rights.canPlace(request.material)) {
+            finish(request, shared::BlockActionStatus::Denied, target.cell);
+            return;
+        }
+        shared::WorldCoordinate destination = target.cell;
+        switch (target.entered_face) {
+            case shared::BlockFace::NegativeX: --destination.x; break;
+            case shared::BlockFace::PositiveX: ++destination.x; break;
+            case shared::BlockFace::NegativeY: --destination.y; break;
+            case shared::BlockFace::PositiveY: ++destination.y; break;
+            case shared::BlockFace::NegativeZ: --destination.z; break;
+            case shared::BlockFace::PositiveZ: ++destination.z; break;
+            case shared::BlockFace::None:
+                finish(request, shared::BlockActionStatus::Occupied, target.cell);
+                return;
+        }
+        auto const normalized = shared::WorldBounds::normalize(destination);
+        auto const query = normalized ? m_physics_world->queryBlock(*normalized) : shared::SparseBlockQuery{};
+        if (!normalized || query.state != shared::GenerationState::Materialized || query.block != shared::Block::Air) {
+            finish(request, shared::BlockActionStatus::Occupied, target.cell);
+            return;
+        }
+        for (auto const& body : m_world.players()) {
+            if (body.movement_capabilities.allows(shared::MovementCapability::CollisionBypass)) {
+                continue;
+            }
+            auto overlaps_axis = [](double const origin, int64_t const cell) {
+                double delta = static_cast<double>(cell) - origin;
+                if (delta > 32'768.0) {
+                    delta -= 65'536.0;
+                }
+                if (delta < -32'768.0) {
+                    delta += 65'536.0;
+                }
+                return delta < 0.625 && delta + 1.0 > 0.0;
+            };
+            double const z = shared::playerPositionZ(body);
+            if (overlaps_axis(shared::playerPositionX(body), normalized->x)
+                && overlaps_axis(shared::playerPositionY(body), normalized->y)
+                && static_cast<double>(normalized->z) < z + 1.8125
+                && static_cast<double>(normalized->z + 1) > z) {
+                finish(request, shared::BlockActionStatus::Occupied, *normalized);
+                return;
+            }
+        }
+        uint64_t const before = m_physics_world->editChunkRevision(shared::WorldBounds::chunkCoordinate(*normalized));
+        if (!canPublishBlockEdit(*normalized) || !m_physics_world->setBlock(*normalized, request.material)) {
+            finish(request, shared::BlockActionStatus::RateLimited, *normalized);
+            return;
+        }
+        publishBlockEdit(*normalized, before);
+        finish(request, shared::BlockActionStatus::Accepted, *normalized);
+        return;
+    }
+    auto const timing = shared::breakTiming(rights, target.block);
+    if (!timing) {
+        replication.break_hold.reset();
+        finish(request, shared::BlockActionStatus::Denied, target.cell);
+        return;
+    }
+    uint64_t const version = m_physics_world->cellVersion(target.cell);
+    auto const policy = m_permission_host.snapshot();
+    auto const capabilities = policy ? policy->capabilities() : nullptr;
+    uint64_t const policy_generation = capabilities ? capabilities->generation() : 0U;
+    bool const same_hold = replication.break_hold && replication.break_hold->target == target.cell
+        && replication.break_hold->material == target.block && replication.break_hold->cell_version == version
+        && replication.break_hold->effective_actions == rights.actions.bits
+        && replication.break_hold->policy_generation == policy_generation;
+    if (!same_hold && !action && replication.break_hold) {
+        replication.break_hold.reset();
+        finish(request, shared::BlockActionStatus::Cancelled, target.cell);
+        return;
+    }
+    if (!same_hold) {
+        replication.break_hold = PlayerReplication::BreakHold{
+            .action = request, .target = target.cell, .material = target.block, .cell_version = version,
+            .started_tick = m_authority_tick, .renewed_tick = m_authority_tick,
+            .effective_actions = rights.actions.bits, .policy_generation = policy_generation,
+        };
+    } else if (action) {
+        replication.break_hold->action = request;
+        replication.break_hold->renewed_tick = m_authority_tick;
+    }
+    uint16_t const intervals = static_cast<uint16_t>((std::min)(m_authority_tick - replication.break_hold->started_tick,
+        static_cast<uint64_t>(std::numeric_limits<uint16_t>::max())));
+    if (!shared::isBreakComplete(*timing, intervals)) {
+        finish(request, shared::BlockActionStatus::Progress, target.cell, intervals, timing->required_full_intervals_after_start);
+        return;
+    }
+    uint64_t const before = m_physics_world->editChunkRevision(shared::WorldBounds::chunkCoordinate(target.cell));
+    replication.break_hold.reset();
+    if (!canPublishBlockEdit(target.cell) || !m_physics_world->setBlock(target.cell, shared::Block::Air)) {
+        finish(request, shared::BlockActionStatus::RateLimited, target.cell);
+        return;
+    }
+    publishBlockEdit(target.cell, before);
+    finish(request, shared::BlockActionStatus::Accepted, target.cell, intervals, timing->required_full_intervals_after_start);
+}
+
+bool GameServer::sendEditManifest(PlayerReplication& replication, shared::ChunkCoordinate column)
+{
+    if (!replication.terrain_session || !m_physics_world) {
+        return false;
+    }
+    column.z = 0;
+    shared::ServerEditedColumnManifestMessage manifest{.session = *replication.terrain_session,
+        .column = column, .watermark = m_edit_manifest_sequence, .chunks = {}};
+    for (auto const& edited : m_physics_world->editedChunks()) {
+        if (edited.coordinate.x == column.x && edited.coordinate.y == column.y) {
+            manifest.chunks.push_back({static_cast<uint8_t>(edited.coordinate.z), edited.revision});
+        }
+    }
+    return sendEditState(replication, std::move(manifest));
+}
+
+bool GameServer::sendEditState(PlayerReplication& replication, shared::Message message)
+{
+    if (replication.edit_delivery_bytes.size() >= PlayerReplication::MAX_PENDING_INPUTS) {
+        return false;
+    }
+    uint64_t const token = replication.next_edit_delivery_token;
+    std::visit([token](auto& value) {
+        using Value = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<Value, shared::ServerBlockDeltaMessage>
+            || std::is_same_v<Value, shared::ServerEditChunkSnapshotMessage>
+            || std::is_same_v<Value, shared::ServerEditedColumnManifestMessage>) {
+            value.delivery_token = token;
+        }
+    }, message);
+    auto const bytes = shared::encodeMessage(message).size();
+    if (bytes > remainingTerrainDeliveryBytes(replication.id, false)) {
+        return false;
+    }
+    ++replication.next_edit_delivery_token;
+    replication.edit_delivery_bytes.emplace(token, static_cast<uint32_t>(bytes));
+    if (std::holds_alternative<shared::ServerEditChunkSnapshotMessage>(message)) {
+        replication.inflight_edit_snapshot = token;
+    }
+    sendTo(replication.id, std::move(message));
+    return true;
+}
+
+bool GameServer::canPublishBlockEdit(shared::WorldCoordinate const coordinate) const
+{
+    auto const key = shared::WorldBounds::chunkCoordinate(coordinate);
+    auto const edited_chunks = m_physics_world->editedChunks();
+    for (auto const& peer : m_player_replications) {
+        if (!peer.terrain_session || (!peer.required_interest_chunks.contains(key)
+            && !peer.authoritative_interest_columns.contains({key.x, key.y, 0}))) {
+            continue;
+        }
+        shared::ServerEditedColumnManifestMessage manifest{.session = *peer.terrain_session,
+            .column = {key.x, key.y, 0}, .watermark = m_edit_manifest_sequence + 1U, .chunks = {}};
+        for (auto const& edited : edited_chunks) {
+            if (edited.coordinate.x == key.x && edited.coordinate.y == key.y) {
+                manifest.chunks.push_back({static_cast<uint8_t>(edited.coordinate.z), edited.revision});
+            }
+        }
+        if (std::ranges::none_of(manifest.chunks, [key](auto const& chunk) { return chunk.z == key.z; })) {
+            manifest.chunks.push_back({static_cast<uint8_t>(key.z), 1U});
+        }
+        shared::ServerBlockDeltaMessage const delta{.session = *peer.terrain_session, .coordinate = coordinate,
+            .from_revision = m_physics_world->editChunkRevision(key),
+            .to_revision = m_physics_world->editChunkRevision(key) + 1U, .cell_version = 1U};
+        size_t const bytes = shared::encodeMessage(manifest).size() + shared::encodeMessage(delta).size();
+        if (peer.edit_delivery_bytes.size() > PlayerReplication::MAX_PENDING_INPUTS - 2U
+            || remainingTerrainDeliveryBytes(peer.id) < bytes) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void GameServer::publishBlockEdit(shared::WorldCoordinate const coordinate, uint64_t const from_revision)
+{
+    ++m_edit_manifest_sequence;
+    auto const key = shared::WorldBounds::chunkCoordinate(coordinate);
+    for (auto& peer : m_player_replications) {
+        if (!peer.terrain_session || (!peer.required_interest_chunks.contains(key)
+            && !peer.authoritative_interest_columns.contains({key.x, key.y, 0}))) {
+            continue;
+        }
+        static_cast<void>(sendEditManifest(peer, {key.x, key.y, 0}));
+        static_cast<void>(sendEditState(peer, shared::ServerBlockDeltaMessage{
+            .session = *peer.terrain_session, .coordinate = coordinate,
+            .from_revision = from_revision, .to_revision = m_physics_world->editChunkRevision(key),
+            .cell_version = m_physics_world->cellVersion(coordinate),
+            .material = *m_physics_world->blockAt(coordinate),
+        }));
+    }
+}
+
+void GameServer::processEditSnapshots(PlayerReplication& replication)
+{
+    if (!replication.terrain_session || !m_physics_world || replication.pending_edit_snapshots.empty()
+        || replication.inflight_edit_snapshot) {
+        return;
+    }
+    std::erase_if(replication.pending_edit_snapshots, [&replication](auto const key) {
+        return !replication.required_interest_chunks.contains(key)
+            && !replication.authoritative_interest_columns.contains({key.x, key.y, 0});
+    });
+    if (replication.pending_edit_snapshots.empty()) {
+        return;
+    }
+    auto const key = *replication.pending_edit_snapshots.begin();
+    auto const overlay = m_physics_world->editSnapshot(key);
+    auto const chunk = m_physics_world->effectiveChunkSnapshot(key);
+    if (!overlay || !chunk) {
+        return;
+    }
+    shared::ServerEditChunkSnapshotMessage message{.session = *replication.terrain_session,
+        .revision = overlay->revision, .chunk = materializedChunkPayload(*chunk), .edits = {}};
+    for (auto const& cell : overlay->edits) {
+        message.edits.push_back({cell.coordinate, cell.material, cell.cell_version});
+    }
+    if (sendEditState(replication, std::move(message))) {
+        replication.pending_edit_snapshots.erase(key);
+    }
+}
+
 bool GameServer::processInput(
     PlayerReplication& replication,
     shared::ClientInputMessage const input,
@@ -3130,6 +3615,12 @@ bool GameServer::processInput(
                 }
                 next_bits &= allowed_bits;
             }
+        }
+        auto const rights = interactionRights(replication);
+        if (!rights.allows(shared::InteractionAction::Flight)) {
+            next_bits = 0U;
+        } else if (!rights.allows(shared::InteractionAction::CollisionBypass)) {
+            next_bits &= 1U;
         }
         capabilities_changed = m_world.setPlayerMovementCapabilities(
             replication.id,
@@ -3296,11 +3787,17 @@ void GameServer::send(shared::Message message) {
     sendTo(std::nullopt, std::move(message));
 }
 
-uint32_t GameServer::remainingTerrainDeliveryBytes(core::ClientId const client_id) const noexcept
+uint32_t GameServer::remainingTerrainDeliveryBytes(
+    core::ClientId const client_id, bool const reserve_edit_snapshot
+) const noexcept
 {
     uint64_t inflight_bytes = 0U;
     auto const replication = std::ranges::find(m_player_replications, client_id, &PlayerReplication::id);
     if (replication != m_player_replications.end()) {
+        for (auto const& [token, bytes] : replication->edit_delivery_bytes) {
+            static_cast<void>(token);
+            inflight_bytes += bytes;
+        }
         for (auto const& [token, delivery] : replication->inflight_chunk_deliveries) {
             static_cast<void>(token);
             inflight_bytes += delivery.encoded_bytes;
@@ -3317,8 +3814,14 @@ uint32_t GameServer::remainingTerrainDeliveryBytes(core::ClientId const client_i
             inflight_bytes += delivery.encoded_bytes;
         }
     }
-    return inflight_bytes < MAX_TERRAIN_INFLIGHT_BYTES
+    uint32_t const free_bytes = inflight_bytes < MAX_TERRAIN_INFLIGHT_BYTES
         ? MAX_TERRAIN_INFLIGHT_BYTES - static_cast<uint32_t>(inflight_bytes) : 0U;
+    if (reserve_edit_snapshot && replication != m_player_replications.end()
+        && !replication->pending_edit_snapshots.empty() && !replication->inflight_edit_snapshot) {
+        return free_bytes > replication->maximum_edit_snapshot_bytes
+            ? free_bytes - replication->maximum_edit_snapshot_bytes : 0U;
+    }
+    return free_bytes;
 }
 
 void GameServer::sendTo(std::optional<core::ClientId> const client_id, shared::Message message) {
@@ -3330,6 +3833,9 @@ void GameServer::sendTo(std::optional<core::ClientId> const client_id, shared::M
         ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     uint8_t const channel = std::holds_alternative<shared::ServerMaterializedChunkBatchMessage>(message)
         || std::holds_alternative<shared::ServerAuthoritativeTerrainBatchMessage>(message)
+        || std::holds_alternative<shared::ServerBlockDeltaMessage>(message)
+        || std::holds_alternative<shared::ServerEditChunkSnapshotMessage>(message)
+        || std::holds_alternative<shared::ServerEditedColumnManifestMessage>(message)
         ? shared::HEIGHT_TILE_CHANNEL : shared::GAME_CHANNEL;
     std::vector const message_bytes = shared::encodeMessage(std::move(message));
     auto const encode_completed_at = diagnostic_preparation
@@ -3479,6 +3985,34 @@ void GameServer::applyPublishedPermissions()
         );
         if (!flight.has_value() || !collision_bypass.has_value()) {
             continue;
+        }
+        PlayerReplication* const target_replication = playerReplication(player.id);
+        if (target_replication && target_replication->terrain_session) {
+            auto const rights = interactionRights(*target_replication);
+            if (target_replication->break_hold) {
+                auto const& hold = *target_replication->break_hold;
+                shared::ServerBlockActionResultMessage cancelled{
+                    .session = *target_replication->terrain_session, .sequence = hold.action.sequence,
+                    .status = shared::BlockActionStatus::Cancelled, .server_tick = m_authority_tick,
+                    .target = hold.target, .cell_version = m_physics_world->cellVersion(hold.target),
+                    .mode = target_replication->game_mode, .effective_actions = rights.actions.bits,
+                    .break_materials = allowedInteractionMaterials(rights, true),
+                    .place_materials = allowedInteractionMaterials(rights, false),
+                };
+                if (target_replication->block_action_results.size() == PlayerReplication::MAX_PENDING_INPUTS) {
+                    target_replication->block_action_results.pop_front();
+                }
+                target_replication->block_action_results.push_back(cancelled);
+                sendTo(player.id, cancelled);
+            }
+            target_replication->break_hold.reset();
+            sendTo(player.id, shared::ServerBlockActionResultMessage{
+                .session = *target_replication->terrain_session, .sequence = 0U,
+                .status = shared::BlockActionStatus::Accepted, .server_tick = m_authority_tick,
+                .mode = target_replication->game_mode, .effective_actions = rights.actions.bits,
+                .break_materials = allowedInteractionMaterials(rights, true),
+                .place_materials = allowedInteractionMaterials(rights, false),
+            });
         }
         shared::MovementCapabilities const movement{
             .bits = static_cast<uint8_t>((*flight != 0 ? 1U : 0U) | (*collision_bypass != 0 ? 2U : 0U)),
@@ -3631,6 +4165,24 @@ uint32_t GameServer::admitHeightTileDeliveries(
         inflight_bytes += delivery.encoded_bytes;
     }
     PlayerReplication const* const replication = playerReplication(stream.client_id);
+    std::optional<shared::Direction> forecast_direction;
+    if (replication != nullptr && !replication->pending_inputs.empty()) {
+        forecast_direction = replication->pending_inputs.front().direction;
+    } else {
+        forecast_direction = stream.last_actual_direction;
+    }
+    std::optional<shared::Player> const current_player = m_world.player(stream.client_id);
+    bool const pending_capability_cycle = replication != nullptr && !replication->pending_inputs.empty()
+        && replication->pending_inputs.front().direction.cycle_movement_capabilities;
+    bool forecast_collision_path_pending = pending_capability_cycle;
+    if (!pending_capability_cycle && forecast_direction.has_value()
+        && current_player.has_value()
+        && current_player->movement_capabilities.allows(shared::MovementCapability::Flight)) {
+        forecast_collision_path_pending = m_physics_world == nullptr
+            || !missingFlightCollisionChunks(
+                m_world, *m_physics_world, stream.client_id, *forecast_direction
+            ).empty();
+    }
     uint32_t const stream_byte_limit = replication != nullptr && replication->terrain_session
         ? MAX_PREPARED_STREAM_INFLIGHT_BYTES : PreviewStream::MAX_INFLIGHT_DELIVERY_BYTES;
     uint32_t const available_batches = std::min<uint32_t>({
@@ -3694,6 +4246,7 @@ uint32_t GameServer::admitHeightTileDeliveries(
                 return stream.resident_keys.contains(key) && !stream.inflight_removal_keys.contains(key);
             }
         );
+    bool const near_only_additions = forecast_collision_path_pending || current_near_has_pending_additions;
 
     std::vector<shared::HeightTileKey> ready_keys;
     ready_keys.reserve(stream.ready_tiles.size());
@@ -3703,8 +4256,8 @@ uint32_t GameServer::admitHeightTileDeliveries(
         bool const forecast_near = isForecastNearHeightTile(stream.forecast_center, key);
         if (stream.desires(key)
             && !stream.inflight_addition_keys.contains(key)
-            && (!current_near_has_pending_additions || current_near)
-            && (current_near_has_pending_additions
+            && (!near_only_additions || current_near)
+            && (near_only_additions
                 || !forecast_near_has_unresident_tiles
                 || current_near
                 || forecast_near)) {
@@ -3894,7 +4447,45 @@ void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player
         forecast_direction = stream.last_actual_direction;
     }
     std::optional<shared::HeightTileKey> next_forecast_center;
-    if (forecast_direction.has_value()) {
+    bool forecast_collision_path_pending = false;
+    if (forecast_direction.has_value() && !forecast_direction->cycle_movement_capabilities
+        && player.movement_capabilities.allows(shared::MovementCapability::Flight)) {
+        std::vector<shared::ChunkCoordinate> missing_collision_chunks;
+        if (m_physics_world == nullptr) {
+            forecast_collision_path_pending = true;
+        } else {
+            missing_collision_chunks = missingFlightCollisionChunks(
+                m_world, *m_physics_world, stream.client_id, *forecast_direction
+            );
+            forecast_collision_path_pending = !missing_collision_chunks.empty();
+        }
+        bool const plan_materializes_chunks = std::ranges::find(
+            m_generation_plan.chunk_stages,
+            shared::GenerationStage::Materialize
+        ) != m_generation_plan.chunk_stages.end();
+        if (forecast_collision_path_pending && plan_materializes_chunks) {
+            uint64_t const revision = m_world.configuration().algorithm_version;
+            uint64_t const seed = m_world.configuration().seed;
+            for (shared::ChunkCoordinate const coordinate : missing_collision_chunks) {
+                shared::GenerationState const state = m_world_generation.state(coordinate, revision, seed);
+                if (state == shared::GenerationState::Failed
+                    && !m_world_generation.requestRetry(coordinate, revision, seed)) {
+                    break;
+                }
+                shared::GenerationAdmission const admission = m_world_generation.requestPlan(
+                    coordinate,
+                    m_generation_plan,
+                    generationPriorityScores(player, *forecast_direction, coordinate)
+                );
+                if (admission == shared::GenerationAdmission::QueueFull
+                    || admission == shared::GenerationAdmission::InvalidPlan
+                    || admission == shared::GenerationAdmission::CapacityExceeded) {
+                    break;
+                }
+            }
+        }
+    }
+    if (forecast_direction.has_value() && !forecast_collision_path_pending) {
         std::optional<shared::PlayerPosition> const forecast_position = m_world.forecastFlightPlayerPosition(
             stream.client_id,
             *forecast_direction
@@ -4408,13 +4999,34 @@ void GameServer::processAuthoritativeTerrain()
             if (batch.tiles.empty()) {
                 return;
             }
+            uint32_t const encoded_bytes = static_cast<uint32_t>(shared::encodedAuthoritativeTerrainBatchSize(batch));
+            shared::ServerEditedColumnManifestMessage maximum_manifest{
+                .session = *replication.terrain_session, .column = batch.tiles.front().coordinate,
+                .watermark = m_edit_manifest_sequence, .chunks = {},
+            };
+            for (uint8_t z = 0U; z < 64U; ++z) {
+                maximum_manifest.chunks.push_back({z, 1U});
+            }
+            uint64_t const manifest_bytes = shared::encodeMessage(maximum_manifest).size() * batch.tiles.size();
+            if (replication.edit_delivery_bytes.size() + batch.tiles.size() > PlayerReplication::MAX_PENDING_INPUTS
+                || encoded_bytes + manifest_bytes > remainingTerrainDeliveryBytes(replication.id)) {
+                for (auto tile = batch.tiles.rbegin(); tile != batch.tiles.rend(); ++tile) {
+                    auto const found = std::ranges::find(replication.ordered_authoritative_columns, tile->coordinate);
+                    if (found != replication.ordered_authoritative_columns.end()) {
+                        replication.authoritative_delivery_frontier.push_front(static_cast<uint32_t>(
+                            std::distance(replication.ordered_authoritative_columns.begin(), found)));
+                    }
+                }
+                batch.tiles.clear();
+                return;
+            }
             std::vector<shared::ChunkCoordinate> keys;
             keys.reserve(batch.tiles.size());
             for (auto const& tile : batch.tiles) {
+                static_cast<void>(sendEditManifest(replication, tile.coordinate));
                 keys.push_back(tile.coordinate);
                 replication.inflight_authoritative_columns.insert(tile.coordinate);
             }
-            uint32_t const encoded_bytes = static_cast<uint32_t>(shared::encodedAuthoritativeTerrainBatchSize(batch));
             replication.authoritative_deliveries.emplace(batch.delivery_token, PlayerReplication::TerrainDelivery{
                 .coordinates = std::move(keys), .encoded_bytes = encoded_bytes,
                 .coverage_epoch = replication.coverage_epoch,
@@ -4507,7 +5119,18 @@ void GameServer::processAuthoritativeTerrain()
                 MAX_PREPARED_STREAM_INFLIGHT_BYTES - inflight_bytes,
                 remainingTerrainDeliveryBytes(replication.id)
             );
-            if (shared::encodedAuthoritativeTerrainBatchSize(batch) > byte_capacity) {
+            shared::ServerEditedColumnManifestMessage maximum_manifest{
+                .session = *replication.terrain_session, .column = coordinate,
+                .watermark = m_edit_manifest_sequence, .chunks = {},
+            };
+            for (uint8_t z = 0U; z < 64U; ++z) {
+                maximum_manifest.chunks.push_back({z, 1U});
+            }
+            uint64_t const manifest_bytes = shared::encodeMessage(maximum_manifest).size() * batch.tiles.size();
+            if (shared::encodedAuthoritativeTerrainBatchSize(batch) > byte_capacity
+                || shared::encodedAuthoritativeTerrainBatchSize(batch) + manifest_bytes
+                    > remainingTerrainDeliveryBytes(replication.id)
+                || replication.edit_delivery_bytes.size() + batch.tiles.size() > PlayerReplication::MAX_PENDING_INPUTS) {
                 batch.tiles.pop_back();
                 replication.authoritative_delivery_frontier.push_front(delivery_index);
                 break;

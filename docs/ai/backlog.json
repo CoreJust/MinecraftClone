@@ -18924,7 +18924,7 @@
     "id": "MC-AI-0531",
     "title": "Server-authoritative actions and revisioned live edit replication",
     "kind": "bug",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
     "route": "luna",
     "milestone": "ED-011-S2",
@@ -18933,7 +18933,7 @@
       "MC-AI-0526"
     ],
     "acceptance": "Serialized aim/rights/hold/timing/placement/mode validation with duplicate and stale intent rejection; per-chunk revisioned live edits update resident clients; snapshot/delta ordering and bounded gap recovery; edited-column manifests cover every affected Z chunk; reconnect/re-entry converge without overwriting accepted edits.",
-    "evidence": "",
+    "evidence": "task-0531/core-verification/coverage-union.json verifies 115 distinct completed passes: 79 before the 120-second batch cutoff and 36/36 in the 126.338-second tail. The first process did not complete; no failed/skipped task-focused cases. Historical preview repairs and partial 1,312-suite limits remain indexed. Full integration/platform/performance/terrain gates remain open.",
     "blocker": "",
     "owner": "codex",
     "level": "basic",
@@ -18942,21 +18942,27 @@
     "context": "W3/W4, SIM002/003. Depends on concurrent W1 BlockInteraction and W2 SparseWorld overlay; coordinator serializes integration. Explicit player voxel edits cannot be certified by a base-only surface profile; generated terrain remains a solid layered column then air.",
     "complexity": "high",
     "created_at": "2026-10-24",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Implemented serialized server block actions, revisioned edit transport, bounded snapshot/resync convergence and exact edited-chunk terrain LOD composition; preserved forecast/cycle handling. Parent S2 remains open.",
     "plan": [
       "Use the S2 interaction, world and replication contracts; coordinate new API signatures with W1/W2 owners.",
       "Add protocol roundtrip and observable server/client convergence regressions, then production action/replication paths."
     ],
-    "product_changes": [],
-    "code_changes": [],
-    "baseline_commit": "",
+    "product_changes": [
+      "Server-owned break/place/mode actions converge to interested clients without stale snapshots erasing accepted edits."
+    ],
+    "code_changes": [
+      "Added sequenced/session-bound action validation, break leases and timing, rights/mode checks, replay-safe results and bounded revision transport.",
+      "Added atomic sparse edit snapshot/delta convergence, complete vertical manifests and bounded resync; terrain LOD composes effective edited chunks with base profiles.",
+      "Preserved async flight forecast/cycle handling and migrated owning protocol/CLI fixtures."
+    ],
+    "baseline_commit": "429a7a109d3f51738f322cbe4710eb28b9549381",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
-    "docs_review": "Checked the plans against the audit and accepted S2 scope; ownership, acceptance and evidence limits retained. No implemented contract changed.",
-    "environment_review": "No build/runtime/CI or external mutation. Standard repository-local commit hooks installed for this isolated checkout.",
-    "backlog_review": "Only existing0483/0516 specifications elaborated; new0522 records this completed planning work, not implementation completion."
+    "docs_review": "Updated only the wire/server/overlay contract in GAMEPLAY; preserved Task0526 targeting contract and excluded UI/Android/presentation changes.",
+    "environment_review": "Coordinator hash-bound focused tests completed 115 distinct cases across two segments. Export worker performs candidate-only docs/apply/whitespace checks; no build, platform or full global gate claim.",
+    "backlog_review": "Task0531 is scoped under active/unfinalized MC-AI-0483. Historical partial1312-test integration and sustained-flight skip do not establish parent completion."
   },
   {
     "id": "MC-AI-0533",

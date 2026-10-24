@@ -3,6 +3,7 @@
 #include <shared/net/Message.hpp>
 #include <shared/policy/Policy.hpp>
 #include <shared/world/Chunk.hpp>
+#include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldCoverage.hpp>
 #include <shared/world/WorldGeneration.hpp>
@@ -19,6 +20,7 @@
 #include <atomic>
 #include <barrier>
 #include <chrono>
+#include <cmath>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -32,6 +34,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -50,6 +53,25 @@ public:
     }
 
     void enablePreparedProtocol() noexcept { m_prepared_protocol = true; }
+    void setEditReceiptsEnabled(bool const enabled) noexcept { m_edit_receipts_enabled = enabled; }
+    void releaseEditReceipts()
+    {
+        m_edit_receipts_enabled = true;
+        for (auto const& message : messages) {
+            std::visit([this](auto const& value) {
+                using Value = std::decay_t<decltype(value)>;
+                if constexpr (std::is_same_v<Value, shared::ServerBlockDeltaMessage>
+                    || std::is_same_v<Value, shared::ServerEditChunkSnapshotMessage>
+                    || std::is_same_v<Value, shared::ServerEditedColumnManifestMessage>) {
+                    if (value.delivery_token != 0U) {
+                        static_cast<void>(sendMessage(shared::ClientEditDeliveryAckMessage{
+                            .session = value.session, .delivery_token = value.delivery_token,
+                        }));
+                    }
+                }
+            }, message);
+        }
+    }
     [[nodiscard]] bool preparedWorldStarted() const noexcept { return m_prepared_world_started; }
 
     [[nodiscard]] std::string preparedStateSummary(char const character) const
@@ -117,8 +139,32 @@ private:
         auto message = shared::decodeMessage(event.data);
         ASSERT_TRUE(message.has_value());
         messages.push_back(*message);
+        std::visit([this](auto const& value) {
+            using Value = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<Value, shared::ServerBlockDeltaMessage>
+                || std::is_same_v<Value, shared::ServerEditChunkSnapshotMessage>
+                || std::is_same_v<Value, shared::ServerEditedColumnManifestMessage>) {
+                if (m_edit_receipts_enabled && value.delivery_token != 0U) {
+                    static_cast<void>(sendMessage(shared::ClientEditDeliveryAckMessage{
+                        .session = value.session, .delivery_token = value.delivery_token,
+                    }));
+                }
+            }
+        }, *message);
         if (!m_prepared_protocol) {
             return;
+        }
+        if (auto const* batch = std::get_if<shared::ServerMaterializedChunkBatchMessage>(&*message)) {
+            static_cast<void>(sendMessage(shared::ClientChunkDeliveryAckMessage{
+                .session = batch->session, .coverage_epoch = batch->coverage_epoch,
+                .delivery_token = batch->delivery_token, .credits = 1U, .not_resident_keys = {},
+            }));
+            static_cast<void>(sendMessage(shared::ClientStartWorldMessage{.session = batch->session}));
+        } else if (auto const* batch = std::get_if<shared::ServerAuthoritativeTerrainBatchMessage>(&*message)) {
+            static_cast<void>(sendMessage(shared::ClientAuthoritativeTerrainAckMessage{
+                .session = batch->session, .coverage_epoch = batch->coverage_epoch,
+                .delivery_token = batch->delivery_token, .not_resident_keys = {},
+            }));
         }
         if (auto const* coverage = std::get_if<shared::ServerChunkCoverageMessage>(&*message)) {
             if (m_credited_coverage_epoch != coverage->coverage_epoch) {
@@ -139,6 +185,7 @@ private:
     }
 
     bool m_prepared_protocol = false;
+    bool m_edit_receipts_enabled = true;
     bool m_prepared_world_started = false;
     std::optional<uint64_t> m_credited_coverage_epoch;
 };
@@ -392,6 +439,152 @@ pub fn policy() {
     return compiled;
 }
 
+class PreparedActionHarness final {
+public:
+    std::unique_ptr<server::GameServer> server;
+    ProtocolClient actor;
+    std::unique_ptr<ProtocolClient> observer;
+    shared::TerrainSessionIdentity session;
+    shared::TerrainSessionIdentity observer_session;
+    shared::WorldCoordinate ground;
+
+    bool initialize()
+    {
+        auto const preparation = quickPreparedFlightWorld();
+        if (!waitUntilPrepared(preparation)) {
+            return false;
+        }
+        server = std::make_unique<server::GameServer>(0U, std::vector<server::GameServer::SpawnPoint>{}, shared::WorldMode::Flight,
+            shared::World::canonicalConfiguration(), shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, preparation,
+            server::GameServer::BindMode::Loopback);
+        actor.enablePreparedProtocol();
+        if (!joinPreparedManually(*server, actor, '@', shared::World::canonicalConfiguration(), std::chrono::seconds{15})) {
+            return false;
+        }
+        auto const position = actor.positions('@').back();
+        session = terrainSession(actor);
+        bool found = pumpUntil(*server, actor, [&] {
+            for (auto const& message : actor.messages) {
+                auto const* batch = std::get_if<shared::ServerAuthoritativeTerrainBatchMessage>(&message);
+                if (!batch) {
+                    continue;
+                }
+                for (auto const& tile : batch->tiles) {
+                    if (tile.coordinate.x == position.x / 16 && tile.coordinate.y == position.y / 16) {
+                        auto const& column = tile.columns[static_cast<uint32_t>(position.y % 16) * 16U
+                            + static_cast<uint32_t>(position.x % 16)];
+                        ground = {position.x, position.y, column.highest_solid_z};
+                        return true;
+                    }
+                }
+            }
+            return false;
+        });
+        next_tick = std::chrono::steady_clock::now();
+        return found;
+    }
+
+    bool addObserver()
+    {
+        observer = std::make_unique<ProtocolClient>();
+        observer->enablePreparedProtocol();
+        if (!joinPreparedManually(*server, *observer, '#', shared::World::canonicalConfiguration(), std::chrono::seconds{15})) {
+            return false;
+        }
+        observer_session = terrainSession(*observer);
+        next_tick = std::chrono::steady_clock::now();
+        return true;
+    }
+
+    bool wait(std::function<bool()> const& ready)
+    {
+        auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+        while (!ready() && std::chrono::steady_clock::now() < deadline) {
+            static_cast<void>(server->poll(std::chrono::milliseconds{1}));
+            actor.poll(std::chrono::milliseconds{1});
+            if (observer) {
+                observer->poll(std::chrono::milliseconds{1});
+            }
+            if (std::chrono::steady_clock::now() >= next_tick) {
+                static_cast<void>(server->tick());
+                next_tick += shared::TICK;
+            }
+        }
+        return ready();
+    }
+
+    static std::optional<shared::ServerBlockActionResultMessage> result(ProtocolClient const& client, uint32_t const sequence)
+    {
+        for (auto iterator = client.messages.rbegin(); iterator != client.messages.rend(); ++iterator) {
+            auto const* response = std::get_if<shared::ServerBlockActionResultMessage>(&*iterator);
+            if (response && response->sequence == sequence) {
+                return *response;
+            }
+        }
+        return std::nullopt;
+    }
+
+    shared::ClientBlockActionMessage action(uint32_t const sequence, shared::BlockActionKind const kind,
+        shared::WorldCoordinate const target, bool const from_observer = false) const
+    {
+        auto const position = from_observer ? observer->positions('#').back() : actor.positions('@').back();
+        auto component = [](int32_t const cell, uint16_t const subcell) {
+            return static_cast<double>(cell) + static_cast<double>(subcell) / shared::SUBCELLS_PER_CELL;
+        };
+        double const x = static_cast<double>(target.x) + 0.5 - component(position.x, position.x_subcell) - 0.3125;
+        double const y = static_cast<double>(target.y) + 0.5 - component(position.y, position.y_subcell) - 0.3125;
+        double const z = static_cast<double>(target.z) + 0.5 - component(position.z, position.z_subcell)
+            - shared::INTERACTION_PLAYER_EYE_HEIGHT;
+        double const length = std::hypot(x, y, z);
+        return {.session = from_observer ? observer_session : session, .sequence = sequence, .kind = kind,
+            .aim_x = static_cast<int16_t>(std::lround(x / length * 32'767.0)),
+            .aim_y = static_cast<int16_t>(std::lround(y / length * 32'767.0)),
+            .aim_z = static_cast<int16_t>(std::lround(z / length * 32'767.0)), .target_hint = target};
+    }
+
+private:
+    static shared::TerrainSessionIdentity terrainSession(ProtocolClient const& client)
+    {
+        for (auto const& message : client.messages) {
+            if (auto const* coverage = std::get_if<shared::ServerChunkCoverageMessage>(&message)) {
+                return coverage->session;
+            }
+        }
+        return {};
+    }
+
+    std::chrono::steady_clock::time_point next_tick;
+};
+
+shared::PolicyCapabilityRegistry blockPolicyRegistry()
+{
+    auto registry = movementPolicyRegistry();
+    for (auto& definition : registry.definitions) {
+        definition.default_value = 0;
+    }
+    for (std::string const key : {"minecraft:block.break", "minecraft:block.place.stone"}) {
+        registry.definitions.push_back({.key = key, .default_value = 1,
+            .minimum_value = 0, .maximum_value = 1, .hard_restriction = shared::PolicyRestriction::Maximum});
+    }
+    return registry;
+}
+
+std::expected<shared::PolicyCompilation, shared::PolicyDiagnostic> denyBlockPolicy()
+{
+    static constexpr std::string_view SOURCE = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policyRule("lock", "minecraft:block.break", 0i64, 1u8)
+    policyRule("lock", "minecraft:block.place.stone", 0i64, 1u8)
+    policyAssign("all", "lock", 1u8)
+}
+)core";
+    shared::PolicyHost compiler;
+    return compiler.compile("block-hard-deny.core", SOURCE, {
+        .backend = shared::PolicyExecutionBackend::Interpreter, .require_interpreter_parity = true,
+    });
+}
+
 } // namespace
 
 TEST_F(GameServerTest, JoinRepliesArePrivateAndNewPlayersReachExistingClients)
@@ -456,6 +649,641 @@ TEST_F(GameServerTest, MismatchedJoinConfigurationDoesNotCreateAuthoritativeStat
     }), 1);
 }
 
+TEST(GameServerActionTest, WrongSessionActionReturnsTypedRejectionWithoutMovingPlayer)
+{
+    server::GameServer server{0};
+    ProtocolClient client;
+    ASSERT_TRUE(joinManually(server, client, '@'));
+    auto const before = client.positions('@').back();
+    generation::GenerationConfiguration configuration{};
+    shared::TerrainSessionIdentity const session{
+        .join_epoch = 99U,
+        .terrain = {.terrain_version = generation::TERRAIN_VERSION, .revision = 1U,
+            .seed = configuration.seed,
+            .configuration_identity = generation::configurationIdentity(configuration)},
+        .configuration = configuration,
+    };
+    ASSERT_TRUE(client.sendMessage(shared::ClientBlockActionMessage{
+        .session = session, .sequence = 1U, .kind = shared::BlockActionKind::PlacePress,
+        .aim_y = 32'767, .target_hint = {0, 0, 0}, .material = shared::Block::Stone,
+    }));
+    ASSERT_TRUE(pumpUntil(server, client, [&] {
+        return std::ranges::any_of(client.messages, [](auto const& message) {
+            auto const* result = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return result && result->sequence == 1U && result->status == shared::BlockActionStatus::WrongSession;
+        });
+    }));
+    EXPECT_EQ(client.positions('@').back().x, before.x);
+    EXPECT_EQ(client.positions('@').back().y, before.y);
+}
+
+TEST(GameServerActionTest, LocalModeRequestsAndDuplicateSequencesRetainServerOwnedMode)
+{
+    auto const preparation = quickPreparedFlightWorld();
+    ASSERT_TRUE(waitUntilPrepared(preparation));
+    auto const configuration = shared::World::canonicalConfiguration();
+    server::GameServer server{0, {}, shared::WorldMode::Flight, configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, preparation, server::GameServer::BindMode::Loopback};
+    ProtocolClient client;
+    client.enablePreparedProtocol();
+    ASSERT_TRUE(joinPreparedManually(server, client, '@', configuration, std::chrono::seconds{15}));
+    auto const coverage = std::ranges::find_if(client.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerChunkCoverageMessage>(message);
+    });
+    ASSERT_NE(coverage, client.messages.end());
+    auto const session = std::get<shared::ServerChunkCoverageMessage>(*coverage).session;
+    shared::ClientBlockActionMessage request{.session = session, .sequence = 1U,
+        .kind = shared::BlockActionKind::RequestMode, .requested_mode = shared::GameMode::Survival};
+    ASSERT_TRUE(client.sendMessage(request));
+    ASSERT_TRUE(pumpUntil(server, client, [&] {
+        return std::ranges::any_of(client.messages, [](auto const& message) {
+            auto const* result = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return result && result->sequence == 1U && result->status == shared::BlockActionStatus::Accepted;
+        });
+    }));
+    EXPECT_EQ(client.positions('@').back().movement_capabilities.bits, 0U);
+    request.requested_mode = shared::GameMode::Spectator;
+    ASSERT_TRUE(client.sendMessage(request));
+    ASSERT_TRUE(pumpUntil(server, client, [&] {
+        return std::ranges::count_if(client.messages, [](auto const& message) {
+            auto const* result = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return result && result->sequence == 1U;
+        }) >= 2;
+    }));
+    auto last_result = std::find_if(client.messages.rbegin(), client.messages.rend(), [](auto const& message) {
+        return std::holds_alternative<shared::ServerBlockActionResultMessage>(message);
+    });
+    ASSERT_NE(last_result, client.messages.rend());
+    EXPECT_EQ(std::get<shared::ServerBlockActionResultMessage>(*last_result).mode, shared::GameMode::Survival);
+    request.sequence = 2U;
+    ASSERT_TRUE(client.sendMessage(request));
+    ASSERT_TRUE(pumpUntil(server, client, [&] {
+        return std::ranges::any_of(client.messages, [](auto const& message) {
+            auto const* result = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return result && result->sequence == 2U && result->mode == shared::GameMode::Spectator
+                && result->status == shared::BlockActionStatus::Accepted;
+        });
+    }));
+    EXPECT_EQ(client.positions('@').back().movement_capabilities.bits, 3U);
+    ProtocolClient replacement;
+    replacement.enablePreparedProtocol();
+    ASSERT_TRUE(joinPreparedManually(server, replacement, '#', configuration, std::chrono::seconds{15}));
+    auto const replacement_coverage = std::ranges::find_if(replacement.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerChunkCoverageMessage>(message);
+    });
+    ASSERT_NE(replacement_coverage, replacement.messages.end());
+    auto const new_session = std::get<shared::ServerChunkCoverageMessage>(*replacement_coverage).session;
+    EXPECT_EQ(new_session.join_epoch, session.join_epoch);
+    EXPECT_NE(new_session.server_nonce, session.server_nonce);
+    request.sequence = 3U;
+    request.requested_mode = shared::GameMode::Survival;
+    ASSERT_TRUE(replacement.sendMessage(request));
+    ASSERT_TRUE(pumpUntil(server, replacement, [&] {
+        return std::ranges::any_of(replacement.messages, [](auto const& message) {
+            auto const* result = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return result && result->sequence == 3U && result->status == shared::BlockActionStatus::WrongSession;
+        });
+    }));
+}
+
+TEST(GameServerActionTest, CreativeActionsUseAuthoritativeTargetAndDuplicateCommitOnlyOnce)
+{
+    auto const preparation = quickPreparedFlightWorld();
+    ASSERT_TRUE(waitUntilPrepared(preparation));
+    auto const configuration = shared::World::canonicalConfiguration();
+    server::GameServer server{0, {}, shared::WorldMode::Flight, configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, preparation};
+    ProtocolClient client;
+    client.enablePreparedProtocol();
+    ASSERT_TRUE(joinPreparedManually(server, client, '@', configuration, std::chrono::seconds{15}));
+    auto const position = client.positions('@').back();
+    auto const coverage = std::ranges::find_if(client.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerChunkCoverageMessage>(message);
+    });
+    ASSERT_NE(coverage, client.messages.end());
+    auto const session = std::get<shared::ServerChunkCoverageMessage>(*coverage).session;
+    ProtocolClient observer;
+    observer.enablePreparedProtocol();
+    ASSERT_TRUE(joinPreparedManually(server, observer, '#', configuration, std::chrono::seconds{15}));
+    auto const observer_coverage = std::ranges::find_if(observer.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerChunkCoverageMessage>(message);
+    });
+    ASSERT_NE(observer_coverage, observer.messages.end());
+    auto const observer_session = std::get<shared::ServerChunkCoverageMessage>(*observer_coverage).session;
+    std::optional<shared::WorldCoordinate> target;
+    ASSERT_TRUE(pumpUntil(server, client, [&] {
+        for (auto const& message : client.messages) {
+            auto const* batch = std::get_if<shared::ServerAuthoritativeTerrainBatchMessage>(&message);
+            if (!batch) {
+                continue;
+            }
+            for (auto const& tile : batch->tiles) {
+                if (tile.coordinate.x == position.x / 16 && tile.coordinate.y == position.y / 16) {
+                    auto const& column = tile.columns[static_cast<uint32_t>(position.y % 16) * 16U
+                        + static_cast<uint32_t>(position.x % 16)];
+                    target = shared::WorldCoordinate{position.x, position.y, column.highest_solid_z};
+                    return true;
+                }
+            }
+        }
+        return false;
+    }));
+    shared::ClientBlockActionMessage request{.session = session, .sequence = 1U,
+        .kind = shared::BlockActionKind::BreakHold, .aim_z = -32'767,
+        .target_hint = {target->x + 1, target->y, target->z}};
+    ASSERT_TRUE(client.sendMessage(request));
+    ASSERT_TRUE(pumpUntil(server, client, [&] {
+        return std::ranges::any_of(client.messages, [](auto const& message) {
+            auto const* result = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return result && result->sequence == 1U && result->status == shared::BlockActionStatus::TargetMismatch;
+        });
+    }));
+    EXPECT_EQ(std::ranges::count_if(client.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerBlockDeltaMessage>(message);
+    }), 0);
+    request.sequence = 2U;
+    request.target_hint = *target;
+    ASSERT_TRUE(client.sendMessage(request));
+    ASSERT_TRUE(pumpUntil(server, client, [&] {
+        return std::ranges::any_of(client.messages, [](auto const& message) {
+            auto const* result = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return result && result->sequence == 2U && result->status == shared::BlockActionStatus::Accepted;
+        });
+    }));
+    ASSERT_TRUE(client.sendMessage(request));
+    ASSERT_TRUE(pumpUntil(server, client, [&] {
+        return std::ranges::count_if(client.messages, [](auto const& message) {
+            auto const* result = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return result && result->sequence == 2U;
+        }) >= 2;
+    }));
+    EXPECT_EQ(std::ranges::count_if(client.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerBlockDeltaMessage>(message);
+    }), 1);
+    auto const delta = std::ranges::find_if(client.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerBlockDeltaMessage>(message);
+    });
+    ASSERT_NE(delta, client.messages.end());
+    auto const& edit = std::get<shared::ServerBlockDeltaMessage>(*delta);
+    EXPECT_EQ(edit.coordinate, *target);
+    EXPECT_EQ(edit.material, shared::Block::Air);
+    EXPECT_EQ(edit.from_revision, 0U);
+    EXPECT_EQ(edit.to_revision, 1U);
+    ASSERT_TRUE(pumpUntil(server, observer, [&] {
+        return std::ranges::any_of(observer.messages, [&](auto const& message) {
+            auto const* delta = std::get_if<shared::ServerBlockDeltaMessage>(&message);
+            return delta && delta->session == observer_session && delta->coordinate == *target
+                && delta->material == shared::Block::Air && delta->to_revision == 1U;
+        });
+    }));
+    auto const key = shared::WorldBounds::chunkCoordinate(*target);
+    ASSERT_TRUE(client.sendMessage(shared::ClientChunkResyncMessage{
+        .session = session, .coordinate = key,
+    }));
+    ASSERT_TRUE(pumpUntil(server, client, [&] {
+        return std::ranges::any_of(client.messages, [key](auto const& message) {
+            auto const* snapshot = std::get_if<shared::ServerEditChunkSnapshotMessage>(&message);
+            return snapshot && snapshot->chunk.coordinate == key && snapshot->revision == 1U;
+        });
+    }));
+    auto const snapshot_message = std::ranges::find_if(client.messages, [key](auto const& message) {
+        auto const* snapshot = std::get_if<shared::ServerEditChunkSnapshotMessage>(&message);
+        return snapshot && snapshot->chunk.coordinate == key && snapshot->revision == 1U;
+    });
+    auto const& snapshot = std::get<shared::ServerEditChunkSnapshotMessage>(*snapshot_message);
+    ASSERT_EQ(snapshot.edits.size(), 1U);
+    EXPECT_EQ(snapshot.edits.front().material, shared::Block::Air);
+    EXPECT_EQ(snapshot.edits.front().cell_version, 1U);
+    EXPECT_TRUE(std::ranges::any_of(client.messages, [key](auto const& message) {
+        auto const* manifest = std::get_if<shared::ServerEditedColumnManifestMessage>(&message);
+        return manifest && manifest->column.x == key.x && manifest->column.y == key.y
+            && std::ranges::any_of(manifest->chunks, [key](auto const& requirement) {
+                return requirement.z == key.z && requirement.revision == 1U;
+            });
+    }));
+    request.sequence = 3U;
+    request.kind = shared::BlockActionKind::PlacePress;
+    request.target_hint = {target->x, target->y, target->z - 1};
+    auto result = [&](uint32_t const sequence, shared::BlockActionStatus const status) {
+        return std::ranges::any_of(client.messages, [=](auto const& message) {
+            auto const* response = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return response && response->sequence == sequence && response->status == status;
+        });
+    };
+    ASSERT_TRUE(client.sendMessage(request));
+    ASSERT_TRUE(pumpUntil(server, client, [&] { return result(3U, shared::BlockActionStatus::Accepted); }));
+    ASSERT_TRUE(client.sendMessage(request));
+    ASSERT_TRUE(pumpUntil(server, client, [&] {
+        return std::ranges::count_if(client.messages, [](auto const& message) {
+            auto const* response = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return response && response->sequence == 3U;
+        }) >= 2;
+    }));
+    EXPECT_TRUE(std::ranges::any_of(client.messages, [&](auto const& message) {
+        auto const* placement = std::get_if<shared::ServerBlockDeltaMessage>(&message);
+        return placement && placement->coordinate == *target && placement->material == shared::Block::Stone
+            && placement->from_revision == 1U && placement->to_revision == 2U;
+    }));
+    request.sequence = 4U;
+    request.target_hint = *target;
+    ASSERT_TRUE(client.sendMessage(request));
+    ASSERT_TRUE(pumpUntil(server, client, [&] { return result(4U, shared::BlockActionStatus::Occupied); }));
+    request.sequence = 5U;
+    request.material = shared::Block::Air;
+    ASSERT_TRUE(client.sendMessage(request));
+    ASSERT_TRUE(pumpUntil(server, client, [&] { return result(5U, shared::BlockActionStatus::Denied); }));
+    EXPECT_EQ(std::ranges::count_if(client.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerBlockDeltaMessage>(message);
+    }), 2);
+    ASSERT_TRUE(pumpUntil(server, observer, [&] {
+        return std::ranges::any_of(observer.messages, [&](auto const& message) {
+            auto const* delta = std::get_if<shared::ServerBlockDeltaMessage>(&message);
+            return delta && delta->session == observer_session && delta->coordinate == *target
+                && delta->material == shared::Block::Stone && delta->from_revision == 1U
+                && delta->to_revision == 2U;
+        });
+    }));
+    std::atomic_bool stop_polling{false};
+    std::thread poll_thread{[&] {
+        while (!stop_polling.load(std::memory_order_relaxed)) {
+            static_cast<void>(server.poll(std::chrono::milliseconds{1}));
+        }
+    }};
+    bool const disconnected = observer.disconnect(std::chrono::seconds{2});
+    stop_polling.store(true, std::memory_order_relaxed);
+    poll_thread.join();
+    ASSERT_TRUE(disconnected);
+    ProtocolClient rejoined;
+    rejoined.enablePreparedProtocol();
+    ASSERT_TRUE(joinPreparedManually(server, rejoined, '#', configuration, std::chrono::seconds{15}));
+    auto const rejoined_coverage = std::ranges::find_if(rejoined.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerChunkCoverageMessage>(message);
+    });
+    ASSERT_NE(rejoined_coverage, rejoined.messages.end());
+    auto const rejoined_session = std::get<shared::ServerChunkCoverageMessage>(*rejoined_coverage).session;
+    EXPECT_NE(rejoined_session.server_nonce, observer_session.server_nonce);
+    ASSERT_TRUE(rejoined.sendMessage(shared::ClientChunkResyncMessage{
+        .session = rejoined_session, .coordinate = key,
+    }));
+    ASSERT_TRUE(pumpUntil(server, rejoined, [&] {
+        return std::ranges::any_of(rejoined.messages, [key](auto const& message) {
+            auto const* snapshot = std::get_if<shared::ServerEditChunkSnapshotMessage>(&message);
+            return snapshot && snapshot->chunk.coordinate == key && snapshot->revision == 2U;
+        });
+    }));
+    auto const current = std::ranges::find_if(rejoined.messages, [key](auto const& message) {
+        auto const* snapshot = std::get_if<shared::ServerEditChunkSnapshotMessage>(&message);
+        return snapshot && snapshot->chunk.coordinate == key && snapshot->revision == 2U;
+    });
+    auto const& current_snapshot = std::get<shared::ServerEditChunkSnapshotMessage>(*current);
+    EXPECT_EQ(current_snapshot.session, rejoined_session);
+    ASSERT_EQ(current_snapshot.edits.size(), 1U);
+    EXPECT_EQ(current_snapshot.edits.front().material, shared::Block::Stone);
+    EXPECT_EQ(current_snapshot.edits.front().cell_version, 2U);
+    auto const effective = shared::materializeChunkPayload(current_snapshot.chunk);
+    ASSERT_TRUE(effective);
+    EXPECT_EQ(effective->blockAt(current_snapshot.edits.front().coordinate), shared::Block::Stone);
+}
+
+TEST(GameServerActionTest, SurvivalBreakRequiresFullIntervalsAndFreshLeaseRenewal)
+{
+    auto const preparation = quickPreparedFlightWorld();
+    ASSERT_TRUE(waitUntilPrepared(preparation));
+    auto const configuration = shared::World::canonicalConfiguration();
+    server::GameServer server{0, {}, shared::WorldMode::Flight, configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, preparation, server::GameServer::BindMode::Loopback};
+    ProtocolClient client;
+    client.enablePreparedProtocol();
+    ASSERT_TRUE(joinPreparedManually(server, client, '@', configuration, std::chrono::seconds{15}));
+    auto const position = client.positions('@').back();
+    auto const coverage = std::ranges::find_if(client.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerChunkCoverageMessage>(message);
+    });
+    ASSERT_NE(coverage, client.messages.end());
+    auto const session = std::get<shared::ServerChunkCoverageMessage>(*coverage).session;
+    std::optional<shared::WorldCoordinate> target;
+    ASSERT_TRUE(pumpUntil(server, client, [&] {
+        for (auto const& message : client.messages) {
+            auto const* batch = std::get_if<shared::ServerAuthoritativeTerrainBatchMessage>(&message);
+            if (!batch) {
+                continue;
+            }
+            for (auto const& tile : batch->tiles) {
+                if (tile.coordinate.x == position.x / 16 && tile.coordinate.y == position.y / 16) {
+                    auto const& column = tile.columns[static_cast<uint32_t>(position.y % 16) * 16U
+                        + static_cast<uint32_t>(position.x % 16)];
+                    target = shared::WorldCoordinate{position.x, position.y, column.highest_solid_z};
+                    return true;
+                }
+            }
+        }
+        return false;
+    }));
+    auto next_tick = std::chrono::steady_clock::now();
+    auto pump_action_until = [&](std::function<bool()> const& ready) {
+        auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+        while (!ready() && std::chrono::steady_clock::now() < deadline) {
+            static_cast<void>(server.poll(std::chrono::milliseconds{1}));
+            client.poll(std::chrono::milliseconds{1});
+            if (std::chrono::steady_clock::now() >= next_tick) {
+                static_cast<void>(server.tick());
+                next_tick += shared::TICK;
+            }
+        }
+        return ready();
+    };
+    auto result = [&](uint32_t const sequence, shared::BlockActionStatus const status) {
+        return std::ranges::any_of(client.messages, [=](auto const& message) {
+            auto const* response = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return response && response->sequence == sequence && response->status == status;
+        });
+    };
+    ASSERT_TRUE(client.sendMessage(shared::ClientBlockActionMessage{
+        .session = session, .sequence = 1U, .kind = shared::BlockActionKind::RequestMode,
+        .requested_mode = shared::GameMode::Survival,
+    }));
+    ASSERT_TRUE(pump_action_until([&] { return result(1U, shared::BlockActionStatus::Accepted); }));
+    shared::ClientBlockActionMessage hold{
+        .session = session, .sequence = 2U, .kind = shared::BlockActionKind::BreakHold,
+        .aim_z = -32'767, .target_hint = *target,
+    };
+    ASSERT_TRUE(client.sendMessage(hold));
+    ASSERT_TRUE(pump_action_until([&] { return result(2U, shared::BlockActionStatus::Progress); }));
+    auto const initial = std::ranges::find_if(client.messages, [](auto const& message) {
+        auto const* response = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+        return response && response->sequence == 2U && response->status == shared::BlockActionStatus::Progress;
+    });
+    auto const& progress = std::get<shared::ServerBlockActionResultMessage>(*initial);
+    EXPECT_EQ(progress.completed_intervals, 0U);
+    EXPECT_GT(progress.required_intervals, 3U);
+    ASSERT_TRUE(client.sendMessage(hold));
+    ASSERT_TRUE(pump_action_until([&] { return result(2U, shared::BlockActionStatus::Cancelled); }));
+    EXPECT_FALSE(result(2U, shared::BlockActionStatus::Accepted));
+    hold.sequence = 3U;
+    ASSERT_TRUE(client.sendMessage(hold));
+    ASSERT_TRUE(pump_action_until([&] { return result(3U, shared::BlockActionStatus::Progress); }));
+    hold.sequence = 4U;
+    hold.kind = shared::BlockActionKind::BreakRelease;
+    ASSERT_TRUE(client.sendMessage(hold));
+    ASSERT_TRUE(pump_action_until([&] { return result(4U, shared::BlockActionStatus::Cancelled); }));
+    EXPECT_EQ(std::ranges::count_if(client.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerBlockDeltaMessage>(message);
+    }), 0);
+    hold.sequence = 5U;
+    hold.kind = shared::BlockActionKind::BreakHold;
+    ASSERT_TRUE(client.sendMessage(hold));
+    ASSERT_TRUE(pump_action_until([&] { return result(5U, shared::BlockActionStatus::Progress); }));
+    auto const restarted = std::ranges::find_if(client.messages, [](auto const& message) {
+        auto const* response = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+        return response && response->sequence == 5U && response->status == shared::BlockActionStatus::Progress;
+    });
+    auto const start = std::get<shared::ServerBlockActionResultMessage>(*restarted);
+    EXPECT_EQ(start.completed_intervals, 0U);
+    for (uint32_t sequence = 6U; sequence <= 8U + start.required_intervals; ++sequence) {
+        hold.sequence = sequence;
+        ASSERT_TRUE(client.sendMessage(hold));
+        ASSERT_TRUE(pump_action_until([&] {
+            return result(sequence, shared::BlockActionStatus::Progress)
+                || result(sequence, shared::BlockActionStatus::Accepted);
+        }));
+        if (result(sequence, shared::BlockActionStatus::Accepted)) {
+            break;
+        }
+    }
+    auto const completion = std::ranges::find_if(client.messages, [](auto const& message) {
+        auto const* response = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+        return response && response->sequence >= 5U && response->status == shared::BlockActionStatus::Accepted;
+    });
+    ASSERT_NE(completion, client.messages.end());
+    auto const& completed = std::get<shared::ServerBlockActionResultMessage>(*completion);
+    EXPECT_GE(completed.server_tick - start.server_tick, start.required_intervals);
+    EXPECT_GE(completed.completed_intervals, start.required_intervals);
+    EXPECT_EQ(std::ranges::count_if(client.messages, [](auto const& message) {
+        auto const* delta = std::get_if<shared::ServerBlockDeltaMessage>(&message);
+        return delta && delta->material == shared::Block::Air && delta->to_revision == 1U;
+    }), 1);
+}
+
+TEST(GameServerActionTest, PublishingPolicyCancelsTheActiveBreakBeforeFreshRequests)
+{
+    PreparedActionHarness harness;
+    ASSERT_TRUE(harness.initialize());
+    ASSERT_TRUE(harness.actor.sendMessage(shared::ClientBlockActionMessage{
+        .session = harness.session, .sequence = 1U, .kind = shared::BlockActionKind::RequestMode,
+        .requested_mode = shared::GameMode::Survival,
+    }));
+    ASSERT_TRUE(harness.wait([&] { return PreparedActionHarness::result(harness.actor, 1U).has_value(); }));
+    ASSERT_EQ(PreparedActionHarness::result(harness.actor, 1U)->status, shared::BlockActionStatus::Accepted);
+    ASSERT_TRUE(harness.actor.sendMessage(harness.action(2U, shared::BlockActionKind::BreakHold, harness.ground)));
+    ASSERT_TRUE(harness.wait([&] { return PreparedActionHarness::result(harness.actor, 2U).has_value(); }));
+    ASSERT_EQ(PreparedActionHarness::result(harness.actor, 2U)->status, shared::BlockActionStatus::Progress);
+    auto policy = denyBlockPolicy();
+    ASSERT_TRUE(policy) << policy.error().message;
+    auto const published = harness.server->publishPermissions(std::move(*policy), blockPolicyRegistry());
+    ASSERT_TRUE(published) << published.error().message;
+    ASSERT_TRUE(harness.wait([&] {
+        auto const response = PreparedActionHarness::result(harness.actor, 2U);
+        return response && response->status == shared::BlockActionStatus::Cancelled;
+    }));
+    EXPECT_EQ(std::ranges::count_if(harness.actor.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerBlockDeltaMessage>(message);
+    }), 0);
+}
+
+TEST(GameServerActionTest, PublishedHardVetoBlocksCreativeBreakAndSelectedPlacementMaterial)
+{
+    PreparedActionHarness harness;
+    ASSERT_TRUE(harness.initialize());
+    auto policy = denyBlockPolicy();
+    ASSERT_TRUE(policy) << policy.error().message;
+    auto const published = harness.server->publishPermissions(std::move(*policy), blockPolicyRegistry());
+    ASSERT_TRUE(published) << published.error().message;
+    ASSERT_TRUE(harness.actor.sendMessage(harness.action(1U, shared::BlockActionKind::BreakHold, harness.ground)));
+    ASSERT_TRUE(harness.wait([&] { return PreparedActionHarness::result(harness.actor, 1U).has_value(); }));
+    EXPECT_EQ(PreparedActionHarness::result(harness.actor, 1U)->status, shared::BlockActionStatus::Denied);
+    ASSERT_TRUE(harness.actor.sendMessage(harness.action(2U, shared::BlockActionKind::PlacePress, harness.ground)));
+    ASSERT_TRUE(harness.wait([&] { return PreparedActionHarness::result(harness.actor, 2U).has_value(); }));
+    EXPECT_EQ(PreparedActionHarness::result(harness.actor, 2U)->status, shared::BlockActionStatus::Denied);
+    EXPECT_EQ(std::ranges::count_if(harness.actor.messages, [](auto const& message) {
+        return std::holds_alternative<shared::ServerBlockDeltaMessage>(message);
+    }), 0);
+}
+
+TEST(GameServerActionTest, CompetingActorsCommitOneRevisionForTheSameTargetInOneTick)
+{
+    PreparedActionHarness harness;
+    ASSERT_TRUE(harness.initialize());
+    ASSERT_TRUE(harness.addObserver());
+    ASSERT_TRUE(harness.actor.sendMessage(harness.action(1U, shared::BlockActionKind::BreakHold, harness.ground)));
+    ASSERT_TRUE(harness.observer->sendMessage(harness.action(1U, shared::BlockActionKind::BreakHold, harness.ground, true)));
+    harness.actor.flush();
+    harness.observer->flush();
+    while (harness.server->poll(std::chrono::milliseconds{1}) > 0U) { }
+    static_cast<void>(harness.server->tick());
+    ASSERT_TRUE(harness.wait([&] {
+        return PreparedActionHarness::result(harness.actor, 1U).has_value()
+            && PreparedActionHarness::result(*harness.observer, 1U).has_value();
+    }));
+    auto const first = *PreparedActionHarness::result(harness.actor, 1U);
+    auto const second = *PreparedActionHarness::result(*harness.observer, 1U);
+    EXPECT_EQ(first.server_tick, second.server_tick);
+    EXPECT_EQ(static_cast<uint32_t>(first.status == shared::BlockActionStatus::Accepted)
+        + static_cast<uint32_t>(second.status == shared::BlockActionStatus::Accepted), 1U);
+    auto const committed = first.status == shared::BlockActionStatus::Accepted ? first : second;
+    EXPECT_EQ(committed.target, harness.ground);
+    auto const rejected = first.status == shared::BlockActionStatus::Accepted ? second : first;
+    EXPECT_TRUE(rejected.status == shared::BlockActionStatus::TargetMismatch
+        || rejected.status == shared::BlockActionStatus::UnknownTarget);
+    ASSERT_TRUE(harness.wait([&] {
+        return std::ranges::any_of(harness.actor.messages, [](auto const& message) {
+            return std::holds_alternative<shared::ServerBlockDeltaMessage>(message);
+        });
+    }));
+    EXPECT_EQ(std::ranges::count_if(harness.actor.messages, [](auto const& message) {
+        auto const* delta = std::get_if<shared::ServerBlockDeltaMessage>(&message);
+        return delta && delta->from_revision == 0U && delta->to_revision == 1U;
+    }), 1);
+    EXPECT_TRUE(std::ranges::any_of(harness.actor.messages, [&](auto const& message) {
+        auto const* delta = std::get_if<shared::ServerBlockDeltaMessage>(&message);
+        return delta && delta->coordinate == harness.ground && delta->material == shared::Block::Air;
+    }));
+}
+
+TEST(GameServerActionTest, CompetingEditInvalidatesHeldTargetAndReplacementStartsWithZeroCredit)
+{
+    PreparedActionHarness harness;
+    ASSERT_TRUE(harness.initialize());
+    ASSERT_TRUE(harness.addObserver());
+    shared::WorldCoordinate held_cell{harness.ground.x + 1, harness.ground.y, harness.ground.z};
+    bool found_height = false;
+    for (auto const& message : harness.actor.messages) {
+        auto const* batch = std::get_if<shared::ServerAuthoritativeTerrainBatchMessage>(&message);
+        if (!batch) {
+            continue;
+        }
+        for (auto const& tile : batch->tiles) {
+            if (tile.coordinate.x == held_cell.x / 16 && tile.coordinate.y == held_cell.y / 16) {
+                held_cell.z = tile.columns[static_cast<uint32_t>(held_cell.y % 16) * 16U
+                    + static_cast<uint32_t>(held_cell.x % 16)].highest_solid_z;
+                found_height = true;
+            }
+        }
+    }
+    ASSERT_TRUE(found_height);
+    ASSERT_TRUE(harness.actor.sendMessage(shared::ClientBlockActionMessage{
+        .session = harness.session, .sequence = 1U, .kind = shared::BlockActionKind::RequestMode,
+        .requested_mode = shared::GameMode::Survival,
+    }));
+    ASSERT_TRUE(harness.wait([&] { return PreparedActionHarness::result(harness.actor, 1U).has_value(); }));
+    ASSERT_EQ(PreparedActionHarness::result(harness.actor, 1U)->status, shared::BlockActionStatus::Accepted);
+    ASSERT_TRUE(harness.actor.sendMessage(harness.action(2U, shared::BlockActionKind::BreakHold, held_cell)));
+    ASSERT_TRUE(harness.wait([&] { return PreparedActionHarness::result(harness.actor, 2U).has_value(); }));
+    ASSERT_EQ(PreparedActionHarness::result(harness.actor, 2U)->status, shared::BlockActionStatus::Progress);
+    auto const started = *PreparedActionHarness::result(harness.actor, 2U);
+    ASSERT_EQ(started.target, held_cell);
+    ASSERT_TRUE(harness.observer->sendMessage(harness.action(1U, shared::BlockActionKind::BreakHold, held_cell, true)));
+    ASSERT_TRUE(harness.wait([&] {
+        auto const response = PreparedActionHarness::result(*harness.observer, 1U);
+        return response && response->status == shared::BlockActionStatus::Accepted;
+    }));
+    EXPECT_EQ(PreparedActionHarness::result(*harness.observer, 1U)->target, held_cell);
+    ASSERT_TRUE(harness.wait([&] {
+        auto const response = PreparedActionHarness::result(harness.actor, 2U);
+        return response && (response->status == shared::BlockActionStatus::TargetMismatch
+            || response->status == shared::BlockActionStatus::UnknownTarget);
+    }));
+    EXPECT_LT(PreparedActionHarness::result(harness.actor, 2U)->server_tick - started.server_tick, 3U);
+    auto const below = shared::WorldCoordinate{held_cell.x, held_cell.y, held_cell.z - 1};
+    ASSERT_TRUE(harness.observer->sendMessage(harness.action(2U, shared::BlockActionKind::PlacePress, below, true)));
+    ASSERT_TRUE(harness.wait([&] { return PreparedActionHarness::result(*harness.observer, 2U).has_value(); }));
+    ASSERT_EQ(PreparedActionHarness::result(*harness.observer, 2U)->status, shared::BlockActionStatus::Accepted);
+    EXPECT_EQ(PreparedActionHarness::result(*harness.observer, 2U)->target, held_cell);
+    ASSERT_TRUE(harness.actor.sendMessage(harness.action(3U, shared::BlockActionKind::BreakHold, held_cell)));
+    ASSERT_TRUE(harness.wait([&] { return PreparedActionHarness::result(harness.actor, 3U).has_value(); }));
+    auto const fresh = *PreparedActionHarness::result(harness.actor, 3U);
+    EXPECT_EQ(fresh.status, shared::BlockActionStatus::Progress);
+    EXPECT_EQ(fresh.completed_intervals, 0U);
+    EXPECT_EQ(fresh.cell_version, 2U);
+    EXPECT_EQ(std::ranges::count_if(harness.actor.messages, [](auto const& message) {
+        auto const* response = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+        return response && response->sequence == 2U && response->status == shared::BlockActionStatus::Accepted;
+    }), 0);
+}
+
+TEST(GameServerActionTest, WithheldEditReceiptsBoundPressureAndResumeWithoutRevisionGaps)
+{
+    PreparedActionHarness harness;
+    ASSERT_TRUE(harness.initialize());
+    auto const first_message = harness.actor.messages.size();
+    harness.actor.setEditReceiptsEnabled(false);
+    uint64_t accepted = 0U;
+    shared::ClientBlockActionMessage blocked;
+    bool reached_limit = false;
+    for (uint32_t sequence = 1U; sequence <= 80U; ++sequence) {
+        bool const placing = accepted % 2U != 0U;
+        auto const target = placing
+            ? shared::WorldCoordinate{harness.ground.x, harness.ground.y, harness.ground.z - 1} : harness.ground;
+        auto const request = harness.action(sequence,
+            placing ? shared::BlockActionKind::PlacePress : shared::BlockActionKind::BreakHold, target);
+        ASSERT_TRUE(harness.actor.sendMessage(request));
+        ASSERT_TRUE(harness.wait([&] { return PreparedActionHarness::result(harness.actor, sequence).has_value(); }));
+        auto const response = *PreparedActionHarness::result(harness.actor, sequence);
+        if (response.status == shared::BlockActionStatus::RateLimited) {
+            blocked = request;
+            reached_limit = true;
+            break;
+        }
+        ASSERT_EQ(response.status, shared::BlockActionStatus::Accepted);
+        ++accepted;
+    }
+    ASSERT_TRUE(reached_limit);
+    ASSERT_GT(accepted, 0U);
+    auto delta_count = [&] {
+        return std::ranges::count_if(harness.actor.messages, [](auto const& message) {
+            return std::holds_alternative<shared::ServerBlockDeltaMessage>(message);
+        });
+    };
+    ASSERT_TRUE(harness.wait([&] { return static_cast<uint64_t>(delta_count()) == accepted; }));
+    uint32_t deliveries = 0U;
+    size_t bytes = 0U;
+    uint64_t revision = 0U;
+    for (size_t index = first_message; index < harness.actor.messages.size(); ++index) {
+        auto const& message = harness.actor.messages[index];
+        if (std::holds_alternative<shared::ServerEditedColumnManifestMessage>(message)
+            || std::holds_alternative<shared::ServerBlockDeltaMessage>(message)
+            || std::holds_alternative<shared::ServerEditChunkSnapshotMessage>(message)) {
+            ++deliveries;
+            bytes += shared::encodeMessage(message).size();
+        }
+        if (auto const* delta = std::get_if<shared::ServerBlockDeltaMessage>(&message)) {
+            EXPECT_EQ(delta->from_revision, revision);
+            EXPECT_EQ(delta->to_revision, ++revision);
+        }
+    }
+    EXPECT_LE(deliveries, 64U);
+    EXPECT_LE(bytes, 49'152U);
+    EXPECT_EQ(revision, accepted);
+    harness.actor.releaseEditReceipts();
+    ASSERT_TRUE(harness.actor.sendMessage(blocked));
+    ASSERT_TRUE(harness.wait([&] {
+        return std::ranges::count_if(harness.actor.messages, [&](auto const& message) {
+            auto const* response = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+            return response && response->sequence == blocked.sequence;
+        }) >= 2;
+    }));
+    EXPECT_EQ(PreparedActionHarness::result(harness.actor, blocked.sequence)->status,
+        shared::BlockActionStatus::RateLimited);
+    ++blocked.sequence;
+    ASSERT_TRUE(harness.actor.sendMessage(blocked));
+    ASSERT_TRUE(harness.wait([&] { return PreparedActionHarness::result(harness.actor, blocked.sequence).has_value(); }));
+    EXPECT_EQ(PreparedActionHarness::result(harness.actor, blocked.sequence)->status, shared::BlockActionStatus::Accepted);
+    ASSERT_TRUE(harness.wait([&] { return static_cast<uint64_t>(delta_count()) == accepted + 1U; }));
+    EXPECT_TRUE(std::ranges::any_of(harness.actor.messages, [accepted](auto const& message) {
+        auto const* delta = std::get_if<shared::ServerBlockDeltaMessage>(&message);
+        return delta && delta->from_revision == accepted && delta->to_revision == accepted + 1U;
+    }));
+}
+
 TEST(GameServerFlightTest, AcceptsMatchingFlightModeAndReplicatesVerticalAuthority)
 {
     server::GameServer server{ 0, {}, shared::WorldMode::Flight };
@@ -497,7 +1325,7 @@ TEST(GameServerFlightTest, AirborneGravityContinuesWithoutNewInputAcknowledgemen
     ASSERT_TRUE(joinManually(server, observer, '#', shared::WorldMode::Flight));
     for (uint32_t sequence = 1U; sequence <= 2U; ++sequence) {
         ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
-            .direction = {.x = 0U, .y = 0U, .cycle_movement_capabilities = true}, .sequence = sequence,
+            .direction = {.x = 0U, .y = 0U, .cycle_movement_capabilities = sequence == 2U}, .sequence = sequence,
         }));
         ASSERT_TRUE(pumpUntil(server, client, [&] {
             return client.positions('@').back().acknowledged_input_sequence == sequence;
@@ -542,7 +1370,7 @@ TEST(GameServerFlightTest, WalkingCommandAndIdleGravityShareTheSingleTickStep)
     ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
     for (uint32_t sequence = 1U; sequence <= 2U; ++sequence) {
         ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
-            .direction = {.x = 0U, .y = 0U, .cycle_movement_capabilities = true}, .sequence = sequence,
+            .direction = {.x = 0U, .y = 0U, .cycle_movement_capabilities = sequence == 2U}, .sequence = sequence,
         }));
         ASSERT_TRUE(pumpUntil(server, client, [&] {
             return client.positions('@').back().acknowledged_input_sequence == sequence;
@@ -762,7 +1590,7 @@ TEST(GameServerFlightTest, DefersUnknownTerrainAndRevalidatesPermissionsBeforeAp
     ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
     shared::ServerPlayerPositionMessage const spawn = client.positions('@').back();
     ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
-        .direction = {.x = 0U, .y = 0U, .z = 127U, .cycle_movement_capabilities = true},
+        .direction = {.x = 0U, .y = 0U, .z = 127U},
         .sequence = 1U,
     }));
 
@@ -794,7 +1622,7 @@ TEST(GameServerFlightTest, ResumesDeferredInputAfterTerrainMaterializes)
     ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
     shared::ServerPlayerPositionMessage const spawn = client.positions('@').back();
     ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
-        .direction = {.x = 0U, .y = 0U, .z = 127U, .cycle_movement_capabilities = true},
+        .direction = {.x = 0U, .y = 0U, .z = 127U},
         .sequence = 1U,
     }));
 
@@ -831,7 +1659,7 @@ TEST(GameServerFlightTest, DefersMixedJumpUntilAdjacentHorizontalChunkMaterializ
             .direction = {
                 .x = static_cast<uint8_t>(sequence == 1U ? 127U : 80U),
                 .y = 0U,
-                .cycle_movement_capabilities = sequence == 1U,
+                .cycle_movement_capabilities = false,
             },
             .sequence = sequence,
         }));
@@ -865,13 +1693,13 @@ TEST(GameServerFlightTest, DefersMixedJumpUntilAdjacentHorizontalChunkMaterializ
     EXPECT_EQ(client.positions('@').back().x_subcell, 4'727U);
 }
 
-TEST(GameServerFlightTest, CyclesOnlyTheThreeServerValidatedMovementCapabilityStates)
+TEST(GameServerFlightTest, CreativeCapabilityCyclingCannotGrantCollisionBypass)
 {
-    static constexpr std::array<uint8_t, 3U> EXPECTED_CAPABILITIES{1U, 0U, 3U};
+    static constexpr std::array<uint8_t, 3U> EXPECTED_CAPABILITIES{0U, 1U, 0U};
     server::GameServer server{ 0, {}, shared::WorldMode::Flight };
     ProtocolClient client;
     ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
-    ASSERT_EQ(client.positions('@').back().movement_capabilities.bits, 3U);
+    ASSERT_EQ(client.positions('@').back().movement_capabilities.bits, 1U);
 
     for (uint32_t sequence = 1U; sequence <= 3U; ++sequence) {
         SCOPED_TRACE(sequence);
@@ -892,7 +1720,7 @@ TEST(GameServerFlightTest, PublishedHardPermissionsOverrideAndReplicateMovementC
     server::GameServer server{ 0, {}, shared::WorldMode::Flight };
     ProtocolClient client;
     ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
-    ASSERT_EQ(client.positions('@').back().movement_capabilities.bits, 3U);
+    ASSERT_EQ(client.positions('@').back().movement_capabilities.bits, 1U);
 
     auto compilation = hardMovementDenyPolicy();
     ASSERT_TRUE(compilation.has_value()) << compilation.error().message;
@@ -920,13 +1748,13 @@ TEST(GameServerFlightTest, RejectsInvalidMovementPolicyWithoutChangingPublishedS
     server::GameServer server{ 0, {}, shared::WorldMode::Flight };
     ProtocolClient client;
     ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
-    ASSERT_EQ(client.positions('@').back().movement_capabilities.bits, 3U);
+    ASSERT_EQ(client.positions('@').back().movement_capabilities.bits, 1U);
 
     auto compilation = invalidMovementPolicy();
     ASSERT_TRUE(compilation.has_value()) << compilation.error().message;
     auto const published = server.publishPermissions(std::move(*compilation), movementPolicyRegistry());
     EXPECT_FALSE(published.has_value());
-    EXPECT_EQ(client.positions('@').back().movement_capabilities.bits, 3U);
+    EXPECT_EQ(client.positions('@').back().movement_capabilities.bits, 1U);
 
     ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
         .direction = { .x = 0U, .y = 0U, .z = 127U },
@@ -1095,8 +1923,8 @@ TEST_F(GameServerTest, CapabilityChangesReachStationaryObservers)
         return observer.positions('@').size() > observer_messages_before;
     }));
 
-    EXPECT_EQ(first.positions('@').back().movement_capabilities.bits, 3U);
-    EXPECT_EQ(observer.positions('@').back().movement_capabilities.bits, 3U);
+    EXPECT_EQ(first.positions('@').back().movement_capabilities.bits, 1U);
+    EXPECT_EQ(observer.positions('@').back().movement_capabilities.bits, 1U);
 }
 
 TEST_F(GameServerTest, MalformedPacketFromUnjoinedPeerDoesNotPreventJoinOrMovement)

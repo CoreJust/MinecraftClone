@@ -1,5 +1,6 @@
 #pragma once
 
+#include <shared/world/BlockInteraction.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/TerrainWorld.hpp>
@@ -19,7 +20,7 @@
 namespace shared {
 
 constexpr uint8_t PROTOCOL_MAGIC = 0x4DU;
-constexpr uint8_t PROTOCOL_VERSION = 20U;
+constexpr uint8_t PROTOCOL_VERSION = 21U;
 constexpr uint8_t GAME_CHANNEL = 0U;
 constexpr uint8_t HEIGHT_TILE_CHANNEL = 1U;
 constexpr uint32_t MAX_MESSAGE_SIZE_BYTES = 5'000'000U;
@@ -120,6 +121,7 @@ struct JoinResponseMessage final {
 
 struct TerrainSessionIdentity final {
     uint64_t join_epoch = 0U;
+    uint64_t server_nonce = 1U;
     TerrainIdentity terrain{};
     generation::GenerationConfiguration configuration{};
 
@@ -208,6 +210,104 @@ struct ClientInputMessage final {
     uint32_t sequence = 0;
 };
 
+enum class BlockActionKind : uint8_t {
+    BreakHold,
+    BreakRelease,
+    PlacePress,
+    RequestMode,
+};
+
+struct ClientBlockActionMessage final {
+    TerrainSessionIdentity session;
+    uint32_t sequence = 0U;
+    BlockActionKind kind = BlockActionKind::BreakRelease;
+    int16_t aim_x = 0;
+    int16_t aim_y = 0;
+    int16_t aim_z = 0;
+    WorldCoordinate target_hint{};
+    Block material = Block::Stone;
+    GameMode requested_mode = GameMode::Spectator;
+    InteractionPerspective perspective = InteractionPerspective::FirstPerson;
+};
+
+enum class BlockActionStatus : uint8_t {
+    Accepted,
+    Progress,
+    Cancelled,
+    StaleSequence,
+    WrongSession,
+    Denied,
+    UnknownTarget,
+    TargetMismatch,
+    Occupied,
+    RateLimited,
+    InvalidMode,
+};
+
+struct ServerBlockActionResultMessage final {
+    TerrainSessionIdentity session;
+    uint32_t sequence = 0U;
+    BlockActionStatus status = BlockActionStatus::Denied;
+    uint64_t server_tick = 0U;
+    WorldCoordinate target{};
+    uint64_t cell_version = 0U;
+    uint16_t completed_intervals = 0U;
+    uint16_t required_intervals = 0U;
+    GameMode mode = GameMode::Creative;
+    uint8_t effective_actions = 0U;
+    uint8_t break_materials = 0U;
+    uint8_t place_materials = 0U;
+};
+
+struct ServerBlockDeltaMessage final {
+    TerrainSessionIdentity session;
+    WorldCoordinate coordinate{};
+    uint64_t from_revision = 0U;
+    uint64_t to_revision = 0U;
+    uint64_t cell_version = 0U;
+    Block material = Block::Air;
+    uint64_t delivery_token = 0U;
+};
+
+struct ClientEditDeliveryAckMessage final {
+    TerrainSessionIdentity session;
+    uint64_t delivery_token = 0U;
+};
+
+struct ClientChunkResyncMessage final {
+    TerrainSessionIdentity session;
+    ChunkCoordinate coordinate{};
+};
+
+struct EditCellPayload final {
+    BlockCoordinate coordinate{};
+    Block material = Block::Air;
+    uint64_t cell_version = 0U;
+    constexpr bool operator==(EditCellPayload const&) const noexcept = default;
+};
+
+struct ServerEditChunkSnapshotMessage final {
+    TerrainSessionIdentity session;
+    uint64_t revision = 0U;
+    MaterializedChunkPayload chunk;
+    std::vector<EditCellPayload> edits;
+    uint64_t delivery_token = 0U;
+};
+
+struct EditedChunkRequirement final {
+    uint8_t z = 0U;
+    uint64_t revision = 0U;
+    constexpr bool operator==(EditedChunkRequirement const&) const noexcept = default;
+};
+
+struct ServerEditedColumnManifestMessage final {
+    TerrainSessionIdentity session;
+    ChunkCoordinate column{};
+    uint64_t watermark = 0U;
+    std::vector<EditedChunkRequirement> chunks;
+    uint64_t delivery_token = 0U;
+};
+
 // Credits are transport admission permits, not generation requests. A client
 // returns one only after it has coalesced the matching stream operation into
 // its bounded terrain handoff.
@@ -264,6 +364,9 @@ uint32_t encodedHeightTileSize(ServerHeightTileMessage const& message) noexcept;
 uint64_t encodedMaterializedChunkBatchSize(ServerMaterializedChunkBatchMessage const& message) noexcept;
 
 [[nodiscard]]
+uint64_t encodedEditChunkSnapshotSize(ServerEditChunkSnapshotMessage const& message) noexcept;
+
+[[nodiscard]]
 uint64_t encodedAuthoritativeTerrainBatchSize(ServerAuthoritativeTerrainBatchMessage const& message) noexcept;
 
 struct ServerRemoveHeightTileMessage final {
@@ -297,7 +400,14 @@ using Message = std::variant<
     ServerStartWorldAckMessage,
     ServerChunkCoverageMessage,
     ServerAuthoritativeTerrainBatchMessage,
-    ClientAuthoritativeTerrainAckMessage>;
+    ClientAuthoritativeTerrainAckMessage,
+    ClientBlockActionMessage,
+    ServerBlockActionResultMessage,
+    ServerBlockDeltaMessage,
+    ClientChunkResyncMessage,
+    ServerEditChunkSnapshotMessage,
+    ServerEditedColumnManifestMessage,
+    ClientEditDeliveryAckMessage>;
 
 [[nodiscard]]
 constexpr int32_t normalizeHeightTileCoordinate(int64_t const value, int32_t const extent) noexcept

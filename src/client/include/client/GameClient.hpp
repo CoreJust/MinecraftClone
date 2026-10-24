@@ -126,6 +126,18 @@ public:
     [[nodiscard]] uint32_t requiredAuthoritativeColumnCount() const noexcept;
     [[nodiscard]] uint32_t residentAuthoritativeColumnCount() const noexcept;
     [[nodiscard]] bool activeCoverageContains(shared::ChunkCoordinate coordinate) const noexcept;
+    [[nodiscard]] bool submitBlockAction(
+        shared::BlockActionKind kind, shared::VoxelRay const& aim,
+        std::optional<shared::WorldCoordinate> target_hint, shared::Block selected,
+        shared::InteractionPerspective perspective = shared::InteractionPerspective::FirstPerson
+    );
+    [[nodiscard]] bool requestGameMode(shared::GameMode mode);
+    [[nodiscard]] std::optional<shared::ServerBlockActionResultMessage> consumeAcceptedBlockActionResult();
+    [[nodiscard]] uint64_t droppedAcceptedBlockActionResultCount() const noexcept;
+    [[nodiscard]] std::optional<shared::ServerBlockActionResultMessage> const& blockActionStatus() const noexcept
+    {
+        return m_block_action_status;
+    }
 protected:
     virtual void servicePlatformEvents() {}
     virtual void onInputSubmitted(shared::Direction const&) {}
@@ -154,6 +166,20 @@ protected:
         shared::ServerStartWorldAckMessage const& message,
         LoadingTimePoint acknowledged_at
     );
+    [[nodiscard]] bool applyEditSnapshot(
+        shared::ServerEditChunkSnapshotMessage const& message,
+        LoadingTimePoint received_at = std::chrono::steady_clock::now()
+    );
+    [[nodiscard]] bool applyBlockDelta(
+        shared::ServerBlockDeltaMessage const& message,
+        LoadingTimePoint received_at = std::chrono::steady_clock::now()
+    );
+    [[nodiscard]] bool applyEditManifest(
+        shared::ServerEditedColumnManifestMessage const& message,
+        LoadingTimePoint received_at = std::chrono::steady_clock::now()
+    );
+    [[nodiscard]] bool applyBlockActionResult(shared::ServerBlockActionResultMessage const& message);
+    void retryEditResync(LoadingTimePoint now);
     void markLoadingPromptRendered(LoadingTimePoint rendered_at);
     [[nodiscard]] LoadingInputResult acceptLoadingStartInput(LoadingTimePoint accepted_at);
 
@@ -230,12 +256,14 @@ private:
     [[nodiscard]] bool isActiveCoverageKey(shared::ChunkCoordinate coordinate) const noexcept;
     [[nodiscard]] bool isActiveMaterializedInterestKey(shared::ChunkCoordinate coordinate) const noexcept;
     [[nodiscard]] bool validateSession(shared::TerrainSessionIdentity const& session) const noexcept;
+    [[nodiscard]] bool needsEditResync(shared::ChunkCoordinate coordinate) const;
     void clearActiveCoverage() noexcept;
     void clearResidentSurfaceMetadata();
     void removeResidentSurfaceMetadata(shared::ChunkCoordinate coordinate);
     void publishResidentSurfaceMetadata(shared::ChunkCoordinate coordinate);
 protected:
     shared::World m_world;
+    std::optional<shared::ServerBlockActionResultMessage> m_block_action_status;
     shared::World m_predicted_world;
     PlayerPresentation m_player_presentation;
     PreviewResidency m_height_tile_residency;
@@ -287,6 +315,15 @@ protected:
     ChunkKeySet m_resident_height_tile_keys;
     ChunkKeySet m_pending_materialized_keys;
     std::unordered_map<uint64_t, PendingMaterializedBatch> m_pending_materialized_batches;
+    std::unordered_map<shared::ChunkCoordinate, shared::ServerEditedColumnManifestMessage, ChunkCoordinateHash> m_edit_manifests;
+    std::deque<shared::ServerBlockDeltaMessage> m_future_edit_deltas;
+    ChunkKeySet m_pending_edit_resync;
+    LoadingTimePoint m_next_edit_resync_retry{};
+    uint32_t m_edit_resync_retry_cursor = 0U;
+    uint32_t m_next_block_action_sequence = 1U;
+    std::deque<shared::ServerBlockActionResultMessage> m_accepted_block_action_results;
+    std::deque<uint32_t> m_accepted_block_action_sequences;
+    uint64_t m_dropped_accepted_block_action_results = 0U;
     std::vector<PendingMaterializedChunk> m_pending_materialized_chunks;
     uint64_t m_last_world_preparation_sequence = 0U;
     uint64_t m_next_join_epoch = 1U;
