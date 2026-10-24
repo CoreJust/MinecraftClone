@@ -25,6 +25,16 @@ as `flight3d-v1` and `sparse-world-v1` select scenario behavior.
 `z - 6 + random < 0`, writes stone block id `1`, and publishes only after the
 candidate is complete. It is seeded world content, not a per-tick scenario.
 
+`world/height_tile.core` exports the three required terrain parameters and a
+version-1 generation plan. This describes the `TerrainGenerator` height-tile
+adapter, separate from production `TerrainWorld` generation. Its parameters
+configure radial terrain height; current materialization fills solid Stone
+columns below the sampled surface and Air above it, without biome-based
+material selection. Sand for deserts or beaches and snow for cold summits are
+planned extensions after the terrain model is integrated. See the
+[world-generation reference](../docs/scripting/WORLD_GENERATION.md) for the
+accepted calls, ranges, budgets, and execution boundary.
+
 The `sparse-world-v1` profile uses the same `0.1.5` frontend as player scenarios.
 `sparseWorldOptions` selects generator version `1` and a positive resident
 chunk bound. `expectBlockXYZ` materializes and checks a block through the

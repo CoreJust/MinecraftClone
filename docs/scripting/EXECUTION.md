@@ -15,8 +15,10 @@ For `flight3d-v1`, the runner creates boundary-zero state, with declared players
 and stopped input. Commands are ordered by source position. An input recorded
 at boundary `B` is effective on the next authoritative step (`B + 1`) and
 remains active until replaced. `wait(N)` advances exactly `N` fixed
-authoritative steps and moves the boundary forward by `N`. `expect` records an
-observation at the current boundary and does not advance time. Camera input is
+authoritative steps and moves the boundary forward by `N`. Each `jump` queues
+one jump input and advances the tick counter by one. All other inputs,
+permission changes, and expectations leave the boundary unchanged.
+Expectations record observations at the current boundary. Camera input is
 converted from the actor's yaw into the authoritative XYZ direction; the server
 remains the authority. Replay identity excludes wall-clock duration.
 
@@ -37,26 +39,55 @@ The application scenario command currently supplies these limits:
 | Limit | Value | Applies to |
 | --- | ---: | --- |
 | Source bytes | 65,536 | Entire source before parsing |
-| Statements | 256 | Every accepted host-call statement |
+| Statements | 256 | Every scenario host-call statement, including `profile`, `seed`, and player declarations |
 | Actors | 4 | `playerXYZ` declarations |
-| Total ticks | 10,000 | Sum of all `wait` values |
-| Operations | 512 | Emitted inputs, waits, expectations, sparse-world options, and observations |
-| Evidence | 128 | `expectXYZ`, `expectBlockXYZ`, and `expectResidentChunks` operations |
+| Total ticks | 10,000 | Sum of every `wait` value plus one per `jump` |
+| Operations | 512 | Collected movement inputs, permission changes, jumps, waits, expectations, `sparseWorldOptions`, block observations, and residency observations |
+| Evidence | 128 | Every `expectXYZ`, `expectMovementPermissions`, `expectVerticalVelocity`, `expectBlockXYZ`, and `expectResidentChunks` call |
 | Resident chunks | 128 | Maximum accepted `sparseWorldOptions` bound |
 | Bytecode bytes | 65,536 | Compiled module size |
 | Static instructions | 65,536 | Proven upper bound for module initialization and `scenario` |
 | Native image bytes | 4,194,304 | Compiled AOT image, when AOT is selected |
+| Runtime executions | 2 | Maximum number of calls to the scenario entrypoint |
+| Command watchdog | 30 seconds | Application deadline for a scenario command |
 
-The API accepts other positive host configurations. Script input cannot raise,
-lower, or replace them. The bounded source analyzer accepts functions and
-conditions only when their compiled call and control-flow graph can be proven
-within the static instruction limit. `for` loops require matching nonnegative
-integer literal bounds and an immutable induction variable that is not changed,
-aliased, or captured. Dynamic loops, recursive or indirect calls, static
-initialization, and cycles outside a proven finite `for` range fail validation.
-The bytecode checker includes module initialization and the `scenario`
-entrypoint in its upper bound, so accepted control flow has a finite instruction
-budget. The 30 second command watchdog remains a separate application deadline.
+These are the application command's defaults; hosts may supply another
+positive configuration. Script input cannot change the selected host limits.
+The counters apply at different points while lowering the source:
+
+| Stage | Counter | What consumes it | What does not consume it |
+| --- | --- | --- | --- |
+| Source admission | Source bytes | Source bytes before parsing | Nothing inside the script can raise this limit |
+| CoreLang collection | Statements | Every registered host-call statement, including `profile`, `seed`, and `playerXYZ` | Ordinary CoreLang statements that are not host calls |
+| Plan collection | Operations | Each operation emitted by an input, permission change, jump, wait, expectation, sparse-world configuration, or sparse-world observation | `profile`, `seed`, and `playerXYZ` declarations |
+| Plan collection | Total ticks | `wait(N)` contributes `N`; each `jump` contributes `1` | Movement inputs, permission changes, and expectations |
+| Plan collection | Evidence | Each position, permission, velocity, block, or residency expectation | Inputs and `sparseWorldOptions` |
+
+Every counter is checked before an immutable plan is published. A wait that
+would cross the tick limit, an emitted operation after the operation limit, or
+an expectation after the evidence limit fails the whole lowering; no partial
+plan reaches the runner. Sparse block observations count as one operation and
+one evidence item apiece, as does each residency expectation. The configured
+resident-chunk bound constrains the later sparse-world observations; it does
+not grant script code a way to resize the host world.
+
+The default bounded CoreLang execution uses the interpreter, limits the
+scenario source to 65,536 bytes, compiled bytecode to 65,536 bytes, the proven
+static instruction count to 65,536, and an AOT image (if selected) to 4 MiB.
+The shared API retains a 65,536 default instruction limit and accepts explicit
+limits up to 1,048,576 instructions for bounded callers with a measured need;
+the scenario command continues to use 65,536. Persistent function-local
+statics are rejected by default. A loader may opt into them only when its
+preflight counts the full initializer path on every entry.
+The source analyzer accepts functions and conditions only when their compiled
+call and control-flow graph can be proven within the instruction limit. `for`
+loops require matching nonnegative integer literal bounds and an immutable
+induction variable that is not changed, aliased, or captured. Dynamic loops,
+recursive or indirect calls, static initialization, and cycles outside a
+proven finite `for` range fail validation. The bytecode checker includes
+module initialization and the `scenario` entrypoint in its upper bound. The
+30-second watchdog is a separate application deadline around the scenario
+command.
 
 ## Cancellation and errors
 
@@ -72,27 +103,11 @@ for stable codes.
 
 ## Seeded world loading
 
-World generation uses separate load-time CoreLang programs and private
-candidates. The scenario-command limits and watchdog above do not apply. The
-`ScriptedWorld` adapter admits at most the smaller of its configured source
-limit (8,192 bytes by default) and 65,536 bytes, limits compiled bytecode to
-65,536 bytes, and preflights `generate` against 262,144 proven instructions.
-`TerrainGenerator` limits source and bytecode to 65,536 bytes each and
-preflights its optional `configure_generation` entry and required getters
-against a cumulative 65,536-instruction bound before the first call. Its loader
-alone opts into function-local static initialization; the proof includes the
-complete first-call initializer path. Repeated calls within one entry retain
-that entry's static value; separate entry invocations do not carry it forward.
-Generic bounded callers still default to 65,536 instructions and may explicitly
-select up to the 1,048,576 hard ceiling.
-
-These static checks reject dynamic loops, recursion, indirect calls, and work
-outside the proven finite subset before entry execution. They do not provide
-runtime fuel, cancellation, or the scenario command's watchdog, so bounded
-preflight is not a sandbox for hostile script text. The application also
-checks host-call limits. `canonical_world.core` iterates a 16x16x16 chunk,
-calls the trusted seeded `terrain_random`, writes only stone block id `1`
-where `z - 6 + random < 0`, and calls `publish`. The loader rejects invalid
-options, source overflow, compilation/runtime or host-call failure, and
-incomplete publication. Only a completed private chunk and its resulting
-configuration identity are exposed.
+World generation uses separate load-time CoreLang programs and code paths;
+the scenario limits above do not apply to them. Those adapters use bounded
+compilation and prove each called entry before the first runtime call.
+`ScriptedWorld` uses a 262,144-instruction limit; `TerrainGenerator` uses a
+cumulative 65,536-instruction limit. They do not have the scenario command's
+30-second watchdog, runtime fuel, or execution cancellation. See
+[World generation](WORLD_GENERATION.md) for their exact callable contracts,
+source limits, and remaining trust boundary.

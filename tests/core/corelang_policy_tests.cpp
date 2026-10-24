@@ -300,6 +300,165 @@ shared::PolicyCapabilityRegistry capabilityRegistry()
     };
 }
 
+void expectPolicyLimitBoundary(
+    shared::PolicyLimits const limits,
+    std::string_view const at_limit_source,
+    std::string_view const one_over_source,
+    shared::PolicyDiagnosticCode const expected_error
+)
+{
+    shared::PolicyHost const host{limits};
+    auto const at_limit = host.compile("at-limit.core", at_limit_source, interpretedOptions());
+    ASSERT_TRUE(at_limit.has_value()) << at_limit.error().message;
+
+    auto const one_over = host.compile("one-over.core", one_over_source, interpretedOptions());
+    ASSERT_FALSE(one_over.has_value());
+    EXPECT_EQ(one_over.error().code, expected_error);
+    EXPECT_EQ(host.snapshot(), nullptr);
+}
+
+TEST(CoreLangPolicyTest, RejectsGroupCountAboveConfiguredLimit)
+{
+    shared::PolicyLimits limits = shared::defaultPolicyLimits();
+    limits.max_groups = 1U;
+    static constexpr std::string_view AT_LIMIT = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policyGroup("first", 5u8, "")
+}
+)core";
+    static constexpr std::string_view ONE_OVER = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policyGroup("first", 5u8, "")
+    policyGroup("second", 5u8, "")
+}
+)core";
+
+    expectPolicyLimitBoundary(
+        limits, AT_LIMIT, ONE_OVER, shared::PolicyDiagnosticCode::GroupLimitExceeded
+    );
+}
+
+TEST(CoreLangPolicyTest, RejectsMembersAbovePerGroupLimit)
+{
+    shared::PolicyLimits limits = shared::defaultPolicyLimits();
+    limits.max_members_per_group = 1U;
+    static constexpr std::string_view AT_LIMIT = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policyGroup("explicit", 5u8, "")
+    policyMember("explicit", 1u64)
+}
+)core";
+    static constexpr std::string_view ONE_OVER = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policyGroup("explicit", 5u8, "")
+    policyMember("explicit", 1u64)
+    policyMember("explicit", 2u64)
+}
+)core";
+
+    expectPolicyLimitBoundary(
+        limits, AT_LIMIT, ONE_OVER, shared::PolicyDiagnosticCode::MemberLimitExceeded
+    );
+}
+
+TEST(CoreLangPolicyTest, RejectsSelectorCountAboveConfiguredLimit)
+{
+    shared::PolicyLimits limits = shared::defaultPolicyLimits();
+    limits.max_selectors = 1U;
+    static constexpr std::string_view AT_LIMIT = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policySelector("first", "player", 0u64, 9u64, 1u64)
+}
+)core";
+    static constexpr std::string_view ONE_OVER = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policySelector("first", "player", 0u64, 9u64, 1u64)
+    policySelector("second", "player", 0u64, 9u64, 1u64)
+}
+)core";
+
+    expectPolicyLimitBoundary(
+        limits, AT_LIMIT, ONE_OVER, shared::PolicyDiagnosticCode::SelectorLimitExceeded
+    );
+}
+
+TEST(CoreLangPolicyTest, RejectsPresetCountAboveConfiguredLimit)
+{
+    shared::PolicyLimits limits = shared::defaultPolicyLimits();
+    limits.max_presets = 1U;
+    static constexpr std::string_view AT_LIMIT = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policyRule("first", "minecraft:speed", 100i64, 0u8)
+}
+)core";
+    static constexpr std::string_view ONE_OVER = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policyRule("first", "minecraft:speed", 100i64, 0u8)
+    policyRule("second", "minecraft:flight", 1i64, 0u8)
+}
+)core";
+
+    expectPolicyLimitBoundary(
+        limits, AT_LIMIT, ONE_OVER, shared::PolicyDiagnosticCode::PresetLimitExceeded
+    );
+}
+
+TEST(CoreLangPolicyTest, RejectsRulesAbovePerPresetLimit)
+{
+    shared::PolicyLimits limits = shared::defaultPolicyLimits();
+    limits.max_rules_per_preset = 1U;
+    static constexpr std::string_view AT_LIMIT = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policyRule("movement", "minecraft:speed", 100i64, 0u8)
+}
+)core";
+    static constexpr std::string_view ONE_OVER = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policyRule("movement", "minecraft:speed", 100i64, 0u8)
+    policyRule("movement", "minecraft:flight", 1i64, 0u8)
+}
+)core";
+
+    expectPolicyLimitBoundary(
+        limits, AT_LIMIT, ONE_OVER, shared::PolicyDiagnosticCode::RuleLimitExceeded
+    );
+}
+
+TEST(CoreLangPolicyTest, RejectsAssignmentsAboveConfiguredLimit)
+{
+    shared::PolicyLimits limits = shared::defaultPolicyLimits();
+    limits.max_assignments = 1U;
+    static constexpr std::string_view AT_LIMIT = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policyRule("movement", "minecraft:speed", 100i64, 0u8)
+    policyAssign("players", "movement", 0u8)
+}
+)core";
+    static constexpr std::string_view ONE_OVER = R"core(@version(0.1.5)
+@use minecraft
+pub fn policy() {
+    policyRule("movement", "minecraft:speed", 100i64, 0u8)
+    policyAssign("players", "movement", 0u8)
+    policyAssign("mobs", "movement", 0u8)
+}
+)core";
+
+    expectPolicyLimitBoundary(
+        limits, AT_LIMIT, ONE_OVER, shared::PolicyDiagnosticCode::AssignmentLimitExceeded
+    );
+}
+
 TEST(CoreLangPolicyTest, CompilesTypedDeclarationsDeterministicallyWithInterpreterParity)
 {
     shared::PolicyHost const host;
