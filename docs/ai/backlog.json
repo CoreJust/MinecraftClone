@@ -18736,7 +18736,7 @@
     "id": "MC-AI-0526",
     "title": "Shared game modes and deterministic voxel targeting",
     "kind": "feature",
-    "status": "active",
+    "status": "done",
     "priority": "P1",
     "route": "luna",
     "milestone": "ED-011-S2",
@@ -18744,7 +18744,7 @@
       "MC-AI-0482"
     ],
     "acceptance": "Pure shared mode/effective-action rules and deterministic non-materializing voxel DDA with inclusive 5-block eye reach, occlusion, Unknown/Preview rejection, ties and wrapped coordinates; exact material break durations and no Survival flight or Spectator editing.",
-    "evidence": "",
+    "evidence": "curvature-correction/result.json records old visibility source RED (1 regression failure) and corrected full BlockInteractionTest GREEN (24/24). Both builds passed; corrected source restored. Existing focused-identity.json binds the earlier 23-case shared candidate. Task-specific docs and source-policy checks passed; full S2 integration/platform qualification remains open.",
     "blocker": "",
     "owner": "codex",
     "level": "basic",
@@ -18753,20 +18753,24 @@
     "context": "W1; S2-01/03/04/05",
     "complexity": "high",
     "created_at": "2026-10-24",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Implemented shared game modes, effective action/material rules, exact full-interval break timing, and deterministic non-materializing targeting with eye reach, occlusion, wrapping, perspective and renderer-consistent curved visibility.",
     "plan": [
       "Pure shared mode/effective-action rules and deterministic non-materializing voxel DDA with inclusive 5-block eye reach, occlusion, Unknown/Preview rejection, ties and wrapped coordinates; exact material break durations and no Survival flight or Spectator editing."
     ],
     "product_changes": [],
-    "code_changes": [],
-    "baseline_commit": "",
+    "code_changes": [
+      "Added shared BlockInteraction API and implementation for mode defaults, effective action rules, material filters, break timing, voxel tracing, and camera target resolution.",
+      "Added 23 BlockInteraction tests covering mode rules, timings, sparse-world query behavior, reach/occlusion, ties/wrapping, and camera perspectives.",
+      "Registered the shared source, public header, and focused test suite in CMake."
+    ],
+    "baseline_commit": "b9db5841c8da0036e96912547bbbf13e3d071808",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
-    "docs_review": "Checked the plans against the audit and accepted S2 scope; ownership, acceptance and evidence limits retained. No implemented contract changed.",
-    "environment_review": "No build/runtime/CI or external mutation. Standard repository-local commit hooks installed for this isolated checkout.",
-    "backlog_review": "Only existing0483/0516 specifications elaborated; new0522 records this completed planning work, not implementation completion."
+    "docs_review": "Added a short gameplay reference linked to BlockInteraction.hpp for mode defaults, hard-veto precedence, break timing, and non-materializing target resolution.",
+    "environment_review": "The existing shared mc_tests build completed with exit_code 0. Focused filter BlockInteractionTest.* passed 23/23; focused-identity.json records unchanged test-binary and owned source/test hashes. Full integration remains a separate gate.",
+    "backlog_review": "Task-level acceptance is covered by the focused shared suite; server/protocol integration and full S2 qualification remain separate."
   },
   {
     "id": "MC-AI-0527",

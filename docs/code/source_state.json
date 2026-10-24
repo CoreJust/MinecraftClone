@@ -209,7 +209,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "2f86ffc89ab2d6dc9cefae52f089f2545488c2c3e01c7eb4d08cea9554f74843"
+      "sources_sha256": "a7db49243e4fb0bc85fe308661485310e9cbfcf03528f0c4f3e8ec6f8d9b7aea"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -246,7 +246,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "1fc5e0a4507b947adc0da2db75a96d5666d0f56a12203ddf80f11337b3b85d96",
+      "guide_sha256": "df7c2ce552599cd66215d99915574591a4315f796434c94c62aa05e4a8842cd0",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -321,6 +321,7 @@
         "src/shared/include/shared/net/Message.hpp",
         "src/shared/include/shared/policy/Policy.hpp",
         "src/shared/include/shared/scenario/Scenario.hpp",
+        "src/shared/include/shared/world/BlockInteraction.hpp",
         "src/shared/include/shared/world/CanonicalWorld.hpp",
         "src/shared/include/shared/world/Chunk.hpp",
         "src/shared/include/shared/world/ChunkMeshLod.hpp",
@@ -339,6 +340,7 @@
         "src/shared/policy/CoreLangPolicy.cpp",
         "src/shared/scenario/CoreLangScenario.cpp",
         "src/shared/scenario/Scenario.cpp",
+        "src/shared/world/BlockInteraction.cpp",
         "src/shared/world/CanonicalWorld.cpp",
         "src/shared/world/CanonicalWorldScript.hpp.in",
         "src/shared/world/Chunk.cpp",
@@ -357,6 +359,7 @@
         "src/shared/world/WorldGenerationPlan.cpp",
         "src/shared/world/WorldGenerationScheduler.cpp",
         "src/tools/column_map_client.cpp",
+        "tests/core/block_interaction_tests.cpp",
         "tests/core/chunk_mesh_lod_tests.cpp",
         "tests/core/chunk_mesher_tests.cpp",
         "tests/core/chunk_tests.cpp",
@@ -386,7 +389,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "13911e0f9ad6363ff7240ea2b96b4327db9a07257a59c22103cd6e4e9b5e1850"
+      "sources_sha256": "245fde5e3bd5d8ab20dbe7fae3e53f10ca088d39fbb8017e673484e259974402"
     },
     {
       "guide": "docs/code/GENERATION.md",

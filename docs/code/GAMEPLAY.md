@@ -1,36 +1,16 @@
-# Gameplay and networking
-
-Run [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-distance CHUNKS]`,
-`--player-client`/`--bot-client`; clients pass `--address IP:PORT`. No args/
-`--local-game` owns server/window and shuts both down. Local play uses an
-ephemeral loopback port; explicit ports retain their semantics.
-T0 precedes preparation.
-`--player-client-2d --address IP:PORT --replay stationary|ordinary-turning
---seconds 1..120 --evidence DIR` records logical CPU column-map frames;
-graphics-free `mc_column_map` omits the mode selector.
+Run [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-distance CHUNKS]`, `--player-client`/`--bot-client` (use `--address IP:PORT`). No args/`--local-game` owns/shuts down server/window. Local play uses ephemeral loopback; explicit ports retain semantics. T0 precedes preparation. `--player-client-2d --address IP:PORT --replay stationary|ordinary-turning --seconds 1..120 --evidence DIR` records logical CPU column-map frames; graphics-free `mc_column_map` omits selector.
 
 ## Shared simulation
 
-[World.hpp](../../src/shared/include/shared/world/World.hpp) sets 100 ms ticks,
-normalized XYZ, 10,000-subcell remainders and a four-bit palette; `World` owns
-lifecycle/replication. Flat is 32×32; Flight wraps XY, bounds Z and spawns aloft.
-Entity Z is 0–65,535; terrain is 0–1,023. Empty high-flight coverage is Ready
-and generates no chunks.
-Flight/bypass select terrain/body collision; walking adds gravity/jumps. Takeoff
-preserves impulse. Flat/Flight footprints are 2×2 and 10/16; spawns enforce separation.
+[World.hpp](../../src/shared/include/shared/world/World.hpp) sets 100-ms ticks, normalized XYZ, 10,000-subcell remainders, four-bit palette; `World` owns lifecycle/replication. Flat: 32×32. Flight wraps XY, bounds Z, spawns aloft. Entity Z 0–65,535; terrain 0–1,023. Empty high-flight coverage is Ready without chunks. Flight/bypass select terrain/body collision; walking adds gravity/jumps; takeoff preserves impulse. Footprints: Flat 2×2, Flight 10/16; spawns enforce separation.
 
 ## Deterministic scenario plans
 
-[Scenario.hpp](../../src/shared/include/shared/scenario/Scenario.hpp) defines
-bounded CoreLang `@version(0.1.5)` plans. Hosts validate combined backend-comparison program/resource budgets before
-publication; rejection starts no runner or world mutation. `flat3d-v1` stores
-position/yaw/pitch/roll (Z=0; yaw 0 faces +Y, positive yaw +X). Evidence
-separates replay IDs, inputs, 100 ms ticks and presentation cadence; vertical
-camera input defaults to zero ([scripting guide](../scripting/README.md)).
+[Scenario.hpp](../../src/shared/include/shared/scenario/Scenario.hpp) defines bounded CoreLang `@version(0.1.5)` plans. Hosts validate combined backend-comparison program/resource budgets prepublication; rejection starts no runner/world mutation. `flat3d-v1` stores position/yaw/pitch/roll (Z=0; yaw 0 faces +Y, positive +X). Evidence separates replay IDs, inputs, 100-ms ticks and presentation cadence; vertical camera defaults to zero ([scripting guide](../scripting/README.md)).
 
 ## Permissions
 
-Bypass requires flight ([POLICY.md](POLICY.md)).
+Bypass requires flight ([POLICY.md](POLICY.md)). [`BlockInteraction.hpp`](../../src/shared/include/shared/world/BlockInteraction.hpp) defines preset/soft/hard effective rights and interval-counted break timing. Read-only wrapped DDA: 5-block eye reach, tied-axis steps, Unknown/Preview stops, renderer-consistent camera/curvature.
 
 ## Wire protocol
 

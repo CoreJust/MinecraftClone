@@ -194,6 +194,7 @@ add_executable(mc_tests
     core/non_movable_tests.cpp
     core/os_tests.cpp
     core/range_span_tests.cpp
+    core/block_interaction_tests.cpp
     core/shared_message_tests.cpp
     core/scenario_parser_tests.cpp
     core/chunk_tests.cpp
