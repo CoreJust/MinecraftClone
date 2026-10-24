@@ -190,6 +190,36 @@ TEST(CoreLangBackendTest, RejectsCallerLimitsAboveThePublicFixedCeilings)
     EXPECT_EQ(compiled.error().code, shared::corelang::BackendErrorCode::InvalidConfiguration);
 }
 
+TEST(CoreLangBackendTest, AllowsExplicitInstructionLimitAboveDefaultUpToTheHardCeiling)
+{
+    static constexpr std::string_view SOURCE = R"core(@version(0.1.5)
+pub fn main() -> u8 {
+    7u8
+}
+)core";
+    shared::corelang::ExecutionLimits default_limits{};
+    EXPECT_EQ(default_limits.max_instructions, 65'536U);
+
+    shared::corelang::ExecutionLimits limits = default_limits;
+    limits.max_instructions = 1'048'576U;
+    auto const compiled = shared::corelang::compileBounded(
+        {.id = "backend-test", .text = std::string{SOURCE}},
+        compilerRegistry(),
+        limits
+    );
+
+    ASSERT_TRUE(compiled.has_value()) << (compiled ? "" : compiled.error().message);
+    auto const cost = shared::corelang::boundedInstructionCount(
+        *compiled,
+        "backend-test",
+        "main",
+        limits,
+        1U
+    );
+    ASSERT_TRUE(cost.has_value()) << (cost ? "" : cost.error().message);
+    EXPECT_LE(*cost, limits.max_instructions);
+}
+
 TEST(CoreLangBackendTest, CancellationPredicateIsObservedDuringCompilation)
 {
     static constexpr std::string_view SOURCE = R"core(@version(0.1.5)
@@ -349,6 +379,83 @@ pub fn main() {
 
     ASSERT_FALSE(compiled.has_value());
     EXPECT_EQ(compiled.error().code, shared::corelang::BackendErrorCode::UnboundedExecution);
+}
+
+TEST(CoreLangBackendTest, PersistentStaticInitializationRequiresOptInAndCountsInitializerPath)
+{
+    static constexpr std::string_view INITIALIZED_SOURCE = R"core(@version(0.1.5)
+fn initial_value() -> u8 {
+    let mut value = 0u8
+    for index in 0i32..8i32 {
+        value += 1u8
+    }
+    value
+}
+pub fn main() -> u8 {
+    static mut value = initial_value()
+    value += 1u8
+    value
+}
+)core";
+    static constexpr std::string_view CONSTANT_SOURCE = R"core(@version(0.1.5)
+fn initial_value() -> u8 {
+    let mut value = 0u8
+    for index in 0i32..8i32 {
+        value += 1u8
+    }
+    value
+}
+pub fn main() -> u8 {
+    static mut value = 0u8
+    value += 1u8
+    value
+}
+)core";
+    shared::corelang::ExecutionLimits default_limits = executionLimits();
+    default_limits.max_instructions = 1'024U;
+    auto const initialized = shared::corelang::compileBounded(
+        {.id = "backend-test", .text = std::string{INITIALIZED_SOURCE}},
+        compilerRegistry(),
+        default_limits
+    );
+    auto const constant = shared::corelang::compileBounded(
+        {.id = "backend-test", .text = std::string{CONSTANT_SOURCE}},
+        compilerRegistry(),
+        default_limits
+    );
+
+    ASSERT_TRUE(initialized.has_value()) << (initialized ? "" : initialized.error().message);
+    ASSERT_TRUE(constant.has_value()) << (constant ? "" : constant.error().message);
+    auto const default_cost = shared::corelang::boundedInstructionCount(
+        *initialized,
+        "backend-test",
+        "main",
+        default_limits,
+        1U
+    );
+    ASSERT_FALSE(default_cost.has_value());
+    EXPECT_EQ(default_cost.error().code, shared::corelang::BackendErrorCode::UnboundedExecution);
+
+    shared::corelang::ExecutionLimits opted_in_limits = default_limits;
+    opted_in_limits.allow_persistent_static_initialization = true;
+    auto const initialized_cost = shared::corelang::boundedInstructionCount(
+        *initialized,
+        "backend-test",
+        "main",
+        opted_in_limits,
+        1U
+    );
+    auto const constant_cost = shared::corelang::boundedInstructionCount(
+        *constant,
+        "backend-test",
+        "main",
+        opted_in_limits,
+        1U
+    );
+
+    ASSERT_TRUE(initialized_cost.has_value()) << (initialized_cost ? "" : initialized_cost.error().message);
+    ASSERT_TRUE(constant_cost.has_value()) << (constant_cost ? "" : constant_cost.error().message);
+    EXPECT_GT(*initialized_cost, *constant_cost);
 }
 
 TEST(CoreLangBackendTest, CompiledProofRejectsArtifactMutation)

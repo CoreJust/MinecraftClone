@@ -48,7 +48,7 @@ namespace lang = core::lang;
 constexpr uint64_t MAX_SOURCE_BYTES = uint64_t{64U} * 1'024U;
 constexpr uint64_t MAX_BYTECODE_BYTES = uint64_t{1U} * 1'024U * 1'024U;
 constexpr uint64_t MAX_NATIVE_IMAGE_BYTES = uint64_t{4U} * 1'024U * 1'024U;
-constexpr uint64_t MAX_INSTRUCTIONS = 65'536U;
+constexpr uint64_t MAX_INSTRUCTIONS = 1'048'576U;
 constexpr uint64_t MAX_EXECUTION_COUNT = 2U;
 constexpr size_t MAX_HOST_CALLS = 64U;
 constexpr size_t MAX_SYMBOL_BYTES = 256U;
@@ -132,6 +132,7 @@ struct InstructionBudget final {
     uint64_t execution_count;
     uint64_t loop_multiplier;
     bool allow_verified_cycles;
+    bool allow_persistent_static_initialization;
 };
 
 [[nodiscard]]
@@ -1348,6 +1349,7 @@ std::expected<uint64_t, BackendError> boundedInstructionCount(
             .execution_count = execution_count,
             .loop_multiplier = 1U,
             .allow_verified_cycles = false,
+            .allow_persistent_static_initialization = limits.allow_persistent_static_initialization,
         });
 }
 
@@ -1375,6 +1377,7 @@ std::expected<uint64_t, BackendError> boundedInstructionCount(
             .execution_count = execution_count,
             .loop_multiplier = program.loop_multiplier_,
             .allow_verified_cycles = program.has_bounded_loops_,
+            .allow_persistent_static_initialization = limits.allow_persistent_static_initialization,
         });
 }
 
@@ -1490,7 +1493,8 @@ std::expected<uint64_t, BackendError> boundedInstructionCountImpl(
                         "CoreLang artifact exceeds static-validation instruction bound"));
                 }
                 if (instruction.opcode == core::lang::Op::IndirectCall ||
-                    instruction.opcode == core::lang::Op::StaticBegin) {
+                    (instruction.opcode == core::lang::Op::StaticBegin &&
+                     !budget.allow_persistent_static_initialization)) {
                     return std::unexpected(error(BackendErrorCode::UnboundedExecution,
                         "CoreLang entry uses an unsupported indirect call or static init"));
                 }
@@ -1638,13 +1642,20 @@ std::expected<uint64_t, BackendError> boundedInstructionCountImpl(
         return std::unexpected(added.error());
     }
     if (budget.loop_multiplier == 0U || total > limits.max_instructions / budget.loop_multiplier) {
+        std::string message = "CoreLang finite-loop execution exceeds its static instruction bound";
+        if (budget.loop_multiplier != 0U) {
+            message += " (requires " + std::to_string(total * budget.loop_multiplier)
+                + ", limit " + std::to_string(limits.max_instructions) + ")";
+        }
         return std::unexpected(error(BackendErrorCode::InstructionLimitExceeded,
-            "CoreLang finite-loop execution exceeds its static instruction bound"));
+            std::move(message)));
     }
     total *= budget.loop_multiplier;
     if (total > limits.max_instructions / budget.execution_count) {
+        uint64_t const required = total * budget.execution_count;
         return std::unexpected(error(BackendErrorCode::InstructionLimitExceeded,
-            "CoreLang execution exceeds its total instruction-step bound"));
+            "CoreLang execution exceeds its total instruction-step bound (requires "
+                + std::to_string(required) + ", limit " + std::to_string(limits.max_instructions) + ")"));
     }
     return total * budget.execution_count;
 }

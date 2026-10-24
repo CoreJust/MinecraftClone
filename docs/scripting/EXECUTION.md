@@ -72,10 +72,27 @@ for stable codes.
 
 ## Seeded world loading
 
-World generation uses a separate load-time CoreLang program and private
-candidate. `canonical_world.core` iterates a 16x16x16 chunk, calls the trusted
-seeded `terrain_random`, writes only stone block id `1` where
-`z - 6 + random < 0`, and calls `publish`. The world loader rejects invalid
-options, source overflow, compilation/runtime failure, host-call overflow, or
-incomplete publication; the live world is changed only by a completed chunk
-and its resulting configuration identity.
+World generation uses separate load-time CoreLang programs and private
+candidates. The scenario-command limits and watchdog above do not apply. The
+`ScriptedWorld` adapter admits at most the smaller of its configured source
+limit (8,192 bytes by default) and 65,536 bytes, limits compiled bytecode to
+65,536 bytes, and preflights `generate` against 262,144 proven instructions.
+`TerrainGenerator` limits source and bytecode to 65,536 bytes each and
+preflights its optional `configure_generation` entry and required getters
+against a cumulative 65,536-instruction bound before the first call. Its loader
+alone opts into function-local static initialization; the proof includes the
+complete first-call initializer path. Repeated calls within one entry retain
+that entry's static value; separate entry invocations do not carry it forward.
+Generic bounded callers still default to 65,536 instructions and may explicitly
+select up to the 1,048,576 hard ceiling.
+
+These static checks reject dynamic loops, recursion, indirect calls, and work
+outside the proven finite subset before entry execution. They do not provide
+runtime fuel, cancellation, or the scenario command's watchdog, so bounded
+preflight is not a sandbox for hostile script text. The application also
+checks host-call limits. `canonical_world.core` iterates a 16x16x16 chunk,
+calls the trusted seeded `terrain_random`, writes only stone block id `1`
+where `z - 6 + random < 0`, and calls `publish`. The loader rejects invalid
+options, source overflow, compilation/runtime or host-call failure, and
+incomplete publication. Only a completed private chunk and its resulting
+configuration identity are exposed.

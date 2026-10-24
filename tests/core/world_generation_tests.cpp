@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -85,6 +86,23 @@ static constexpr std::string_view WRONG_SIGNATURE_WORLD_SCRIPT = R"corelang(
 @use minecraft
 
 pub fn configure_generation() -> u8 { 1u8 }
+
+pub fn base_height() -> f64 { 6.0f64 }
+pub fn crest_spacing() -> f64 { 128.0f64 }
+pub fn crest_amplitude() -> f64 { 800.0f64 }
+)corelang";
+
+static constexpr std::string_view STATEFUL_WORLD_SCRIPT = R"corelang(
+@version(0.1.5)
+@use minecraft
+
+pub fn configure_generation() {
+    static mut configured = 0u64
+    configured += 32u64
+    configured += 32u64
+    generation_plan_version(1u8)
+    generation_refinement(configured)
+}
 
 pub fn base_height() -> f64 { 6.0f64 }
 pub fn crest_spacing() -> f64 { 128.0f64 }
@@ -205,4 +223,20 @@ TEST(WorldGenerationTest, WrongPlanEntrypointSignatureFailsClosed)
         shared::TerrainGenerator{WRONG_SIGNATURE_WORLD_SCRIPT},
         std::runtime_error
     );
+}
+
+TEST(WorldGenerationTest, FunctionLocalStaticIsBoundedWithinEntry)
+{
+    shared::TerrainGenerator const generator{STATEFUL_WORLD_SCRIPT};
+
+    EXPECT_EQ(generator.generationPlan().refinement_extents, std::vector<uint32_t>{64U});
+    EXPECT_EQ(generator.heightAt(32'768, 32'768), 806U);
+}
+
+TEST(WorldGenerationTest, OversizedSourceIsRejectedWithTheAdapterErrorType)
+{
+    static constexpr size_t MAX_SOURCE_BYTES = 65'536U;
+    std::string const source(MAX_SOURCE_BYTES + 1U, ' ');
+
+    EXPECT_THROW(shared::TerrainGenerator{source}, std::runtime_error);
 }

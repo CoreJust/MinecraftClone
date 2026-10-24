@@ -1,6 +1,7 @@
 #include <shared/world/WorldGeneration.hpp>
 
 #include <shared/HeightTileScript.hpp>
+#include <shared/corelang/Execution.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/WorldGenerationScheduler.hpp>
@@ -31,6 +32,8 @@
 namespace {
 
 constexpr uint32_t HEIGHT_TILE_INDEX_MULTIPLIER = shared::HeightTile::SIDE_LENGTH;
+constexpr uint64_t MAX_TERRAIN_SCRIPT_SOURCE_BYTES = uint64_t{64U} * 1'024U;
+constexpr uint64_t MAX_TERRAIN_SCRIPT_INSTRUCTIONS = 65'536U;
 constexpr double WORLD_CENTER = 32'768.0;
 constexpr uint16_t MAXIMUM_HEIGHT = static_cast<uint16_t>(shared::WorldExtent::DEPTH);
 
@@ -458,27 +461,68 @@ struct TerrainGenerator::ScriptState final {
 
     explicit ScriptState(std::string_view const script_source)
     {
+        if (script_source.size() > MAX_TERRAIN_SCRIPT_SOURCE_BYTES) {
+            throw std::runtime_error{"CoreLang terrain source exceeds the source byte limit"};
+        }
         core::lang::CompilerRegistry const registry = generationPlanCompilerRegistry();
-        auto const compiled = core::lang::compile(
+        shared::corelang::ExecutionLimits limits{};
+        limits.max_source_bytes = MAX_TERRAIN_SCRIPT_SOURCE_BYTES;
+        limits.max_bytecode_bytes = MAX_TERRAIN_SCRIPT_SOURCE_BYTES;
+        limits.max_instructions = MAX_TERRAIN_SCRIPT_INSTRUCTIONS;
+        limits.allow_persistent_static_initialization = true;
+        auto const compiled = shared::corelang::compileBounded(
             {
                 .id = "s6_height_tile",
                 .text = script_source.empty()
                     ? detail::S6_HEIGHT_TILE_SCRIPT
                     : std::string{script_source},
             },
-            registry
+            registry,
+            limits
         );
         if (!compiled) {
-            throw std::runtime_error{"CoreLang terrain script failed to compile"};
+            throw std::runtime_error{
+                "CoreLang terrain script failed bounded compilation: " + compiled.error().message
+            };
         }
-        auto const configure_generation = generationPlanExport(compiled->artifact, "s6_height_tile");
+        auto const configure_generation = generationPlanExport(
+            compiled->compiled.artifact,
+            "s6_height_tile"
+        );
         if (!configure_generation) {
             throw std::runtime_error{"CoreLang terrain generation declaration failed: " + configure_generation.error()};
+        }
+        uint64_t bounded_instruction_total = 0U;
+        auto preflight_entry = [&](std::string_view const entry) {
+            auto const count = shared::corelang::boundedInstructionCount(
+                *compiled,
+                "s6_height_tile",
+                entry,
+                limits,
+                1U
+            );
+            if (!count) {
+                throw std::runtime_error{
+                    "CoreLang terrain entry failed bounded instruction validation: " + count.error().message
+                };
+            }
+            if (*count > limits.max_instructions - bounded_instruction_total) {
+                throw std::runtime_error{
+                    "CoreLang terrain entrypoints exceed their cumulative instruction bound"
+                };
+            }
+            bounded_instruction_total += *count;
+        };
+        if (configure_generation->has_value()) {
+            preflight_entry("configure_generation");
+        }
+        for (std::string_view const entry : {"base_height", "crest_spacing", "crest_amplitude"}) {
+            preflight_entry(entry);
         }
         if (auto const registered = registerGenerationPlanProviders(runtime, generation_plan_collector); !registered) {
             throw std::runtime_error{"CoreLang terrain generation providers failed to register: " + registered.error()};
         }
-        auto loaded = runtime.loadCompiled(*compiled);
+        auto loaded = runtime.loadCompiled(compiled->compiled);
         if (!loaded) {
             throw std::runtime_error{"CoreLang terrain script failed to load"};
         }

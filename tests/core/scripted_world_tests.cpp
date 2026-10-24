@@ -47,6 +47,48 @@ pub fn generate(seed: u64) {
 )";
 }
 
+[[nodiscard]]
+std::string_view dynamicLoopScript()
+{
+    return R"(@version(0.1.5)
+@use minecraft
+pub fn generate(seed: u64) {
+    while seed >= 42u64 { }
+    publish()
+}
+)";
+}
+
+[[nodiscard]]
+std::string_view recursiveScript()
+{
+    return R"(@version(0.1.5)
+@use minecraft
+fn recurse(value: u64) -> () {
+    recurse(value)
+}
+pub fn generate(seed: u64) {
+    recurse(0u64)
+    publish()
+}
+)";
+}
+
+[[nodiscard]]
+std::string_view overBudgetScript()
+{
+    return R"(@version(0.1.5)
+@use minecraft
+pub fn generate(seed: u64) {
+    let mut total = 0i32
+    for index in 0i32..262144i32 {
+        total += 1i32
+    }
+    publish()
+}
+)";
+}
+
 TEST(ScriptedWorldTest, CanonicalScriptMatchesTheNativeFixtureAndConfigurationIdentity)
 {
     static constexpr uint64_t SEED = 42U;
@@ -117,6 +159,33 @@ TEST(ScriptedWorldTest, RejectsUnsupportedOptionsAndCallbackBudget)
     EXPECT_EQ(invalid_dimensions.error().code, shared::ScriptedWorldErrorCode::InvalidOptions);
     EXPECT_FALSE(bounded.has_value());
     EXPECT_EQ(bounded.error().code, shared::ScriptedWorldErrorCode::HostCallLimitExceeded);
+}
+
+TEST(ScriptedWorldTest, RejectsDynamicLoopsBeforeCallingGenerate)
+{
+    auto const world = shared::ScriptedWorld::load(dynamicLoopScript());
+
+    ASSERT_FALSE(world.has_value());
+    EXPECT_EQ(world.error().code, shared::ScriptedWorldErrorCode::RuntimeFailed);
+    EXPECT_NE(world.error().message.find("dynamic control flow"), std::string::npos);
+}
+
+TEST(ScriptedWorldTest, RejectsRecursiveCallsBeforeCallingGenerate)
+{
+    auto const world = shared::ScriptedWorld::load(recursiveScript());
+
+    ASSERT_FALSE(world.has_value());
+    EXPECT_EQ(world.error().code, shared::ScriptedWorldErrorCode::RuntimeFailed);
+    EXPECT_NE(world.error().message.find("recursive calls"), std::string::npos);
+}
+
+TEST(ScriptedWorldTest, RejectsFiniteWorkAboveTheInstructionBound)
+{
+    auto const world = shared::ScriptedWorld::load(overBudgetScript());
+
+    ASSERT_FALSE(world.has_value());
+    EXPECT_EQ(world.error().code, shared::ScriptedWorldErrorCode::RuntimeFailed);
+    EXPECT_NE(world.error().message.find("instruction bound"), std::string::npos);
 }
 
 } // namespace
