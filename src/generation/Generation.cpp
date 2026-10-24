@@ -73,21 +73,27 @@ void addClimate(GenerationSnapshot& snapshot, detail::ClimateFields const& clima
     snapshot.precipitation = climate.precipitation;
 }
 
+template <typename SnapshotFactory>
 void publishStage(
     ProgressCallback const& progress,
     GenerationStage stage,
-    GenerationSnapshot snapshot,
+    SnapshotFactory&& make_snapshot,
     std::stop_token const& cancellation
 )
 {
     detail::checkCancellation(cancellation);
-    detail::reportProgress(
-        progress,
-        stage,
-        1U,
-        1U,
-        std::make_shared<GenerationSnapshot const>(std::move(snapshot))
-    );
+    if (progress)
+    {
+        auto snapshot = std::make_shared<GenerationSnapshot const>(make_snapshot());
+        detail::checkCancellation(cancellation);
+        detail::reportProgress(
+            progress,
+            stage,
+            1U,
+            1U,
+            std::move(snapshot)
+        );
+    }
     detail::checkCancellation(cancellation);
 }
 
@@ -160,7 +166,9 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     publishStage(
         progress_context,
         GenerationStage::Tectonics,
-        makeSnapshot(GenerationStage::Tectonics, configuration.resolution, elevation),
+        [&] {
+            return makeSnapshot(GenerationStage::Tectonics, configuration.resolution, elevation);
+        },
         cancellation_context
     );
 
@@ -187,7 +195,13 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     publishStage(
         progress_context,
         GenerationStage::CoastalElaboration,
-        makeSnapshot(GenerationStage::CoastalElaboration, configuration.resolution, elevation),
+        [&] {
+            return makeSnapshot(
+                GenerationStage::CoastalElaboration,
+                configuration.resolution,
+                elevation
+            );
+        },
         cancellation_context
     );
 
@@ -204,16 +218,18 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
         cancellation_context,
         progress_context
     );
-    GenerationSnapshot initial_snapshot = makeSnapshot(
-        GenerationStage::InitialDrainage,
-        configuration.resolution,
-        elevation
-    );
-    addHydrology(initial_snapshot, initial_hydrology);
     publishStage(
         progress_context,
         GenerationStage::InitialDrainage,
-        std::move(initial_snapshot),
+        [&] {
+            GenerationSnapshot snapshot = makeSnapshot(
+                GenerationStage::InitialDrainage,
+                configuration.resolution,
+                elevation
+            );
+            addHydrology(snapshot, initial_hydrology);
+            return snapshot;
+        },
         cancellation_context
     );
 
@@ -230,17 +246,19 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
         cancellation_context,
         progress_context
     );
-    GenerationSnapshot provisional_snapshot = makeSnapshot(
-        GenerationStage::ProvisionalClimate,
-        configuration.resolution,
-        elevation
-    );
-    addHydrology(provisional_snapshot, initial_hydrology);
-    addClimate(provisional_snapshot, provisional_climate);
     publishStage(
         progress_context,
         GenerationStage::ProvisionalClimate,
-        std::move(provisional_snapshot),
+        [&] {
+            GenerationSnapshot snapshot = makeSnapshot(
+                GenerationStage::ProvisionalClimate,
+                configuration.resolution,
+                elevation
+            );
+            addHydrology(snapshot, initial_hydrology);
+            addClimate(snapshot, provisional_climate);
+            return snapshot;
+        },
         cancellation_context
     );
 
@@ -258,17 +276,19 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
         progress_context
     );
     elevation = erosion.elevation;
-    GenerationSnapshot erosion_snapshot = makeSnapshot(
-        GenerationStage::TerrainErosion,
-        configuration.resolution,
-        elevation
-    );
-    addHydrology(erosion_snapshot, erosion);
-    addClimate(erosion_snapshot, provisional_climate);
     publishStage(
         progress_context,
         GenerationStage::TerrainErosion,
-        std::move(erosion_snapshot),
+        [&] {
+            GenerationSnapshot snapshot = makeSnapshot(
+                GenerationStage::TerrainErosion,
+                configuration.resolution,
+                elevation
+            );
+            addHydrology(snapshot, erosion);
+            addClimate(snapshot, provisional_climate);
+            return snapshot;
+        },
         cancellation_context
     );
 
@@ -285,17 +305,19 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
         cancellation_context,
         progress_context
     );
-    GenerationSnapshot climate_snapshot = makeSnapshot(
-        GenerationStage::FinalClimate,
-        configuration.resolution,
-        elevation
-    );
-    addHydrology(climate_snapshot, erosion);
-    addClimate(climate_snapshot, climate);
     publishStage(
         progress_context,
         GenerationStage::FinalClimate,
-        std::move(climate_snapshot),
+        [&] {
+            GenerationSnapshot snapshot = makeSnapshot(
+                GenerationStage::FinalClimate,
+                configuration.resolution,
+                elevation
+            );
+            addHydrology(snapshot, erosion);
+            addClimate(snapshot, climate);
+            return snapshot;
+        },
         cancellation_context
     );
 
@@ -322,17 +344,19 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
             erosion.fjord_candidate_mask[index] & final_hydrology.ocean_mask[index]
         );
     }
-    GenerationSnapshot final_snapshot = makeSnapshot(
-        GenerationStage::FinalDrainage,
-        configuration.resolution,
-        final_hydrology.elevation
-    );
-    addHydrology(final_snapshot, final_hydrology);
-    addClimate(final_snapshot, climate);
     publishStage(
         progress_context,
         GenerationStage::FinalDrainage,
-        std::move(final_snapshot),
+        [&] {
+            GenerationSnapshot snapshot = makeSnapshot(
+                GenerationStage::FinalDrainage,
+                configuration.resolution,
+                final_hydrology.elevation
+            );
+            addHydrology(snapshot, final_hydrology);
+            addClimate(snapshot, climate);
+            return snapshot;
+        },
         cancellation_context
     );
 

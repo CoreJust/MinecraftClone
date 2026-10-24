@@ -18840,7 +18840,7 @@
     "id": "MC-AI-0529",
     "title": "Skip unconsumed generation progress snapshots",
     "kind": "bug",
-    "status": "active",
+    "status": "done",
     "priority": "P1",
     "route": "luna",
     "milestone": "ED-011-S2",
@@ -18848,7 +18848,7 @@
       "MC-AI-0482"
     ],
     "acceptance": "With no progress callback, avoid snapshot construction/copy while final atlas output remains identical; callback-present ordered progression and final identity unchanged. Preserve exact R6 numerics.",
-    "evidence": "",
+    "evidence": "Source-bound standalone Release baseline/current probes preserve all 45 atlas fields byte-for-byte (SHA2566ea0cf257aef056c10f4875db7686e442e534b6ccbb90534b7f30170074cd977) and callback events/snapshots exactly. Without callback:42 fewer allocations and6227320 fewer requested bytes per generation; callback allocations unchanged. Three existing GenerationPreparationTests passed6.261s against fresh main objects. Evidence: /Users/core-just/.codex/task-evidence/mc-s2-20261024/cpu002-measurement/report.json and core-verification/generation-progress-current-01.log. Only12-logical-core arm64Mac measured; timings within spread do not prove speedup or other-platform acceptance. Review delta restores a cancellation check after snapshot construction and before callback publication; isolated Release rebuild and3/3 preparation tests passed, and callback/no-callback atlas and progress bytes match the original probe exactly. Delta receipt: cpu002-measurement/review-delta/receipt.json.",
     "blocker": "",
     "owner": "codex",
     "level": "basic",
@@ -18857,20 +18857,24 @@
     "context": "W0; CPU-002",
     "complexity": "medium",
     "created_at": "2026-10-24",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Construct immutable stage snapshots lazily only when a progress callback exists, retaining cancellation checks before and after publication.",
     "plan": [
       "With no progress callback, avoid snapshot construction/copy while final atlas output remains identical; callback-present ordered progression and final identity unchanged. Preserve exact R6 numerics."
     ],
-    "product_changes": [],
-    "code_changes": [],
-    "baseline_commit": "",
+    "product_changes": [
+      "Atlas generation without a progress consumer avoids discarded snapshot allocations and field copies."
+    ],
+    "code_changes": [
+      "Make publishStage accept a snapshot factory and invoke it only for a nonempty callback; preserve exact callback sequence and generation numerics."
+    ],
+    "baseline_commit": "49dbff418557f6c210bd1355144a11ba5e619413",
     "commits": [],
-    "finalized": false,
-    "retrospective": "",
-    "docs_review": "Checked the plans against the audit and accepted S2 scope; ownership, acceptance and evidence limits retained. No implemented contract changed.",
-    "environment_review": "No build/runtime/CI or external mutation. Standard repository-local commit hooks installed for this isolated checkout.",
-    "backlog_review": "Only existing0483/0516 specifications elaborated; new0522 records this completed planning work, not implementation completion."
+    "finalized": true,
+    "retrospective": "Matched all-field byte serialization and callback traces demonstrate behavior preservation; allocation reduction is measured, while wall-time results do not justify a speedup claim.",
+    "docs_review": "Read generation guide against source and documented conditional snapshots; regenerated exact staged source binding.",
+    "environment_review": "Standalone Release probes use same compiler/settings and source hashes on12-logical-core arm64Mac. First process call is not a controlled cold-machine trial; no8-core/Windows measurement claimed.",
+    "backlog_review": "CPU-002 fix complete. S2 model, gameplay/platform/performance and remaining broad-review criteria stay open."
   },
   {
     "id": "MC-AI-0530",

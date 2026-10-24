@@ -390,7 +390,7 @@
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "f8b3ef34f97589d8d078eec111c7e4ebc5960853d0cefb4d185985c6b6b5e859",
+      "guide_sha256": "6c8ec3fc993a89a9951dc8e788101db2304e6935665d1dc168d4db0f20376ad2",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -951,7 +951,7 @@
         "tests/generation/numpy_random_tests.cpp",
         "tests/generation/reference_tests.cpp"
       ],
-      "sources_sha256": "c461ba5b47ff929209d5c33460c46bcca3abafa35c0848caa129494ff9ae17b3"
+      "sources_sha256": "42c45db45c8de5a42e3243edb23cb3fd22870df016549f2d1666d0ee1c240a8b"
     },
     {
       "guide": "docs/code/RENDERING.md",

@@ -6,11 +6,11 @@ targets require no window, renderer, network startup or CoreLang initialization.
 The standalone `mc_world_map` exporter uses the same atlas and sampler as gameplay.
 Diagnostic RGB interpolation uses fused multiply-add for stable rounding.
 
-The atlas pipeline publishes immutable stage snapshots from tectonics and
-coasts through drainage, climate and erosion to the final fields. Progress
-snapshots describe completed real work; consumers may coalesce snapshots but
-cannot invent a completed atlas. Cancellation and failures remain explicit.
-Configuration validation precedes allocation and generation.
+With a progress callback, the atlas publishes immutable snapshots at completed
+tectonic, coast, drainage, climate and erosion stages. Without one, it skips
+snapshot construction and copying; final fields remain identical. Consumers may
+coalesce snapshots; readiness requires a completed atlas. Cancellation and failures
+remain explicit. Configuration validation precedes allocation.
 
 Canonical regional elaboration inherits its parent samples. `TerrainWorld`
 provides typed surface columns and materializes actual chunks from those columns;
