@@ -1274,8 +1274,18 @@ def run_phase(
                 timed_out=timed_out,
             )
     except (OSError, RuntimeError) as error:
-        result = PhaseResult(name, command, 127, str(error))
-        log_path.write_text(result.output, encoding="utf-8")
+        try:
+            output = log_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            output = ""
+        separator = "\n" if output and not output.endswith(("\n", "\r")) else ""
+        diagnostic = f"Phase execution or cleanup failed: {error}"
+        result = PhaseResult(name, command, 127, f"{output}{separator}{diagnostic}\n")
+        try:
+            with log_path.open("ab") as log_stream:
+                log_stream.write(f"{separator}{diagnostic}\n".encode("utf-8"))
+        except OSError:
+            pass
     result.duration_seconds = time.monotonic() - started
     if result.returncode == 0 and name in NATIVE_RECEIPT_PHASES:
         try:

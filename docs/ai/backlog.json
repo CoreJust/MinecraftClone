@@ -19273,5 +19273,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": "Parent S2 remains active. MC-AI-0535 records integrated-effects qualification separately; Android gameplay, model integration, material extensions and aggregate platform/performance/release gates remain open."
+  },
+  {
+    "id": "MC-AI-0541",
+    "title": "Preserve phase evidence when timeout cleanup fails",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "When phase termination raises an error after output has been recorded, preserve the original phase log and include the cleanup error in a nonpassing result. Add a focused regression covering real emitted output followed by a teardown failure; retain existing timeout and process cleanup behavior.",
+    "evidence": "Focused emitted-output/cleanup-error regression fails on baseline and passes after correction. All91 ai_check tests complete with1 platform-specific skip and0 failures; whitespace check passes. Evidence: task-evidence/mc-s2-20261024/task-0541.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Complete source-matched S2 validation while preserving the requested behavior and actual evidence.",
+    "context": "The full S2 gate03 hit PermissionError during timeout termination of the long capture. run_phase overwrote ctest.log with only the33-byte error, while gate.log retained1320 completed outcomes. No game processes remained after explicit inventory; this task fixes evidence loss, not the incomplete capture.",
+    "complexity": "low",
+    "created_at": "2026-10-24",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Preserve existing phase log bytes and append execution/cleanup errors; retain a failing result and receipt instead of replacing prior evidence.",
+    "plan": [
+      "When phase termination raises an error after output has been recorded, preserve the original phase log and include the cleanup error in a nonpassing result. Add a focused regression covering real emitted output followed by a teardown failure; retain existing timeout and process cleanup behavior."
+    ],
+    "product_changes": [
+      "Failed phase cleanup retains prior validation output for diagnosis."
+    ],
+    "code_changes": [
+      "Append execution/cleanup diagnostics to the phase log; include prior output in the nonpassing result.",
+      "Add a regression proving emitted output and cleanup failure remain in the file, result and FAIL receipt."
+    ],
+    "baseline_commit": "9b0dff2b232926d93640fb1f0a71f505552663df",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

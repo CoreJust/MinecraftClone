@@ -498,6 +498,36 @@ constexpr core::Version PROJECT_VERSION{
         self.assertEqual(result.returncode, 127)
         self.assertTrue((log_dir / "missing.log").is_file())
 
+    def test_timeout_cleanup_failure_preserves_phase_output_and_fails(self):
+        ai_check = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        command = [
+            sys.executable,
+            "-c",
+            "import time; print('phase output before timeout', flush=True); time.sleep(30)",
+        ]
+        cleanup_error = "simulated permission denied during process-tree cleanup"
+
+        def fail_cleanup(process):
+            process.kill()
+            process.wait()
+            raise OSError(cleanup_error)
+
+        with mock.patch.object(ai_check, "terminate_process_tree", side_effect=fail_cleanup):
+            result = ai_check.run_phase(self.root, log_dir, "cleanup-failure", command, 1)
+
+        phase_log = (log_dir / "cleanup-failure.log").read_text(encoding="utf-8")
+        receipt = json.loads(
+            ai_check.receipt_path(log_dir, "cleanup-failure").read_text(encoding="utf-8")
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("phase output before timeout", result.output)
+        self.assertIn(cleanup_error, result.output)
+        self.assertIn("phase output before timeout", phase_log)
+        self.assertIn(cleanup_error, phase_log)
+        self.assertEqual(receipt["status"], "FAIL")
+
     def test_failed_phase_prints_complete_diagnostics(self):
         ai_check = load_module()
         diagnostics = "traceback-start\n" + ("diagnostic line\n" * 1_500) + "traceback-end"
