@@ -19,6 +19,15 @@
 
 namespace shared {
 
+namespace {
+
+uint64_t retainedEditCapacityUnits(uint64_t const stored_cells) noexcept
+{
+    return stored_cells == 0U ? 1U : stored_cells;
+}
+
+} // namespace
+
 Block AuthoritativeMaterialProfile::materialAt(
     uint16_t const z,
     uint32_t const block_sea_level
@@ -246,6 +255,40 @@ Chunk makeTerrainChunk(TerrainWorld const& terrain_world, ChunkCoordinate const 
     return terrain_world.materializeChunk(surface, coordinate);
 }
 
+uint32_t editCellIndex(BlockCoordinate const coordinate) noexcept
+{
+    return static_cast<uint32_t>(coordinate.z) * Chunk::FACE_BLOCK_COUNT
+        + static_cast<uint32_t>(coordinate.y) * Chunk::SIDE_LENGTH
+        + coordinate.x;
+}
+
+BlockCoordinate editCellCoordinate(uint32_t const index) noexcept
+{
+    return {
+        .x = static_cast<uint8_t>(index % Chunk::SIDE_LENGTH),
+        .y = static_cast<uint8_t>((index / Chunk::SIDE_LENGTH) % Chunk::SIDE_LENGTH),
+        .z = static_cast<uint8_t>(index / Chunk::FACE_BLOCK_COUNT),
+    };
+}
+
+bool chunksEqual(Chunk const& left, Chunk const& right) noexcept
+{
+    if (left.coordinate() != right.coordinate()) {
+        return false;
+    }
+    for (uint8_t z = 0U; z < Chunk::SIDE_LENGTH; ++z) {
+        for (uint8_t y = 0U; y < Chunk::SIDE_LENGTH; ++y) {
+            for (uint8_t x = 0U; x < Chunk::SIDE_LENGTH; ++x) {
+                BlockCoordinate const coordinate{x, y, z};
+                if (left.blockAt(coordinate) != right.blockAt(coordinate)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
 template <typename ResidentMap, typename ChunkFactory, typename AdvanceAccess>
 auto emplaceGeneratedChunk(
     ResidentMap& residents,
@@ -274,6 +317,9 @@ Chunk* SparseWorld::ensureChunk(
         evicted_coordinate->reset();
     }
     if (!WorldBounds::isValidChunk(coordinate)) {
+        return nullptr;
+    }
+    if (!editChunkRequirementSatisfied(coordinate)) {
         return nullptr;
     }
     ChunkCoordinate const preview_coordinate{.x = coordinate.x, .y = coordinate.y, .z = 0};
@@ -319,6 +365,7 @@ Chunk* SparseWorld::ensureChunk(
     if (!inserted) {
         return nullptr;
     }
+    applySparseEdits(iterator->second.chunk);
     if (auto tile = m_authoritative_surfaces.find({coordinate.x, coordinate.y, 0});
         tile != m_authoritative_surfaces.end()) {
         tile->second.dense_mask |= uint64_t{1} << static_cast<uint32_t>(coordinate.z);
@@ -339,11 +386,19 @@ std::optional<Block> SparseWorld::blockAt(WorldCoordinate const coordinate)
     if (!normalized) {
         return std::nullopt;
     }
-    if (residentChunk(WorldBounds::chunkCoordinate(*normalized)) == nullptr
-        && hasAuthoritativeSurface(WorldBounds::chunkCoordinate(*normalized))) {
+    ChunkCoordinate const key = WorldBounds::chunkCoordinate(*normalized);
+    uint32_t const edit_index = editCellIndex(WorldBounds::blockCoordinate(*normalized));
+    auto const edits = m_sparse_edits.find(key);
+    bool has_sparse_override = false;
+    if (edits != m_sparse_edits.end()) {
+        auto const cell = edits->second.cells.find(edit_index);
+        has_sparse_override = cell != edits->second.cells.end() && cell->second.has_override;
+    }
+    if (residentChunk(key) == nullptr
+        && (m_authoritative_surfaces.contains({key.x, key.y, 0}) || has_sparse_override)) {
         return static_cast<SparseWorld const&>(*this).blockAt(*normalized);
     }
-    Chunk* const chunk = ensureChunk(WorldBounds::chunkCoordinate(*normalized));
+    Chunk* const chunk = ensureChunk(key);
     if (!chunk) {
         return std::nullopt;
     }
@@ -366,6 +421,17 @@ SparseBlockQuery SparseWorld::queryBlock(WorldCoordinate const coordinate) const
         return {};
     }
     ChunkCoordinate const chunk_coordinate = WorldBounds::chunkCoordinate(*normalized);
+    if (!editChunkRequirementSatisfied(chunk_coordinate)) {
+        return {};
+    }
+    auto const edits = m_sparse_edits.find(chunk_coordinate);
+    if (edits != m_sparse_edits.end()) {
+        uint32_t const index = editCellIndex(WorldBounds::blockCoordinate(*normalized));
+        auto const cell = edits->second.cells.find(index);
+        if (cell != edits->second.cells.end() && cell->second.has_override) {
+            return {.state = GenerationState::Materialized, .block = cell->second.material};
+        }
+    }
     if (Chunk const* const chunk = residentChunk(chunk_coordinate); chunk != nullptr) {
         return {
             .state = GenerationState::Materialized,
@@ -374,6 +440,9 @@ SparseBlockQuery SparseWorld::queryBlock(WorldCoordinate const coordinate) const
     }
     auto const authority = m_authoritative_surfaces.find({.x = chunk_coordinate.x, .y = chunk_coordinate.y, .z = 0});
     if (authority != m_authoritative_surfaces.end()) {
+        if (hasIncompleteEditRequirements({chunk_coordinate.x, chunk_coordinate.y, 0})) {
+            return {};
+        }
         uint32_t const index = static_cast<uint32_t>(normalized->y % Chunk::SIDE_LENGTH) * Chunk::SIDE_LENGTH
             + static_cast<uint32_t>(normalized->x % Chunk::SIDE_LENGTH);
         return {.state = GenerationState::Materialized,
@@ -444,7 +513,8 @@ bool SparseWorld::publishMaterializedChunk(
     ChunkCoordinate const coordinate = chunk.coordinate();
     if (!WorldBounds::isValidChunk(coordinate)
         || revision != m_options.revision
-        || seed != m_options.seed) {
+        || seed != m_options.seed
+        || !editChunkRequirementSatisfied(coordinate)) {
         return false;
     }
     if (auto const existing = m_resident.find(coordinate); existing != m_resident.end()) {
@@ -455,6 +525,7 @@ bool SparseWorld::publishMaterializedChunk(
     if (!evictIfFull(evicted_coordinate)) {
         return false;
     }
+    applySparseEdits(chunk);
     m_previews.erase({.x = coordinate.x, .y = coordinate.y, .z = 0});
     advanceAccessClock();
     auto [iterator, inserted] = m_resident.emplace(
@@ -481,7 +552,13 @@ bool SparseWorld::publishMaterializedChunk(
             .columns = tile->second.columns,
             .resident_chunks = {},
         };
-        if (!matchesSurfaceMetadata(metadata, iterator->second.chunk, coordinate)) {
+        bool matches_expected = matchesSurfaceMetadata(metadata, iterator->second.chunk, coordinate);
+        if (!matches_expected && m_sparse_edits.contains(coordinate)) {
+            Chunk expected = makeAuthoritativeChunk(coordinate, metadata.columns, metadata.block_sea_level);
+            applySparseEdits(expected);
+            matches_expected = chunksEqual(expected, iterator->second.chunk);
+        }
+        if (!matches_expected) {
             m_authoritative_dense_overrides.insert(coordinate);
             pinAuthoritativeSurface(coordinate);
             m_evictable_residents.erase({iterator->second.last_access, coordinate});
@@ -621,6 +698,9 @@ bool SparseWorld::setTerrainIdentity(TerrainIdentity identity)
     }
     m_authoritative_surfaces.clear();
     m_evictable_authoritative_surfaces.clear();
+    m_sparse_edits.clear();
+    m_retained_edit_capacity_units = 0U;
+    m_edited_chunk_requirements.clear();
     m_protected_authoritative_columns.clear();
     m_authoritative_dense_overrides.clear();
     ++m_authoritative_surface_revision;
@@ -705,6 +785,9 @@ std::optional<VerifiedSurfaceColumn> SparseWorld::verifiedSurfaceColumn(
         .y = static_cast<int32_t>(y / Chunk::SIDE_LENGTH),
         .z = 0,
     };
+    if (hasIncompleteEditRequirements(tile_coordinate)) {
+        return std::nullopt;
+    }
     auto metadata_iterator = m_surface_metadata.find(tile_coordinate);
     if (metadata_iterator == m_surface_metadata.end()) {
         return std::nullopt;
@@ -801,6 +884,9 @@ void SparseWorld::setWorldIdentity(uint64_t const revision, uint64_t const seed)
     m_options.seed = seed;
     m_authoritative_surfaces.clear();
     m_evictable_authoritative_surfaces.clear();
+    m_sparse_edits.clear();
+    m_retained_edit_capacity_units = 0U;
+    m_edited_chunk_requirements.clear();
     m_protected_authoritative_columns.clear();
     m_authoritative_dense_overrides.clear();
     ++m_authoritative_surface_revision;
@@ -817,27 +903,491 @@ void SparseWorld::setWorldIdentity(uint64_t const revision, uint64_t const seed)
 bool SparseWorld::setBlock(WorldCoordinate const coordinate, Block const block)
 {
     auto const normalized = WorldBounds::normalize(coordinate);
-    if (!normalized) {
+    if (!normalized || !isValidBlock(block)) {
         return false;
     }
-    Chunk* const chunk = ensureChunk(WorldBounds::chunkCoordinate(*normalized));
+    ChunkCoordinate const key = WorldBounds::chunkCoordinate(*normalized);
+    BlockCoordinate const cell_coordinate = WorldBounds::blockCoordinate(*normalized);
+    uint32_t const index = editCellIndex(cell_coordinate);
+    SparseEditValue const* current_cell = nullptr;
+    if (auto const current_edits = m_sparse_edits.find(key); current_edits != m_sparse_edits.end()) {
+        if (auto const cell = current_edits->second.cells.find(index); cell != current_edits->second.cells.end()) {
+            current_cell = &cell->second;
+        }
+    }
+    bool const already_retained = current_cell != nullptr;
+    if (already_retained && current_cell->material == block) {
+        return false;
+    }
+    auto const current_edits = m_sparse_edits.find(key);
+    bool const consumes_capacity = !already_retained
+        && (current_edits == m_sparse_edits.end() || !current_edits->second.cells.empty());
+    if (consumes_capacity && m_retained_edit_capacity_units >= m_options.max_retained_edit_cells) {
+        return false;
+    }
+    Chunk* const chunk = ensureChunk(key);
     if (!chunk) {
         return false;
     }
-    bool const changed = chunk->setBlock(WorldBounds::blockCoordinate(*normalized), block);
-    if (changed) {
-        ChunkCoordinate const key = WorldBounds::chunkCoordinate(*normalized);
-        if (m_authoritative_surfaces.contains({key.x, key.y, 0})) {
-            m_authoritative_dense_overrides.insert(key);
-            pinAuthoritativeSurface(key);
-            auto const resident = m_resident.find(key);
-            m_evictable_residents.erase({resident->second.last_access, key});
-            auto& tile = m_authoritative_surfaces.at({key.x, key.y, 0});
-            tile.revision = ++m_authoritative_surface_revision;
-        }
-        invalidateSurfaceMetadata(key);
+    auto const previous = chunk->blockAt(cell_coordinate);
+    if (!previous || *previous == block) {
+        return false;
     }
-    return changed;
+    SparseChunkEdits& edits = m_sparse_edits[key];
+    if (edits.revision == std::numeric_limits<uint64_t>::max()) {
+        return false;
+    }
+    uint64_t const next_revision = edits.revision + 1U;
+    SparseEditValue value{
+        .material = block,
+        .base_material = *previous,
+        .cell_version = next_revision,
+        .has_override = true,
+    };
+    if (auto const existing = edits.cells.find(index); existing != edits.cells.end()) {
+        value.base_material = existing->second.base_material;
+    }
+
+    auto const resident = m_resident.find(key);
+    uint64_t const before_hash = chunk->contentIdentity().content_hash;
+    bool const had_known_baseline = resident != m_resident.end()
+        && resident->second.authoritative_baseline_hash != 0U
+        && resident->second.authoritative_baseline_hash == before_hash;
+    edits.cells.insert_or_assign(index, value);
+    if (!chunk->setBlock(cell_coordinate, block)) {
+        return false;
+    }
+    if (consumes_capacity) {
+        ++m_retained_edit_capacity_units;
+    }
+    edits.revision = next_revision;
+    if (had_known_baseline) {
+        resident->second.authoritative_baseline_hash = chunk->contentIdentity().content_hash;
+    }
+
+    auto const tile = m_authoritative_surfaces.find({key.x, key.y, 0});
+    if (tile != m_authoritative_surfaces.end()) {
+        pinAuthoritativeSurface(key);
+        tile->second.revision = ++m_authoritative_surface_revision;
+    }
+    invalidateSurfaceMetadata(key);
+    return true;
+}
+
+uint64_t SparseWorld::editChunkRevision(ChunkCoordinate const coordinate) const noexcept
+{
+    auto const edits = m_sparse_edits.find(coordinate);
+    return edits == m_sparse_edits.end() ? 0U : edits->second.revision;
+}
+
+uint64_t SparseWorld::cellVersion(WorldCoordinate const coordinate) const noexcept
+{
+    auto const normalized = WorldBounds::normalize(coordinate);
+    if (!normalized) {
+        return 0U;
+    }
+    ChunkCoordinate const chunk_coordinate = WorldBounds::chunkCoordinate(*normalized);
+    auto const edits = m_sparse_edits.find(chunk_coordinate);
+    if (edits == m_sparse_edits.end()) {
+        return 0U;
+    }
+    auto const cell = edits->second.cells.find(editCellIndex(WorldBounds::blockCoordinate(*normalized)));
+    return cell == edits->second.cells.end() ? 0U : cell->second.cell_version;
+}
+
+std::vector<EditedChunkRevision> SparseWorld::editedChunks() const
+{
+    std::vector<EditedChunkRevision> result;
+    result.reserve(m_sparse_edits.size());
+    for (auto const& [coordinate, edits] : m_sparse_edits) {
+        if (std::ranges::any_of(edits.cells, [](auto const& cell) { return cell.second.has_override; })) {
+            result.push_back({coordinate, edits.revision});
+        }
+    }
+    std::ranges::sort(result, [](EditedChunkRevision const& left, EditedChunkRevision const& right) {
+        if (left.coordinate.x != right.coordinate.x) {
+            return left.coordinate.x < right.coordinate.x;
+        }
+        if (left.coordinate.y != right.coordinate.y) {
+            return left.coordinate.y < right.coordinate.y;
+        }
+        return left.coordinate.z < right.coordinate.z;
+    });
+    return result;
+}
+
+std::optional<SparseEditSnapshot> SparseWorld::editSnapshot(ChunkCoordinate const coordinate) const
+{
+    if (!WorldBounds::isValidChunk(coordinate)) {
+        return std::nullopt;
+    }
+    auto const edits = m_sparse_edits.find(coordinate);
+    if (edits == m_sparse_edits.end()) {
+        return std::nullopt;
+    }
+    SparseEditSnapshot result{.coordinate = coordinate, .revision = edits->second.revision};
+    result.edits.reserve(edits->second.cells.size());
+    for (auto const& [index, cell] : edits->second.cells) {
+        if (cell.has_override) {
+            result.edits.push_back({editCellCoordinate(index), cell.material, cell.cell_version});
+        }
+    }
+    std::ranges::sort(result.edits, [](SparseEditCell const& left, SparseEditCell const& right) {
+        return editCellIndex(left.coordinate) < editCellIndex(right.coordinate);
+    });
+    return result;
+}
+
+std::optional<Chunk> SparseWorld::effectiveChunkSnapshot(ChunkCoordinate const coordinate) const
+{
+    if (!WorldBounds::isValidChunk(coordinate)) {
+        return std::nullopt;
+    }
+    auto chunk = makeBaseChunk(coordinate);
+    if (!chunk) {
+        return std::nullopt;
+    }
+    applySparseEdits(*chunk);
+    return chunk;
+}
+
+bool SparseWorld::installEditSnapshot(
+    SparseEditSnapshot const& snapshot,
+    Chunk const& effective_chunk
+)
+{
+    ChunkCoordinate const coordinate = snapshot.coordinate;
+    if (!WorldBounds::isValidChunk(coordinate)
+        || effective_chunk.coordinate() != coordinate
+        || snapshot.edits.size() > Chunk::BLOCK_COUNT) {
+        return false;
+    }
+    auto const current = m_sparse_edits.find(coordinate);
+    if (current != m_sparse_edits.end() && snapshot.revision <= current->second.revision) {
+        return false;
+    }
+
+    uint64_t previous_capacity_units = 0U;
+    uint64_t replacement_stored_cell_count = 0U;
+    if (current != m_sparse_edits.end()) {
+        previous_capacity_units = retainedEditCapacityUnits(current->second.cells.size());
+        replacement_stored_cell_count = static_cast<uint64_t>(current->second.cells.size());
+    }
+    if (previous_capacity_units > m_retained_edit_capacity_units) {
+        return false;
+    }
+
+    std::unordered_set<uint32_t> unique_cells;
+    unique_cells.reserve(snapshot.edits.size());
+    for (SparseEditCell const& edit : snapshot.edits) {
+        if (!Chunk::isValid(edit.coordinate)
+            || !isValidBlock(edit.material)
+            || edit.cell_version == 0U
+            || edit.cell_version > snapshot.revision) {
+            return false;
+        }
+        uint32_t const index = editCellIndex(edit.coordinate);
+        if (!unique_cells.insert(index).second
+            || effective_chunk.blockAt(edit.coordinate) != edit.material) {
+            return false;
+        }
+        if (current == m_sparse_edits.end() || !current->second.cells.contains(index)) {
+            ++replacement_stored_cell_count;
+        }
+        if (current != m_sparse_edits.end()) {
+            auto const old_cell = current->second.cells.find(index);
+            if (old_cell != current->second.cells.end()
+                && edit.cell_version < old_cell->second.cell_version) {
+                return false;
+            }
+        }
+    }
+    uint64_t const retained_capacity_units = m_retained_edit_capacity_units - previous_capacity_units
+        + retainedEditCapacityUnits(replacement_stored_cell_count);
+    if (retained_capacity_units > m_options.max_retained_edit_cells) {
+        return false;
+    }
+
+    auto base = makeBaseChunk(coordinate);
+    if (base) {
+        Chunk expected = *base;
+        for (SparseEditCell const& edit : snapshot.edits) {
+            static_cast<void>(expected.setBlock(edit.coordinate, edit.material));
+        }
+        if (!chunksEqual(expected, effective_chunk)) {
+            return false;
+        }
+    }
+    if (!m_resident.contains(coordinate) && !canAdmitResidentChunk()) {
+        return false;
+    }
+
+    SparseChunkEdits replacement{.revision = snapshot.revision};
+    replacement.cells.reserve(snapshot.edits.size() + (current == m_sparse_edits.end() ? 0U : current->second.cells.size()));
+    for (SparseEditCell const& edit : snapshot.edits) {
+        uint32_t const index = editCellIndex(edit.coordinate);
+        Block base_material = effective_chunk.blockAt(edit.coordinate).value_or(Block::Air);
+        if (base) {
+            base_material = base->blockAt(edit.coordinate).value_or(base_material);
+        } else if (current != m_sparse_edits.end()) {
+            auto const old_cell = current->second.cells.find(index);
+            if (old_cell != current->second.cells.end()) {
+                base_material = old_cell->second.base_material;
+            }
+        }
+        replacement.cells.emplace(index, SparseEditValue{
+            .material = edit.material,
+            .base_material = base_material,
+            .cell_version = edit.cell_version,
+            .has_override = true,
+        });
+    }
+    if (current != m_sparse_edits.end()) {
+        for (auto const& [index, old_cell] : current->second.cells) {
+            if (replacement.cells.contains(index)) {
+                continue;
+            }
+            Block const material = effective_chunk.blockAt(editCellCoordinate(index)).value_or(old_cell.material);
+            replacement.cells.emplace(index, SparseEditValue{
+                .material = material,
+                .base_material = old_cell.base_material,
+                .cell_version = std::max(old_cell.cell_version, snapshot.revision),
+                .has_override = false,
+            });
+        }
+    }
+
+    auto [state, inserted_state] = m_sparse_edits.insert_or_assign(coordinate, std::move(replacement));
+    static_cast<void>(inserted_state);
+    m_retained_edit_capacity_units = retained_capacity_units;
+    auto resident = m_resident.find(coordinate);
+    if (resident == m_resident.end()) {
+        if (!evictIfFull(nullptr)) {
+            return false;
+        }
+        m_previews.erase({coordinate.x, coordinate.y, 0});
+        advanceAccessClock();
+        auto [inserted, success] = m_resident.emplace(coordinate, ResidentChunk{
+            .chunk = effective_chunk,
+            .last_access = m_access_clock,
+        });
+        if (!success) {
+            return false;
+        }
+        resident = inserted;
+        try {
+            indexResidentForEviction(coordinate, resident->second);
+        } catch (...) {
+            m_resident.erase(resident);
+            throw;
+        }
+    } else {
+        resident->second.chunk = effective_chunk;
+        touch(coordinate, resident->second);
+    }
+    resident->second.authoritative_baseline_hash = effective_chunk.contentIdentity().content_hash;
+    m_authoritative_dense_overrides.erase(coordinate);
+    if (auto tile = m_authoritative_surfaces.find({coordinate.x, coordinate.y, 0});
+        tile != m_authoritative_surfaces.end()) {
+        tile->second.dense_mask |= uint64_t{1} << static_cast<uint32_t>(coordinate.z);
+        if (std::ranges::any_of(state->second.cells, [](auto const& cell) { return cell.second.has_override; })) {
+            pinAuthoritativeSurface(coordinate);
+        }
+        if (snapshot.revision != 0U || !snapshot.edits.empty()) {
+            tile->second.revision = ++m_authoritative_surface_revision;
+        }
+    }
+    invalidateSurfaceMetadata(coordinate);
+    return true;
+}
+
+bool SparseWorld::applyEditDelta(
+    WorldCoordinate const coordinate,
+    Block const material,
+    uint64_t const from_revision,
+    uint64_t const to_revision,
+    uint64_t const cell_version
+)
+{
+    auto const normalized = WorldBounds::normalize(coordinate);
+    if (!normalized || !isValidBlock(material)
+        || from_revision == std::numeric_limits<uint64_t>::max()
+        || to_revision != from_revision + 1U
+        || cell_version == 0U
+        || cell_version > to_revision) {
+        return false;
+    }
+    ChunkCoordinate const key = WorldBounds::chunkCoordinate(*normalized);
+    auto const current_revision = m_sparse_edits.find(key);
+    uint64_t const revision = current_revision == m_sparse_edits.end() ? 0U : current_revision->second.revision;
+    if (revision != from_revision || cellVersion(*normalized) >= cell_version) {
+        return false;
+    }
+    auto const previous = queryBlock(*normalized).block;
+    if (previous && *previous == material) {
+        return false;
+    }
+
+    uint32_t const index = editCellIndex(WorldBounds::blockCoordinate(*normalized));
+    SparseEditValue const* current_cell = nullptr;
+    if (current_revision != m_sparse_edits.end()) {
+        if (auto const cell = current_revision->second.cells.find(index);
+            cell != current_revision->second.cells.end()) {
+            current_cell = &cell->second;
+        }
+    }
+    bool const already_retained = current_cell != nullptr;
+    bool const consumes_capacity = !already_retained
+        && (current_revision == m_sparse_edits.end() || !current_revision->second.cells.empty());
+    if (consumes_capacity && m_retained_edit_capacity_units >= m_options.max_retained_edit_cells) {
+        return false;
+    }
+
+    SparseChunkEdits& edits = m_sparse_edits[key];
+    SparseEditValue value{
+        .material = material,
+        .base_material = previous.value_or(Block::Air),
+        .cell_version = cell_version,
+        .has_override = true,
+    };
+    if (auto const old_cell = edits.cells.find(index); old_cell != edits.cells.end()) {
+        value.base_material = old_cell->second.base_material;
+    }
+    edits.cells.insert_or_assign(index, value);
+    if (consumes_capacity) {
+        ++m_retained_edit_capacity_units;
+    }
+    edits.revision = to_revision;
+
+    if (auto resident = m_resident.find(key); resident != m_resident.end()) {
+        uint64_t const before_hash = resident->second.chunk.contentIdentity().content_hash;
+        bool const known_baseline = resident->second.authoritative_baseline_hash != 0U
+            && resident->second.authoritative_baseline_hash == before_hash;
+        static_cast<void>(resident->second.chunk.setBlock(WorldBounds::blockCoordinate(*normalized), material));
+        if (known_baseline) {
+            resident->second.authoritative_baseline_hash = resident->second.chunk.contentIdentity().content_hash;
+        }
+    }
+    if (auto tile = m_authoritative_surfaces.find({key.x, key.y, 0}); tile != m_authoritative_surfaces.end()) {
+        pinAuthoritativeSurface(key);
+        tile->second.revision = ++m_authoritative_surface_revision;
+    }
+    invalidateSurfaceMetadata(key);
+    return true;
+}
+
+bool SparseWorld::setEditedChunkRequirements(
+    ChunkCoordinate const coordinate,
+    std::span<EditedChunkRevision const> const requirements
+)
+{
+    if (!WorldBounds::isValidChunk(coordinate) || coordinate.z != 0
+        || requirements.size() > WorldExtent::DEPTH / Chunk::SIDE_LENGTH) {
+        return false;
+    }
+    EditedChunkRequirements values{};
+    for (EditedChunkRevision const& requirement : requirements) {
+        if (!WorldBounds::isValidChunk(requirement.coordinate)
+            || requirement.coordinate.x != coordinate.x
+            || requirement.coordinate.y != coordinate.y
+            || requirement.revision == 0U
+            || values[static_cast<size_t>(requirement.coordinate.z)] != 0U) {
+            return false;
+        }
+        values[static_cast<size_t>(requirement.coordinate.z)] = requirement.revision;
+    }
+    if (requirements.empty()) {
+        m_edited_chunk_requirements.erase(coordinate);
+    } else {
+        m_edited_chunk_requirements.insert_or_assign(coordinate, values);
+    }
+    invalidateSurfaceMetadata(coordinate);
+    return true;
+}
+
+std::optional<Chunk> SparseWorld::makeBaseChunk(ChunkCoordinate const coordinate) const
+{
+    ChunkCoordinate const tile_coordinate{coordinate.x, coordinate.y, 0};
+    if (auto const tile = m_authoritative_surfaces.find(tile_coordinate);
+        tile != m_authoritative_surfaces.end()) {
+        return makeAuthoritativeChunk(coordinate, tile->second.columns, tile->second.block_sea_level);
+    }
+    if (m_terrain_world
+        && m_terrain_world->identity().seed == m_options.seed
+        && m_terrain_world->identity().revision == m_options.revision) {
+        return makeTerrainChunk(*m_terrain_world, coordinate);
+    }
+    if (m_generator) {
+        return m_generator->generateChunk(coordinate);
+    }
+    auto const resident = m_resident.find(coordinate);
+    if (resident == m_resident.end()) {
+        return std::nullopt;
+    }
+    Chunk result = resident->second.chunk;
+    if (auto const edits = m_sparse_edits.find(coordinate); edits != m_sparse_edits.end()) {
+        for (auto const& [index, cell] : edits->second.cells) {
+            static_cast<void>(result.setBlock(editCellCoordinate(index), cell.base_material));
+        }
+    }
+    return result;
+}
+
+void SparseWorld::applySparseEdits(Chunk& chunk) const
+{
+    auto const edits = m_sparse_edits.find(chunk.coordinate());
+    if (edits == m_sparse_edits.end()) {
+        return;
+    }
+    for (auto const& [index, cell] : edits->second.cells) {
+        if (cell.has_override) {
+            static_cast<void>(chunk.setBlock(editCellCoordinate(index), cell.material));
+        }
+    }
+}
+
+bool SparseWorld::hasIncompleteEditRequirements(ChunkCoordinate coordinate) const noexcept
+{
+    coordinate.z = 0;
+    auto const requirements = m_edited_chunk_requirements.find(coordinate);
+    if (requirements == m_edited_chunk_requirements.end()) {
+        return false;
+    }
+    for (uint32_t z = 0U; z < requirements->second.size(); ++z) {
+        uint64_t const required_revision = requirements->second[z];
+        if (required_revision != 0U
+            && editChunkRevision({coordinate.x, coordinate.y, static_cast<int32_t>(z)}) < required_revision) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SparseWorld::editChunkRequirementSatisfied(ChunkCoordinate const coordinate) const noexcept
+{
+    auto const requirements = m_edited_chunk_requirements.find({coordinate.x, coordinate.y, 0});
+    if (requirements == m_edited_chunk_requirements.end()) {
+        return true;
+    }
+    uint64_t const required_revision = requirements->second[static_cast<size_t>(coordinate.z)];
+    return required_revision == 0U || editChunkRevision(coordinate) >= required_revision;
+}
+
+bool SparseWorld::canAdmitResidentChunk() const noexcept
+{
+    if (m_resident.size() + m_previews.size() < m_options.max_resident_chunks) {
+        return true;
+    }
+    if (!m_previews.empty()) {
+        return true;
+    }
+    return std::ranges::any_of(m_evictable_residents, [this](ResidentEvictionCandidate const& candidate) {
+        auto const resident = m_resident.find(candidate.coordinate);
+        return resident != m_resident.end()
+            && (resident->second.authoritative_baseline_hash == 0U
+                || resident->second.authoritative_baseline_hash
+                    == resident->second.chunk.contentIdentity().content_hash);
+    });
 }
 
 Chunk const* SparseWorld::residentChunk(ChunkCoordinate const coordinate) const noexcept
@@ -982,6 +1532,7 @@ std::optional<AuthoritativeTerrainTile> SparseWorld::authoritativeTile(ChunkCoor
 bool SparseWorld::hasAuthoritativeChunk(ChunkCoordinate const coordinate) const noexcept
 {
     return WorldBounds::isValidChunk(coordinate)
+        && editChunkRequirementSatisfied(coordinate)
         && (m_resident.contains(coordinate) || m_authoritative_surfaces.contains({coordinate.x, coordinate.y, 0}));
 }
 
@@ -1038,7 +1589,9 @@ std::vector<ChunkCoordinate> SparseWorld::availableAuthoritativeColumns() const
     result.reserve(m_authoritative_surfaces.size());
     for (auto const& [coordinate, tile] : m_authoritative_surfaces) {
         static_cast<void>(tile);
-        result.push_back(coordinate);
+        if (!hasIncompleteEditRequirements(coordinate)) {
+            result.push_back(coordinate);
+        }
     }
     std::ranges::sort(result, [](auto const left, auto const right) {
         return left.y != right.y ? left.y < right.y : left.x < right.x;
@@ -1048,22 +1601,47 @@ std::vector<ChunkCoordinate> SparseWorld::availableAuthoritativeColumns() const
 
 uint64_t SparseWorld::authoritativeDenseSectionMask(
     ChunkCoordinate const coordinate,
-    AuthoritativeSurface const& tile
+    AuthoritativeSurface const& tile,
+    uint8_t const local_x,
+    uint8_t const local_y
 ) const
 {
     uint64_t result = 0U;
-    uint64_t mask = tile.dense_mask;
-    for (uint32_t section = 0U; mask != 0U; ++section, mask >>= 1U) {
-        if ((mask & 1U) == 0U) {
+    for (uint32_t section = 0U; section < WorldExtent::DEPTH / Chunk::SIDE_LENGTH; ++section) {
+        ChunkCoordinate const dense_key{coordinate.x, coordinate.y, static_cast<int32_t>(section)};
+        auto const edits = m_sparse_edits.find(dense_key);
+        if (edits != m_sparse_edits.end()) {
+            for (uint8_t local_z = 0U; local_z < Chunk::SIDE_LENGTH; ++local_z) {
+                auto const cell = edits->second.cells.find(editCellIndex({local_x, local_y, local_z}));
+                if (cell != edits->second.cells.end() && cell->second.has_override) {
+                    result |= uint64_t{1} << section;
+                    break;
+                }
+            }
+        }
+        if ((tile.dense_mask & (uint64_t{1} << section)) == 0U) {
             continue;
         }
-        ChunkCoordinate const dense_key{coordinate.x, coordinate.y, static_cast<int32_t>(section)};
         auto const resident = m_resident.find(dense_key);
-        if (resident != m_resident.end()
-            && (m_authoritative_dense_overrides.contains(dense_key)
-                || resident->second.authoritative_baseline_hash == 0U
-                || resident->second.authoritative_baseline_hash != resident->second.chunk.contentIdentity().content_hash)) {
-            result |= uint64_t{1} << section;
+        if (resident == m_resident.end()
+            || (resident->second.authoritative_baseline_hash != 0U
+                && resident->second.authoritative_baseline_hash == resident->second.chunk.contentIdentity().content_hash)) {
+            continue;
+        }
+        for (uint8_t local_z = 0U; local_z < Chunk::SIDE_LENGTH; ++local_z) {
+            uint32_t const world_z = section * Chunk::SIDE_LENGTH + local_z;
+            Block expected = tile.columns[static_cast<uint32_t>(local_y) * Chunk::SIDE_LENGTH + local_x]
+                .materialAt(static_cast<uint16_t>(world_z), tile.block_sea_level);
+            if (edits != m_sparse_edits.end()) {
+                auto const cell = edits->second.cells.find(editCellIndex({local_x, local_y, local_z}));
+                if (cell != edits->second.cells.end() && cell->second.has_override) {
+                    expected = cell->second.material;
+                }
+            }
+            if (resident->second.chunk.blockAt({local_x, local_y, local_z}) != expected) {
+                result |= uint64_t{1} << section;
+                break;
+            }
         }
     }
     return result;
@@ -1075,6 +1653,9 @@ std::optional<AuthoritativeTerrainColumn> SparseWorld::authoritativeColumn(int64
     uint32_t const normalized_y = WorldBounds::wrapHorizontal(y);
     ChunkCoordinate const key{static_cast<int32_t>(normalized_x / Chunk::SIDE_LENGTH),
         static_cast<int32_t>(normalized_y / Chunk::SIDE_LENGTH), 0};
+    if (hasIncompleteEditRequirements(key)) {
+        return std::nullopt;
+    }
     auto const found = m_authoritative_surfaces.find(key);
     if (found == m_authoritative_surfaces.end()) {
         return std::nullopt;
@@ -1089,7 +1670,9 @@ std::optional<AuthoritativeTerrainColumn> SparseWorld::authoritativeColumn(int64
         .ground_material = profile.ground_material, .block_sea_level = tile.block_sea_level,
         .identity = tile.identity, .revision = tile.revision,
     };
-    result.dense_section_mask = authoritativeDenseSectionMask(key, tile);
+    uint8_t const local_x = static_cast<uint8_t>(normalized_x % Chunk::SIDE_LENGTH);
+    uint8_t const local_y = static_cast<uint8_t>(normalized_y % Chunk::SIDE_LENGTH);
+    result.dense_section_mask = authoritativeDenseSectionMask(key, tile, local_x, local_y);
     if (result.dense_section_mask != 0U) {
         auto blocks = std::make_shared<std::array<Block, WorldExtent::DEPTH>>();
         result.highest_solid_z = 0U;
@@ -1130,7 +1713,7 @@ std::optional<AuthoritativeTerrainColumn> SparseWorld::authoritativeColumn(int64
 bool SparseWorld::hasAuthoritativeSurface(ChunkCoordinate coordinate) const noexcept
 {
     coordinate.z = 0;
-    return m_authoritative_surfaces.contains(coordinate);
+    return m_authoritative_surfaces.contains(coordinate) && !hasIncompleteEditRequirements(coordinate);
 }
 
 std::optional<AuthoritativeTileIdentity> SparseWorld::authoritativeTileIdentity(ChunkCoordinate coordinate) const
@@ -1166,14 +1749,46 @@ uint64_t SparseWorld::authoritativeTileContentHash(
 ) const
 {
     uint64_t hash = 14'695'981'039'346'656'037ULL;
-    uint64_t mask = authoritativeDenseSectionMask(coordinate, tile);
-    for (uint32_t z = 0U; mask != 0U; ++z, mask >>= 1U) {
-        if ((mask & 1U) != 0U) {
-            auto const chunk = m_resident.find({coordinate.x, coordinate.y, static_cast<int32_t>(z)});
-            if (chunk != m_resident.end()) {
-                hash = (hash ^ z) * 1'099'511'628'211ULL;
-                hash = (hash ^ chunk->second.chunk.contentIdentity().content_hash) * 1'099'511'628'211ULL;
-            }
+    uint64_t dense_mask = tile.dense_mask;
+    for (uint32_t z = 0U; dense_mask != 0U; ++z, dense_mask >>= 1U) {
+        if ((dense_mask & 1U) == 0U) {
+            continue;
+        }
+        auto const chunk = m_resident.find({coordinate.x, coordinate.y, static_cast<int32_t>(z)});
+        if (chunk != m_resident.end()
+            && (chunk->second.authoritative_baseline_hash == 0U
+                || chunk->second.authoritative_baseline_hash != chunk->second.chunk.contentIdentity().content_hash)) {
+            hash = (hash ^ z) * 1'099'511'628'211ULL;
+            hash = (hash ^ chunk->second.chunk.contentIdentity().content_hash) * 1'099'511'628'211ULL;
+        }
+    }
+
+    std::vector<ChunkCoordinate> edit_coordinates;
+    for (auto const& [edit_coordinate, edits] : m_sparse_edits) {
+        if (edit_coordinate.x == coordinate.x && edit_coordinate.y == coordinate.y && !edits.cells.empty()) {
+            edit_coordinates.push_back(edit_coordinate);
+        }
+    }
+    std::ranges::sort(edit_coordinates, [](ChunkCoordinate const left, ChunkCoordinate const right) {
+        return left.z < right.z;
+    });
+    for (ChunkCoordinate const edit_coordinate : edit_coordinates) {
+        auto const& edits = m_sparse_edits.at(edit_coordinate);
+        hash = (hash ^ static_cast<uint32_t>(edit_coordinate.z)) * 1'099'511'628'211ULL;
+        hash = (hash ^ edits.revision) * 1'099'511'628'211ULL;
+        std::vector<uint32_t> indices;
+        indices.reserve(edits.cells.size());
+        for (auto const& [index, cell] : edits.cells) {
+            static_cast<void>(cell);
+            indices.push_back(index);
+        }
+        std::ranges::sort(indices);
+        for (uint32_t const index : indices) {
+            SparseEditValue const& cell = edits.cells.at(index);
+            hash = (hash ^ index) * 1'099'511'628'211ULL;
+            hash = (hash ^ static_cast<uint8_t>(cell.material)) * 1'099'511'628'211ULL;
+            hash = (hash ^ cell.cell_version) * 1'099'511'628'211ULL;
+            hash = (hash ^ static_cast<uint64_t>(cell.has_override)) * 1'099'511'628'211ULL;
         }
     }
     return hash;

@@ -888,7 +888,11 @@ TEST(SparseWorldTest, AuthoritativeProfilesPreserveDenseEditsAndInvalidateOnIden
     EXPECT_EQ(world.queryBlock({64, 80, 900}).block, shared::Block::Snow);
     EXPECT_EQ(world.queryBlock({65, 80, 900}).block, shared::Block::Air);
     EXPECT_GT(world.authoritativeSurfaceRevision(), before);
-    EXPECT_FALSE(world.evict({4, 5, 56}));
+    EXPECT_TRUE(world.evict({4, 5, 56}));
+    EXPECT_EQ(world.queryBlock({64, 80, 900}).block, shared::Block::Snow);
+    auto* const rematerialized = world.ensureChunk({4, 5, 56});
+    ASSERT_NE(rematerialized, nullptr);
+    EXPECT_EQ(rematerialized->blockAt({0, 0, 4}), shared::Block::Snow);
     world.setWorldIdentity(2U, 42U);
     EXPECT_FALSE(world.authoritativeColumn(64, 80).has_value());
     EXPECT_EQ(world.queryBlock({64, 80, 900}).state, shared::GenerationState::Unknown);
@@ -945,8 +949,26 @@ TEST(SparseWorldTest, AuthorityEvictionPreservesProtectedAndEditedColumnsAcrossP
     EXPECT_EQ(world.queryBlock({16, 0, 900}).block, shared::Block::Snow);
 
     ASSERT_TRUE(world.setBlock({16, 0, 900}, *original));
+    EXPECT_EQ(world.editChunkRevision({1, 0, 56}), 2U);
+    EXPECT_EQ(world.cellVersion({16, 0, 900}), 2U);
     EXPECT_FALSE(world.removeAuthoritativeSurface({1, 0, 0}));
-    EXPECT_FALSE(world.evict({1, 0, 56}));
+    ASSERT_TRUE(world.evict({1, 0, 56}));
+    EXPECT_EQ(world.residentChunk({1, 0, 56}), nullptr);
+    EXPECT_TRUE(world.hasAuthoritativeChunk({1, 0, 56}));
+    EXPECT_EQ(world.queryBlock({16, 0, 900}).block, original);
+    auto const edited_column = world.authoritativeColumn(16, 0);
+    ASSERT_TRUE(edited_column.has_value());
+    if (!edited_column) {
+        return;
+    }
+    EXPECT_EQ(edited_column->dense_section_mask, uint64_t{1} << 56U);
+    ASSERT_NE(edited_column->dense_blocks, nullptr);
+    EXPECT_EQ(edited_column->materialAt(900U), *original);
+    auto* const rematerialized = world.ensureChunk({1, 0, 56});
+    ASSERT_NE(rematerialized, nullptr);
+    EXPECT_EQ(rematerialized->blockAt({0U, 0U, 4U}), original);
+    EXPECT_EQ(world.editChunkRevision({1, 0, 56}), 2U);
+    EXPECT_EQ(world.cellVersion({16, 0, 900}), 2U);
     std::array const next_protection{shared::ChunkCoordinate{3, 0, 0}};
     ASSERT_TRUE(world.setProtectedAuthoritativeColumns(next_protection));
     ASSERT_TRUE(world.publishAuthoritativeSurface(makeCanonicalSurface({4, 0, 0}, identity)));
@@ -1144,7 +1166,14 @@ TEST(SparseWorldTest, AuthorityContentIdentityDetectsDirectDenseEditsAndUnknownB
     if (!unknown_column) {
         return;
     }
-    EXPECT_EQ(unknown_column->dense_section_mask, uint64_t{1} << 24U);
+    EXPECT_EQ(unknown_column->dense_section_mask, 0U);
+    EXPECT_EQ(unknown_column->dense_blocks, nullptr);
+    EXPECT_EQ(unknown_column->highest_solid_z, surface.columns[0].highest_solid_z);
+    for (uint16_t z = 0U; z < shared::WorldExtent::DEPTH; ++z) {
+        auto const query = unknown.queryBlock({64, 80, z});
+        EXPECT_EQ(query.state, shared::GenerationState::Materialized);
+        EXPECT_EQ(query.block, surface.columns[0].materialAt(z, surface.block_sea_level));
+    }
     ASSERT_TRUE(unknown.evict({4, 5, 24}));
     auto const unknown_evicted_identity = unknown.authoritativeTileIdentity(surface.coordinate);
     ASSERT_TRUE(unknown_evicted_identity.has_value());
@@ -1263,4 +1292,566 @@ TEST(SparseWorldTest, ExactAuthorityIdentityMatchDetectsUnknownDenseBaselineEvic
     EXPECT_TRUE(world.matchesAuthoritativeTileIdentity(
         COORDINATE, evicted->identity, evicted->revision, evicted->content_hash
     ));
+}
+
+TEST(SparseWorldTest, SparseEditsSurviveEvictionAndWrappedRematerialization)
+{
+    static constexpr uint64_t WORLD_SEED = 42U;
+    static constexpr uint64_t WORLD_REVISION = 1U;
+    static constexpr shared::ChunkCoordinate TILE{1, 1, 0};
+    static constexpr shared::ChunkCoordinate WRAPPED_TILE{4'095, 1, 0};
+    struct ExpectedEdit final {
+        shared::WorldCoordinate coordinate;
+        shared::Block block;
+    };
+    static constexpr std::array<ExpectedEdit, 5U> EXPECTED_EDITS{
+        ExpectedEdit{{16, 16, 384}, shared::Block::Air},
+        ExpectedEdit{{16, 16, 383}, shared::Block::Air},
+        ExpectedEdit{{16, 16, 700}, shared::Block::Stone},
+        ExpectedEdit{{16, 16, 710}, shared::Block::Snow},
+        ExpectedEdit{{-1, 16, 0}, shared::Block::Air},
+    };
+
+    auto const identity = testsupport::makeTerrainIdentity(WORLD_SEED, WORLD_REVISION);
+    shared::SparseWorld world(
+        {
+            .seed = WORLD_SEED,
+            .max_resident_chunks = 1U,
+            .revision = WORLD_REVISION,
+            .max_authoritative_columns = 2U,
+        },
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(makeCanonicalSurface(TILE, identity)));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(makeCanonicalSurface(WRAPPED_TILE, identity)));
+
+    ASSERT_TRUE(world.setBlock({16, 16, 384}, shared::Block::Air));
+    ASSERT_TRUE(world.setBlock({16, 16, 383}, shared::Block::Air));
+    ASSERT_TRUE(world.setBlock({16, 16, 700}, shared::Block::Stone));
+    ASSERT_TRUE(world.setBlock({16, 16, 701}, shared::Block::Stone));
+    ASSERT_TRUE(world.setBlock({16, 16, 701}, shared::Block::Air));
+    ASSERT_TRUE(world.setBlock({16, 16, 710}, shared::Block::Snow));
+    ASSERT_TRUE(world.setBlock({-1, 16, 0}, shared::Block::Air));
+    EXPECT_LE(world.residentChunkCount(), world.maxResidentChunks());
+
+    for (ExpectedEdit const& edit : EXPECTED_EDITS) {
+        auto const normalized = shared::WorldBounds::normalize(edit.coordinate);
+        ASSERT_TRUE(normalized.has_value());
+        auto* const chunk = world.ensureChunk(shared::WorldBounds::chunkCoordinate(*normalized));
+        ASSERT_NE(chunk, nullptr);
+        EXPECT_EQ(chunk->blockAt(shared::WorldBounds::blockCoordinate(*normalized)), edit.block);
+        EXPECT_EQ(world.queryBlock(edit.coordinate).block, edit.block);
+        EXPECT_LE(world.residentChunkCount(), world.maxResidentChunks());
+    }
+    auto const reset_column = world.authoritativeColumn(16, 16);
+    ASSERT_TRUE(reset_column.has_value());
+    EXPECT_EQ(reset_column->materialAt(700U), shared::Block::Stone);
+    EXPECT_EQ(reset_column->materialAt(701U), shared::Block::Air);
+    EXPECT_EQ(reset_column->materialAt(710U), shared::Block::Snow);
+    EXPECT_EQ(reset_column->highest_solid_z, 710U);
+}
+
+TEST(SparseWorldTest, BaseEqualResetSurvivesDenseEvictionAndRematerialization)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate EDITED_CHUNK{4, 5, 43};
+    static constexpr shared::WorldCoordinate RESET_BLOCK{64, 80, 701};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = makeCanonicalSurface(TILE, identity);
+    shared::SparseWorld world(
+        {.seed = 42U, .max_resident_chunks = 1U, .revision = 1U},
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+
+    ASSERT_TRUE(world.setBlock(RESET_BLOCK, shared::Block::Snow));
+    ASSERT_TRUE(world.setBlock(RESET_BLOCK, shared::Block::Air));
+    auto const reset_identity = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(reset_identity.has_value());
+    ASSERT_TRUE(world.evict(EDITED_CHUNK));
+
+    auto const evicted_identity = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(evicted_identity.has_value());
+    EXPECT_EQ(evicted_identity->revision, reset_identity->revision);
+    EXPECT_EQ(evicted_identity->content_hash, reset_identity->content_hash);
+    auto const column = world.authoritativeColumn(64, 80);
+    ASSERT_TRUE(column.has_value());
+    EXPECT_EQ(column->dense_section_mask, uint64_t{1} << 43U);
+    EXPECT_EQ(column->materialAt(701U), shared::Block::Air);
+
+    auto* const chunk = world.ensureChunk(EDITED_CHUNK);
+    ASSERT_NE(chunk, nullptr);
+    EXPECT_EQ(chunk->blockAt({0U, 0U, 13U}), shared::Block::Air);
+}
+
+TEST(SparseWorldTest, SameValueWritesDoNotAdvanceEditRevisions)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate EDITED_CHUNK{4, 5, 24};
+    static constexpr shared::WorldCoordinate EDITED_BLOCK{64, 80, 385};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    shared::SparseWorld world(
+        {.seed = 42U, .max_resident_chunks = 2U, .revision = 1U},
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(makeCanonicalSurface(TILE, identity)));
+    ASSERT_TRUE(world.setBlock(EDITED_BLOCK, shared::Block::Snow));
+    auto const after_change = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(after_change.has_value());
+    auto const* const chunk = world.residentChunk(EDITED_CHUNK);
+    ASSERT_NE(chunk, nullptr);
+    uint64_t const chunk_revision = chunk->contentIdentity().revision;
+    uint64_t const edit_revision = world.editChunkRevision(EDITED_CHUNK);
+    uint64_t const cell_version = world.cellVersion(EDITED_BLOCK);
+    uint64_t const surface_revision = world.authoritativeSurfaceRevision();
+
+    EXPECT_FALSE(world.setBlock(EDITED_BLOCK, shared::Block::Snow));
+
+    auto const after_no_op = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(after_no_op.has_value());
+    EXPECT_EQ(after_no_op->revision, after_change->revision);
+    EXPECT_EQ(after_no_op->content_hash, after_change->content_hash);
+    EXPECT_EQ(world.residentChunk(EDITED_CHUNK)->contentIdentity().revision, chunk_revision);
+    EXPECT_EQ(world.editChunkRevision(EDITED_CHUNK), edit_revision);
+    EXPECT_EQ(world.cellVersion(EDITED_BLOCK), cell_version);
+    EXPECT_EQ(world.authoritativeSurfaceRevision(), surface_revision);
+}
+
+TEST(SparseWorldTest, EditOverlayCapacityRejectsNewCellsAndAllowsRetainedCellWrites)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate EDITED_CHUNK{4, 5, 24};
+    static constexpr shared::ChunkCoordinate REJECTED_CHUNK{4, 5, 43};
+    static constexpr shared::WorldCoordinate EDITED_BLOCK{64, 80, 385};
+    static constexpr shared::WorldCoordinate REJECTED_BLOCK{64, 80, 700};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    shared::SparseWorld world(
+        {
+            .seed = 42U,
+            .max_resident_chunks = 2U,
+            .revision = 1U,
+            .max_retained_edit_cells = 1U,
+        },
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(makeCanonicalSurface(TILE, identity)));
+
+    ASSERT_TRUE(world.setBlock(EDITED_BLOCK, shared::Block::Snow));
+    auto const original_identity = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(original_identity.has_value());
+    ASSERT_TRUE(world.setBlock(EDITED_BLOCK, shared::Block::Air));
+    EXPECT_FALSE(world.setBlock(EDITED_BLOCK, shared::Block::Air));
+
+    EXPECT_FALSE(world.setBlock(REJECTED_BLOCK, shared::Block::Stone));
+
+    EXPECT_EQ(world.editChunkRevision(EDITED_CHUNK), 2U);
+    EXPECT_EQ(world.cellVersion(EDITED_BLOCK), 2U);
+    EXPECT_EQ(world.queryBlock(EDITED_BLOCK).block, shared::Block::Air);
+    EXPECT_EQ(world.editChunkRevision(REJECTED_CHUNK), 0U);
+    EXPECT_EQ(world.cellVersion(REJECTED_BLOCK), 0U);
+    EXPECT_FALSE(world.editSnapshot(REJECTED_CHUNK).has_value());
+    EXPECT_EQ(world.residentChunk(REJECTED_CHUNK), nullptr);
+    auto const after_rejection_identity = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(after_rejection_identity.has_value());
+    EXPECT_EQ(after_rejection_identity->revision, original_identity->revision + 1U);
+    EXPECT_NE(after_rejection_identity->content_hash, original_identity->content_hash);
+}
+
+TEST(SparseWorldTest, EditOverlayCapacityRejectsOversizedRemoteSnapshotAtomically)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate EDITED_CHUNK{4, 5, 24};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = makeCanonicalSurface(TILE, identity);
+    shared::SparseWorld world(
+        {
+            .seed = 42U,
+            .max_resident_chunks = 2U,
+            .revision = 1U,
+            .max_retained_edit_cells = 1U,
+        },
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+    auto const original_identity = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(original_identity.has_value());
+    auto effective_chunk = makeCanonicalChunk(surface, EDITED_CHUNK);
+    ASSERT_TRUE(effective_chunk.setBlock({0U, 0U, 0U}, shared::Block::Snow));
+    ASSERT_TRUE(effective_chunk.setBlock({1U, 0U, 0U}, shared::Block::Stone));
+    shared::SparseEditSnapshot snapshot{
+        .coordinate = EDITED_CHUNK,
+        .revision = 2U,
+        .edits = {
+            {{0U, 0U, 0U}, shared::Block::Snow, 1U},
+            {{1U, 0U, 0U}, shared::Block::Stone, 2U},
+        },
+    };
+
+    EXPECT_FALSE(world.installEditSnapshot(snapshot, effective_chunk));
+
+    EXPECT_EQ(world.editChunkRevision(EDITED_CHUNK), 0U);
+    EXPECT_FALSE(world.editSnapshot(EDITED_CHUNK).has_value());
+    EXPECT_EQ(world.residentChunk(EDITED_CHUNK), nullptr);
+    auto const after_rejection_identity = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(after_rejection_identity.has_value());
+    EXPECT_EQ(after_rejection_identity->revision, original_identity->revision);
+    EXPECT_EQ(after_rejection_identity->content_hash, original_identity->content_hash);
+}
+
+TEST(SparseWorldTest, EditOverlayCapacityRejectsNewRemoteDeltaWithoutLosingRetainedEdit)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate FIRST_CHUNK{4, 5, 24};
+    static constexpr shared::ChunkCoordinate SECOND_CHUNK{4, 5, 43};
+    static constexpr shared::WorldCoordinate FIRST_BLOCK{64, 80, 385};
+    static constexpr shared::WorldCoordinate SECOND_BLOCK{64, 80, 700};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    shared::SparseWorld world(
+        {
+            .seed = 42U,
+            .max_resident_chunks = 2U,
+            .revision = 1U,
+            .max_retained_edit_cells = 1U,
+        },
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(makeCanonicalSurface(TILE, identity)));
+    ASSERT_TRUE(world.applyEditDelta(FIRST_BLOCK, shared::Block::Snow, 0U, 1U, 1U));
+
+    EXPECT_FALSE(world.applyEditDelta(SECOND_BLOCK, shared::Block::Stone, 0U, 1U, 1U));
+
+    EXPECT_EQ(world.editChunkRevision(FIRST_CHUNK), 1U);
+    EXPECT_EQ(world.cellVersion(FIRST_BLOCK), 1U);
+    EXPECT_EQ(world.queryBlock(FIRST_BLOCK).block, shared::Block::Snow);
+    EXPECT_EQ(world.editChunkRevision(SECOND_CHUNK), 0U);
+    EXPECT_EQ(world.cellVersion(SECOND_BLOCK), 0U);
+    EXPECT_FALSE(world.editSnapshot(SECOND_CHUNK).has_value());
+}
+
+TEST(SparseWorldTest, RepeatedRemoteSnapshotRotationCannotExceedStoredCellCapacity)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate EDITED_CHUNK{4, 5, 24};
+    static constexpr uint64_t MAX_RETAINED_CELLS = 4U;
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = makeCanonicalSurface(TILE, identity);
+    shared::SparseWorld world(
+        {
+            .seed = 42U,
+            .max_resident_chunks = 2U,
+            .revision = 1U,
+            .max_retained_edit_cells = MAX_RETAINED_CELLS,
+        },
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+
+    auto install_single_cell_snapshot = [&](uint8_t const local_x, uint64_t const revision) {
+        shared::BlockCoordinate const cell{local_x, 0U, 0U};
+        auto effective_chunk = makeCanonicalChunk(surface, EDITED_CHUNK);
+        if (!effective_chunk.setBlock(cell, shared::Block::Snow)) {
+            return false;
+        }
+        shared::SparseEditSnapshot const snapshot{
+            .coordinate = EDITED_CHUNK,
+            .revision = revision,
+            .edits = {{cell, shared::Block::Snow, revision}},
+        };
+        return world.installEditSnapshot(snapshot, effective_chunk);
+    };
+
+    ASSERT_TRUE(install_single_cell_snapshot(0U, 1U));
+    ASSERT_TRUE(install_single_cell_snapshot(1U, 2U));
+    ASSERT_TRUE(install_single_cell_snapshot(2U, 3U));
+    ASSERT_TRUE(install_single_cell_snapshot(3U, 4U));
+    auto const before_rejection = world.editSnapshot(EDITED_CHUNK);
+    ASSERT_TRUE(before_rejection.has_value());
+    ASSERT_EQ(before_rejection->revision, 4U);
+    auto const effective_before_rejection = world.effectiveChunkSnapshot(EDITED_CHUNK);
+    ASSERT_TRUE(effective_before_rejection.has_value());
+
+    EXPECT_FALSE(install_single_cell_snapshot(4U, 5U));
+
+    auto const after_rejection = world.editSnapshot(EDITED_CHUNK);
+    ASSERT_TRUE(after_rejection.has_value());
+    EXPECT_EQ(after_rejection->revision, before_rejection->revision);
+    ASSERT_EQ(after_rejection->edits.size(), 1U);
+    EXPECT_EQ(after_rejection->edits[0].coordinate, (shared::BlockCoordinate{3U, 0U, 0U}));
+    EXPECT_EQ(world.cellVersion({68, 80, 384}), 0U);
+    auto const effective_after_rejection = world.effectiveChunkSnapshot(EDITED_CHUNK);
+    ASSERT_TRUE(effective_after_rejection.has_value());
+    EXPECT_EQ(effective_after_rejection->blockAt({3U, 0U, 0U}), shared::Block::Snow);
+    EXPECT_EQ(
+        effective_after_rejection->blockAt({4U, 0U, 0U}),
+        effective_before_rejection->blockAt({4U, 0U, 0U})
+    );
+}
+
+TEST(SparseWorldTest, RetainedSnapshotTombstonesCanBeRevivedAtCapacity)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate EDITED_CHUNK{4, 5, 24};
+    static constexpr shared::WorldCoordinate RETAINED_BLOCK{64, 80, 384};
+    static constexpr shared::WorldCoordinate NEW_BLOCK{65, 80, 384};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = makeCanonicalSurface(TILE, identity);
+    auto make_world = [&]() {
+        shared::SparseWorld world(
+            {
+                .seed = 42U,
+                .max_resident_chunks = 2U,
+                .revision = 1U,
+                .max_retained_edit_cells = 1U,
+            },
+            shared::SparseWorldGenerationMode::MaterializedOnly
+        );
+        EXPECT_TRUE(world.setTerrainIdentity(identity));
+        EXPECT_TRUE(world.publishAuthoritativeSurface(surface));
+        auto effective_chunk = makeCanonicalChunk(surface, EDITED_CHUNK);
+        EXPECT_TRUE(effective_chunk.setBlock({0U, 0U, 0U}, shared::Block::Snow));
+        shared::SparseEditSnapshot const initial_snapshot{
+            .coordinate = EDITED_CHUNK,
+            .revision = 1U,
+            .edits = {{{0U, 0U, 0U}, shared::Block::Snow, 1U}},
+        };
+        EXPECT_TRUE(world.installEditSnapshot(initial_snapshot, effective_chunk));
+        auto const base_chunk = makeCanonicalChunk(surface, EDITED_CHUNK);
+        shared::SparseEditSnapshot const cleared_snapshot{
+            .coordinate = EDITED_CHUNK,
+            .revision = 2U,
+            .edits = {},
+        };
+        EXPECT_TRUE(world.installEditSnapshot(cleared_snapshot, base_chunk));
+        return world;
+    };
+
+    {
+        auto world = make_world();
+        ASSERT_EQ(world.editChunkRevision(EDITED_CHUNK), 2U);
+        ASSERT_EQ(world.cellVersion(RETAINED_BLOCK), 2U);
+
+        EXPECT_TRUE(world.setBlock(RETAINED_BLOCK, shared::Block::Snow));
+
+        EXPECT_EQ(world.editChunkRevision(EDITED_CHUNK), 3U);
+        EXPECT_EQ(world.cellVersion(RETAINED_BLOCK), 3U);
+        EXPECT_FALSE(world.setBlock(NEW_BLOCK, shared::Block::Stone));
+        EXPECT_EQ(world.editChunkRevision(EDITED_CHUNK), 3U);
+        EXPECT_EQ(world.cellVersion(NEW_BLOCK), 0U);
+    }
+
+    {
+        auto world = make_world();
+
+        EXPECT_TRUE(world.applyEditDelta(RETAINED_BLOCK, shared::Block::Snow, 2U, 3U, 3U));
+
+        EXPECT_EQ(world.editChunkRevision(EDITED_CHUNK), 3U);
+        EXPECT_EQ(world.cellVersion(RETAINED_BLOCK), 3U);
+        EXPECT_FALSE(world.applyEditDelta(NEW_BLOCK, shared::Block::Stone, 3U, 4U, 4U));
+        EXPECT_EQ(world.editChunkRevision(EDITED_CHUNK), 3U);
+        EXPECT_EQ(world.cellVersion(NEW_BLOCK), 0U);
+    }
+}
+
+TEST(SparseWorldTest, EmptyRevisionSnapshotsUseBoundedCapacityAndPreserveDeltaFences)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate FIRST_CHUNK{4, 5, 24};
+    static constexpr shared::ChunkCoordinate SECOND_CHUNK{4, 5, 25};
+    static constexpr shared::ChunkCoordinate REJECTED_CHUNK{4, 5, 26};
+    static constexpr shared::WorldCoordinate FIRST_BLOCK{64, 80, 384};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = makeCanonicalSurface(TILE, identity);
+    shared::SparseWorld world(
+        {
+            .seed = 42U,
+            .max_resident_chunks = 2U,
+            .revision = 1U,
+            .max_retained_edit_cells = 2U,
+        },
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+
+    for (shared::ChunkCoordinate const coordinate : {FIRST_CHUNK, SECOND_CHUNK}) {
+        auto const effective_chunk = makeCanonicalChunk(surface, coordinate);
+        shared::SparseEditSnapshot const snapshot{
+            .coordinate = coordinate,
+            .revision = 1U,
+            .edits = {},
+        };
+        ASSERT_TRUE(world.installEditSnapshot(snapshot, effective_chunk));
+    }
+    EXPECT_EQ(world.residentChunkCount(), 2U);
+
+    auto const rejected_chunk = makeCanonicalChunk(surface, REJECTED_CHUNK);
+    shared::SparseEditSnapshot const rejected_snapshot{
+        .coordinate = REJECTED_CHUNK,
+        .revision = 1U,
+        .edits = {},
+    };
+    EXPECT_FALSE(world.installEditSnapshot(rejected_snapshot, rejected_chunk));
+
+    EXPECT_EQ(world.editChunkRevision(FIRST_CHUNK), 1U);
+    EXPECT_TRUE(world.editSnapshot(FIRST_CHUNK).has_value());
+    EXPECT_EQ(world.editChunkRevision(SECOND_CHUNK), 1U);
+    EXPECT_TRUE(world.editSnapshot(SECOND_CHUNK).has_value());
+    EXPECT_EQ(world.editChunkRevision(REJECTED_CHUNK), 0U);
+    EXPECT_FALSE(world.editSnapshot(REJECTED_CHUNK).has_value());
+    EXPECT_EQ(world.residentChunk(REJECTED_CHUNK), nullptr);
+    EXPECT_EQ(world.residentChunkCount(), 2U);
+
+    EXPECT_TRUE(world.applyEditDelta(FIRST_BLOCK, shared::Block::Snow, 1U, 2U, 2U));
+
+    EXPECT_EQ(world.editChunkRevision(FIRST_CHUNK), 2U);
+    EXPECT_EQ(world.cellVersion(FIRST_BLOCK), 2U);
+    EXPECT_EQ(world.residentChunkCount(), 2U);
+}
+
+TEST(SparseWorldTest, SparseEditLeavesNeighboringAuthorityProfileSparse)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::WorldCoordinate EDITED_BLOCK{64, 80, 900};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    shared::SparseWorld world(
+        {.seed = 42U, .max_resident_chunks = 2U, .revision = 1U},
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(makeCanonicalSurface(TILE, identity)));
+    ASSERT_TRUE(world.setBlock(EDITED_BLOCK, shared::Block::Stone));
+
+    auto const edited = world.authoritativeColumn(64, 80);
+    ASSERT_TRUE(edited.has_value());
+    EXPECT_EQ(edited->highest_solid_z, 900U);
+    ASSERT_NE(edited->dense_blocks, nullptr);
+    auto const untouched = world.authoritativeColumn(65, 80);
+    ASSERT_TRUE(untouched.has_value());
+    EXPECT_EQ(untouched->dense_section_mask, 0U);
+    EXPECT_EQ(untouched->dense_blocks, nullptr);
+}
+
+TEST(SparseWorldTest, EditOverlaySnapshotSurvivesEvictionWithCellVersions)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate EDITED_CHUNK{4, 5, 43};
+    static constexpr shared::WorldCoordinate EDITED_BLOCK{64, 80, 700};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = makeCanonicalSurface(TILE, identity);
+    shared::SparseWorld world(
+        {.seed = 42U, .max_resident_chunks = 1U, .revision = 1U},
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+
+    ASSERT_TRUE(world.setBlock(EDITED_BLOCK, shared::Block::Stone));
+    ASSERT_TRUE(world.setBlock(EDITED_BLOCK, shared::Block::Air));
+    EXPECT_EQ(world.editChunkRevision(EDITED_CHUNK), 2U);
+    EXPECT_EQ(world.cellVersion(EDITED_BLOCK), 2U);
+    auto const snapshot = world.editSnapshot(EDITED_CHUNK);
+    ASSERT_TRUE(snapshot.has_value());
+    ASSERT_EQ(snapshot->revision, 2U);
+    ASSERT_EQ(snapshot->edits.size(), 1U);
+    EXPECT_EQ(snapshot->edits[0].coordinate, (shared::BlockCoordinate{0U, 0U, 12U}));
+    EXPECT_EQ(snapshot->edits[0].material, shared::Block::Air);
+    EXPECT_EQ(snapshot->edits[0].cell_version, 2U);
+
+    auto const edited_chunks = world.editedChunks();
+    ASSERT_EQ(edited_chunks.size(), 1U);
+    EXPECT_EQ(edited_chunks[0].coordinate, EDITED_CHUNK);
+    EXPECT_EQ(edited_chunks[0].revision, 2U);
+    ASSERT_TRUE(world.evict(EDITED_CHUNK));
+    EXPECT_EQ(world.blockAt(EDITED_BLOCK), shared::Block::Air);
+    auto const effective_snapshot = world.effectiveChunkSnapshot(EDITED_CHUNK);
+    ASSERT_TRUE(effective_snapshot.has_value());
+    EXPECT_EQ(effective_snapshot->blockAt({0U, 0U, 12U}), shared::Block::Air);
+    auto* const rematerialized = world.ensureChunk(EDITED_CHUNK);
+    ASSERT_NE(rematerialized, nullptr);
+    EXPECT_EQ(rematerialized->blockAt({0U, 0U, 12U}), shared::Block::Air);
+}
+
+TEST(SparseWorldTest, RemoteEditSnapshotsAndDeltasRejectStaleState)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate EDITED_CHUNK{4, 5, 24};
+    static constexpr shared::WorldCoordinate EDITED_BLOCK{64, 80, 384};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = makeCanonicalSurface(TILE, identity);
+    shared::SparseWorld world(
+        {.seed = 42U, .max_resident_chunks = 2U, .revision = 1U},
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+    auto effective_chunk = makeCanonicalChunk(surface, EDITED_CHUNK);
+    ASSERT_TRUE(effective_chunk.setBlock({0U, 0U, 0U}, shared::Block::Snow));
+    shared::SparseEditSnapshot snapshot{
+        .coordinate = EDITED_CHUNK,
+        .revision = 2U,
+        .edits = {{{0U, 0U, 0U}, shared::Block::Snow, 2U}},
+    };
+
+    ASSERT_TRUE(world.installEditSnapshot(snapshot, effective_chunk));
+    EXPECT_EQ(world.editChunkRevision(EDITED_CHUNK), 2U);
+    EXPECT_EQ(world.cellVersion(EDITED_BLOCK), 2U);
+    EXPECT_EQ(world.queryBlock(EDITED_BLOCK).block, shared::Block::Snow);
+
+    shared::SparseEditSnapshot stale_snapshot = snapshot;
+    stale_snapshot.edits[0].material = shared::Block::Air;
+    auto stale_chunk = makeCanonicalChunk(surface, EDITED_CHUNK);
+    EXPECT_FALSE(world.installEditSnapshot(stale_snapshot, stale_chunk));
+    EXPECT_FALSE(world.applyEditDelta(EDITED_BLOCK, shared::Block::Air, 1U, 2U, 3U));
+    EXPECT_EQ(world.queryBlock(EDITED_BLOCK).block, shared::Block::Snow);
+    EXPECT_EQ(world.editChunkRevision(EDITED_CHUNK), 2U);
+
+    EXPECT_TRUE(world.applyEditDelta(EDITED_BLOCK, shared::Block::Air, 2U, 3U, 3U));
+    EXPECT_EQ(world.queryBlock(EDITED_BLOCK).block, shared::Block::Air);
+    EXPECT_EQ(world.cellVersion(EDITED_BLOCK), 3U);
+    EXPECT_EQ(world.editChunkRevision(EDITED_CHUNK), 3U);
+    EXPECT_FALSE(world.applyEditDelta(EDITED_BLOCK, shared::Block::Snow, 2U, 3U, 4U));
+}
+
+TEST(SparseWorldTest, EditedChunkManifestFencesProfileAuthorityUntilSnapshotArrives)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate EDITED_CHUNK{4, 5, 24};
+    static constexpr shared::WorldCoordinate EDITED_BLOCK{64, 80, 384};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = makeCanonicalSurface(TILE, identity);
+    shared::SparseWorld world(
+        {.seed = 42U, .max_resident_chunks = 2U, .revision = 1U},
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+    ASSERT_TRUE(world.publishSurfaceMetadata(makeCanonicalSurface(TILE, identity)));
+    std::array<shared::EditedChunkRevision, 1U> requirements{{{EDITED_CHUNK, 2U}}};
+
+    ASSERT_TRUE(world.setEditedChunkRequirements(TILE, requirements));
+    EXPECT_FALSE(world.hasAuthoritativeSurface(TILE));
+    EXPECT_EQ(world.queryBlock(EDITED_BLOCK).state, shared::GenerationState::Unknown);
+    EXPECT_EQ(world.queryBlock({64, 80, 900}).state, shared::GenerationState::Unknown);
+    EXPECT_FALSE(world.authoritativeColumn(64, 80).has_value());
+    EXPECT_FALSE(world.verifiedSurfaceColumn(64, 80).has_value());
+
+    auto effective_chunk = makeCanonicalChunk(surface, EDITED_CHUNK);
+    ASSERT_TRUE(effective_chunk.setBlock({0U, 0U, 0U}, shared::Block::Snow));
+    shared::SparseEditSnapshot snapshot{
+        .coordinate = EDITED_CHUNK,
+        .revision = 2U,
+        .edits = {{{0U, 0U, 0U}, shared::Block::Snow, 2U}},
+    };
+    ASSERT_TRUE(world.installEditSnapshot(snapshot, effective_chunk));
+
+    EXPECT_TRUE(world.hasAuthoritativeSurface(TILE));
+    EXPECT_EQ(world.queryBlock(EDITED_BLOCK).block, shared::Block::Snow);
+    EXPECT_TRUE(world.authoritativeColumn(64, 80).has_value());
 }

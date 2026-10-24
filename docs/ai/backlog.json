@@ -18696,7 +18696,7 @@
     "id": "MC-AI-0525",
     "title": "Durable sparse voxel edits independent of dense residency",
     "kind": "bug",
-    "status": "active",
+    "status": "done",
     "priority": "P1",
     "route": "luna",
     "milestone": "ED-011-S2",
@@ -18704,7 +18704,7 @@
       "MC-AI-0482"
     ],
     "acceptance": "Air removals, explicit player break/place edits to layered columns, base-equal resets and wrapped-cell writes survive eviction/rematerialization with bounded dense residency; same-value writes are no-ops; untouched-column reads avoid a full-height reconstruction.",
-    "evidence": "",
+    "evidence": "task-0525/final-sparse.xml:47/47 SparseWorld tests pass; regression-red.xml reproduced snapshot-rotation bypass before the fix. regression-green.xml: action/transport/message/server/lifecycle tests passed; its two old SparseWorld expectations were corrected and covered by final-sparse.xml. Capacity includes inactive cell versions and one unit for empty chunk revision records. Full S2 integration remains separate.",
     "blocker": "",
     "owner": "codex",
     "level": "basic",
@@ -18713,20 +18713,24 @@
     "context": "W2; SIM-001, TER-01",
     "complexity": "high",
     "created_at": "2026-10-24",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-10-24",
+    "resolution_changes": "Retained sparse overrides and versions survive dense eviction. Atomic admission bounds all cell records, including tombstones and empty chunk revisions; snapshots/deltas preserve stale-state fences.",
     "plan": [
-      "Air removals, arbitrary layered/cavity/overhang edits, base-equal resets and wrapped-cell writes survive eviction/rematerialization with bounded dense residency; same-value writes are no-ops; untouched-column reads avoid a full-height reconstruction."
+      "Air removals, explicit player break/place edits to layered columns, base-equal resets and wrapped-cell writes survive eviction/rematerialization with bounded dense residency; same-value writes are no-ops; untouched-column reads avoid a full-height reconstruction."
     ],
-    "product_changes": [],
-    "code_changes": [],
-    "baseline_commit": "",
+    "product_changes": [
+      "Player block edits survive dense chunk eviction and rematerialization."
+    ],
+    "code_changes": [
+      "SparseWorld retains bounded per-cell overrides, versions and chunk revisions; snapshot/delta admission is atomic."
+    ],
+    "baseline_commit": "b4df68886386277e7689a3cd604a1bff0206ac0e",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
-    "docs_review": "Checked the plans against the audit and accepted S2 scope; ownership, acceptance and evidence limits retained. No implemented contract changed.",
-    "environment_review": "No build/runtime/CI or external mutation. Standard repository-local commit hooks installed for this isolated checkout.",
-    "backlog_review": "Only existing0483/0516 specifications elaborated; new0522 records this completed planning work, not implementation completion."
+    "docs_review": "Updated the canonical gameplay guide for durable overlays, replication versions and the default retained-cell cap.",
+    "environment_review": "Existing Mac Debug build and focused tests; no external publication or Android runtime acceptance.",
+    "backlog_review": "Closes W2/SIM-001/TER-01 implementation task; parent S2 and protocol/action tasks remain open."
   },
   {
     "id": "MC-AI-0526",

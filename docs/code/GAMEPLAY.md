@@ -2,8 +2,8 @@
 
 Run [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-distance CHUNKS]`,
 `--player-client`/`--bot-client`; clients pass `--address IP:PORT`. No args/
-`--local-game` owns server/window and shuts both down. Default local play uses an
-ephemeral loopback port; explicit server/port options retain their semantics.
+`--local-game` owns server/window and shuts both down. Local play uses an
+ephemeral loopback port; explicit ports retain their semantics.
 T0 precedes preparation.
 `--player-client-2d --address IP:PORT --replay stationary|ordinary-turning
 --seconds 1..120 --evidence DIR` records logical CPU column-map frames;
@@ -74,7 +74,7 @@ queued/submitted jobs. Cancellation/drain preserve result ownership; `GameServer
 owns scheduling, stale-result rejection and publication.
 
 Prepared joins retain original T0. Dense 48 permits prompt/start; first public
-full Ready additionally requires every exact 768 startup-reserve profile. Status
+full Ready requires all 768 startup-reserve profiles. Status
 `startup_prefetch_primed_at` records priming; afterward readiness and counters track
 current 640 only. Begin/restart/cancel and complete profile clear rearm priming.
 Partial reserve loss preserves complete current 640 coverage.
@@ -86,11 +86,10 @@ Preview meshes grow from the near-camera connected component and publish after a
 cardinal neighbor is ready. Interest changes and bridge removals rebuild it; detached renderer
 meshes retire while canonical resident data remains available for remeshing.
 
-Loading shows stage data with a stable elevation palette. A large, outlined
-ready heading/instruction is centered in the window. Fresh key/mouse input starts
-after a fence-confirmed prompt; held input stays consumed until release. Gameplay
-waits for server ACK; focus loss releases capture. Map pixels need validated
-metadata and validated authoritative highest-solid coverage, otherwise Unknown.
+Loading shows stage data with a stable elevation palette and centered outlined
+Ready prompt. Fresh input starts after its fence; held input stays consumed until
+release. Gameplay waits for server ACK; focus loss releases capture. Map pixels
+require validated metadata and authoritative highest-solid coverage; otherwise Unknown.
 
 ## Client and qualification
 
@@ -110,8 +109,7 @@ full 640 profile route from generic 320 geometry and x200 stress. T0 never reset
 180-second warmup is non-gating.
 
 [PlayerClient](../../src/client/PlayerClient.cpp) uses GLFW/Vulkan. Cursor controls
-yaw/pitch; WASD is camera-relative. Prediction replays pending input without
-changing authority. F5 cycles first/rear/front without changing input/interest;
+yaw/pitch; WASD is camera-relative. F5 cycles first/rear/front without changing input/interest;
 first-person hides the body. HUD shows view/F5/5 (macOS may reserve F5/F6).
 Camera is distance-bounded and collision-clipped; R reloads renderer.
 
@@ -120,7 +118,10 @@ Camera is distance-bounded and collision-clipped; R reloads renderer.
 `Chunk` validates material IDs and terrain identity. `SparseWorld` remote reads
 preserve Unknown without creating generators; exact profiles represent all Z.
 Gravity support queries the same authoritative columns as body collision,
-including dense edits, and retains real terrain steps. Canonical tile identity
+including retained edits, and retains terrain steps. Canonical tile identity
 ignores unedited dense-cache admission/eviction but changes for edits, deletion
 and profile replacement. `ChunkMesher` suppresses neighbor seams; caches require
 exact blocks, neighbors and authoritative identity.
+
+Air/base-reset overrides survive eviction. Versions reject stale updates. The
+65,536-unit cap counts stored cells (minimum one per chunk); rejection is atomic.

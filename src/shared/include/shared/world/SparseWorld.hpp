@@ -96,11 +96,14 @@ public:
 
 struct SparseWorldOptions final {
     static constexpr uint64_t DEFAULT_MAX_RESIDENT_CHUNKS = 128U;
+    // Sixteen full edit snapshots; empty revision-only chunks consume one unit.
+    static constexpr uint64_t DEFAULT_MAX_RETAINED_EDIT_CELLS = 65'536U;
 
     uint64_t seed = WorldConfiguration::SEED;
     uint64_t max_resident_chunks = DEFAULT_MAX_RESIDENT_CHUNKS;
     uint64_t revision = 1U;
     uint64_t max_authoritative_columns = MAX_FOUR_PLAYER_AUTHORITATIVE_COLUMNS;
+    uint64_t max_retained_edit_cells = DEFAULT_MAX_RETAINED_EDIT_CELLS;
 };
 
 inline constexpr uint32_t MAX_SURFACE_METADATA_TILES = 1'024U;
@@ -143,6 +146,23 @@ struct AuthoritativeTileIdentity final {
     TerrainIdentity identity;
     uint64_t revision = 0U;
     uint64_t content_hash = 0U;
+};
+
+struct EditedChunkRevision final {
+    ChunkCoordinate coordinate{};
+    uint64_t revision = 0U;
+};
+
+struct SparseEditCell final {
+    BlockCoordinate coordinate{};
+    Block material = Block::Air;
+    uint64_t cell_version = 0U;
+};
+
+struct SparseEditSnapshot final {
+    ChunkCoordinate coordinate{};
+    uint64_t revision = 0U;
+    std::vector<SparseEditCell> edits;
 };
 
 struct AuthoritativeTerrainColumn final {
@@ -246,6 +266,28 @@ public:
     [[nodiscard]]
     bool setBlock(WorldCoordinate coordinate, Block block);
 
+    [[nodiscard]] uint64_t editChunkRevision(ChunkCoordinate coordinate) const noexcept;
+    [[nodiscard]] uint64_t cellVersion(WorldCoordinate coordinate) const noexcept;
+    [[nodiscard]] std::vector<EditedChunkRevision> editedChunks() const;
+    [[nodiscard]] std::optional<SparseEditSnapshot> editSnapshot(ChunkCoordinate coordinate) const;
+    [[nodiscard]] std::optional<Chunk> effectiveChunkSnapshot(ChunkCoordinate coordinate) const;
+
+    [[nodiscard]] bool installEditSnapshot(
+        SparseEditSnapshot const& snapshot,
+        Chunk const& effective_chunk
+    );
+    [[nodiscard]] bool applyEditDelta(
+        WorldCoordinate coordinate,
+        Block material,
+        uint64_t from_revision,
+        uint64_t to_revision,
+        uint64_t cell_version
+    );
+    [[nodiscard]] bool setEditedChunkRequirements(
+        ChunkCoordinate coordinate,
+        std::span<EditedChunkRevision const> requirements
+    );
+
     [[nodiscard]]
     Chunk const* residentChunk(ChunkCoordinate coordinate) const noexcept;
 
@@ -332,12 +374,41 @@ private:
         uint64_t seed;
     };
 
+    struct SparseEditValue final {
+        Block material = Block::Air;
+        Block base_material = Block::Air;
+        uint64_t cell_version = 0U;
+        bool has_override = true;
+    };
+
+    struct SparseChunkEdits final {
+        uint64_t revision = 0U;
+        std::unordered_map<uint32_t, SparseEditValue> cells;
+    };
+
     using PreviewChunks = std::unordered_map<ChunkCoordinate, Preview, ChunkCoordinateHash>;
+    using SparseChunkEditsMap = std::unordered_map<ChunkCoordinate, SparseChunkEdits, ChunkCoordinateHash>;
+    using EditedChunkRequirements = std::array<uint64_t, WorldExtent::DEPTH / Chunk::SIDE_LENGTH>;
+    using EditedChunkRequirementsMap = std::unordered_map<
+        ChunkCoordinate,
+        EditedChunkRequirements,
+        ChunkCoordinateHash
+    >;
 
     [[nodiscard]]
-    uint64_t authoritativeDenseSectionMask(ChunkCoordinate coordinate, AuthoritativeSurface const& tile) const;
+    uint64_t authoritativeDenseSectionMask(
+        ChunkCoordinate coordinate,
+        AuthoritativeSurface const& tile,
+        uint8_t local_x,
+        uint8_t local_y
+    ) const;
     [[nodiscard]]
     uint64_t authoritativeTileContentHash(ChunkCoordinate coordinate, AuthoritativeSurface const& tile) const;
+    [[nodiscard]] std::optional<Chunk> makeBaseChunk(ChunkCoordinate coordinate) const;
+    void applySparseEdits(Chunk& chunk) const;
+    [[nodiscard]] bool hasIncompleteEditRequirements(ChunkCoordinate coordinate) const noexcept;
+    [[nodiscard]] bool editChunkRequirementSatisfied(ChunkCoordinate coordinate) const noexcept;
+    [[nodiscard]] bool canAdmitResidentChunk() const noexcept;
     void pinAuthoritativeSurface(ChunkCoordinate coordinate) noexcept;
     void advanceAccessClock() noexcept;
     void touch(ChunkCoordinate coordinate, ResidentChunk& resident) noexcept;
@@ -364,6 +435,9 @@ private:
     ResidentEvictionCandidates m_evictable_residents;
     mutable SurfaceMetadataTiles m_surface_metadata;
     std::unordered_map<ChunkCoordinate, AuthoritativeSurface, ChunkCoordinateHash> m_authoritative_surfaces;
+    SparseChunkEditsMap m_sparse_edits;
+    uint64_t m_retained_edit_capacity_units = 0U;
+    EditedChunkRequirementsMap m_edited_chunk_requirements;
     std::map<uint64_t, ChunkCoordinate> m_evictable_authoritative_surfaces;
     ProtectedChunks m_protected_authoritative_columns;
     ProtectedChunks m_authoritative_dense_overrides;
