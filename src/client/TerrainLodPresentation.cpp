@@ -844,9 +844,20 @@ std::shared_ptr<TerrainLodScene const> buildTerrainLodSceneFromColumns(
     }
     auto scene =
         std::const_pointer_cast<TerrainLodScene>(buildTerrainLodScene(world, center_x, center_y, actual, cancellation));
+    std::unordered_set<uint64_t> rendered_columns;
+    for (auto const leaf : scene->leaves) {
+        if (leaf.level == shared::TerrainLodLevel::L3) {
+            rendered_columns.insert((static_cast<uint64_t>(leaf.x) << 32U) | leaf.y);
+        }
+    }
     std::unordered_set<uint64_t> authority_keys;
     for (auto const& input_column : columns) {
         TerrainLodColumnInput const& column = *input_column;
+        // Captures outside the refined scene contribute no geometry. Their
+        // streaming changes must not discard valid near-ground geometry.
+        if (!rendered_columns.contains((static_cast<uint64_t>(column.x) << 32U) | column.y)) {
+            continue;
+        }
         scene->chunk_sources.insert(scene->chunk_sources.end(), column.sources.begin(), column.sources.end());
         for (auto const& source : column.authority_sources) {
             uint64_t const key =

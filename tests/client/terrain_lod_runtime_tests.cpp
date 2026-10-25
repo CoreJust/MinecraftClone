@@ -509,3 +509,30 @@ TEST(TerrainLodRuntimeTest, PresentedMembershipMatchesFlatTraversalWithoutChangi
 }
 
 } // namespace client
+
+TEST(TerrainLodRuntimeTest, MovingIntoKnownBacklogPromotesCurrentColumnWithoutNewSurfaceEvents)
+{
+    client::TerrainLodRuntimePlan plan;
+    plan.updateInterest(0U, 0U);
+    std::array const available{client::TerrainLodColumnKey{10U, 0U}, client::TerrainLodColumnKey{11U, 0U},
+        client::TerrainLodColumnKey{12U, 0U}};
+    plan.discover(available);
+    plan.updateInterest(192U, 0U);
+    EXPECT_EQ(plan.nextDiscovery(), available[2]);
+}
+
+TEST(TerrainLodRuntimeTest, TurningAcrossPeriodicEdgePromotesKnownCurrentColumnOnce)
+{
+    client::TerrainLodRuntimePlan plan;
+    plan.updateInterest(0U, 0U);
+    std::array const available{client::TerrainLodColumnKey{1U, 0U},
+        client::TerrainLodColumnKey{4'095U, 0U}, client::TerrainLodColumnKey{0U, 0U}};
+    plan.discover(available);
+    plan.updateInterest(65'535U, 0U);
+    EXPECT_EQ(plan.nextDiscovery(), available[1]);
+    plan.remember(available[1]);
+    plan.updateInterest(0U, 0U);
+    EXPECT_EQ(plan.nextDiscovery(), available[2]);
+    EXPECT_EQ(plan.nextDiscovery(), available[0]);
+    EXPECT_FALSE(plan.nextDiscovery());
+}

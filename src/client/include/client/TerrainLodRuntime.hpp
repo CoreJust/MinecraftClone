@@ -140,8 +140,26 @@ public:
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     void updateInterest(uint32_t const x, uint32_t const y)
     {
+        bool const changed_column = m_center_x / 16U != x % 65'536U / 16U
+            || m_center_y / 16U != y % 65'536U / 16U;
         m_center_x = x % 65'536U;
         m_center_y = y % 65'536U;
+        if (changed_column) {
+            TerrainLodColumnKey const center{m_center_x / 16U, m_center_y / 16U};
+            // Movement changes capture urgency even when no new surface arrives.
+            for (uint64_t const encoded : m_queued) {
+                auto const key = decode(encoded);
+                if (key == center) {
+                    std::erase(m_priority_discovery, key);
+                    m_priority_queued.insert(encoded);
+                    m_priority_discovery.push_front(key);
+                    m_priority_streak = 0U;
+                } else if (distance(key.x, center.x) <= 2U && distance(key.y, center.y) <= 2U
+                    && m_priority_queued.insert(encoded).second) {
+                    m_priority_discovery.push_back(key);
+                }
+            }
+        }
         std::erase_if(m_columns, [this](uint64_t const key) { return !relevant(decode(key)); });
         std::erase_if(m_presented, [this](uint64_t const key) { return !relevant(decode(key)); });
     }

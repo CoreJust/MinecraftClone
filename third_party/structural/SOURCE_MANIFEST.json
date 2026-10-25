@@ -77,7 +77,7 @@
       "local": "bounded_cell_cache.h",
       "source": "structural_terrain/bounded_cell_cache.h",
       "source_sha256": "6131a889f0b40a4f24c75275924b266a33b7376ab04e438151c0f188dc1ce76e",
-      "local_sha256": "dd3b98d5c96f5a85a903edaa507f8a57cc55db9abd5d0f973240ab76e153fbaf"
+      "local_sha256": "34aa6d651b794f3087672774928cc836a682ba3611ae89cbdbac7c510c7838fd"
     },
     {
       "local": "centered_control.h",
@@ -119,7 +119,7 @@
   "local_changes": [
     {
       "local": "bounded_cell_cache.h",
-      "summary": "Memo saturation returns transient owned values for deterministic recomputation rather than failing queries."
+      "summary": "Memo saturation reclaims unpinned retained values across caches within the existing logical budget; shared leases preserve graph lifetimes, and fully pinned misses remain transient."
     },
     {
       "local": "worlds_noise.h",

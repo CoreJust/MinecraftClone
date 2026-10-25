@@ -7,10 +7,11 @@ license is retained in `LICENSE`.
 
 The kernel equations are unchanged. Local changes add checked in-memory span
 constructors to `CenteredControl`, `RegisteredWorldFields`, and `SeededWorldSurface`.
-The memo cache also stops retaining misses when its logical budget is full and
-returns caller-owned values for deterministic recomputation. Shared ownership
-keeps nested graph dependencies alive during concurrent queries. The existing
-file constructors remain part of the frozen wrapper source.
+The memo cache reclaims unpinned retained values when its logical budget fills.
+Shared ownership keeps nested graph dependencies alive during concurrent queries;
+fully pinned misses return transient values for deterministic recomputation.
+Builders run outside cache locks. The existing file constructors remain part of
+the frozen wrapper source.
 
 Compile the five NoiseLib source files with the pinned Clang contraction mode
 (`-ffp-contract=on`). The owning `V9Terrain.cpp` enables that mode around the

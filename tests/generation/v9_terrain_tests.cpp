@@ -108,6 +108,131 @@ TEST(V9TerrainTest, StructuralCacheBudgetFallsBackToDeterministicRecompute)
     EXPECT_EQ(budget.used(), Cache::minimumPageCacheBytes());
 }
 
+TEST(V9TerrainTest, StructuralCacheBudgetReusesNewWorkingSetAfterSaturation)
+{
+    using Cache = BoundedCellMemo<uint64_t, 32U>;
+    constexpr uint64_t VALUE_BYTES = (Cache::logicalCapacityBytes() - Cache::minimumPageCacheBytes()) / 1024U;
+    CellBudget budget{Cache::minimumPageCacheBytes() + VALUE_BYTES};
+    Cache cache{budget};
+    EXPECT_EQ(*cache.get(0U, 0U, [] { return 11U; }), 11U);
+    size_t computations = 0U;
+    for (size_t repeat = 0U; repeat < 3U; ++repeat) {
+        EXPECT_EQ(*cache.get(1U, 0U, [&] { ++computations; return 23U; }), 23U);
+        EXPECT_LE(budget.used(), budget.limit());
+    }
+    EXPECT_EQ(computations, 1U);
+}
+
+TEST(V9TerrainTest, StructuralCacheBudgetReclaimsAcrossMemos)
+{
+    using Cache = BoundedCellMemo<uint64_t, 32U>;
+    constexpr uint64_t VALUE_BYTES = (Cache::logicalCapacityBytes() - Cache::minimumPageCacheBytes()) / 1024U;
+    CellBudget budget{2U * Cache::minimumPageCacheBytes() + VALUE_BYTES};
+    Cache first{budget};
+    Cache second{budget};
+    EXPECT_EQ(*first.get(0U, 0U, [] { return 11U; }), 11U);
+    size_t computations = 0U;
+    for (size_t repeat = 0U; repeat < 3U; ++repeat) {
+        EXPECT_EQ(*second.get(1U, 0U, [&] { ++computations; return 23U; }), 23U);
+        EXPECT_LE(budget.used(), budget.limit());
+    }
+    EXPECT_EQ(computations, 1U);
+}
+
+TEST(V9TerrainTest, StructuralCacheBudgetRetriesAdmissionAfterPinnedValueRelease)
+{
+    using Cache = BoundedCellMemo<uint64_t, 32U>;
+    constexpr uint64_t VALUE_BYTES = (Cache::logicalCapacityBytes() - Cache::minimumPageCacheBytes()) / 1024U;
+    CellBudget budget{Cache::minimumPageCacheBytes() + VALUE_BYTES};
+    Cache cache{budget};
+    auto pinned = cache.get(0U, 0U, [] { return 11U; });
+    EXPECT_EQ(*cache.get(1U, 0U, [] { return 23U; }), 23U);
+    EXPECT_EQ(*pinned, 11U);
+    EXPECT_LE(budget.used(), budget.limit());
+    pinned.reset();
+    size_t computations = 0U;
+    for (size_t repeat = 0U; repeat < 3U; ++repeat) {
+        EXPECT_EQ(*cache.get(1U, 0U, [&] { ++computations; return 23U; }), 23U);
+        EXPECT_LE(budget.used(), budget.limit());
+    }
+    EXPECT_EQ(computations, 1U);
+}
+
+TEST(V9TerrainTest, StructuralCacheBudgetRetriesPageAdmission)
+{
+    using Cache = BoundedCellMemo<uint64_t, 32U>;
+    constexpr uint64_t VALUE_BYTES = (Cache::logicalCapacityBytes() - Cache::minimumPageCacheBytes()) / 1024U;
+    constexpr uint64_t PAGE_BYTES = Cache::minimumPageCacheBytes() - Cache::minimumCacheBytes();
+    CellBudget budget{Cache::minimumPageCacheBytes() + VALUE_BYTES};
+    Cache cache{budget};
+    ASSERT_TRUE(budget.tryReserve(PAGE_BYTES));
+    EXPECT_EQ(*cache.get(1U, 0U, [] { return 23U; }), 23U);
+    EXPECT_EQ(cache.pages(), 0U);
+    budget.release(PAGE_BYTES);
+    size_t computations = 0U;
+    for (size_t repeat = 0U; repeat < 3U; ++repeat) {
+        EXPECT_EQ(*cache.get(1U, 0U, [&] { ++computations; return 23U; }), 23U);
+    }
+    EXPECT_EQ(computations, 1U);
+    EXPECT_LE(budget.used(), budget.limit());
+}
+
+TEST(V9TerrainTest, StructuralCachedLeaseOutlivesMemoAndBudget)
+{
+    std::shared_ptr<const uint64_t> retained;
+    {
+        using Cache = BoundedCellMemo<uint64_t, 32U>;
+        CellBudget budget{Cache::logicalCapacityBytes()};
+        Cache cache{budget};
+        retained = cache.get(1U, 0U, [] { return 23U; });
+        EXPECT_EQ(cache.entries(), 1U);
+    }
+    EXPECT_EQ(*retained, 23U);
+    retained.reset();
+}
+
+TEST(V9TerrainTest, StructuralCacheRetainedValueSupportsConcurrentHits)
+{
+    using Cache = BoundedCellMemo<uint64_t, 32U>;
+    CellBudget budget{Cache::logicalCapacityBytes()};
+    Cache cache{budget};
+    auto pinned = cache.get(1U, 0U, [] { return 23U; });
+    std::atomic<size_t> computations{};
+    std::atomic<bool> matching{true};
+    std::array<std::thread, 8U> workers;
+    for (auto& worker : workers) {
+        worker = std::thread([&] {
+            for (size_t repeat = 0U; repeat < 100U; ++repeat) {
+                auto value = cache.get(1U, 0U, [&] { ++computations; return 23U; });
+                if (value != pinned || *value != 23U) { matching.store(false); }
+            }
+        });
+    }
+    for (auto& worker : workers) { worker.join(); }
+    EXPECT_TRUE(matching.load());
+    EXPECT_EQ(computations.load(), 0U);
+    EXPECT_LE(budget.used(), budget.limit());
+}
+
+TEST(V9TerrainTest, StructuralCacheBuilderFailureAllowsRetryWithoutLeakingCharge)
+{
+    using Cache = BoundedCellMemo<uint64_t, 32U>;
+    CellBudget budget{Cache::logicalCapacityBytes()};
+    Cache cache{budget};
+    try {
+        (void)cache.get(1U, 0U, []() -> uint64_t { throw std::runtime_error("builder failed"); });
+        FAIL() << "expected builder failure";
+    } catch (const std::runtime_error& error) {
+        EXPECT_STREQ(error.what(), "builder failed");
+    }
+    EXPECT_EQ(budget.used(), Cache::minimumPageCacheBytes());
+    EXPECT_EQ(cache.entries(), 0U);
+    auto value = cache.get(1U, 0U, [] { return 23U; });
+    EXPECT_EQ(*value, 23U);
+    EXPECT_EQ(cache.entries(), 1U);
+    EXPECT_LE(budget.used(), budget.limit());
+}
+
 TEST(V9TerrainTest, StructuralCacheBudgetAllowsConcurrentRecomputation)
 {
     using Cache = BoundedCellMemo<uint64_t, 32U>;
@@ -168,7 +293,7 @@ TEST(V9TerrainTest, NestedCacheMissRetainsTransientChildUntilParentRelease)
     static constexpr uint32_t X = 5U;
     static constexpr uint32_t Y = 11U;
     static constexpr uint32_t CHILD_VALUE = 37U;
-    CellBudget budget{Cache::minimumPageCacheBytes() + sizeof(Cache)};
+    CellBudget budget{Cache::minimumPageCacheBytes() + Cache::minimumCacheBytes()};
     Cache child_cache{budget};
     Cache parent_cache{budget};
     auto child = child_cache.get(X, Y, [] { return MemoNode{CHILD_VALUE, nullptr}; });
@@ -186,7 +311,7 @@ TEST(V9TerrainTest, NestedCacheMissRetainsTransientChildUntilParentRelease)
 
     parent.reset();
     EXPECT_TRUE(weak_child.expired());
-    EXPECT_EQ(budget.used(), Cache::minimumPageCacheBytes() + sizeof(Cache));
+    EXPECT_EQ(budget.used(), Cache::minimumPageCacheBytes() + Cache::minimumCacheBytes());
 }
 
 TEST(V9TerrainTest, PreparationRejectsInvalidSourceAndObservesCancellation)

@@ -1286,3 +1286,28 @@ TEST(TerrainLodPresentationTest, BatchedChunkOnlyValidationDoesNotRequireTerrain
     EXPECT_EQ(client::staleTerrainLodColumns(columns, world, terrain->identity()),
         (std::vector<client::TerrainLodColumnCoordinate>{{4U, 5U}}));
 }
+
+TEST(TerrainLodPresentationTest, UnrenderedCapturedColumnsDoNotInvalidateNearGroundScene)
+{
+    auto const terrain = presentationWorld(256U);
+    shared::SparseWorld world{{}, shared::SparseWorldGenerationMode::MaterializedOnly};
+    ASSERT_TRUE(world.setTerrainIdentity(terrain->identity()));
+    std::vector<std::shared_ptr<client::TerrainLodColumnInput const>> columns;
+    for (int32_t const center : {1, 100}) {
+        for (auto const offset :
+             {std::array{0, 0}, std::array{-1, 0}, std::array{1, 0}, std::array{0, -1}, std::array{0, 1}}) {
+            ASSERT_TRUE(world.publishAuthoritativeSurface(terrain->sampleSurface(
+                {.x = center + offset[0], .y = 1 + offset[1], .z = 0})));
+        }
+        auto capture = client::captureTerrainLodColumn(world, static_cast<uint32_t>(center), 1U);
+        ASSERT_TRUE(capture);
+        columns.push_back(std::make_shared<client::TerrainLodColumnInput const>(std::move(*capture)));
+    }
+    auto const scene = client::buildTerrainLodSceneFromColumns(*terrain, 16U, 16U, columns);
+    ASSERT_EQ(scene->actual_column_count, 1U);
+    ASSERT_TRUE(client::terrainLodSourcesCurrent(*scene, world));
+    ASSERT_TRUE(world.removeAuthoritativeSurface({100, 1, 0}));
+    EXPECT_TRUE(client::terrainLodSourcesCurrent(*scene, world));
+    ASSERT_TRUE(world.removeAuthoritativeSurface({1, 1, 0}));
+    EXPECT_FALSE(client::terrainLodSourcesCurrent(*scene, world));
+}

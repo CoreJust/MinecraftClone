@@ -21255,5 +21255,57 @@
     "docs_review": "GAMEPLAY.md now documents per-sequence placement validation, immediate and bounded held repetition, and fresh-press ownership after cancellation.",
     "environment_review": "The prior composed candidate reports 7/7 focused native tests; current 700c base was not rebuilt or retested. Three broader unchanged server-action fixture failures remain assigned to MC-AI-0522.",
     "backlog_review": "Local implementation milestone only. NativeV9 runtime, Windows owner acceptance, full-volume/readiness, FPS/performance, Android, and aggregate S2 gates remain open."
+  },
+  {
+    "id": "MC-AI-0595",
+    "title": "Keep bounded terrain streaming coherent under movement",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0587"
+    ],
+    "acceptance": "Repair the observed NativeV9 structural-memo saturation and ground-detail coherence path without increasing its logical byte limit or adding fixed count/radius residency quotas. Reuse unpinned immutable cache values; pinned graph/output leases retain their charges until destruction. Promote already-known nearby captures on movement without waiting for new stream events. Pending scenes retain authority/source guards only for rendered geometry, while existing session, coverage, edit and torus uniqueness checks remain exact. This is a local coherence milestone only; Windows FPS, direct owner visual acceptance, and an adaptive total RAM+VRAM budget remain open on MC-AI-0483. The user’s example chunk counts were explicitly reference, not targets.",
+    "evidence": "Exact user request, residency correction and ground-alignment clarification are copied under /Users/core-just/.codex/task-evidence/mc-s2-20261025/task-0595-adaptive-streaming/prepared-on-136e/source/ with hashes in source/source-manifest.json. Request SHA-256 35490b1dee11ad30e5824becae9fe95010b998bb95f2f941f914c2934eab7711; correction SHA-256 657d26fb039ad9759a7d6bb9699ddf9d5431c8a4c3661ea57890150da0027d2b; owner ground alignment SHA-256 0bd4d0b49e592f1dcd9ed2aa9c58c59d2e762ee9d086426f8284c9d348952f07; requirements ledger SHA-256 ecc39dd97d66721ad3c587cc9e1868781fadbe00e9b235675329025c796e7957. The eight-path final patch SHA-256 9db901a0fd992fef27411230faad83c84fc4d248119026a49e80c4417792ff03 applies cleanly to 136e1351fa7692f66ba659759d1313b0ac36645d. Prior configured-CMake evidence reports 18/18 focused V9Terrain tests, 53/53 LOD regressions, and the source-current stopped-scene contract at 6,561/6,561 actual columns. Those test/runtime receipts predate this 136e rebase; the full benchmark harness still exits 1 on legacy dense-worker readiness, so no full-harness pass is claimed. No Windows FPS, total RAM+VRAM measurement or owner visual acceptance is claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "The owner reported a severe flight-stop FPS collapse, far-terrain flicker and blocked movement, then clarified that example chunk counts were references rather than desired residency quotas. This bounded fix removes the measured structural memo saturation cliff and stale ground-scene source dependency without inventing per-device quotas.",
+    "context": "The measured fixed NativeV9 run filled the structural memo to 536,870,888 of 536,870,912 logical bytes and accumulated more than 15,000 denied reservations. The fix preserves the existing logical budget and canonical numeric inputs. It addresses one coherence/performance prerequisite; it does not implement the requested hardware-dependent RAM+VRAM budget or qualify Windows FPS. Runtime evidence reports 6,561 of 6,561 required actual columns current at the stopped player, while the whole benchmark harness remains failed under an unrelated legacy dense-worker readiness contract.",
+    "complexity": "high",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Reworked the bounded structural cache to reuse moving working-set values by reclaiming only unpinned immutable pool ownership; retained graph leases keep charges until destruction. Movement promotes known captures on center-column changes, and pending scene source stamps now follow rendered L3 columns only. Existing guards and the fixed logical budget remain unchanged. This local milestone does not claim Windows FPS or combined-memory qualification.",
+    "plan": [
+      "Preserve the exact feedback correction that chunk counts are references, not quotas, and the ground-alignment requirement that unrelated discarded captures cannot block publication.",
+      "Apply the reviewed eight-file bounded cache, movement promotion and rendered-source membership delta without changing numeric kernels or identity guards.",
+      "Retain saturation, lease lifetime, retry, concurrency, presentation source invalidation and movement regressions as public-contract evidence.",
+      "Record only local cache/currentness evidence; leave Windows FPS, owner visual acceptance and adaptive combined RAM+VRAM budgeting open on MC-AI-0483."
+    ],
+    "product_changes": [
+      "A saturated bounded structural memo can reuse unpinned working-set values, and moving ground captures no longer wait on unrelated source events. No residency target or hardware-specific memory budget is introduced."
+    ],
+    "code_changes": [
+      "docs/code/RENDERING.md",
+      "docs/code/source_state.json",
+      "src/client/TerrainLodPresentation.cpp",
+      "src/client/include/client/TerrainLodRuntime.hpp",
+      "tests/client/terrain_lod_presentation_tests.cpp",
+      "tests/client/terrain_lod_runtime_tests.cpp",
+      "tests/generation/v9_terrain_tests.cpp",
+      "third_party/structural/README.md",
+      "third_party/structural/SOURCE_MANIFEST.json",
+      "third_party/structural/bounded_cell_cache.h"
+    ],
+    "baseline_commit": "136e1351fa7692f66ba659759d1313b0ac36645d",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "RENDERING documents unpinned structural memo reclamation, graph lease charge lifetime, movement promotion and exact rendered-source dependencies. The source-backed criteria reject fixed quota interpretation.",
+    "environment_review": "Prior CMake/test/runtime evidence is explicitly tied to its frozen pre-rebase candidate. No rebase build/test was run here. Windows FPS, total RAM+VRAM and direct owner visual acceptance remain open.",
+    "backlog_review": "This is a local prerequisite only. MC-AI-0483 remains active for user acceptance, Windows visual/FPS qualification and the adaptive combined-memory requirement."
   }
 ]
