@@ -20647,5 +20647,45 @@
     "docs_review": "CLI help describes the opt-in; source inventory is refreshed.",
     "environment_review": "Windows live-UI run retained complete JSON/stdout/stderr evidence; configured existing build dependencies were reused.",
     "backlog_review": "The live-UI measurement prerequisite is complete; the actual FPS target and remaining platform runtime gates stay open under MC-AI-0483."
+  },
+  {
+    "id": "MC-AI-0575",
+    "title": "Replace the linear terrain scene handoff membership scan",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0572"
+    ],
+    "acceptance": "Replace the O(pending columns × rendered columns) scan when selecting presented columns with an exact keyed membership lookup. Preserve pending-column order and duplicates, exact coordinate membership, source/edit/session/coverage validation, current rendered output, and fallback behavior. Add differential coverage for actual-sized input plus misses/duplicates and benchmark the same key set before and after. Do not claim full-game FPS qualification from the microbenchmark.",
+    "evidence": "The exact 6,889-key CPU membership benchmark ran 100 iterations per variant across 3 paired measurements: flat search 6,328–6,655 µs versus indexed lookup 124–128 µs (50.46–53.34× membership-only). The modified Runtime and test compiled/linked and 22 Runtime tests passed. The later source-bound full-UI Windows trace remains an ordinary run with changed geometry; its frame gate failed and it is not a matched causal comparison for this delta. Receipt: /Users/core-just/.codex/task-evidence/mc0575-handoff-20261025/delivery-evidence.json. Parent MC-AI-0483 FPS qualification remains open.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "The measured post-publication handoff performed a linear search for every pending column, producing O(N×M) membership work at real 6,889-column source counts.",
+    "context": "Existing per-frame stage telemetry and the actual tail profile identified the column-selection loop in TerrainLodRuntime. The optimization uses exact coordinate membership only, leaving captured-source validity and publication fences unchanged.",
+    "complexity": "low",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added a sorted exact-key membership helper and used it for presented-column selection. The helper preserves input order and duplicates; differential and actual-sized membership timing evidence are recorded separately from whole-game FPS.",
+    "plan": [],
+    "product_changes": [
+      "Terrain LOD scene handoff selects exact rendered columns without scanning the complete rendered list for every pending column."
+    ],
+    "code_changes": [
+      "src/client/TerrainLodRuntime.cpp",
+      "src/client/include/client/TerrainLodRuntime.hpp",
+      "tests/client/terrain_lod_runtime_tests.cpp"
+    ],
+    "baseline_commit": "ddbdbcdb3836b44663f18e504e1d1d7a8a2be55b",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "The O(N×M) membership scan was a source-confirmed hotspot; the bounded sorted lookup is measured on the same actual-sized key set without overclaiming a gameplay FPS gain.",
+    "docs_review": "No separate guide change was needed; generated source inventory is refreshed.",
+    "environment_review": "Configured existing dependencies and local focused test artifacts were reused; no package prefix mutation.",
+    "backlog_review": "The handoff membership prerequisite is complete; all full UI frame-budget and platform gates remain open under MC-AI-0483."
   }
 ]

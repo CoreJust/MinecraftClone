@@ -7,6 +7,7 @@
 #include <array>
 #include <chrono>
 #include <memory>
+#include <random>
 #include <span>
 #include <string>
 #include <utility>
@@ -465,4 +466,46 @@ TEST(TerrainLodRuntimeTest, PublicationReportsUncapturedColumn)
 }
 
 } // namespace
+TEST(TerrainLodRuntimeTest, PresentedMembershipMatchesFlatTraversalWithoutChangingOrder)
+{
+    std::vector<std::shared_ptr<TerrainLodColumnInput const>> pending;
+    std::vector<TerrainLodColumnKey> rendered;
+    for (uint32_t x = 0U; x < 83U; ++x) {
+        for (uint32_t y = 0U; y < 83U; ++y) {
+            auto column = std::make_shared<TerrainLodColumnInput>();
+            column->x = (x + 4'055U) % 4'096U;
+            column->y = (y + 4'055U) % 4'096U;
+            pending.push_back(column);
+            rendered.push_back({column->x, column->y});
+        }
+    }
+    std::minstd_rand random{57'500U};
+    std::vector<std::shared_ptr<TerrainLodColumnInput const>> expected;
+    std::vector<std::shared_ptr<TerrainLodColumnInput const>> actual;
+    for (uint32_t trial = 0U; trial < 8U; ++trial) {
+        if (trial != 0U) {
+            std::shuffle(pending.begin(), pending.end(), random);
+            std::shuffle(rendered.begin(), rendered.end(), random);
+            rendered.resize(rendered.size() / 2U);
+        }
+        rendered.push_back({UINT32_MAX, UINT32_MAX});
+        rendered.push_back(rendered.front());
+        pending.push_back(pending.front());
+        auto const original_rendered = rendered;
+        expected.clear();
+        for (auto const& column : pending) {
+            if (std::ranges::find(rendered, TerrainLodColumnKey{column->x, column->y}) != rendered.end()) {
+                expected.push_back(column);
+            }
+        }
+        selectPresentedTerrainLodColumns(pending, rendered, actual);
+        EXPECT_EQ(actual, expected);
+        EXPECT_EQ(rendered, original_rendered);
+    }
+    selectPresentedTerrainLodColumns(pending, {}, actual);
+    EXPECT_TRUE(actual.empty());
+    selectPresentedTerrainLodColumns({}, rendered, actual);
+    EXPECT_TRUE(actual.empty());
+}
+
 } // namespace client

@@ -397,7 +397,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "649ed32d078b61179ed5b48b8a40c4c50ae5547ae8f63554399138aa8c6c8965"
+      "sources_sha256": "04f29b98a71cc88ebc3f35f3d03188b7811682377c623e2244e50768b05bdea9"
     },
     {
       "guide": "docs/code/GENERATION.md",
@@ -1138,7 +1138,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "e594641d99932bec88b564bcbf1a8474525c7da45b9662b6455d0b7fad1b7028"
+      "sources_sha256": "166745d0c1f09a6a2c8f6344fcc9eb0d35638773cf6d9825eb4cdb056339dd83"
     }
   ],
   "version": 1

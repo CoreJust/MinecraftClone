@@ -64,6 +64,26 @@ bool capturedTerrainLodColumnCurrent(
 
 } // namespace
 
+void selectPresentedTerrainLodColumns(
+    std::span<std::shared_ptr<TerrainLodColumnInput const> const> pending,
+    std::span<TerrainLodColumnKey const> rendered,
+    std::vector<std::shared_ptr<TerrainLodColumnInput const>>& presented)
+{
+    std::vector<uint64_t> membership;
+    membership.reserve(rendered.size());
+    for (auto const key : rendered) {
+        membership.push_back((static_cast<uint64_t>(key.x) << 32U) | key.y);
+    }
+    std::ranges::sort(membership);
+    presented.clear();
+    for (auto const& column : pending) {
+        uint64_t const key = (static_cast<uint64_t>(column->x) << 32U) | column->y;
+        if (std::ranges::binary_search(membership, key)) {
+            presented.push_back(column);
+        }
+    }
+}
+
 uint64_t TerrainLodSourceIndex::key(uint32_t const x, uint32_t const y) noexcept
 {
     return (static_cast<uint64_t>(x) << 32U) | y;
@@ -656,12 +676,7 @@ void TerrainLodRuntime::update(
                 ++m_published;
                 ++m_diagnostic_events;
                 m_plan.presented(rendered);
-                m_presented_columns.clear();
-                for (auto const& column : m_pending_columns) {
-                    if (std::ranges::find(rendered, TerrainLodColumnKey{column->x, column->y}) != rendered.end()) {
-                        m_presented_columns.push_back(column);
-                    }
-                }
+                selectPresentedTerrainLodColumns(m_pending_columns, rendered, m_presented_columns);
                 m_presented_join_epoch = m_pending->session_join_epoch;
                 m_presented_coverage_epoch = m_pending->coverage_epoch;
                 m_pending.reset();

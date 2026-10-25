@@ -32,6 +32,12 @@ struct TerrainLodColumnKey final {
     bool operator==(TerrainLodColumnKey const&) const = default;
 };
 
+// Retains pending capture order and duplicates, selecting exact rendered coordinate membership.
+void selectPresentedTerrainLodColumns(
+    std::span<std::shared_ptr<TerrainLodColumnInput const> const> pending,
+    std::span<TerrainLodColumnKey const> rendered,
+    std::vector<std::shared_ptr<TerrainLodColumnInput const>>& presented);
+
 struct TerrainLodWorkTicket final {
     uint64_t generation = 0U;
     uint32_t center_x = 0U;
