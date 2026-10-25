@@ -1,3 +1,4 @@
+#include <client/Camera.hpp>
 #include <client/GenerationMapPresentation.hpp>
 #include <client/S2MapPresentation.hpp>
 
@@ -316,6 +317,60 @@ TEST(S2MapPresentationTest, MinimapUsesTheSuppliedLocalProjectionAndHeading)
     EXPECT_EQ(north.y, east.y);
     EXPECT_DOUBLE_EQ(north.heading_degrees, 0.0);
     EXPECT_DOUBLE_EQ(east.heading_degrees, 90.0);
+}
+
+TEST(S2MapPresentationTest, MinimapTerrainAndMarkerShareNorthUpWorldY)
+{
+    auto lod = localLod();
+    for (shared::TerrainLodNode& node : lod.nodes) {
+        node.sample.height = 400.0;
+        node.sample.top_material = node.key.y >= lod.extent / 2U
+            ? shared::Block::Sand
+            : shared::Block::Stone;
+        node.sample.water_present = false;
+    }
+
+    auto const image = client::rasterizeS2Minimap(lod);
+    auto const south = client::layoutS2MinimapMarker(lod, 8192.0, 4096.0, 0.0, {0.0F, 0.0F, 100.0F, 100.0F});
+    auto const north = client::layoutS2MinimapMarker(lod, 8192.0, 12'288.0, 0.0, {0.0F, 0.0F, 100.0F, 100.0F});
+
+    ASSERT_TRUE(image.has_value());
+    EXPECT_EQ(image->rgba[image->width + 1U], (std::array<uint8_t, 4U>{211U, 194U, 149U, 255U}));
+    EXPECT_EQ(image->rgba[(image->height - 2U) * image->width + 1U],
+        (std::array<uint8_t, 4U>{118U, 118U, 118U, 255U}));
+    ASSERT_TRUE(south.visible);
+    ASSERT_TRUE(north.visible);
+    EXPECT_LT(north.y, south.y);
+
+    std::vector<client::GuiVectorVertex> pointer;
+    client::appendS2MinimapPointerTriangles(north, {0.0F, 0.0F, 100.0F, 100.0F}, 1.0F, pointer);
+    ASSERT_FALSE(pointer.empty());
+    float pointer_tip_y = north.y;
+    for (client::GuiVectorVertex const& vertex : pointer) {
+        pointer_tip_y = std::min(pointer_tip_y, vertex.position[1U]);
+    }
+    EXPECT_LT(pointer_tip_y, north.y);
+}
+
+TEST(S2MapPresentationTest, MinimapHeadingFollowsCameraTurnsAndCompassCardinals)
+{
+    static constexpr std::array<double, 4U> CARDINAL_YAWS{0.0, 90.0, 180.0, 270.0};
+    client::Camera camera;
+    for (double const yaw : CARDINAL_YAWS) {
+        ASSERT_TRUE(camera.setAngles({.yaw_degrees = yaw}));
+        glm::dvec3 const facing = camera.forward();
+        EXPECT_NEAR(client::minimapHeadingDegreesFromCameraForward(facing.x, facing.y), yaw, 1e-12);
+    }
+
+    ASSERT_TRUE(camera.setAngles({}));
+    ASSERT_TRUE(camera.rotate(-15.0, 0.0));
+    glm::dvec3 const left_facing = camera.forward();
+    EXPECT_NEAR(client::minimapHeadingDegreesFromCameraForward(left_facing.x, left_facing.y), 345.0, 1e-12);
+
+    ASSERT_TRUE(camera.setAngles({}));
+    ASSERT_TRUE(camera.rotate(15.0, 0.0));
+    glm::dvec3 const right_facing = camera.forward();
+    EXPECT_NEAR(client::minimapHeadingDegreesFromCameraForward(right_facing.x, right_facing.y), 15.0, 1e-12);
 }
 
 TEST(S2MapPresentationTest, MinimapUsesWarmSandColorForSandSurfaceSamples)

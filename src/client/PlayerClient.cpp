@@ -4794,10 +4794,7 @@ void PlayerClient::updatePlayingMapPresentation()
     double const player_x = player ? shared::playerPositionX(*player) : 0.0;
     double const player_y = player ? shared::playerPositionY(*player) : 0.0;
     glm::dvec3 const facing = m_look_camera.forward();
-    double heading = std::atan2(facing.x, -facing.y) * (180.0 / 3.141'592'653'589'793'238'46);
-    if (heading < 0.0) {
-        heading += 360.0;
-    }
+    double const heading = minimapHeadingDegreesFromCameraForward(facing.x, facing.y);
     uint64_t const join_epoch = worldLoadingJoinEpoch();
 
     if (!map_ui_enabled) {

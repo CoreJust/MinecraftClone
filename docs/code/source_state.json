@@ -247,7 +247,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "b71f11a018081cfe2e2a5c02595e45ac9283e6c34365e1cb99dd7e22f7ddc720",
+      "guide_sha256": "75ffc5501c4f01f1b48f6328e2b826efaaf93ed36d66f50a1df0af38eb03fa00",
       "id": "gameplay",
       "sources": [
         "src/client/BlockActionPresentation.cpp",
@@ -398,7 +398,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "512a2b49740f584228c1dc8f2f9d70e87a51a94fc523c7415e64eba61cf27e2f"
+      "sources_sha256": "2a3cee30f78cc71f8d05c7491b4ec1aee336ab7af8e733556918969ecbe4ad8e"
     },
     {
       "guide": "docs/code/GENERATION.md",
@@ -1015,7 +1015,7 @@
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "10bfe7cb0354df7d1e3fccf343ae3c1ee43bee9b46b903314be84dc2b22c638a",
+      "guide_sha256": "30109354a922c424a0db50d2f2e56d56f708a60250bda79e29b68abb60adad17",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -1139,7 +1139,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "a1311b1ab699111477960e13adb3403b485afcf522eb05eda1a019219aee51eb"
+      "sources_sha256": "a9466343ed8738096b54f1b9b274e32fe0f80299ac5030db501564e6dd8ed531"
     }
   ],
   "version": 1

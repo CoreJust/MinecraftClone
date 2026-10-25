@@ -152,6 +152,10 @@ struct S2MinimapMarker final {
     bool visible = false;
 };
 
+// Converts the camera's +Y-at-zero forward vector to clockwise minimap degrees.
+[[nodiscard]]
+double minimapHeadingDegreesFromCameraForward(double forward_x, double forward_y) noexcept;
+
 [[nodiscard]]
 std::optional<S2MapImage> rasterizeS2WorldMap(
     shared::TerrainWorld const& world,

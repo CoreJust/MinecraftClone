@@ -55,7 +55,7 @@ Premultiply overlay before filtering; magnify nearest, minify trilinear. Decode
 sRGB for lighting; encode for UNORM/sRGB output. Capture `srgb_encoded` reports
 pixel encoding; offscreen stays linear.
 
-Two ≤512² RGBA8 slots serve eight draws. Preparing/Connecting use backdrops; generation status map hides fallback until Playing. Keep 2× drift; shade scaled/uplifted relief; water avoids hillshade. Five phases reach Arrival at 25s; True Ready selects final. Pause hidden motion; ship shaders on desktop/Android. S2 keeps Sand/Snow and V9 biomes. Generation reuses canonical S2 relief/contour/depth/ice; source temperature grows ice; scalar overlays unchanged; no phase blur.
+Two ≤512² RGBA8 slots serve eight draws. Preparing/Connecting backdrops; generation hides fallback until Playing. 2× drift; shade scaled/uplifted land only. Five phases: Arrival 25s; True Ready selects final. Pause hidden motion; ship desktop/Android shaders. S2: Sand/Snow, V9 biomes. Generation reuses canonical relief/contour/depth/ice; source temperature drives ice; scalar overlays exact; no phase blur. Minimap +Y up; heading 0° north, +90° east; raster/marker/pointer align.
 
 `setFrameCompletionTracking(true)` exposes `frameProgress()`;
 sequence IDs include swapchain generation. Failed submits do not advance; toggling

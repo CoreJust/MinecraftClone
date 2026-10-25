@@ -10,7 +10,7 @@ Use [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-di
 
 ## Permissions
 
-Bypass requires flight ([POLICY.md](POLICY.md)). [`BlockInteraction.hpp`](../../src/shared/include/shared/world/BlockInteraction.hpp) defines preset/soft/hard effective rights and interval-counted break timing. Read-only wrapped DDA: 5-block eye reach, tied-axis steps, Unknown/Preview stops, renderer-consistent camera/curvature.
+Bypass requires flight ([POLICY.md](POLICY.md)). [`BlockInteraction.hpp`](../../src/shared/include/shared/world/BlockInteraction.hpp) defines preset/soft/hard effective rights and interval-counted break timing. Read-only wrapped DDA: 6-block eye reach, tied-axis steps, Unknown/Preview stops, renderer-consistent camera/curvature. Material break durations are unchanged.
 
 ## Wire protocol
 

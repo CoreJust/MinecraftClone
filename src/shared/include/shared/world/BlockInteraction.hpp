@@ -46,7 +46,7 @@ constexpr bool isValidInteractionPerspective(InteractionPerspective perspective)
 }
 
 inline constexpr double MAX_INTERACTION_CAMERA_DISTANCE = 6.0;
-inline constexpr double DEFAULT_BLOCK_REACH = 5.0;
+inline constexpr double DEFAULT_BLOCK_REACH = 6.0;
 inline constexpr double INTERACTION_CAMERA_OBSTRUCTION_MARGIN = 0.03;
 inline constexpr double INTERACTION_PLAYER_EYE_HEIGHT = 1.625;
 inline constexpr double INTERACTION_WORLD_CURVATURE_RADIUS = 131'072.0;

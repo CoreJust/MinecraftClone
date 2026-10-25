@@ -1791,8 +1791,9 @@ std::optional<S2MapImage> rasterizeS2Minimap(shared::TerrainLodArtifact const& l
     };
     image.rgba.resize(MINIMAP_PIXEL_COUNT);
     for (uint32_t y = 0U; y < image.height; ++y) {
-        uint32_t const row = std::min(
+        uint32_t const row_from_south = std::min(
             y * local_lod.extent / image.height / local_lod.spacing, local_lod.side - 2U);
+        uint32_t const row = local_lod.side - 2U - row_from_south;
         for (uint32_t x = 0U; x < image.width; ++x) {
             uint32_t const column = std::min(
                 x * local_lod.extent / image.width / local_lod.spacing, local_lod.side - 2U);
@@ -1801,8 +1802,8 @@ std::optional<S2MapImage> rasterizeS2Minimap(shared::TerrainLodArtifact const& l
             if (!local_lod.nodes[index].sample.water_present) {
                 uint32_t const west = column == 0U ? column : column - 1U;
                 uint32_t const east = std::min(column + 1U, local_lod.side - 1U);
-                uint32_t const north = row == 0U ? row : row - 1U;
-                uint32_t const south = std::min(row + 1U, local_lod.side - 1U);
+                uint32_t const north = std::min(row + 1U, local_lod.side - 1U);
+                uint32_t const south = row == 0U ? row : row - 1U;
                 double const west_height = local_lod.nodes[static_cast<size_t>(row) * local_lod.side + west].sample.height;
                 double const east_height = local_lod.nodes[static_cast<size_t>(row) * local_lod.side + east].sample.height;
                 double const north_height = local_lod.nodes[static_cast<size_t>(north) * local_lod.side + column].sample.height;
@@ -1823,6 +1824,15 @@ std::optional<S2MapImage> rasterizeS2Minimap(shared::TerrainLodArtifact const& l
         setPixel(image, static_cast<int32_t>(image.width - 1U), static_cast<int32_t>(coordinate), {20.0F, 36.0F, 44.0F});
     }
     return image;
+}
+
+double minimapHeadingDegreesFromCameraForward(double const forward_x, double const forward_y) noexcept
+{
+    double heading = std::atan2(forward_x, forward_y) * (180.0 / 3.141'592'653'589'793'238'46);
+    if (heading < 0.0) {
+        heading += 360.0;
+    }
+    return heading;
 }
 
 S2MinimapMarker layoutS2MinimapMarker(
@@ -1848,7 +1858,8 @@ S2MinimapMarker layoutS2MinimapMarker(
     }
     return {
         .x = minimap_bounds[0] + static_cast<float>(local_x / local_lod.extent) * minimap_bounds[2],
-        .y = minimap_bounds[1] + static_cast<float>(local_y / local_lod.extent) * minimap_bounds[3],
+        .y = minimap_bounds[1] + minimap_bounds[3]
+            - static_cast<float>(local_y / local_lod.extent) * minimap_bounds[3],
         .heading_degrees = heading,
         .visible = true,
     };

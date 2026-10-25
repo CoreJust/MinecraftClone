@@ -196,6 +196,39 @@ TEST(BlockInteractionTest, FindsTheFirstSolidVoxelAndIncludesTheReachBoundary)
     EXPECT_DOUBLE_EQ(result.target->distance, 5.0);
 }
 
+TEST(BlockInteractionTest, DefaultInteractionReachIncludesSixBlocksAndRejectsSeven)
+{
+    static constexpr double EXPECTED_DEFAULT_REACH = 6.0;
+    EXPECT_DOUBLE_EQ(shared::DEFAULT_BLOCK_REACH, EXPECTED_DEFAULT_REACH);
+
+    shared::VoxelRay const eye_ray{
+        .origin_y = 1.0,
+        .origin_z = 0.5,
+        .direction_y = 1.0,
+    };
+
+    shared::SparseWorld six_blocks_away = makeMaterializedOnlyWorld();
+    publishChunk(six_blocks_away, makeChunk({{{.x = 0U, .y = 7U, .z = 0U}, shared::Block::Stone}}));
+    shared::BlockTargetResult const six_block_target = shared::resolveInteractionTarget(
+        six_blocks_away,
+        eye_ray,
+        shared::InteractionPerspective::FirstPerson
+    );
+
+    shared::SparseWorld seven_blocks_away = makeMaterializedOnlyWorld();
+    publishChunk(seven_blocks_away, makeChunk({{{.x = 0U, .y = 8U, .z = 0U}, shared::Block::Stone}}));
+    shared::BlockTargetResult const seven_block_target = shared::resolveInteractionTarget(
+        seven_blocks_away,
+        eye_ray,
+        shared::InteractionPerspective::FirstPerson
+    );
+
+    ASSERT_TRUE(six_block_target.target.has_value());
+    EXPECT_EQ(six_block_target.target->cell, (shared::WorldCoordinate{0, 7, 0}));
+    EXPECT_EQ(seven_block_target.status, shared::BlockTargetStatus::Miss);
+    EXPECT_FALSE(seven_block_target.target.has_value());
+}
+
 TEST(BlockInteractionTest, StopsAtTheFirstSolidVoxel)
 {
     shared::SparseWorld world = makeMaterializedOnlyWorld();
@@ -531,7 +564,7 @@ TEST(BlockInteractionTest, ThirdPersonCannotGainReachOrSeeThroughTheCameraWall)
     EXPECT_EQ(in_reach.target->cell, (shared::WorldCoordinate{0, 13, 0}));
 
     shared::SparseWorld out_of_reach_world = makeMaterializedOnlyWorld();
-    publishChunk(out_of_reach_world, makeChunk({{{.x = 0U, .y = 14U, .z = 0U}, shared::Block::Stone}}));
+    publishChunk(out_of_reach_world, makeChunk({{{.x = 0U, .y = 15U, .z = 0U}, shared::Block::Stone}}));
     shared::BlockTargetResult const out_of_reach = shared::resolveInteractionTarget(
         out_of_reach_world,
         eye_ray,

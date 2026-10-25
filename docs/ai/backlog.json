@@ -20906,5 +20906,49 @@
     "docs_review": "Replaced stale per-client-generation wording in GAMEPLAY.md and GENERATION.md using three-way merges onto the current 50c5 baseline; retained the 0581 12,678-byte tile cap contract. Both guides remain below 900 words. INDEX and source_state were regenerated and ai_docs.py check passed.",
     "environment_review": "Existing Release Mac V9 ordinary live-UI run used Apple M3 Pro, 2560x1440, seed 42, and live UI. It completed in 24.144 s with 60 inputs; server preparation was about 14.1 s, L0 readiness 16.310 s, and controlled-start ACK 18.1375 s. No new final-base build/test rerun was performed during this metadata preparation. No Windows runtime/FPS or relative speedup is claimed.",
     "backlog_review": "Added MC-AI-0583 as a done/finalized basic child of MC-AI-0483; parent 0483 remains active and unfinalized. This is a local prepared-world reuse implementation milestone only. Current user generation visual acceptance, Windows/Android play, performance, and aggregate S2 gates remain open."
+  },
+  {
+    "id": "MC-AI-0584",
+    "title": "Correct block reach and minimap compass orientation",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Implement only FB7-01 and FB7-02: shared default eye reach increases from 5 to exactly 6 blocks, with exact-six hit and seven-block miss while existing material break durations remain unchanged; minimap heading follows camera yaw and north-up +Y raster, marker and pointer align, with cardinal and both turn-sign coverage. Feedback items 3 through 7, Windows/Android behavior and owner acceptance remain open under MC-AI-0483.",
+    "evidence": "Owner request: /Users/core-just/.codex/task-evidence/mc-s2-20261025/feedback-seven/request.txt (SHA-256 c686c91d759945f6ff428a53014a29d0cb2446a0c6f9eb15e0883cb3bb3b91d0); ordered requirements: feedback-seven/requirements.json (SHA-256 44e7fca47dc141b9086bb2442a498e27baf3ec20cb0b872d0a681fc3c19dc6b8). Original 8-path source patch SHA-256 68aa37fbd2a8b4acd117193946f69916f90fda37926d0bb15ab1d09e9761d0ee. Focused Release CTest passed 44/44 on the original bdcde-based candidate, including exact-six/seven reach, unchanged break timing, minimap cardinals/turn signs and north-up raster/marker/pointer. Those tests were not rerun on the rebased fe98 candidate. Final candidate and immutable manifest: /Users/core-just/.codex/task-evidence/mc-s2-20261025/task-0584/prepared-on-fe98/manifest.json; same-reviewer Luna/high renewal report will be recorded under prepared-on-fe98. No Windows/Android runtime or items 3–7/aggregate S2 closure claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "The owner reported that interaction reach feels one block too short and the minimap pointer turns opposite to the camera.",
+    "context": "The authoritative feedback-seven request and ordered criteria are retained at /Users/core-just/.codex/task-evidence/mc-s2-20261025/feedback-seven. Interpret “one block longer” as 5 to 6 blocks; preserve break-duration policy. This task covers feedback items 1 and 2 only and does not close aggregate S2 or platform owner acceptance.",
+    "complexity": "medium",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Raised shared default eye reach to six blocks without changing break durations. Corrected minimap north-up +Y terrain sampling and marker placement and derived compass heading from the camera forward vector; added reach-boundary, compass, turn-sign, terrain, marker and pointer regressions.",
+    "plan": [
+      "Raise shared default block eye reach by one block and verify the exact boundary without changing material break durations.",
+      "Correct camera-forward to compass heading and align north-up world +Y across minimap raster, marker and pointer."
+    ],
+    "product_changes": [
+      "Block interaction reaches six blocks while the minimap compass direction and terrain/player coordinates agree."
+    ],
+    "code_changes": [
+      "src/client/PlayerClient.cpp",
+      "src/client/S2MapPresentation.cpp",
+      "src/client/include/client/S2MapPresentation.hpp",
+      "src/shared/include/shared/world/BlockInteraction.hpp",
+      "tests/client/s2_map_presentation_tests.cpp",
+      "tests/core/block_interaction_tests.cpp"
+    ],
+    "baseline_commit": "fe98ddfa28a9042b12559259d807749f3f831ac5",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "A shared eye-reach constant preserves server/client agreement; derive minimap direction from camera forward and keep raster, marker and pointer on one north-up coordinate frame.",
+    "docs_review": "GAMEPLAY documents six-block eye reach and unchanged material break durations. RENDERING documents north-up +Y, heading cardinals, and raster/marker/pointer alignment while preserving generation-painter and phase contracts. The 0583 prepared-world reuse and 0581 12,678-byte cap notes remain present. ai_docs.py refresh and check passed on the rebased private candidate; RENDERING is at the 900-word limit.",
+    "environment_review": "The previously tested bdcde candidate passed the 44 focused Release CTests. The 0584 source hunks merge cleanly onto fe98; no build or retest is claimed for this metadata preparation. Windows and Android behavior remain unverified.",
+    "backlog_review": "Closes only this local implementation/test milestone for feedback items 1–2. MC-AI-0483 remains active and unfinalized; owner platform acceptance, feedback items 3–7 and aggregate S2 gates remain open."
   }
 ]
