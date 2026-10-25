@@ -29,7 +29,7 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
 Z-up uses zero-to-one depth. `InstalledShaderAssets` reads installed `shaders/`; Android
 `AndroidShaderAssets` reads APK assets. Both require bare `.spv` names, without source fallback.
 
-Frustum culls drawing only. Full-world L0 remains fallback as cells refine 4×4
+Conservative hierarchy preserves visibility/order. L0 remains fallback as cells refine 4×4
 through L1/L2, stitched along shared edges. A 32-block band adjusts intersecting
 cells and neighbor edges toward actual edges. Incomplete captures retain fallback.
 Async planning reuses canonical groups through unedited churn; edits invalidate

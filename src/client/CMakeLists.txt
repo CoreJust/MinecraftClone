@@ -15,6 +15,7 @@ target_sources(mc
         render/DebugHud.cpp
         render/GuiRenderer.cpp
         render/HeightTileDrawIndex.cpp
+        include/client/render/TerrainLodDrawIndex.hpp
         render/ShaderAssets.cpp
         render/StoneIndirectDraws.cpp
         render/TextRenderer.cpp

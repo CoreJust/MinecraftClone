@@ -19876,5 +19876,46 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0564",
+    "title": "Prune terrain visibility through a conservative hierarchy",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Reduce tested group work with a conservative hierarchy or equivalent source-backed reuse, preserving exact visible range output/order for wrapped and curved bounds and view changes. Verify flat-reference equivalence and source-bound native CPU/frame measurements; keep Windows300–500+ acceptance open until actual threshold passes.",
+    "evidence": "Three focused native tests pass in each of five runs, including exact ordered membership across 48 moving wrapped/curved views of 73,756 synthetic groups, exact half-period cuts, mixed extents, and scene reset. Five Release microbenchmark runs: median flat 1.1261 ms/view versus indexed 0.5025 ms/view; exact leaf group work 276,967 versus 3,540,288 (92.18% reduction). These are synthetic Mac CPU culling measurements, not qualified Windows frame gains. Configured Release mc_main compile/link and ai_docs checks pass. Evidence: /Users/core-just/.codex/task-evidence/mc0564-visibility-20261025/. Windows 300–500+ FPS acceptance remains MC-AI-0553 scope.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Reach the owner moving-frame CPU budget by removing the measured full flat visibility scan.",
+    "context": "Actual Windows B scans73756 groups eachframe at2.411ms median; terrain GPU pass is below1ms. Reuse existing scene/draw-index machinery where it is correct; no approximate culling.",
+    "complexity": "high",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Replace the flat terrain group scan with an immutable conservative spatial hierarchy. Ambiguous periodic-image nodes descend; exact curved leaf tests and original group ordering preserve the prior visible range behavior. The local traversal prerequisite is implemented and tested; owner Windows performance acceptance remains open.",
+    "plan": [],
+    "product_changes": [
+      "Prune offscreen terrain groups conservatively without changing render distance or visible group order."
+    ],
+    "code_changes": [
+      "src/client/include/client/render/TerrainLodDrawIndex.hpp",
+      "src/client/render/PresentationRenderer.cpp",
+      "tests/client/terrain_lod_draw_index_tests.cpp",
+      "tests/CMakeLists.txt",
+      "docs/code/RENDERING.md",
+      "src/client/CMakeLists.txt"
+    ],
+    "baseline_commit": "78eb16454c1e7b0d0fe8ab5992f2c6274688c25d",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

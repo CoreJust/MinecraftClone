@@ -12,6 +12,7 @@
 #include <client/render/ShaderAssets.hpp>
 #include <client/render/StoneFaceCapacity.hpp>
 #include <client/render/StoneIndirectDraws.hpp>
+#include <client/render/TerrainLodDrawIndex.hpp>
 #include <client/render/TerrainLodUploadPlan.hpp>
 #include <client/render/TerrainTextureMipChain.hpp>
 #include <client/render/TerrainTextures.hpp>
@@ -3360,6 +3361,7 @@ struct VulkanRenderer::Impl final {
         m_active_terrain_field = std::move(m_pending_terrain_field);
         m_terrain_lod_scene = std::move(m_pending_terrain_lod_scene);
         m_terrain_lod_ranges = std::move(m_pending_terrain_lod_ranges);
+        m_terrain_lod_draw_index.reset(m_terrain_lod_scene->groups);
         m_pending_terrain_lod_ranges.clear();
         m_pending_terrain_lod_reusable.clear();
         m_pending_terrain_lod_uploaded.clear();
@@ -4425,21 +4427,10 @@ private:
                         glm::vec3(0.0F), glm::vec3(m_camera.forward()), glm::vec3(m_camera.up())
                     ) };
                     glm::dvec3 const camera_position = m_camera.pose().position;
-                    for (uint32_t group_index = 0U; group_index < m_terrain_lod_scene->groups.size(); ++group_index) {
-                        auto const& group = m_terrain_lod_scene->groups[group_index];
-                        glm::vec3 const minimum{
-                            static_cast<float>(group.origin_x), static_cast<float>(group.origin_y),
-                            static_cast<float>(group.minimum_z),
-                        };
-                        glm::vec3 const maximum{
-                            static_cast<float>(group.origin_x + group.extent),
-                            static_cast<float>(group.origin_y + group.extent), static_cast<float>(group.maximum_z),
-                        };
-                        WrappedBounds const wrapped = curvedBoundsNearestToCamera(minimum, maximum, camera_position);
-                        if (!insideWorldVisibility(wrapped, worldVisibilityRadius(camera_position.z))
-                            || !frustum.intersects(wrapped.minimum, wrapped.maximum)) {
-                            continue;
-                        }
+                    static_cast<void>(m_terrain_lod_draw_index.collect(
+                        frustum, camera_position, m_visible_terrain_lod_groups
+                    ));
+                    for (uint32_t const group_index : m_visible_terrain_lod_groups) {
                         StoneDrawRange const range = m_terrain_lod_ranges[group_index];
                         appendVisibleStoneRange(m_visible_stone_draw_ranges, range);
                     }
@@ -5760,6 +5751,8 @@ private:
     StoneDrawRange m_legacy_draw_range;
     std::shared_ptr<TerrainLodScene const> m_terrain_lod_scene;
     std::vector<StoneDrawRange> m_terrain_lod_ranges;
+    TerrainLodDrawIndex m_terrain_lod_draw_index;
+    std::vector<uint32_t> m_visible_terrain_lod_groups;
     detail::TerrainLodUploadPlanner m_terrain_lod_upload_planner;
     std::shared_ptr<TerrainLodScene const> m_pending_terrain_lod_scene;
     std::shared_ptr<TerrainLodScene const> m_pending_terrain_lod_patch;

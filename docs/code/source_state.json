@@ -210,7 +210,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "2e3c952666a581678bdba59e0008d27129898af67717e5febf2e7b6494c38b67"
+      "sources_sha256": "7a47a498f0444c127832b0a51a0eecc1140d47f75da3daf4d81448efae68ba2d"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -973,7 +973,7 @@
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "0cd2e0695c6ae1415efdb6ac8e06f983d06caca615aa17a26515cffba50fc767",
+      "guide_sha256": "ed633d2483181dd4ddd6568f18025536bec440f8432db7edda8219eddb1abb83",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -991,6 +991,7 @@
         "src/client/include/client/render/ShaderAssets.hpp",
         "src/client/include/client/render/StoneFaceCapacity.hpp",
         "src/client/include/client/render/StoneIndirectDraws.hpp",
+        "src/client/include/client/render/TerrainLodDrawIndex.hpp",
         "src/client/include/client/render/TerrainLodUploadPlan.hpp",
         "src/client/include/client/render/TerrainTextureMipChain.hpp",
         "src/client/include/client/render/TerrainTextures.hpp",
@@ -1077,6 +1078,7 @@
         "tests/client/stone_face_capacity_tests.cpp",
         "tests/client/stone_indirect_draws_tests.cpp",
         "tests/client/stone_renderer_tests.cpp",
+        "tests/client/terrain_lod_draw_index_tests.cpp",
         "tests/client/terrain_lod_presentation_tests.cpp",
         "tests/client/terrain_lod_runtime_tests.cpp",
         "tests/client/terrain_lod_selection_tests.cpp",
@@ -1093,7 +1095,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "be0e833ab39777f2edd46adde69b1caa49bddde2e0d8e246542d946aec3bd541"
+      "sources_sha256": "c6d5ef513d6d93ebce262d99b470af607704a4deaefc7f49c66c861d16e4295a"
     }
   ],
   "version": 1
