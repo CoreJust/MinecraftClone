@@ -412,6 +412,10 @@ Files:
 - [`src/generation/Sha256.hpp`](../../src/generation/Sha256.hpp)
 - [`src/generation/V9PlatecSource.cpp`](../../src/generation/V9PlatecSource.cpp)
 - [`src/generation/V9PlatecSource.hpp`](../../src/generation/V9PlatecSource.hpp)
+- [`src/generation/V9Terrain.cpp`](../../src/generation/V9Terrain.cpp)
+- [`src/generation/V9Terrain.hpp`](../../src/generation/V9Terrain.hpp)
+- [`src/generation/V9TerrainMorphology.cpp`](../../src/generation/V9TerrainMorphology.cpp)
+- [`src/generation/V9TerrainMorphology.hpp`](../../src/generation/V9TerrainMorphology.hpp)
 - [`src/generation/include/generation/Generation.hpp`](../../src/generation/include/generation/Generation.hpp)
 - [`src/tools/world_map.cpp`](../../src/tools/world_map.cpp)
 - [`tests/fixtures/terrain_v2/manifest.json`](../../tests/fixtures/terrain_v2/manifest.json)
@@ -961,6 +965,7 @@ Files:
 - [`tests/generation/platec_compat_tests.cpp`](../../tests/generation/platec_compat_tests.cpp)
 - [`tests/generation/reference_tests.cpp`](../../tests/generation/reference_tests.cpp)
 - [`tests/generation/v9_platec_source_tests.cpp`](../../tests/generation/v9_platec_source_tests.cpp)
+- [`tests/generation/v9_terrain_tests.cpp`](../../tests/generation/v9_terrain_tests.cpp)
 
 ## `rendering`
 

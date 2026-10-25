@@ -173,6 +173,7 @@ add_executable(mc_tests
     generation/platec_compat_tests.cpp
     generation/reference_tests.cpp
     generation/v9_platec_source_tests.cpp
+    generation/v9_terrain_tests.cpp
     core/algorithm_tests.cpp
     core/byte_io_tests.cpp
     core/crash_handler_tests.cpp
@@ -556,6 +557,7 @@ target_include_directories(mc_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/generation
     ${PROJECT_SOURCE_DIR}/third_party/platec/cpp_src
+    ${PROJECT_SOURCE_DIR}/third_party/structural
 )
 target_compile_definitions(mc_tests PRIVATE
     MC_TERRAIN_REFERENCE_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/terrain_v2"

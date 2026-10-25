@@ -1,0 +1,133 @@
+{
+  "source_closure": "approved v9 frozen source-snapshot/files/next_model",
+  "files": [
+    {
+      "local": "LICENSE",
+      "source": "structural_terrain/LICENSE",
+      "source_sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+      "local_sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "local": "NoiseLib/include/controlfunction.h",
+      "source": "structural_terrain/upstream/NoiseLib/include/controlfunction.h",
+      "source_sha256": "7131840e041fb62e0b794a31928559315b7deb608266493ae53fe64bda3118d9",
+      "local_sha256": "7131840e041fb62e0b794a31928559315b7deb608266493ae53fe64bda3118d9"
+    },
+    {
+      "local": "NoiseLib/include/math2d.h",
+      "source": "structural_terrain/upstream/NoiseLib/include/math2d.h",
+      "source_sha256": "82fb7a2562c310d3dc1712c5d8284f0bdea0740dca67b8fefe889dd6f940b622",
+      "local_sha256": "82fb7a2562c310d3dc1712c5d8284f0bdea0740dca67b8fefe889dd6f940b622"
+    },
+    {
+      "local": "NoiseLib/include/math3d.h",
+      "source": "structural_terrain/upstream/NoiseLib/include/math3d.h",
+      "source_sha256": "7a0929e453ba53c950d522bd0e01106955d4c624363afabbbbb1e8a5c2727aca",
+      "local_sha256": "7a0929e453ba53c950d522bd0e01106955d4c624363afabbbbb1e8a5c2727aca"
+    },
+    {
+      "local": "NoiseLib/include/perlin.h",
+      "source": "structural_terrain/upstream/NoiseLib/include/perlin.h",
+      "source_sha256": "05fb58971b7a45f0dfa4fbb79e7afb3e2e540cf47205513eda03537735c554f5",
+      "local_sha256": "05fb58971b7a45f0dfa4fbb79e7afb3e2e540cf47205513eda03537735c554f5"
+    },
+    {
+      "local": "NoiseLib/include/spline.h",
+      "source": "structural_terrain/upstream/NoiseLib/include/spline.h",
+      "source_sha256": "9732f93bf340f0ced8864090ab8d205637138b6f3b575b0afd076e630b922542",
+      "local_sha256": "9732f93bf340f0ced8864090ab8d205637138b6f3b575b0afd076e630b922542"
+    },
+    {
+      "local": "NoiseLib/include/utils.h",
+      "source": "structural_terrain/upstream/NoiseLib/include/utils.h",
+      "source_sha256": "1323a694f10a15235baaa8756de24ce4ca7d9878fd27e43d7fa6f9fa5ab169c0",
+      "local_sha256": "1323a694f10a15235baaa8756de24ce4ca7d9878fd27e43d7fa6f9fa5ab169c0"
+    },
+    {
+      "local": "NoiseLib/source/math2d.cpp",
+      "source": "structural_terrain/upstream/NoiseLib/source/math2d.cpp",
+      "source_sha256": "66ce6838129d10af1766a98200ce74a55dfadd516d65e3c41b008e8069cbb536",
+      "local_sha256": "66ce6838129d10af1766a98200ce74a55dfadd516d65e3c41b008e8069cbb536"
+    },
+    {
+      "local": "NoiseLib/source/math3d.cpp",
+      "source": "structural_terrain/upstream/NoiseLib/source/math3d.cpp",
+      "source_sha256": "2c6680ac5bff03a478fd74f43b128ea900feb5260d6d8a9085cbb6914c117fba",
+      "local_sha256": "2c6680ac5bff03a478fd74f43b128ea900feb5260d6d8a9085cbb6914c117fba"
+    },
+    {
+      "local": "NoiseLib/source/perlin.cpp",
+      "source": "structural_terrain/upstream/NoiseLib/source/perlin.cpp",
+      "source_sha256": "411b9cf008b30f74a527748c775c2b07c78866166518f03b6ef62376ef0bd01b",
+      "local_sha256": "411b9cf008b30f74a527748c775c2b07c78866166518f03b6ef62376ef0bd01b"
+    },
+    {
+      "local": "NoiseLib/source/spline.cpp",
+      "source": "structural_terrain/upstream/NoiseLib/source/spline.cpp",
+      "source_sha256": "a6e7680cdd70968a04daaf63765f941df02b7d78d672dd379efd1b84575c7c23",
+      "local_sha256": "a6e7680cdd70968a04daaf63765f941df02b7d78d672dd379efd1b84575c7c23"
+    },
+    {
+      "local": "NoiseLib/source/utils.cpp",
+      "source": "structural_terrain/upstream/NoiseLib/source/utils.cpp",
+      "source_sha256": "f6b5da5f451d3daa92b663d0095ce250ebee11b40303d08e9a90e2ec490fea94",
+      "local_sha256": "f6b5da5f451d3daa92b663d0095ce250ebee11b40303d08e9a90e2ec490fea94"
+    },
+    {
+      "local": "bounded_cell_cache.h",
+      "source": "structural_terrain/bounded_cell_cache.h",
+      "source_sha256": "6131a889f0b40a4f24c75275924b266a33b7376ab04e438151c0f188dc1ce76e",
+      "local_sha256": "dd3b98d5c96f5a85a903edaa507f8a57cc55db9abd5d0f973240ab76e153fbaf"
+    },
+    {
+      "local": "centered_control.h",
+      "source": "structural_worlds/centered_control.h",
+      "source_sha256": "4fe01c7cb9d61d428d70bc0c89c655c2162163d83312a66f37903d2394fd25f4",
+      "local_sha256": "75fde1e0f4e6e70c7bd833fb74b6ec91688032bb1bf0b81c60fcd147c9c851d2"
+    },
+    {
+      "local": "cubic_periodic.h",
+      "source": "structural_terrain/cubic_periodic.h",
+      "source_sha256": "4db63190c30609710e1c3161643b8bb586a20cacce998d3f9cded086fc4652cd",
+      "local_sha256": "4db63190c30609710e1c3161643b8bb586a20cacce998d3f9cded086fc4652cd"
+    },
+    {
+      "local": "river_connection_guard.h",
+      "source": "structural_worlds/river_connection_guard.h",
+      "source_sha256": "e31acae00005236de7b415e5504d1a129e0f192e4e41e9500b7df2b30ad0992f",
+      "local_sha256": "e31acae00005236de7b415e5504d1a129e0f192e4e41e9500b7df2b30ad0992f"
+    },
+    {
+      "local": "world_fields.h",
+      "source": "structural_worlds/world_fields.h",
+      "source_sha256": "fd07eae967c091a4808b7757bc512579ed7eae56c70c8ea7690c90ffd0b18826",
+      "local_sha256": "e990d7df11cb12ada8f7e800702e712ebd39c3dcf567b4c179b2e1fd2ae9ee6d"
+    },
+    {
+      "local": "world_surface.h",
+      "source": "structural_worlds/world_surface.h",
+      "source_sha256": "cfb5322f3cd1e490a71b85189e7b082fdb1ae61eb45f1fa8b95001c0d32c5067",
+      "local_sha256": "478bab87d3af1ecfddcad56f7d3848203a0725f40d55acc3b00c394fa3d8436c"
+    },
+    {
+      "local": "worlds_noise.h",
+      "source": "structural_worlds/worlds_noise.h",
+      "source_sha256": "eb020ab33c2be57ce8f4916c560b6e1cc8229f906a17399eea7413b7a81b043b",
+      "local_sha256": "a01526fb9776cad55f3e9ea3fee926c93e02d64cd2aeef4f7e113f30432df8d0"
+    }
+  ],
+  "local_changes": [
+    {
+      "local": "bounded_cell_cache.h",
+      "summary": "Memo saturation returns transient owned values for deterministic recomputation rather than failing queries."
+    },
+    {
+      "local": "worlds_noise.h",
+      "summary": "Structural graph memo dependencies use shared ownership so transient uncached children remain valid through parent evaluation; numeric kernel operations are unchanged."
+    },
+    {
+      "local": "world_surface.h",
+      "summary": "Scalar anchor queries copy values from owning memo results."
+    }
+  ]
+}

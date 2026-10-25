@@ -210,7 +210,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "1d8be771d1012a92971df8e330f020be1575cb9703e75531ac096dcf81b5507a"
+      "sources_sha256": "96f4c72da09a4350e2bf10ab846a447d1a4f3cf349a8652040c86b0ba7f3723d"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -401,7 +401,7 @@
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "6c3bfb542e8fa53bd09bdee1d3fa837c4c249c7ba6712bc9a5d1f7c9c26aea24",
+      "guide_sha256": "b89c4a7dccd41707516e668ae073881f8cc819e25bb94f5a6465ade3814e6940",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -420,6 +420,10 @@
         "src/generation/Sha256.hpp",
         "src/generation/V9PlatecSource.cpp",
         "src/generation/V9PlatecSource.hpp",
+        "src/generation/V9Terrain.cpp",
+        "src/generation/V9Terrain.hpp",
+        "src/generation/V9TerrainMorphology.cpp",
+        "src/generation/V9TerrainMorphology.hpp",
         "src/generation/include/generation/Generation.hpp",
         "src/tools/world_map.cpp",
         "tests/fixtures/terrain_v2/manifest.json",
@@ -968,9 +972,10 @@
         "tests/generation/numpy_random_tests.cpp",
         "tests/generation/platec_compat_tests.cpp",
         "tests/generation/reference_tests.cpp",
-        "tests/generation/v9_platec_source_tests.cpp"
+        "tests/generation/v9_platec_source_tests.cpp",
+        "tests/generation/v9_terrain_tests.cpp"
       ],
-      "sources_sha256": "28e853309d1302d17727bad93d2852deff51e4fd31ee6be43e30c0b64ff0b946"
+      "sources_sha256": "47d956ce031a7ae695b3121704edcaecb5f6a6b57f96bb1f883a1fb6f5aa70a7"
     },
     {
       "guide": "docs/code/RENDERING.md",

@@ -24,6 +24,13 @@ add_library(mc_generation STATIC
     NumpyTanh.cpp
     Sha256.cpp
     V9PlatecSource.cpp
+    V9Terrain.cpp
+    V9TerrainMorphology.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/math2d.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/math3d.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/perlin.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/spline.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/utils.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/bounds.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/geometry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/heightmap.cpp
@@ -58,6 +65,8 @@ target_sources(mc_generation
             Numerics.hpp
             Sha256.hpp
             V9PlatecSource.hpp
+            V9Terrain.hpp
+            V9TerrainMorphology.hpp
 )
 
 target_include_directories(mc_generation
@@ -67,6 +76,10 @@ target_include_directories(mc_generation
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/..
         ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src
+)
+target_include_directories(mc_generation SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/include
 )
 target_compile_features(mc_generation PUBLIC cxx_std_23)
 if(ANDROID)
@@ -92,6 +105,20 @@ if(MSVC)
     set_source_files_properties(${MC_PLATEC_SOURCE_FILES} PROPERTIES COMPILE_OPTIONS "/fp:precise")
 else()
     set_source_files_properties(${MC_PLATEC_SOURCE_FILES} PROPERTIES COMPILE_OPTIONS "-ffp-contract=off;-fno-strict-overflow")
+endif()
+
+# The frozen NoiseLib call closure uses compiler-default contraction.
+set(MC_STRUCTURAL_NOISE_SOURCE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/math2d.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/math3d.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/perlin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/spline.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/utils.cpp"
+)
+if(NOT MSVC)
+    set_source_files_properties(${MC_STRUCTURAL_NOISE_SOURCE_FILES}
+        PROPERTIES COMPILE_OPTIONS "-ffp-contract=on"
+    )
 endif()
 
 if(COMMAND mc_apply_target_defaults)
@@ -159,12 +186,14 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND MC_GENERATION_BUILD_TE
         "${MC_REPOSITORY_ROOT}/tests/generation/platec_compat_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/reference_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/v9_platec_source_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/v9_terrain_tests.cpp"
     )
     target_link_libraries(mc_generation_tests PRIVATE mc_generation GTest::gtest_main)
     target_include_directories(mc_generation_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/..
         ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural
     )
     target_compile_definitions(mc_generation_tests PRIVATE
         MC_TERRAIN_REFERENCE_FIXTURE_DIR="${MC_REPOSITORY_ROOT}/tests/fixtures/terrain_v2"
