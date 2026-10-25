@@ -37,11 +37,7 @@ version/policy changes, release or lease expiry. Placement needs a fresh press
 and rejects body overlap. Duplicates cannot recommit. Loopback mode
 requests use the local grant; remote requests require `minecraft:mode.change`.
 
-Preview batches retain ≤64 operations/10,118 bytes, 128 ready/dispatched tiles
-and eight credits sharing 34,356 bytes below ENet's 65,536-byte window. Removals
-reserve capacity; interest/heading/ACK changes reorder work. Missing or
-disconnected authority entries rotate fairly. Preview cancellation excludes
-authority jobs. Session/epoch checks, replay-safe credits and ownership remain separate.
+Preview batches cap at 64 operations/12,678 bytes and fit a maximum 16-bit tile. Eight credits share 34,356 bytes within ENet's 65,536-byte window. Removals reserve capacity; interest, heading and ACKs reorder work. Missing entries rotate fairly. Preview cancellation excludes authority jobs; session/epoch and replay-safe credits remain separate.
 
 ## Terrain-v2 preparation and authority
 

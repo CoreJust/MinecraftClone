@@ -498,8 +498,8 @@ private:
         static constexpr uint32_t MAX_QUEUED_TILES = 128U;
         static constexpr uint32_t MAX_BUFFERED_TILES = 128U;
         static constexpr uint32_t MAX_INFLIGHT_DELIVERIES = shared::HEIGHT_TILE_DELIVERY_WINDOW;
-        // 13-byte batch framing plus the largest surface and 16-bit height-delta payload.
-        static constexpr uint32_t MAX_DELIVERY_BYTES = 10'118U;
+        // One maximum 16-bit tile record plus the 13-byte batch and 27-byte record headers.
+        static constexpr uint32_t MAX_DELIVERY_BYTES = 13U + 27U + shared::HEIGHT_TILE_PAYLOAD_BYTES;
         static constexpr uint32_t MAX_INFLIGHT_DELIVERY_BYTES = 34'356U;
         static constexpr uint32_t MAX_URGENT_CANDIDATES_PER_PUMP = 512U;
         static constexpr uint32_t MAX_PRIORITY_CANDIDATES_PER_PUMP = 256U;

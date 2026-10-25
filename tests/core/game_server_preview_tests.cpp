@@ -51,6 +51,9 @@
 
 namespace {
 
+constexpr uint32_t MAXIMUM_HEIGHT_TILE_BATCH_BYTES =
+    13U + 27U + shared::HEIGHT_TILE_PAYLOAD_BYTES;
+
 std::shared_ptr<shared::TerrainWorld const> preparedTerrainWorld()
 {
     static std::shared_ptr<shared::TerrainWorld const> const terrain_world = [] {
@@ -1023,7 +1026,7 @@ bool waitForStalledDeliveryWindow(PreviewClient& client, uint32_t const first_me
 void expectBoundedDeliveryWindow(std::vector<shared::ServerHeightTileBatchMessage> const& batches)
 {
     static constexpr uint32_t MAXIMUM_BATCHES = 8U;
-    static constexpr uint32_t MAXIMUM_PACKET_BYTES = 10'118U;
+    static constexpr uint32_t MAXIMUM_PACKET_BYTES = MAXIMUM_HEIGHT_TILE_BATCH_BYTES;
     static constexpr uint32_t MAXIMUM_WINDOW_BYTES = 34'356U;
     EXPECT_GE(batches.size(), 1U);
     EXPECT_LE(batches.size(), MAXIMUM_BATCHES);
@@ -2645,7 +2648,7 @@ TEST(GameServerPreviewTest, PreparedWorldMaterializationAdmissionIsFairAcrossPla
 TEST(GameServerPreviewTest, MaximumHeightTileFitsOneDeliveryBatch)
 {
     static constexpr uint32_t BATCH_HEADER_BYTES = 13U;
-    static constexpr uint32_t MAX_BATCH_BYTES = 10'118U;
+    static constexpr uint32_t MAX_BATCH_BYTES = MAXIMUM_HEIGHT_TILE_BATCH_BYTES;
     static constexpr uint32_t MAX_INFLIGHT_BYTES = 34'356U;
     shared::ServerHeightTileMessage tile;
     tile.surface.identity.configuration_identity.assign(
@@ -2665,8 +2668,9 @@ TEST(GameServerPreviewTest, MaximumHeightTileFitsOneDeliveryBatch)
 
     EXPECT_EQ(accounted_batch_bytes, MAX_BATCH_BYTES);
     EXPECT_EQ(encoded_batch.size(), MAX_BATCH_BYTES);
-    EXPECT_LE(3U * MAX_BATCH_BYTES, MAX_INFLIGHT_BYTES);
-    EXPECT_GT(4U * MAX_BATCH_BYTES, MAX_INFLIGHT_BYTES);
+    ASSERT_EQ(encoded_batch[1], shared::PROTOCOL_VERSION);
+    EXPECT_LE(2U * MAX_BATCH_BYTES, MAX_INFLIGHT_BYTES);
+    EXPECT_GT(3U * MAX_BATCH_BYTES, MAX_INFLIGHT_BYTES);
 }
 
 TEST(GameServerPreviewTest, PreviewBatchAdmissionRefillsWithinInflightByteReserve)
@@ -2674,6 +2678,7 @@ TEST(GameServerPreviewTest, PreviewBatchAdmissionRefillsWithinInflightByteReserv
     static constexpr std::chrono::seconds TIMEOUT{10};
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
     static constexpr uint32_t MAX_INFLIGHT_BYTES = 34'356U;
+    static constexpr uint32_t INITIAL_INFLIGHT_BATCHES = 2U;
     std::atomic_uint32_t ready_tiles{0U};
     std::atomic_uint32_t inflight_deliveries{0U};
     server::GameServer::BenchmarkHooks const hooks{
@@ -2718,22 +2723,26 @@ TEST(GameServerPreviewTest, PreviewBatchAdmissionRefillsWithinInflightByteReserv
     }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
 
     auto const initial_deadline = std::chrono::steady_clock::now() + TIMEOUT;
-    while ((client.received_delivery_batches < 3U || ready_tiles.load(std::memory_order_relaxed) == 0U
-            || inflight_deliveries.load(std::memory_order_relaxed) != 3U)
+    while ((client.received_delivery_batches < INITIAL_INFLIGHT_BATCHES
+            || ready_tiles.load(std::memory_order_relaxed) == 0U
+            || inflight_deliveries.load(std::memory_order_relaxed) != INITIAL_INFLIGHT_BATCHES)
         && std::chrono::steady_clock::now() < initial_deadline) {
         client.poll(POLL_INTERVAL);
     }
-    ASSERT_EQ(client.received_delivery_batches, 3U);
+    ASSERT_EQ(client.received_delivery_batches, INITIAL_INFLIGHT_BATCHES);
     ASSERT_GT(ready_tiles.load(std::memory_order_relaxed), 0U);
-    ASSERT_EQ(inflight_deliveries.load(std::memory_order_relaxed), 3U);
+    ASSERT_EQ(inflight_deliveries.load(std::memory_order_relaxed), INITIAL_INFLIGHT_BATCHES);
 
     std::vector<shared::ServerHeightTileBatchMessage> batches = deliveryBatchesFrom(client.messages, 0U);
-    ASSERT_EQ(batches.size(), 3U);
+    ASSERT_EQ(batches.size(), INITIAL_INFLIGHT_BATCHES);
     uint32_t inflight_bytes = 0U;
     for (shared::ServerHeightTileBatchMessage const& batch : batches) {
         ASSERT_EQ(batch.tiles.size(), 1U);
         ASSERT_TRUE(batch.removals.empty());
-        inflight_bytes += static_cast<uint32_t>(shared::encodeMessage(batch).size());
+        std::vector<uint8_t> const encoded_batch = shared::encodeMessage(batch);
+        ASSERT_EQ(encoded_batch[1], shared::PROTOCOL_VERSION);
+        EXPECT_LE(encoded_batch.size(), MAXIMUM_HEIGHT_TILE_BATCH_BYTES);
+        inflight_bytes += static_cast<uint32_t>(encoded_batch.size());
     }
     EXPECT_LE(inflight_bytes, MAX_INFLIGHT_BYTES);
 
@@ -2741,16 +2750,17 @@ TEST(GameServerPreviewTest, PreviewBatchAdmissionRefillsWithinInflightByteReserv
     while (std::chrono::steady_clock::now() < quiet_deadline) {
         client.poll(POLL_INTERVAL);
     }
-    EXPECT_EQ(client.received_delivery_batches, 3U);
+    EXPECT_EQ(client.received_delivery_batches, INITIAL_INFLIGHT_BATCHES);
 
     ASSERT_TRUE(client.acknowledgeDelivery(batches.front().delivery_token));
     auto const refill_deadline = std::chrono::steady_clock::now() + TIMEOUT;
-    while (client.received_delivery_batches < 4U && std::chrono::steady_clock::now() < refill_deadline) {
+    while (client.received_delivery_batches < INITIAL_INFLIGHT_BATCHES + 1U
+        && std::chrono::steady_clock::now() < refill_deadline) {
         client.poll(POLL_INTERVAL);
     }
-    ASSERT_GE(client.received_delivery_batches, 4U);
+    ASSERT_GE(client.received_delivery_batches, INITIAL_INFLIGHT_BATCHES + 1U);
     batches = deliveryBatchesFrom(client.messages, 0U);
-    ASSERT_EQ(batches.size(), 4U);
+    ASSERT_EQ(batches.size(), INITIAL_INFLIGHT_BATCHES + 1U);
     inflight_bytes = 0U;
     for (size_t index = 1U; index < batches.size(); ++index) {
         inflight_bytes += static_cast<uint32_t>(shared::encodeMessage(batches[index]).size());
@@ -4554,7 +4564,7 @@ TEST(GameServerPreviewTest, CompactTerrainUsesAvailableCreditsWithinTheGameplayB
 {
     static constexpr std::chrono::seconds TIMEOUT{2};
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
-    static constexpr uint32_t MAXIMUM_BATCH_BYTES = 10'118U;
+    static constexpr uint32_t MAXIMUM_BATCH_BYTES = MAXIMUM_HEIGHT_TILE_BATCH_BYTES;
     static constexpr uint32_t MAXIMUM_OUTSTANDING_BYTES = 34'356U;
     static constexpr uint32_t RENDER_DISTANCE = 32U;
     static constexpr server::GameServer::SpawnPoint SPAWN{
@@ -5034,7 +5044,7 @@ TEST(GameServerPreviewTest, ReversalCancelsQueuedRemovalsForRestoredInterest)
 TEST(GameServerPreviewTest, SaturatedAdditionsDoNotStarveRemovalsAndInflightReclaimsRecover)
 {
     static constexpr auto TIMEOUT = std::chrono::seconds{12};
-    static constexpr uint32_t MAXIMUM_PACKET_BYTES = 10'118U;
+    static constexpr uint32_t MAXIMUM_PACKET_BYTES = MAXIMUM_HEIGHT_TILE_BATCH_BYTES;
     static constexpr uint32_t MAXIMUM_WINDOW_BYTES = 34'356U;
     static constexpr uint32_t INITIAL_TILES = 1'024U;
     static constexpr uint32_t MINIMUM_REMOVALS_PER_MIXED_BATCH =
