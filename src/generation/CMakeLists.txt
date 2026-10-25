@@ -16,6 +16,13 @@ endif()
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/superlu"
     "${CMAKE_CURRENT_BINARY_DIR}/superlu")
 
+if(MSVC)
+    set(MC_V9_GSW_OCEANOGRAPHIC_SOURCE V9OceanographicToolboxMsvc.cpp)
+else()
+    set(MC_V9_GSW_OCEANOGRAPHIC_SOURCE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/gsw/gsw_oceanographic_toolbox.c")
+endif()
+
 add_library(mc_generation STATIC
     Coastal.cpp
     Climate.cpp
@@ -35,6 +42,16 @@ add_library(mc_generation STATIC
     V9ClimateSparseSolver.cpp
     V9Numerics.cpp
     V9Random.cpp
+    V9Water.cpp
+    V9WaterClimate.cpp
+    V9WaterFields.cpp
+    V9WaterMarine.cpp
+    V9WaterModel.cpp
+    V9WaterQuery.cpp
+    V9WaterRefinement.cpp
+    V9WaterRouting.cpp
+    ${MC_V9_GSW_OCEANOGRAPHIC_SOURCE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/gsw/gsw_saar.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/math2d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/math3d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/perlin.cpp
@@ -82,6 +99,14 @@ target_sources(mc_generation
             V9ClimateSparseSolver.hpp
             V9Numerics.hpp
             V9Random.hpp
+            V9Water.hpp
+            V9WaterClimate.hpp
+            V9WaterFields.hpp
+            V9WaterMarine.hpp
+            V9WaterModel.hpp
+            V9WaterQuery.hpp
+            V9WaterRefinement.hpp
+            V9WaterRouting.hpp
 )
 
 target_include_directories(mc_generation
@@ -95,6 +120,7 @@ target_include_directories(mc_generation
         ${CMAKE_CURRENT_BINARY_DIR}/superlu
 )
 target_include_directories(mc_generation SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/gsw
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/include
 )
@@ -137,6 +163,20 @@ if(NOT MSVC)
     set_source_files_properties(${MC_STRUCTURAL_NOISE_SOURCE_FILES}
         PROPERTIES COMPILE_OPTIONS "-ffp-contract=on"
     )
+endif()
+
+# Keep GSW's source compiler contraction mode local to the frozen upstream
+# implementation and the MSVC compatibility wrapper.
+set(MC_V9_GSW_SOURCE_FILES
+    "${MC_V9_GSW_OCEANOGRAPHIC_SOURCE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/gsw/gsw_saar.c"
+)
+if(MSVC)
+    set_source_files_properties(${MC_V9_GSW_SOURCE_FILES}
+        PROPERTIES COMPILE_OPTIONS "/fp:precise")
+else()
+    set_source_files_properties(${MC_V9_GSW_SOURCE_FILES}
+        PROPERTIES COMPILE_OPTIONS "-ffp-contract=on")
 endif()
 
 if(COMMAND mc_apply_target_defaults)
@@ -206,6 +246,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND MC_GENERATION_BUILD_TE
         "${MC_REPOSITORY_ROOT}/tests/generation/v9_platec_source_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/v9_terrain_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/v9_climate_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/v9_water_tests.cpp"
     )
     target_link_libraries(mc_generation_tests PRIVATE mc_generation GTest::gtest_main)
     target_include_directories(mc_generation_tests PRIVATE
@@ -213,6 +254,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND MC_GENERATION_BUILD_TE
         ${CMAKE_CURRENT_SOURCE_DIR}/..
         ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src
         ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/gsw
     )
     target_compile_definitions(mc_generation_tests PRIVATE
         MC_TERRAIN_REFERENCE_FIXTURE_DIR="${MC_REPOSITORY_ROOT}/tests/fixtures/terrain_v2"

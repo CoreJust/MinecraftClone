@@ -210,7 +210,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "85b63b77f886070175c01643496dce542670bb402aee825ae1e8e02d2bfc8a5b"
+      "sources_sha256": "1bfedfcf206187f1045828823d92944db50acf898b14d4575b59ddc436055590"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -401,7 +401,7 @@
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "06a0111b153f4ebea05e97a9614c62b9dcfd1b63449e65139f710e80cd18a29c",
+      "guide_sha256": "ecd4fd164e2f1f48cc39ddfc2549b53268649428741011699ebeb4d2c2323a0c",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -428,6 +428,7 @@
         "src/generation/V9ClimateThermal.hpp",
         "src/generation/V9Numerics.cpp",
         "src/generation/V9Numerics.hpp",
+        "src/generation/V9OceanographicToolboxMsvc.cpp",
         "src/generation/V9PlatecSource.cpp",
         "src/generation/V9PlatecSource.hpp",
         "src/generation/V9Random.cpp",
@@ -436,6 +437,22 @@
         "src/generation/V9Terrain.hpp",
         "src/generation/V9TerrainMorphology.cpp",
         "src/generation/V9TerrainMorphology.hpp",
+        "src/generation/V9Water.cpp",
+        "src/generation/V9Water.hpp",
+        "src/generation/V9WaterClimate.cpp",
+        "src/generation/V9WaterClimate.hpp",
+        "src/generation/V9WaterFields.cpp",
+        "src/generation/V9WaterFields.hpp",
+        "src/generation/V9WaterMarine.cpp",
+        "src/generation/V9WaterMarine.hpp",
+        "src/generation/V9WaterModel.cpp",
+        "src/generation/V9WaterModel.hpp",
+        "src/generation/V9WaterQuery.cpp",
+        "src/generation/V9WaterQuery.hpp",
+        "src/generation/V9WaterRefinement.cpp",
+        "src/generation/V9WaterRefinement.hpp",
+        "src/generation/V9WaterRouting.cpp",
+        "src/generation/V9WaterRouting.hpp",
         "src/generation/include/generation/Generation.hpp",
         "src/tools/world_map.cpp",
         "tests/fixtures/terrain_v2/manifest.json",
@@ -986,9 +1003,10 @@
         "tests/generation/reference_tests.cpp",
         "tests/generation/v9_climate_tests.cpp",
         "tests/generation/v9_platec_source_tests.cpp",
-        "tests/generation/v9_terrain_tests.cpp"
+        "tests/generation/v9_terrain_tests.cpp",
+        "tests/generation/v9_water_tests.cpp"
       ],
-      "sources_sha256": "1c797d4c8e2108caa4175fb7d8f25aa92d736d64402e4824871d41ae5b9d9a4c"
+      "sources_sha256": "b0221c5ace16a6febb6c7226d78f574eb8d38e83eaedb4867b671558a1fd68ee"
     },
     {
       "guide": "docs/code/RENDERING.md",

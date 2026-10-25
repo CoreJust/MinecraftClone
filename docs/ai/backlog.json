@@ -20260,6 +20260,46 @@
     "backlog_review": ""
   },
   {
+    "id": "MC-AI-0559",
+    "title": "Port native v9 water ice and biome query stages",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Implement the standalone native v9 water component and its source closure: deterministic water topology/equilibrium, routing, marine salt/ice, land and local biome classification, and water query stages. Preserve exact discrete topology and tie order; validate cancellation/progress, field names/shapes/dtypes, the 11 focused component contracts, and rejection of unrepresentable water cell areas. Build and test the standalone generation target with UBSan and float-cast-overflow where available, and record exact source/vendor hashes and provenance. Preserve the six GSW vendor files byte-for-byte with their license; do not claim an unverified upstream C commit. No runtime Python, cached seed worlds, caves, or overhangs. Numeric forward bounds/classification margins, actual-predecessor multi-seed L0-L3 seams, cross-platform parity, and performance remain required under MC-AI-0483; see docs/code/GENERATION.md.",
+    "evidence": "Final private candidate based on eb00e092c7625477edf230db6b6ef47b09dc2aec; standalone AppleClang 17 generation test target built at /private/tmp/mc-ai-0559-builds/final-ubsan-generation with VCPKG_MANIFEST_INSTALL=OFF, existing read-only GTest prefix, UBSan + float-cast-overflow, and no recovery. All 13 V9Water.* tests passed after rebuilding the rebased candidate; result JSON SHA-256 3828791f6e9ce1116406ad7b300cc90f6b8fe191022b6a096f846d7957636b32. Source/vendor manifest /private/tmp/mc-ai-0559-builds/final-ubsan-generation/water-source-manifest.json SHA-256 4b78b87a297695f166b405f973dc6e6431f5d7ed49f5f4c23f0fcb4932eab523 records exact code/doc/vendor hashes; six GSW files including license total 9,284,406 bytes and match frozen hashes. A disposable clean export of the staged source passed policy checks; python3 publish.py EarlyDev:BasicBlocks 0.1.1:1 --checks-only --snapshot-source-commit 77655e5222a56d48ada99ff59e3dbd9c0f9cef6b passed all 27 common source-policy checks. ai_docs refresh/check passed. Prior integrated seeds 2/10/42 retain exact discrete water/biome masks and ice classes; floats remain measured errors without a universal bound. Numeric margins and actual-predecessor L0-L3 seams, cross-platform parity, and performance remain open under MC-AI-0483.",
+    "blocker": "",
+    "owner": "Codex native model pipeline",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Remove the water/biome prerequisite for native replacement terrain and model-driven tops.",
+    "context": "Approved water74 closure and fresh raw native-query oracles. Consume the native predecessor fields; provider/registry integration remains MC-AI-0560 and gameplay Snow/Sand material use follows pipeline integration. Broader numeric, actual-predecessor L0-L3 seam, platform, and performance gates remain open under MC-AI-0483.",
+    "complexity": "high",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added and registered the internal v9 water equilibrium, routing, marine salt/ice, land/biome and query stages; reject domains whose derived cell area is non-finite or non-positive; moved the six GSW source/license files unchanged under third_party/gsw and added file-level provenance with the upstream commit explicitly unresolved. Added the 11 focused contracts and two cell-area boundary regressions, standalone generation wiring and generation guide/source index. Closed only the local component prerequisite; broader acceptance remains under MC-AI-0483. Corrected the MSVC adapter source inventory and source-policy include, digit-separator, and nesting violations; flattened bounded river-clipping traversal and reran all 13 focused tests.",
+    "plan": [
+      "Port and register the standalone native water component with unchanged GSW vendor bytes.",
+      "Verify the 11 focused contracts, standalone generation build/test target, and source-policy documentation.",
+      "Record immutable source hashes and keep parent qualification gates open until their evidence passes."
+    ],
+    "product_changes": [
+      "Native v9 water, ice, river and biome query stages are available to the generation pipeline."
+    ],
+    "code_changes": [
+      ".gitattributes; src/generation/V9Water*.cpp/.hpp and V9OceanographicToolboxMsvc.cpp; third_party/gsw including provenance.json; CMake registration and tests/generation/v9_water_tests.cpp; docs/code/GENERATION.md and generated source index."
+    ],
+    "baseline_commit": "d55377d5a745eab22635cc0692b52c649a3c3f6d",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Updated the generation guide for water behavior, GSW byte identity and explicit provenance, and 0560/0483 integration and qualification boundaries. Named the MSVC adapter in the source inventory; guide remains within the 900-word policy. ai_docs refresh/check passed.",
+    "environment_review": "Standalone AppleClang 17 generation target rebuilt and all 13 V9Water tests passed under UBSan and float-cast-overflow with no recovery. Clean source-policy export passed 27/27 checks. No package was installed; the existing GTest prefix was read-only. No Windows or runtime acceptance is claimed.",
+    "backlog_review": "Closes local water component work only. MC-AI-0483 still requires numeric forward bounds/classification margins and actual-predecessor multi-seed L0-L3 seam evidence, plus platform and performance gates."
+  },
+  {
     "id": "MC-AI-0571",
     "title": "Expose bounded ordinary-game framebuffer capture",
     "kind": "chore",

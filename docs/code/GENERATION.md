@@ -81,6 +81,18 @@ all model fields. Untested seeds, full numerical-chain bounds, all-domain L0–L
 coverage, Windows/Android canonical parity, performance and full game runtime
 acceptance remain open under MC-AI-0483.
 
+## Native V9 water and biome
+
+V9 water uses seasonal forcing and a 256×256 source-metre bed for equilibrium,
+routing, marine salt/ice, snow/firn and biomes while preserving periodic TIN
+ties. Queries expose water support and clipped meshes; incomplete catchments or
+receiver closure fail. Generation reports progress and observes cancellation.
+`V9OceanographicToolboxMsvc.cpp` is in the generation source inventory. Six GSW
+files and the license stay byte-identical in `third_party/gsw`; provenance
+hashes them and leaves the upstream C revision unresolved. MC-AI-0560 owns
+provider integration. Numeric margins and actual-predecessor L0–L3 seams remain
+MC-AI-0483 gates.
+
 ## Bounded materialized prefetch
 
 Authoritative readiness covers 40 chunks (640 blocks) of horizontal interest:

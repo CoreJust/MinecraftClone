@@ -16,3 +16,6 @@ third_party/platec/cpp_src/mass.cpp whitespace=cr-at-eol,-blank-at-eof
 
 # Preserve frozen SuperLU source bytes.
 third_party/superlu/** -text -eol whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab,cr-at-eol
+
+# Preserve the unchanged GSW source and license bytes.
+third_party/gsw/** whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
