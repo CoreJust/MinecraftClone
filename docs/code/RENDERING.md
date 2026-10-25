@@ -54,13 +54,14 @@ color is premultiplied before filtering. Nearest magnification and trilinear
 minification. Decode sRGB before lighting; encode for UNORM in shader or use sRGB
 attachments. Capture `srgb_encoded` labels pixel encoding; offscreen stays linear.
 
-Two RGBA8 map slots (≤512²) support eight nearest-sampled cropped/scissored draws;
-unchanged uploads skip. Preparing/Connecting show a backdrop; generation pairs real
-status/counters with a square map on dark canvas. Hide fallback until Playing. Six
-captions (Tectonics, Relief, Water, Ice, Climate, Arrival) illustrate five 5-second
-phases; Arrival is at 25 s. True Ready immediately selects Arrival and the exact
-final default-map composite. Pause motion when hidden/iconified. Desktop/Android ship
-`map.vert`/`map.frag`. `setFrameCompletionTracking(true)` exposes `frameProgress()`;
+Two RGBA8 slots (≤512²) support eight nearest-sampled draws; unchanged uploads skip.
+Preparing/Connecting use backdrops; generation pairs status/counters with a square map on
+dark canvas; fallback hides until Playing. Drift averages a 2× raster; land shading
+follows the winning mapped source’s scaled/uplifted relief; water/fill avoids hillshade.
+Five 5-second phases end at Arrival (25 s); True Ready selects the exact final map.
+Pause hidden motion; Desktop/Android ship map shaders.
+
+`setFrameCompletionTracking(true)` exposes `frameProgress()`;
 sequence IDs include swapchain generation. Failed submits do not advance; toggling
 clears. Completion needs fence observation/readback. Recreation retires only after
 fences complete; shared observation time prevents earlier-display credit. Re-arm on

@@ -9,6 +9,9 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -73,6 +76,105 @@ uint32_t animationRenderPixelIndex(uint32_t const native_x, uint32_t const nativ
     uint32_t const x = native_x * SCALE + SCALE / 2U;
     uint32_t const y = native_y * SCALE + SCALE / 2U;
     return y * RENDER_RESOLUTION + x;
+}
+
+[[nodiscard]]
+std::shared_ptr<generation::GlobalAtlas const> makeDriftingMapAtlas()
+{
+    static constexpr uint32_t RESOLUTION = 256U;
+    static constexpr uint32_t FIELD_COUNT = RESOLUTION * RESOLUTION;
+    static constexpr uint32_t CENTER_CONTINENT_START = 128U;
+    static constexpr uint32_t CENTER_CONTINENT_END = 192U;
+    static constexpr uint32_t SEAM_CONTINENT_WIDTH = 8U;
+
+    auto atlas = std::make_shared<generation::GlobalAtlas>();
+    atlas->configuration.resolution = RESOLUTION;
+    atlas->elevation.resize(FIELD_COUNT, -100.0F);
+    atlas->plate_id.resize(FIELD_COUNT, 0);
+    atlas->plate_vx.resize(FIELD_COUNT, 1.0F);
+    atlas->plate_vy.resize(FIELD_COUNT, 0.0F);
+    for (uint32_t y = 0U; y < RESOLUTION; ++y)
+    {
+        for (uint32_t x = 0U; x < RESOLUTION; ++x)
+        {
+            bool const center_continent = x >= CENTER_CONTINENT_START && x < CENTER_CONTINENT_END;
+            bool const seam_continent = x < SEAM_CONTINENT_WIDTH || x >= RESOLUTION - SEAM_CONTINENT_WIDTH;
+            if (center_continent || seam_continent)
+            {
+                atlas->elevation[y * RESOLUTION + x] = 100.0F;
+            }
+        }
+    }
+    return atlas;
+}
+
+[[nodiscard]]
+double verticalEdgePosition(
+    client::GenerationMapImage const& image,
+    uint32_t const y,
+    uint32_t const first_x,
+    uint32_t const last_x
+) noexcept
+{
+    double total_weight = 0.0;
+    double weighted_position = 0.0;
+    for (uint32_t x = first_x; x < last_x; ++x)
+    {
+        uint32_t const left = image.rgba[y * image.width + x][2U];
+        uint32_t const right = image.rgba[y * image.width + x + 1U][2U];
+        uint32_t const difference = left > right ? left - right : right - left;
+        total_weight += static_cast<double>(difference);
+        weighted_position += (static_cast<double>(x) + 0.5) * static_cast<double>(difference);
+    }
+    return total_weight > 0.0 ? weighted_position / total_weight : 0.0;
+}
+
+[[nodiscard]]
+bool writePpmIfRequested(std::string const& filename, client::GenerationMapImage const& image)
+{
+    char const* const evidence_directory = std::getenv("MC_GENERATION_MAP_EVIDENCE_DIR");
+    if (evidence_directory == nullptr || evidence_directory[0] == '\0')
+    {
+        return true;
+    }
+
+    std::ofstream output(std::filesystem::path(evidence_directory) / filename, std::ios::binary);
+    if (!output)
+    {
+        return false;
+    }
+    output << "P6\n" << image.width << ' ' << image.height << "\n255\n";
+    for (Rgba8 const& pixel : image.rgba)
+    {
+        output.write(reinterpret_cast<char const*>(pixel.data()), 3);
+    }
+    return output.good();
+}
+
+[[nodiscard]]
+bool writeFrameTimingsIfRequested(
+    std::array<uint64_t, 6U> const& elapsed_microseconds,
+    std::array<uint8_t, 6U> const& phase_indices
+)
+{
+    char const* const evidence_directory = std::getenv("MC_GENERATION_MAP_EVIDENCE_DIR");
+    if (evidence_directory == nullptr || evidence_directory[0] == '\0')
+    {
+        return true;
+    }
+
+    std::ofstream output(std::filesystem::path(evidence_directory) / "frame-timings.csv");
+    if (!output)
+    {
+        return false;
+    }
+    output << "frame,phase_index,update_microseconds\n";
+    for (uint32_t frame = 0U; frame < elapsed_microseconds.size(); ++frame)
+    {
+        output << frame << ',' << static_cast<uint32_t>(phase_indices[frame]) << ','
+               << elapsed_microseconds[frame] << '\n';
+    }
+    return output.good();
 }
 
 TEST(GenerationMapPresentationTest, MissingMalformedOrNonFiniteHeightProducesNoImage)
@@ -512,6 +614,277 @@ TEST(GenerationMapPresentationTest, AnimationIsBoundedDeterministicAndSettlesToT
     };
 
     EXPECT_EQ(client::animateGenerationMap(snapshot, final_image, nullptr, ready_clock), final_image);
+}
+
+TEST(GenerationMapPresentationTest, TectonicDriftSamplesFractionalMotionAndStaysContinuousAcrossRelief)
+{
+    static constexpr uint32_t NATIVE_EDGE_X = 64U;
+    static constexpr uint32_t EDGE_WINDOW_RADIUS = 8U;
+    static constexpr uint32_t EDGE_ROW = 100U * client::GENERATION_MAP_ANIMATION_SCALE;
+    static constexpr uint32_t HIGH_COLOR_THRESHOLD = 130U;
+
+    std::shared_ptr<generation::GlobalAtlas const> const atlas = makeDriftingMapAtlas();
+    client::GenerationMapAnimator animator;
+    std::array<uint64_t, 6U> elapsed_microseconds{};
+    std::array<uint8_t, 6U> phase_indices{};
+    uint32_t frame_count = 0U;
+    auto renderAt = [&](std::chrono::milliseconds const visible_elapsed) {
+        auto const start = std::chrono::steady_clock::now();
+        client::GenerationMapAnimationFrame frame = animator.update(
+            nullptr,
+            atlas,
+            nullptr,
+            nullptr,
+            client::GenerationMapAnimationClock{ .visible_elapsed = visible_elapsed }
+        );
+        elapsed_microseconds[frame_count] = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - start
+            ).count()
+        );
+        phase_indices[frame_count] = static_cast<uint8_t>(frame.phase);
+        ++frame_count;
+        return frame;
+    };
+
+    client::GenerationMapAnimationFrame const at_start = renderAt(std::chrono::milliseconds{ 0 });
+    client::GenerationMapAnimationFrame const at_fractional_drift = renderAt(std::chrono::milliseconds{ 750 });
+    client::GenerationMapAnimationFrame const after_fractional_drift = renderAt(std::chrono::milliseconds{ 1'000 });
+    client::GenerationMapAnimationFrame const before_relief = renderAt(std::chrono::milliseconds{ 4'999 });
+    client::GenerationMapAnimationFrame const relief_start = renderAt(std::chrono::milliseconds{ 5'000 });
+    client::GenerationMapAnimationFrame const relief_after_drift = renderAt(std::chrono::milliseconds{ 5'750 });
+
+    ASSERT_NE(at_start.image, nullptr);
+    ASSERT_NE(at_fractional_drift.image, nullptr);
+    ASSERT_NE(after_fractional_drift.image, nullptr);
+    ASSERT_NE(before_relief.image, nullptr);
+    ASSERT_NE(relief_start.image, nullptr);
+    ASSERT_NE(relief_after_drift.image, nullptr);
+    EXPECT_EQ(at_start.image->width, client::GENERATION_MAP_ANIMATION_RENDER_RESOLUTION);
+    EXPECT_EQ(at_start.image->height, client::GENERATION_MAP_ANIMATION_RENDER_RESOLUTION);
+    EXPECT_EQ(at_start.phase, client::GenerationMapAnimationPhase::Tectonics);
+    EXPECT_EQ(before_relief.phase, client::GenerationMapAnimationPhase::Tectonics);
+    EXPECT_EQ(relief_start.phase, client::GenerationMapAnimationPhase::Relief);
+
+    uint32_t const center_edge = NATIVE_EDGE_X * client::GENERATION_MAP_ANIMATION_SCALE
+        - 3U * client::GENERATION_MAP_ANIMATION_SCALE;
+    uint32_t const edge_first_x = center_edge - EDGE_WINDOW_RADIUS;
+    uint32_t const edge_last_x = center_edge + EDGE_WINDOW_RADIUS;
+    double const start_edge = verticalEdgePosition(*at_start.image, EDGE_ROW, edge_first_x, edge_last_x);
+    double const fractional_edge = verticalEdgePosition(
+        *at_fractional_drift.image,
+        EDGE_ROW,
+        edge_first_x,
+        edge_last_x
+    );
+    double const fractional_shift = fractional_edge - start_edge;
+    EXPECT_GT(fractional_shift, 0.20);
+    EXPECT_LT(fractional_shift, 0.65);
+
+    double const phase_boundary_shift = verticalEdgePosition(
+        *relief_start.image,
+        EDGE_ROW,
+        edge_first_x,
+        edge_last_x
+    ) - verticalEdgePosition(*before_relief.image, EDGE_ROW, edge_first_x, edge_last_x);
+    EXPECT_NEAR(phase_boundary_shift, 0.0, 0.1);
+
+    uint32_t const seam_row = EDGE_ROW * at_start.image->width;
+    EXPECT_GT(at_start.image->rgba[seam_row][2U], HIGH_COLOR_THRESHOLD);
+    EXPECT_GT(at_start.image->rgba[seam_row + at_start.image->width - 1U][2U], HIGH_COLOR_THRESHOLD);
+    EXPECT_TRUE(std::all_of(at_start.image->rgba.begin(), at_start.image->rgba.end(), [](Rgba8 const& pixel) {
+        return pixel[3U] == 255U;
+    }));
+
+    EXPECT_TRUE(writePpmIfRequested("tectonics-0000.ppm", *at_start.image));
+    EXPECT_TRUE(writePpmIfRequested("tectonics-0750.ppm", *at_fractional_drift.image));
+    EXPECT_TRUE(writePpmIfRequested("tectonics-1000.ppm", *after_fractional_drift.image));
+    EXPECT_TRUE(writePpmIfRequested("tectonics-4999.ppm", *before_relief.image));
+    EXPECT_TRUE(writePpmIfRequested("relief-5000.ppm", *relief_start.image));
+    EXPECT_TRUE(writePpmIfRequested("relief-5750.ppm", *relief_after_drift.image));
+    EXPECT_TRUE(writeFrameTimingsIfRequested(elapsed_microseconds, phase_indices));
+}
+
+TEST(GenerationMapPresentationTest, TectonicDriftPreservesWaterInteriorColorAndShadingSemantics)
+{
+    static constexpr uint32_t RESOLUTION = 256U;
+    static constexpr uint32_t FIELD_COUNT = RESOLUTION * RESOLUTION;
+    static constexpr uint32_t SAMPLE_X = 60U;
+    static constexpr uint32_t SAMPLE_Y = 50U;
+
+    auto water_atlas = std::make_shared<generation::GlobalAtlas>(*makeDriftingMapAtlas());
+    water_atlas->sea_level = 20.0F;
+    water_atlas->water_level.assign(FIELD_COUNT, 20.0F);
+    water_atlas->ocean_mask.assign(FIELD_COUNT, 1U);
+    water_atlas->lake_mask.assign(FIELD_COUNT, 0U);
+    water_atlas->river_mask.assign(FIELD_COUNT, 0U);
+    for (uint32_t y = 0U; y < RESOLUTION; ++y)
+    {
+        for (uint32_t x = 0U; x < RESOLUTION; ++x)
+        {
+            uint32_t const index = y * RESOLUTION + x;
+            bool const right_plate = x >= RESOLUTION / 2U;
+            water_atlas->elevation[index] = right_plate ? 18.0F : -3.5F;
+            water_atlas->plate_id[index] = right_plate ? 1 : 0;
+            water_atlas->plate_vx[index] = right_plate ? 1.0F : -1.0F;
+            water_atlas->plate_vy[index] = 0.0F;
+        }
+    }
+    auto dry_control_atlas = std::make_shared<generation::GlobalAtlas>(*water_atlas);
+    std::fill(dry_control_atlas->ocean_mask.begin(), dry_control_atlas->ocean_mask.end(), 0U);
+
+    client::GenerationMapAnimator water_animator;
+    client::GenerationMapAnimator dry_control_animator;
+    client::GenerationMapAnimationClock const clock{
+        .visible_elapsed = std::chrono::milliseconds{ 750 },
+    };
+    client::GenerationMapAnimationFrame const water_frame = water_animator.update(
+        nullptr,
+        std::move(water_atlas),
+        nullptr,
+        nullptr,
+        clock
+    );
+    client::GenerationMapAnimationFrame const dry_control_frame = dry_control_animator.update(
+        nullptr,
+        std::move(dry_control_atlas),
+        nullptr,
+        nullptr,
+        clock
+    );
+
+    ASSERT_NE(water_frame.image, nullptr);
+    ASSERT_NE(dry_control_frame.image, nullptr);
+    EXPECT_TRUE(writePpmIfRequested("tectonics-water.ppm", *water_frame.image));
+    EXPECT_TRUE(writePpmIfRequested("tectonics-dry-control.ppm", *dry_control_frame.image));
+    uint32_t const sample_index = animationRenderPixelIndex(SAMPLE_X, SAMPLE_Y);
+    Rgba8 const water_pixel = water_frame.image->rgba[sample_index];
+    Rgba8 const dry_control_pixel = dry_control_frame.image->rgba[sample_index];
+    EXPECT_EQ(water_pixel, (Rgba8{ 43U, 86U, 106U, 255U }));
+    EXPECT_NE(water_pixel, dry_control_pixel);
+    EXPECT_EQ(water_pixel[3U], 255U);
+}
+
+TEST(GenerationMapPresentationTest, TectonicDriftUsesMappedHeightScaleForReliefShading)
+{
+    static constexpr uint32_t RESOLUTION = 256U;
+    static constexpr uint32_t RAMP_START_X = 64U;
+    static constexpr uint32_t RAMP_END_X = 80U;
+    static constexpr uint32_t MOVING_PLATE_END = 128U;
+    static constexpr uint32_t SAMPLE_X = 33U;
+    static constexpr uint32_t SAMPLE_Y = 50U;
+    static constexpr Rgba8 EXPECTED_UNSHADED_COLOR{ 229U, 231U, 224U, 255U };
+
+    auto atlas = std::make_shared<generation::GlobalAtlas>(*makeDriftingMapAtlas());
+    for (uint32_t y = 0U; y < RESOLUTION; ++y)
+    {
+        for (uint32_t x = 0U; x < RESOLUTION; ++x)
+        {
+            uint32_t const index = y * RESOLUTION + x;
+            bool const moving_plate = x < MOVING_PLATE_END;
+            atlas->elevation[index] = x < RAMP_START_X
+                ? 8.0F
+                : (x < RAMP_END_X ? 8.0F + static_cast<float>(x - RAMP_START_X) * 0.625F : 18.0F);
+            atlas->plate_id[index] = moving_plate ? 0 : 1;
+            atlas->plate_vx[index] = moving_plate ? 1.0F : 0.0F;
+            atlas->plate_vy[index] = 0.0F;
+        }
+    }
+
+    client::GenerationMapAnimator animator;
+    client::GenerationMapAnimationFrame const frame = animator.update(
+        nullptr,
+        std::move(atlas),
+        nullptr,
+        nullptr,
+        client::GenerationMapAnimationClock{ .visible_elapsed = std::chrono::milliseconds{ 0 } }
+    );
+
+    ASSERT_NE(frame.image, nullptr);
+    uint32_t const sample_index = animationRenderPixelIndex(SAMPLE_X, SAMPLE_Y);
+    EXPECT_EQ(frame.image->rgba[sample_index], EXPECTED_UNSHADED_COLOR);
+}
+
+TEST(GenerationMapPresentationTest, HigherMovingPlateKeepsOwnershipWhenItOverlapsStationaryTerrain)
+{
+    static constexpr uint32_t RESOLUTION = 256U;
+    static constexpr uint32_t MOVING_PLATE_START = 128U;
+    static constexpr uint32_t MOVING_PLATE_END = 160U;
+    static constexpr uint32_t OVERLAP_NATIVE_X = 80U;
+    static constexpr uint32_t SAMPLE_Y = 100U;
+    static constexpr uint32_t HIGH_COLOR_THRESHOLD = 130U;
+
+    auto atlas = std::make_shared<generation::GlobalAtlas>(*makeDriftingMapAtlas());
+    std::fill(atlas->plate_id.begin(), atlas->plate_id.end(), 0);
+    std::fill(atlas->plate_vx.begin(), atlas->plate_vx.end(), 0.0F);
+    for (uint32_t y = 0U; y < RESOLUTION; ++y)
+    {
+        for (uint32_t x = 0U; x < RESOLUTION; ++x)
+        {
+            uint32_t const index = y * RESOLUTION + x;
+            bool const is_moving_plate = x >= MOVING_PLATE_START && x < MOVING_PLATE_END;
+            atlas->elevation[index] = is_moving_plate ? 100.0F : -100.0F;
+            atlas->plate_id[index] = is_moving_plate ? 1 : 0;
+            atlas->plate_vx[index] = is_moving_plate ? -1.0F : 0.0F;
+        }
+    }
+
+    client::GenerationMapAnimator animator;
+    client::GenerationMapAnimationFrame const frame = animator.update(
+        nullptr,
+        std::move(atlas),
+        nullptr,
+        nullptr,
+        client::GenerationMapAnimationClock{ .visible_elapsed = std::chrono::milliseconds{ 0 } }
+    );
+
+    ASSERT_NE(frame.image, nullptr);
+    uint32_t const overlap_pixel = SAMPLE_Y * client::GENERATION_MAP_ANIMATION_SCALE
+            * frame.image->width + OVERLAP_NATIVE_X * client::GENERATION_MAP_ANIMATION_SCALE + 1U;
+    EXPECT_GT(frame.image->rgba[overlap_pixel][2U], HIGH_COLOR_THRESHOLD);
+}
+
+TEST(GenerationMapPresentationTest, MovingDriftUsesNearestWaterColorToFillNewGaps)
+{
+    static constexpr uint32_t RESOLUTION = 256U;
+    static constexpr uint32_t WATER_X = 124U;
+    static constexpr uint32_t WATER_Y = 200U;
+    static constexpr uint32_t GAP_PIXEL_X = 190U;
+    static constexpr uint32_t GAP_PIXEL_Y = 300U;
+    static constexpr uint32_t HIGH_COLOR_THRESHOLD = 120U;
+
+    auto atlas = std::make_shared<generation::GlobalAtlas>(*makeDriftingMapAtlas());
+    uint32_t const field_count = RESOLUTION * RESOLUTION;
+    atlas->water_level.assign(field_count, 0.0F);
+    atlas->ocean_mask.assign(field_count, 0U);
+    atlas->lake_mask.assign(field_count, 0U);
+    atlas->river_mask.assign(field_count, 0U);
+    uint32_t const water_index = WATER_Y * RESOLUTION + WATER_X;
+    atlas->elevation[water_index] = 100.0F;
+    atlas->ocean_mask[water_index] = 1U;
+    for (uint32_t y = 0U; y < RESOLUTION; ++y)
+    {
+        for (uint32_t x = 0U; x < RESOLUTION; ++x)
+        {
+            uint32_t const index = y * RESOLUTION + x;
+            bool const east_plate = x >= RESOLUTION / 2U;
+            atlas->plate_id[index] = east_plate ? 1 : 0;
+            atlas->plate_vx[index] = east_plate ? -1.0F : 1.0F;
+        }
+    }
+
+    client::GenerationMapAnimator animator;
+    client::GenerationMapAnimationFrame const frame = animator.update(
+        nullptr,
+        std::move(atlas),
+        nullptr,
+        nullptr,
+        client::GenerationMapAnimationClock{ .visible_elapsed = std::chrono::milliseconds{ 0 } }
+    );
+
+    ASSERT_NE(frame.image, nullptr);
+    uint32_t const gap_pixel = GAP_PIXEL_Y * frame.image->width + GAP_PIXEL_X;
+    EXPECT_GT(frame.image->rgba[gap_pixel][2U], HIGH_COLOR_THRESHOLD);
 }
 
 TEST(GenerationMapPresentationTest, ReducedMotionUsesAStableSnapshotEndpoint)
