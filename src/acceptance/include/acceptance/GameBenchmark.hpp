@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <map>
 #include <optional>
 #include <span>
@@ -285,6 +286,9 @@ struct GameBenchmarkOptions final {
     shared::corelang::Backend backend = shared::corelang::Backend::Interpreter;
     std::chrono::seconds full_radius_warmup_timeout = GAME_BENCHMARK_FULL_RADIUS_DEFAULT_WARMUP_TIMEOUT;
     bool diagnostic_full_radius_capture = false;
+    std::filesystem::path frame_capture_image;
+    std::string frame_capture_phase = "playing";
+    std::chrono::milliseconds frame_capture_delay{0};
 };
 
 [[nodiscard]] std::chrono::seconds gameBenchmarkDeadline(GameBenchmarkOptions const& options) noexcept;

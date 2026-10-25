@@ -1632,9 +1632,6 @@ bool PlayerClient::requestDiagnosticFrameCapture(std::filesystem::path image_pat
     if (!m_benchmark.has_value() || !m_benchmark->enable_diagnostic_frame_capture) {
         return fail("diagnostic readback was not enabled when the client was constructed");
     }
-    if (worldLoadingStatus().state != WorldLoadingState::Playing) {
-        return fail("normal gameplay has not reached Playing");
-    }
     FrameCaptureState const capture_state = m_renderer.captureState();
     if (capture_state != FrameCaptureState::Ready && capture_state != FrameCaptureState::Completed) {
         return fail("renderer framebuffer readback is not ready");
@@ -4780,7 +4777,8 @@ void PlayerClient::resetWorldMapSource()
 void PlayerClient::updatePlayingMapPresentation()
 {
     m_s2_map_vector_triangles.clear();
-    bool const map_ui_enabled = !m_benchmark.has_value() && !m_capture.has_value();
+    bool const map_ui_enabled = (!m_benchmark || m_benchmark->enable_diagnostic_frame_capture)
+        && !m_capture.has_value();
     auto const world = map_ui_enabled ? terrainLodWorld() : nullptr;
     auto const root_lod = world ? terrainLodRoot() : nullptr;
     std::optional<shared::Player> const player = predictedLocalPlayer();

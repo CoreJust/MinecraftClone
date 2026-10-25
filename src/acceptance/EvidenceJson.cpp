@@ -1064,6 +1064,13 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
         "    \"presentation_timing\": "
             + (benchmark.presentation_timing
                 ? presentationTimingJson(*benchmark.presentation_timing) : "null") + ",\n"
+        "    \"diagnostic_frame_capture_path\": " + jsonString(benchmark.diagnostic_frame_capture_path) + ",\n"
+        "    \"diagnostic_frame_capture_phase\": " + jsonString(benchmark.diagnostic_frame_capture_phase) + ",\n"
+        "    \"diagnostic_frame_capture_delay_ms\": " + std::to_string(benchmark.diagnostic_frame_capture_delay_ms) + ",\n"
+        "    \"diagnostic_frame_requested_loading_state\": "
+            + jsonString(benchmark.diagnostic_frame_requested_loading_state) + ",\n"
+        "    \"diagnostic_frame_capture_state\": " + jsonString(benchmark.diagnostic_frame_capture_state) + ",\n"
+        "    \"diagnostic_frame_capture_error\": " + jsonString(benchmark.diagnostic_frame_capture_error) + ",\n"
         "    \"controlled_start\": "
             + (benchmark.controlled_start ? startActionJson(*benchmark.controlled_start) : "null") + ",\n"
         "    \"frame_completion_source\": \"per-slot-submitted-frame-fence-success-observed-on-reuse\",\n"

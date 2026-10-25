@@ -2213,6 +2213,18 @@ GameBenchmarkPhase gameBenchmarkPhaseAt(
 
 std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOptions const& options)
 {
+    bool const frame_capture_requested = !options.frame_capture_image.empty();
+    if (options.frame_capture_delay < std::chrono::milliseconds::zero()
+        || options.frame_capture_delay > std::chrono::milliseconds{30'000}) {
+        return std::unexpected("benchmark frame capture delay must be between zero and 30 seconds");
+    }
+    if (frame_capture_requested && (options.frame_capture_phase != "playing" && options.frame_capture_phase != "generation")) {
+        return std::unexpected("benchmark frame capture phase must be generation or playing");
+    }
+    if (frame_capture_requested && (!options.qualification_proof.empty()
+        || options.workload != GameBenchmarkWorkload::OrdinaryMovement)) {
+        return std::unexpected("benchmark frame capture requires ordinary workload without a qualification proof");
+    }
     bool const s1_terrain_workload = options.workload == GameBenchmarkWorkload::OrdinaryTurningMovement;
     bool const full_radius_workload = options.workload == GameBenchmarkWorkload::Speed200FullRadiusRecovery;
     bool capture_presentation_history = options.qualification_proof == "performance";
@@ -2461,7 +2473,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .require_immediate_present_mode = options.require_immediate_present_mode,
         .freeze_camera = options.workload == GameBenchmarkWorkload::DiagnosticStationary
             || full_radius_workload,
-        .show_debug_hud = full_radius_workload || s1_terrain_workload,
+        .show_debug_hud = frame_capture_requested || full_radius_workload || s1_terrain_workload,
         .enable_mesh_stage_diagnostics = options.diagnostic_full_radius_capture,
         .enable_presentation_history = capture_presentation_history,
         .capture_frame_completion = true,
@@ -2483,6 +2495,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 },
             }
             : std::function<std::optional<client::CameraAngles>(Clock::time_point)>{},
+        .enable_diagnostic_frame_capture = frame_capture_requested,
     };
     auto const player_storage = [&] {
         if (glfwInit() != GLFW_TRUE) {
@@ -2574,6 +2587,13 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .raw_permission_publish_durations_ns = {},
     }};
     GameBenchmarkEvidence& benchmark = *benchmark_storage;
+    if (frame_capture_requested) {
+        benchmark.diagnostic_frame_capture_path = options.frame_capture_image.string();
+        benchmark.diagnostic_frame_capture_phase = options.frame_capture_phase;
+        benchmark.diagnostic_frame_capture_delay_ms = static_cast<uint64_t>(options.frame_capture_delay.count());
+        benchmark.diagnostic_frame_capture_state = "not-requested";
+        benchmark.diagnostic_overrides_present = true;
+    }
     benchmark.raw_frames.reserve(20'000U);
     benchmark.raw_gameplay_inputs.reserve(2'000U);
     if (benchmark.presentation_timing) {
@@ -2974,10 +2994,16 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         ReusableHeapValue<GameBenchmarkFrameSample> frame_sample;
     };
     auto loop_scratch = std::make_unique<LoopScratch>();
+    std::optional<Clock::time_point> capture_phase_started_at;
     client::GameClientBenchmarkHooks const client_hooks{
         .isolate_platform_input = true,
         .deadline = started_at + effective_deadline,
         .should_stop = [&] {
+            if (frame_capture_requested) {
+                auto const state = player.diagnosticFrameCaptureState();
+                return state == client::PlayerClientDiagnosticFrameCaptureState::Succeeded
+                    || state == client::PlayerClientDiagnosticFrameCaptureState::Failed;
+            }
             if (s1_terrain_workload && !s1_movement_window.startedAt()) {
                 Clock::time_point const now = Clock::now();
                 client::WorldLoadingStatus const status = player.worldLoadingStatus();
@@ -3055,6 +3081,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             return Clock::now() >= stop_at;
         },
         .is_uncapped_phase = [&] {
+            if (frame_capture_requested) {
+                return false;
+            }
             if (s1_terrain_workload) {
                 std::optional<Clock::time_point> const movement_started_at = s1_movement_window.startedAt();
                 return movement_started_at
@@ -3241,6 +3270,24 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             client::WorldLoadingStatus const& observed_loading_status = loop_scratch->loading_status.replaceFrom(
                 [&] { return player.worldLoadingStatus(); }
             );
+            if (frame_capture_requested) {
+                if (player.diagnosticFrameCaptureState() == client::PlayerClientDiagnosticFrameCaptureState::NotRequested) {
+                    bool const phase_matches = options.frame_capture_phase == "playing"
+                        ? observed_loading_status.state == client::WorldLoadingState::Playing
+                        : observed_loading_status.state == client::WorldLoadingState::PreparingAtlas
+                            || observed_loading_status.state == client::WorldLoadingState::PreparingSpawn;
+                    if (phase_matches && !capture_phase_started_at) {
+                        capture_phase_started_at = sample.completed_at;
+                    }
+                    if (phase_matches && sample.completed_at - *capture_phase_started_at >= options.frame_capture_delay) {
+                        benchmark.diagnostic_frame_requested_loading_state = worldLoadingStateName(observed_loading_status.state);
+                        static_cast<void>(player.requestDiagnosticFrameCapture(options.frame_capture_image));
+                    }
+                }
+                observeControlledStart(observed_loading_status);
+                // Diagnostic readback never enters the cold/warm/uncapped performance windows.
+                return;
+            }
             observeControlledStart(observed_loading_status);
             observeS1LoadingStatus(observed_loading_status, sample.completed_at);
             if (!first_loop_at
@@ -4448,6 +4495,25 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .game_benchmark = std::move(benchmark),
     }};
     RuntimeEvidence& result = *result_storage;
+    if (frame_capture_requested) {
+        auto const state = player.diagnosticFrameCaptureState();
+        auto& capture = *result.game_benchmark;
+        bool const succeeded = state == client::PlayerClientDiagnosticFrameCaptureState::Succeeded;
+        capture.diagnostic_frame_capture_state = succeeded ? "succeeded"
+            : state == client::PlayerClientDiagnosticFrameCaptureState::Failed ? "failed" : "incomplete";
+        capture.diagnostic_frame_capture_error = std::string{player.diagnosticFrameCaptureError()};
+        result.mode = "benchmark-game-frame-capture";
+        result.passed = succeeded;
+        if (!succeeded) {
+            result.failure = capture.diagnostic_frame_capture_error.empty()
+                ? "ordinary frame capture did not complete within the benchmark deadline"
+                : capture.diagnostic_frame_capture_error;
+        }
+        if (capture.frame_budget) {
+            capture.frame_budget->required_for_benchmark_pass = false;
+        }
+        return std::move(result);
+    }
     if (near_terrain_incomplete) {
         result.failure = "full-radius travel left missing meshes in the current near terrain window";
     } else if (s1_terrain_workload && !s1_movement_window.startedAt()) {

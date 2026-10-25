@@ -20258,5 +20258,51 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0571",
+    "title": "Expose bounded ordinary-game framebuffer capture",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Provide an explicit bounded ordinary-game CLI capture path using the existing opt-in framebuffer API, with real generation or Playing phase selection and terminal image/status evidence. Preserve default benchmark behavior without the option; refuse image overwrite/colliding outputs and keep diagnostic readback outside performance windows. Verify parsing, serialized status, native compilation and ordinary graphical capture. This local hook prerequisite does not close the broad0540 capture sweep, final V9 Windows UI review or0483/FPS gates. Capture mode must use normal S2 HUD/map presentation rather than the hidden benchmark overlay; no speculative hotbar is added.",
+    "evidence": "Configured Release mc_main/mc_tests build and171 focused tests pass; runtime CLI tests cover invalid phase, missing image, output collision without clobbering, and bounded delay rejection. Native ordinary-game Mac generation and Playing captures succeeded at2560x1440 and were visually inspected; evidence uses separate mode benchmark-game-frame-capture, terminal succeeded, and zero cold/warm/uncapped samples. The captured pre-final-V9 R6 frames demonstrate the normal-renderer hook only, not finalV9 UI or animation qualification. Source, commands, binary/image hashes, logs and review receipt are retained under /Users/core-just/.codex/task-evidence/mc0571-capture-20261025/. The corrected capture-only Playing smoke at ui-playing.ppm includes normal S2 HUD, minimap/player pointer and crosshair. Earlier HUD-hidden captures are diagnostic history only, not UI acceptance. Final binary/source manifest is ui-native-input.json.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Remove the missing normal-game CLI readback hook that blocked source-bound Windows UI inspection.",
+    "context": "Committed PlayerClient already provides the opt-in one-frame framebuffer API; dirty0540 target/sweep edits are unrelated and are not imported. Existing900-second sweep failure stays open. Actual generation UI is an owner concern, so the diagnostic path supports one bounded generation or Playing frame with an optional0\u201330second phase delay.",
+    "complexity": "medium",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added CLI wiring to the existing ordinary framebuffer API, loading-phase eligibility, bounded delay and terminal evidence. Capture runs stop after a saved/failed frame and never enter benchmark measurement windows. Existing output safety remains; collision rejection preserves the image. No fixture capture is presented as real gameplay proof. Capture-only presentation restores ordinary player HUD/map defaults that performance benchmark options suppress; performance runs without capture remain unchanged.",
+    "plan": [],
+    "product_changes": [
+      "Allow explicit diagnostic capture of one actual ordinary-game generation or Playing frame."
+    ],
+    "code_changes": [
+      "src/main.cpp",
+      "src/acceptance/GameBenchmark.cpp",
+      "src/acceptance/include/acceptance/GameBenchmark.hpp",
+      "src/acceptance/EvidenceJson.cpp",
+      "src/acceptance/include/acceptance/EvidenceJson.hpp",
+      "src/client/PlayerClient.cpp",
+      "src/client/include/client/PlayerClient.hpp",
+      "tests/acceptance/runtime_cli_tests.cmake",
+      "tests/acceptance/evidence_json_tests.cpp",
+      "docs/ACCEPTANCE.md",
+      "tests/acceptance/game_benchmark_tests.cpp"
+    ],
+    "baseline_commit": "694840b50a7b51afc6b94af4a96e3c2059cd536e",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Corrected the initial summary: capture API was already committed; only the missing ordinary CLI consumer and bounded phase control were needed. Broad visual acceptance remains open.",
+    "docs_review": "Documented CLI, diagnostic-only evidence mode, requested-state semantics, deadline and overwrite rules in docs/ACCEPTANCE.md.",
+    "environment_review": "Private candidate only; explicit VCPKG_MANIFEST_INSTALL=OFF with existing prefixes. Mac graphical commands used outer escalated execution, no focus control or OS reset.",
+    "backlog_review": "Only0571 is added.0540 sweep and0483 finalV9 Windows UI/FPS gates remain open."
   }
 ]

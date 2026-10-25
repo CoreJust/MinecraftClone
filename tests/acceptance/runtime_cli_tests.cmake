@@ -419,3 +419,49 @@ foreach(required_text "\"passed\": false" "capture image and evidence paths must
         message(FATAL_ERROR "collision evidence is missing ${required_text}")
     endif()
 endforeach()
+
+foreach(capture_case IN ITEMS invalid-phase missing-image)
+    if(capture_case STREQUAL "invalid-phase")
+        set(capture_args --benchmark-frame-capture image.ppm --benchmark-frame-capture-phase invalid)
+        set(expected_error "benchmark frame capture phase must be generation or playing")
+    else()
+        set(capture_args --benchmark-frame-capture-phase generation)
+        set(expected_error "benchmark frame capture phase requires --benchmark-frame-capture")
+    endif()
+    execute_process(
+        COMMAND "${MC_MAIN}" --benchmark-game ${capture_args} --evidence "${OUTPUT_DIRECTORY}/capture-invalid.json"
+        RESULT_VARIABLE capture_result
+        OUTPUT_VARIABLE capture_stdout
+        ERROR_VARIABLE capture_stderr
+        TIMEOUT 10
+    )
+    if(capture_result EQUAL 0 OR NOT "${capture_stdout}${capture_stderr}" MATCHES "${expected_error}")
+        message(FATAL_ERROR "capture argument validation failed for ${capture_case}")
+    endif()
+endforeach()
+
+file(WRITE "${OUTPUT_DIRECTORY}/capture-collision.ppm" "preserved-image")
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --benchmark-frame-capture "${OUTPUT_DIRECTORY}/capture-collision.ppm"
+        --evidence "${OUTPUT_DIRECTORY}/capture-collision.ppm"
+    RESULT_VARIABLE collision_result
+    OUTPUT_VARIABLE collision_stdout
+    ERROR_VARIABLE collision_stderr
+    TIMEOUT 10
+)
+file(READ "${OUTPUT_DIRECTORY}/capture-collision.ppm" collision_image)
+if(collision_result EQUAL 0 OR NOT collision_image STREQUAL "preserved-image"
+    OR NOT "${collision_stdout}${collision_stderr}" MATCHES "capture image and evidence paths must differ")
+    message(FATAL_ERROR "capture collision did not preserve existing output")
+endif()
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --benchmark-frame-capture image.ppm
+        --benchmark-frame-capture-delay-ms 30001 --evidence "${OUTPUT_DIRECTORY}/capture-invalid-delay.json"
+    RESULT_VARIABLE delay_result
+    OUTPUT_VARIABLE delay_stdout
+    ERROR_VARIABLE delay_stderr
+    TIMEOUT 10
+)
+if(delay_result EQUAL 0 OR NOT "${delay_stdout}${delay_stderr}" MATCHES "delay must be between zero and 30 seconds")
+    message(FATAL_ERROR "capture delay range was not enforced")
+endif()

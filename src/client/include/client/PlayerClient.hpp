@@ -592,6 +592,7 @@ public:
         bool scan_exact_coverage = false
     ) const;
     [[nodiscard]] bool captureSucceeded() const noexcept { return m_capture_succeeded; }
+    // Explicit constructor opt-in permits one ordinary loading or playing framebuffer readback.
     [[nodiscard]] bool requestDiagnosticFrameCapture(std::filesystem::path image_path);
     [[nodiscard]] PlayerClientDiagnosticFrameCaptureState diagnosticFrameCaptureState() const noexcept
     {

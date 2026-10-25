@@ -105,6 +105,9 @@ struct RuntimeCommand final {
     bool diagnostic_full_radius_capture = false;
     bool diagnostic_presentation_stages = false;
     std::optional<uint32_t> diagnostic_indexed_stone_quads;
+    std::filesystem::path benchmark_frame_capture;
+    std::string benchmark_frame_capture_phase;
+    std::chrono::milliseconds benchmark_frame_capture_delay{0};
 };
 
 [[nodiscard]]
@@ -473,7 +476,7 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         }
         return command;
     }
-    if (argc >= 4 && argc <= 19 && std::string_view{ argv[1] } == "--benchmark-game"
+    if (argc >= 4 && argc <= 25 && std::string_view{ argv[1] } == "--benchmark-game"
         && std::string_view{ argv[argc - 2] } == "--evidence") {
         RuntimeCommand command{};
         command.mode = RuntimeMode::GameBenchmark;
@@ -485,9 +488,33 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         bool diagnostic_full_radius_capture_selected = false;
         bool diagnostic_presentation_stages_selected = false;
         bool diagnostic_indexed_stone_quads_selected = false;
+        bool capture_delay_selected = false;
         for (int argument_index = 2; argument_index < argc - 2; ++argument_index) {
             std::string_view const argument{ argv[argument_index] };
-            if (argument == "--present-immediate" && !command.require_immediate_present_mode) {
+            if (argument == "--benchmark-frame-capture" && command.benchmark_frame_capture.empty()
+                && argument_index + 1 < argc - 2) {
+                command.benchmark_frame_capture = argv[++argument_index];
+                if (command.benchmark_frame_capture.empty() || command.benchmark_frame_capture == "-") {
+                    return std::unexpected("benchmark frame capture requires an image file path");
+                }
+            } else if (argument == "--benchmark-frame-capture-delay-ms" && !capture_delay_selected
+                && argument_index + 1 < argc - 2) {
+                uint32_t delay = 0U;
+                std::string_view const value{argv[++argument_index]};
+                auto const [end, error] = std::from_chars(value.data(), value.data() + value.size(), delay);
+                if (error != std::errc{} || end != value.data() + value.size() || delay > 30'000U) {
+                    return std::unexpected("benchmark frame capture delay must be between zero and 30 seconds");
+                }
+                command.benchmark_frame_capture_delay = std::chrono::milliseconds{delay};
+                capture_delay_selected = true;
+            } else if (argument == "--benchmark-frame-capture-phase" && command.benchmark_frame_capture_phase.empty()
+                && argument_index + 1 < argc - 2) {
+                command.benchmark_frame_capture_phase = argv[++argument_index];
+                if (command.benchmark_frame_capture_phase != "playing"
+                    && command.benchmark_frame_capture_phase != "generation") {
+                    return std::unexpected("benchmark frame capture phase must be generation or playing");
+                }
+            } else if (argument == "--present-immediate" && !command.require_immediate_present_mode) {
                 command.require_immediate_present_mode = true;
             } else if (argument == "--corelang-backend" && !backend_selected
                 && argument_index + 1 < argc - 2) {
@@ -566,6 +593,10 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
                 return std::unexpected("invalid game benchmark option: " + std::string{ argument });
             }
         }
+        if ((!command.benchmark_frame_capture_phase.empty() || capture_delay_selected)
+            && command.benchmark_frame_capture.empty()) {
+            return std::unexpected("benchmark frame capture phase requires --benchmark-frame-capture");
+        }
         if (!command.qualification_proof.empty()) {
             uint32_t constexpr proof_radius = 256U;
             if (radius_selected && command.render_distance != proof_radius) {
@@ -610,7 +641,9 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         "[--gameplay-proof terrain-coverage|performance] "
         "[--render-distance CHUNKS] [--full-radius-warmup-seconds 1..1800] "
         "[--diagnostic-full-radius-capture] [--diagnostic-presentation-stages] "
-        "[--diagnostic-indexed-stone-quads 0|1|2] --evidence <file>', "
+        "[--diagnostic-indexed-stone-quads 0|1|2] [--benchmark-frame-capture <ppm>] "
+        "[--benchmark-frame-capture-phase generation|playing] "
+        "[--benchmark-frame-capture-delay-ms 0..30000] --evidence <file>', "
         "or '--capture-render --image <ppm> --evidence <file>'"
     );
 }
@@ -802,6 +835,11 @@ int runGameBenchmarkCommand(RuntimeCommand const& command)
             );
         }
     }
+    if (!command.benchmark_frame_capture.empty()
+        && normalizedOutputPath(command.benchmark_frame_capture) == normalizedOutputPath(command.evidence_path)) {
+        std::cerr << "capture image and evidence paths must differ\n";
+        return 1;
+    }
     acceptance::GameBenchmarkOptions options{
         .require_immediate_present_mode = command.require_immediate_present_mode,
         .workload = command.game_benchmark_workload,
@@ -810,11 +848,17 @@ int runGameBenchmarkCommand(RuntimeCommand const& command)
         .backend = command.backend,
         .full_radius_warmup_timeout = command.full_radius_warmup_timeout,
         .diagnostic_full_radius_capture = command.diagnostic_full_radius_capture,
+        .frame_capture_image = command.benchmark_frame_capture,
+        .frame_capture_phase = command.benchmark_frame_capture_phase.empty()
+            ? "playing" : command.benchmark_frame_capture_phase,
+        .frame_capture_delay = command.benchmark_frame_capture_delay,
     };
     options.deadline = acceptance::gameBenchmarkDeadline(options);
-    RuntimeDeadlineWatchdog watchdog{ command.evidence_path, "benchmark-game", options.deadline };
+    std::string const evidence_mode = options.frame_capture_image.empty()
+        ? "benchmark-game" : "benchmark-game-frame-capture";
+    RuntimeDeadlineWatchdog watchdog{ command.evidence_path, evidence_mode, options.deadline };
     acceptance::RuntimeEvidence evidence = acceptance::collectRuntimeEvidence(
-        "benchmark-game",
+        evidence_mode,
         [&options] { return acceptance::runGameBenchmark(options); }
     );
     evidence.deadline = std::chrono::duration_cast<std::chrono::milliseconds>(options.deadline);

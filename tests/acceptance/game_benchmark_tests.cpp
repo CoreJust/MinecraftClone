@@ -2261,3 +2261,23 @@ TEST(GameBenchmark, S1PresentedSceneCoverageUsesExactWrappedActualKeys)
     scene.leaves.back().level = shared::TerrainLodLevel::L0;
     EXPECT_EQ(acceptance::gameBenchmarkS1PresentedCurrentColumnCount(scene, {}), 6'560U);
 }
+
+TEST(GameBenchmark, RejectsOrdinaryFrameReadbackAsPerformanceQualification)
+{
+    acceptance::GameBenchmarkOptions options;
+    options.frame_capture_image = "actual.ppm";
+    options.qualification_proof = "performance";
+    auto const result = acceptance::runGameBenchmark(options);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), "benchmark frame capture requires ordinary workload without a qualification proof");
+}
+
+TEST(GameBenchmark, RejectsUnboundedFrameCaptureDelayBeforeStartingGame)
+{
+    acceptance::GameBenchmarkOptions options;
+    options.frame_capture_image = "actual.ppm";
+    options.frame_capture_delay = std::chrono::milliseconds{30'001};
+    auto const result = acceptance::runGameBenchmark(options);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), "benchmark frame capture delay must be between zero and 30 seconds");
+}

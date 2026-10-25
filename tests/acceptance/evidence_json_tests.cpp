@@ -1663,3 +1663,25 @@ TEST(EvidenceJson, SerializesSubmittedSceneSettingsAndPresentedPlayerProof)
     EXPECT_NE(json.find(R"("body": [17.250000, 33.500000, 96.000000])"), std::string::npos);
     EXPECT_NE(json.find(R"("submitted_frame_count": 9, "sampled_offset_ns": 11)"), std::string::npos);
 }
+
+TEST(EvidenceJson, PreservesOrdinaryDiagnosticCaptureIdentityAndFailure)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.mode = "benchmark-game-frame-capture";
+    evidence.game_benchmark.emplace();
+    auto& capture = *evidence.game_benchmark;
+    capture.diagnostic_frame_capture_path = "capture.ppm";
+    capture.diagnostic_frame_capture_phase = "generation";
+    capture.diagnostic_frame_capture_delay_ms = 6'000U;
+    capture.diagnostic_frame_requested_loading_state = "preparing-atlas";
+    capture.diagnostic_frame_capture_state = "failed";
+    capture.diagnostic_frame_capture_error = "output already exists";
+    std::string const json = acceptance::evidenceJson(evidence);
+    EXPECT_NE(json.find("\"mode\": \"benchmark-game-frame-capture\""), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_capture_path\": \"capture.ppm\""), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_capture_phase\": \"generation\""), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_requested_loading_state\": \"preparing-atlas\""), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_capture_delay_ms\": 6000"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_capture_state\": \"failed\""), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_capture_error\": \"output already exists\""), std::string::npos);
+}

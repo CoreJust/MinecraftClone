@@ -16,7 +16,14 @@ regular-file JSON, including its final newline. Windows emits binary. Reject
 missing, duplicate, truncated or invalid frames; retain process exit status.
 External compression leaves the workload and measurement window unchanged.
 
-Scenario mode drives a bounded local server with authoritative assertions. Renderer modes require Vulkan/windows; watchdogs preserve failures.
+Diagnostic only; no qualification:
+
+```sh
+mc_main --benchmark-game --benchmark-frame-capture <fresh.ppm> --evidence <json>
+mc_main --benchmark-game --benchmark-frame-capture <fresh.ppm> --benchmark-frame-capture-phase generation --benchmark-frame-capture-delay-ms <0..30000> --evidence <json>
+```
+
+Scenarios assert local authority. Renderer modes require Vulkan/windows; watchdogs preserve failures.
 
 Evidence records framebuffer size, device/driver, present mode, validation/HUD,
 durations, frame count and CPU percentiles. Historical

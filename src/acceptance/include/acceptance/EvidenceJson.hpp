@@ -678,6 +678,12 @@ struct GameBenchmarkEvidence final {
     std::vector<GameBenchmarkServerStreamSample> raw_server_stream_samples;
     std::vector<uint64_t> raw_server_tick_durations_ns;
     std::vector<uint64_t> raw_permission_publish_durations_ns;
+    std::string diagnostic_frame_capture_path;
+    std::string diagnostic_frame_capture_phase;
+    uint64_t diagnostic_frame_capture_delay_ms = 0U;
+    std::string diagnostic_frame_requested_loading_state;
+    std::string diagnostic_frame_capture_state;
+    std::string diagnostic_frame_capture_error;
 };
 
 struct RuntimeEvidence final {
