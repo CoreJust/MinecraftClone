@@ -575,6 +575,44 @@ captureTerrainLodColumn(shared::SparseWorld const& world, uint32_t const x, uint
     return result;
 }
 
+TerrainLodCapturedColumn::TerrainLodCapturedColumn(
+    CaptureToken,
+    TerrainLodColumnInput&& input,
+    std::shared_ptr<shared::TerrainIdentity const> authority_identity_record
+)
+    : m_input(std::move(input)), m_authority_identity_record(std::move(authority_identity_record))
+{}
+
+std::shared_ptr<TerrainLodCapturedColumn const> captureTerrainLodColumnForBatch(
+    shared::SparseWorld const& world,
+    uint32_t const x,
+    uint32_t const y,
+    TerrainLodAuthorityBatch& batch
+)
+{
+    auto captured = captureTerrainLodColumn(world, x, y);
+    if (!captured) {
+        return nullptr;
+    }
+
+    std::shared_ptr<shared::TerrainIdentity const> identity_record = batch.m_identity_record;
+    if (!captured->authority_sources.empty()) {
+        if (!identity_record) {
+            identity_record = std::make_shared<shared::TerrainIdentity const>(
+                captured->authority_sources.front().identity
+            );
+        } else if (captured->authority_sources.front().identity != *identity_record) {
+            return nullptr;
+        }
+        // SparseWorld clears authoritative tiles on identity replacement and rejects mismatched publication.
+        batch.m_identity_record = identity_record;
+    }
+
+    return std::make_shared<TerrainLodCapturedColumn const>(
+        TerrainLodCapturedColumn::CaptureToken{}, std::move(*captured), std::move(identity_record)
+    );
+}
+
 bool terrainLodColumnSourcesCurrent(TerrainLodColumnInput const& column, shared::SparseWorld const& world)
 {
     for (auto const& source : column.sources) {
@@ -593,10 +631,15 @@ bool terrainLodColumnSourcesCurrent(TerrainLodColumnInput const& column, shared:
     return true;
 }
 
-std::vector<TerrainLodColumnCoordinate> staleTerrainLodColumns(
-    std::span<std::shared_ptr<TerrainLodColumnInput const> const> const columns,
+namespace {
+template <typename ColumnPointer, typename InputOf, typename BatchIdentityMatches, typename SourceIdentityMatches>
+std::vector<TerrainLodColumnCoordinate> staleTerrainLodColumnsImpl(
+    std::span<ColumnPointer const> const columns,
     shared::SparseWorld const& world,
-    shared::TerrainIdentity const& captured_batch_identity
+    shared::TerrainIdentity const& captured_batch_identity,
+    InputOf const& input_of,
+    BatchIdentityMatches const& batch_identity_matches,
+    SourceIdentityMatches const& source_identity_matches
 )
 {
     // Reuse tile state only within this synchronous validation pass. A new pass
@@ -611,28 +654,29 @@ std::vector<TerrainLodColumnCoordinate> staleTerrainLodColumns(
         ++pass;
     }
 
-    bool const has_authority_sources = std::ranges::any_of(columns, [](auto const& column) {
-        return !column->authority_sources.empty();
+    bool const has_authority_sources = std::ranges::any_of(columns, [&input_of](auto const& column) {
+        return !input_of(column).authority_sources.empty();
     });
     // SparseWorld validates every published tile against its active identity and clears all tiles when it changes.
     bool const authority_identity_current = !has_authority_sources
         || world.matchesAuthoritativeTileVersions(
             captured_batch_identity, std::span<shared::AuthoritativeTileVersion const>{});
-    for (auto const& column : columns) {
+    for (auto const& column_pointer : columns) {
+        TerrainLodColumnInput const& column = input_of(column_pointer);
         bool current = true;
-        for (TerrainLodChunkSource const& source : column->sources) {
+        for (TerrainLodChunkSource const& source : column.sources) {
             if (!chunkSourceCurrent(source, world)) {
                 current = false;
                 break;
             }
         }
-        if (current && !column->authority_sources.empty()) {
-            current = authority_identity_current;
-            for (TerrainLodAuthoritySource const& source : column->authority_sources) {
+        if (current && !column.authority_sources.empty()) {
+            current = authority_identity_current && batch_identity_matches(column_pointer, captured_batch_identity);
+            for (TerrainLodAuthoritySource const& source : column.authority_sources) {
                 if (!current) {
                     break;
                 }
-                if (source.identity != captured_batch_identity) {
+                if (!source_identity_matches(column_pointer, source, captured_batch_identity)) {
                     current = false;
                     break;
                 }
@@ -650,13 +694,50 @@ std::vector<TerrainLodColumnCoordinate> staleTerrainLodColumns(
             }
         }
         if (!current) {
-            stale.push_back({column->x, column->y});
+            stale.push_back({column.x, column.y});
         }
     }
     std::ranges::sort(stale, [](TerrainLodColumnCoordinate const left, TerrainLodColumnCoordinate const right) {
         return left.x != right.x ? left.x < right.x : left.y < right.y;
     });
     return stale;
+}
+} // namespace
+
+std::vector<TerrainLodColumnCoordinate> staleTerrainLodColumns(
+    std::span<std::shared_ptr<TerrainLodColumnInput const> const> const columns,
+    shared::SparseWorld const& world,
+    shared::TerrainIdentity const& captured_batch_identity
+)
+{
+    auto const input_of = [](auto const& column) -> TerrainLodColumnInput const& { return *column; };
+    auto const batch_identity_matches = [](auto const&, shared::TerrainIdentity const&) { return true; };
+    auto const source_identity_matches = [](auto const&, auto const& source, auto const& identity) {
+        return source.identity == identity;
+    };
+    return staleTerrainLodColumnsImpl(
+        columns, world, captured_batch_identity, input_of, batch_identity_matches, source_identity_matches
+    );
+}
+
+std::vector<TerrainLodColumnCoordinate> staleCapturedTerrainLodColumns(
+    std::span<std::shared_ptr<TerrainLodCapturedColumn const> const> const columns,
+    shared::SparseWorld const& world,
+    TerrainLodAuthorityBatch const& batch
+)
+{
+    shared::TerrainIdentity const empty_identity{};
+    shared::TerrainIdentity const& batch_identity = batch.m_identity_record
+        ? *batch.m_identity_record
+        : empty_identity;
+    auto const input_of = [](auto const& column) -> TerrainLodColumnInput const& { return column->input(); };
+    auto const batch_identity_matches = [&batch](auto const& column, auto const&) {
+        return batch.m_identity_record && column->m_authority_identity_record == batch.m_identity_record;
+    };
+    auto const source_identity_matches = [](auto const&, auto const&, auto const&) { return true; };
+    return staleTerrainLodColumnsImpl(
+        columns, world, batch_identity, input_of, batch_identity_matches, source_identity_matches
+    );
 }
 
 bool terrainLodSourcesCurrent(TerrainLodScene const& scene, shared::SparseWorld const& world)

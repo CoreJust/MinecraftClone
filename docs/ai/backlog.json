@@ -20109,5 +20109,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0568",
+    "title": "Reduce repeated terrain identity validation work",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Use the simplest exact reuse of immutable source/column identity and version data to remove repeated long identity comparisons or full unchanged work. Preserve mixed-source rejection, source/session replacement, per-tile and sparse-edit changes, direct dense mutation checks and deterministic ordering. Verify observable stale/edit behavior plus matched source-bound CPU measurements; no approximate hashes or unchecked stale cache. Windows 300–500+ qualification remains MC-AI-0553/0483.",
+    "evidence": "Focused current-candidate TerrainLodPresentationTest suite: 28/28 passed. Exact-input benchmark receipt and source/harness/binary hashes: /Users/core-just/.codex/task-evidence/mc-s2-20261024/task-0568-identity-validation/exact-input-validation-bench/receipt.json. Current-state output count 0 and post-edit stale output count 4 matched exactly between strict and captured APIs. Paired medians were 2.058 ms versus 0.412 ms current and 3.149 ms versus 0.470 ms after edit. Windows 300–500+ FPS and full gameplay qualification remain open under MC-AI-0553/0483.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Reduce the measured main-thread cost blocking the requested moving FPS without weakening terrain currency.",
+    "context": "MC-AI-0565 Mac native CPU profile records 446/820 updateTerrainLod samples in staleTerrainLodColumns, including 183 identity memcmp samples, plus 86 available-column enumeration/sort samples.",
+    "complexity": "high",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "The runtime now validates sealed captured-column batches against one shared immutable terrain identity record while preserving strict raw-column validation and per-tile availability/revision/dense-content checks. A source-bound headless comparison on 6,889 capture-API columns produced identical current and stale outputs; paired median validator CPU time fell from 2.058 ms to 0.412 ms for current inputs and from 3.149 ms to 0.470 ms after an edit. This is a local validator-cost result, not an end-to-end FPS result.",
+    "plan": [],
+    "product_changes": [],
+    "code_changes": [
+      "src/client/include/client/TerrainLodPresentation.hpp and src/client/TerrainLodPresentation.cpp add a sealed captured-column/batch identity path while retaining strict staleTerrainLodColumns behavior for raw callers.",
+      "src/client/include/client/TerrainLodRuntime.hpp and src/client/TerrainLodRuntime.cpp retain captured columns and use batch validation while checking current source availability and content each pass.",
+      "tests/client/terrain_lod_presentation_tests.cpp covers capture, dense/sparse edits, authority availability, identity replacement, old-batch rejection, and strict mixed-source rejection."
+    ],
+    "baseline_commit": "ddd42df2b46f168db498dd22ba71afbb8de469c5",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "The earlier ordinary-Mac movement pair had different active geometry and is not speedup evidence. The exact-input microbenchmark isolates the validator APIs and shows local CPU cost reduction, while the actual Windows moving-FPS gate remains open.",
+    "docs_review": "Read docs/code/RENDERING.md against the captured-batch implementation and documented the shared identity record plus retained tile checks; ai_docs refresh/check and ai_tasks render/check pass on the final private candidate.",
+    "environment_review": "Used existing macOS arm64 Release libraries with VCPKG_MANIFEST_INSTALL=OFF; compiled the candidate presentation translation unit and focused test translation unit with the existing -O3 configuration. No package install or shared-prefix mutation. Runtime/FPS qualification is not claimed.",
+    "backlog_review": "Finalized this local source-identity validation prerequisite only. Parent MC-AI-0483 and the MC-AI-0553 Windows moving-FPS target remain active and unqualified."
   }
 ]

@@ -29,13 +29,13 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
 Z-up uses zero-to-one depth. `InstalledShaderAssets` reads installed `shaders/`; Android
 `AndroidShaderAssets` reads APK assets. Both require bare `.spv` names, without source fallback.
 
-Conservative hierarchy preserves visibility/order. L0 remains fallback as cells refine 4×4
-through L1/L2, stitched along shared edges. A 32-block band adjusts intersecting
-cells and neighbor edges toward actual edges. Incomplete captures retain fallback.
-Async planning reuses canonical groups through unedited churn; edits invalidate
-identity; source matching avoids allocation. Ordinary bottoms use textured 16×16
-Bedrock; edits retain exact fallback. Uploads preserve the old scene until candidate
-completion; stale candidates preserve columns.
+Conservative hierarchy preserves visibility/order. L0 fallback through 4×4 L1/L2
+refinement with stitched edges. A 32-block band aligns neighboring cells to actual
+edges. Incomplete captures retain fallback. Async planning reuses canonical groups
+through unchanged churn; captured batches share one sealed identity while each tile's
+availability, revision, and dense content stay checked. Ordinary bottoms use
+textured 16×16 Bedrock; edits retain exact fallback. Old scene remains until upload
+completes; stale columns are preserved.
 See [gameplay]
 (GAMEPLAY.md), [full-radius qualification](../ai/GAMEPLAY_QUALIFICATION.md), and
 [LOD presentation tests](../../tests/client/terrain_lod_presentation_tests.cpp).

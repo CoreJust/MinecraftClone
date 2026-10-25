@@ -1163,7 +1163,7 @@ TEST(TerrainLodPresentationTest, SourceChecksRejectMixedAuthorityIdentities)
     EXPECT_FALSE(client::terrainLodSourcesCurrent(mixed_scene, world));
 }
 
-TEST(TerrainLodPresentationTest, BatchedValidationRefreshesSharedTileStateAndAvailability)
+TEST(TerrainLodPresentationTest, CapturedBatchValidationRefreshesSharedTileStateAndAvailability)
 {
     auto const terrain = presentationWorld(256U);
     shared::SparseWorld world{{}, shared::SparseWorldGenerationMode::MaterializedOnly};
@@ -1174,15 +1174,14 @@ TEST(TerrainLodPresentationTest, BatchedValidationRefreshesSharedTileStateAndAva
         }
     }
 
-    auto first = client::captureTerrainLodColumn(world, 1U, 1U);
-    auto second = client::captureTerrainLodColumn(world, 2U, 1U);
-    ASSERT_TRUE(first.has_value());
-    ASSERT_TRUE(second.has_value());
-    std::array<std::shared_ptr<client::TerrainLodColumnInput const>, 2U> columns{
-        std::make_shared<client::TerrainLodColumnInput const>(std::move(*first)),
-        std::make_shared<client::TerrainLodColumnInput const>(std::move(*second)),
+    client::TerrainLodAuthorityBatch batch;
+    std::array<std::shared_ptr<client::TerrainLodCapturedColumn const>, 2U> columns{
+        client::captureTerrainLodColumnForBatch(world, 1U, 1U, batch),
+        client::captureTerrainLodColumnForBatch(world, 2U, 1U, batch),
     };
-    EXPECT_TRUE(client::staleTerrainLodColumns(columns, world, terrain->identity()).empty());
+    ASSERT_NE(columns[0], nullptr);
+    ASSERT_NE(columns[1], nullptr);
+    EXPECT_TRUE(client::staleCapturedTerrainLodColumns(columns, world, batch).empty());
 
     auto* const dense_chunk = world.ensureChunk({2, 1, 63});
     ASSERT_NE(dense_chunk, nullptr);
@@ -1191,40 +1190,36 @@ TEST(TerrainLodPresentationTest, BatchedValidationRefreshesSharedTileStateAndAva
     shared::Block const replacement = *previous == shared::Block::Air ? shared::Block::Snow : shared::Block::Air;
     ASSERT_TRUE(dense_chunk->setBlock({0U, 0U, 0U}, replacement));
     std::vector<client::TerrainLodColumnCoordinate> const stale_after_dense_edit{{1U, 1U}, {2U, 1U}};
-    EXPECT_EQ(client::staleTerrainLodColumns(columns, world, terrain->identity()), stale_after_dense_edit);
+    EXPECT_EQ(client::staleCapturedTerrainLodColumns(columns, world, batch), stale_after_dense_edit);
 
-    first = client::captureTerrainLodColumn(world, 1U, 1U);
-    second = client::captureTerrainLodColumn(world, 2U, 1U);
-    ASSERT_TRUE(first.has_value());
-    ASSERT_TRUE(second.has_value());
     columns = {
-        std::make_shared<client::TerrainLodColumnInput const>(std::move(*first)),
-        std::make_shared<client::TerrainLodColumnInput const>(std::move(*second)),
+        client::captureTerrainLodColumnForBatch(world, 1U, 1U, batch),
+        client::captureTerrainLodColumnForBatch(world, 2U, 1U, batch),
     };
-    EXPECT_TRUE(client::staleTerrainLodColumns(columns, world, terrain->identity()).empty());
+    ASSERT_NE(columns[0], nullptr);
+    ASSERT_NE(columns[1], nullptr);
+    EXPECT_TRUE(client::staleCapturedTerrainLodColumns(columns, world, batch).empty());
 
     ASSERT_TRUE(world.setBlock({32, 16, 1000}, shared::Block::Snow));
-    auto const stale_after_sparse_edit = client::staleTerrainLodColumns(columns, world, terrain->identity());
+    auto const stale_after_sparse_edit = client::staleCapturedTerrainLodColumns(columns, world, batch);
     EXPECT_NE(std::ranges::find(stale_after_sparse_edit, client::TerrainLodColumnCoordinate{2U, 1U}),
         stale_after_sparse_edit.end());
     uint64_t const authority_revision = world.authoritativeSurfaceRevision();
-    first = client::captureTerrainLodColumn(world, 1U, 1U);
-    second = client::captureTerrainLodColumn(world, 2U, 1U);
-    ASSERT_TRUE(first.has_value());
-    ASSERT_TRUE(second.has_value());
     columns = {
-        std::make_shared<client::TerrainLodColumnInput const>(std::move(*first)),
-        std::make_shared<client::TerrainLodColumnInput const>(std::move(*second)),
+        client::captureTerrainLodColumnForBatch(world, 1U, 1U, batch),
+        client::captureTerrainLodColumnForBatch(world, 2U, 1U, batch),
     };
-    EXPECT_TRUE(client::staleTerrainLodColumns(columns, world, terrain->identity()).empty());
+    ASSERT_NE(columns[0], nullptr);
+    ASSERT_NE(columns[1], nullptr);
+    EXPECT_TRUE(client::staleCapturedTerrainLodColumns(columns, world, batch).empty());
 
     std::array<shared::EditedChunkRevision, 1U> missing_requirement{{{{2, 1, 63}, 1U}}};
     ASSERT_TRUE(world.setEditedChunkRequirements({2, 1, 0}, missing_requirement));
     EXPECT_EQ(world.authoritativeSurfaceRevision(), authority_revision);
-    EXPECT_EQ(client::staleTerrainLodColumns(columns, world, terrain->identity()), stale_after_dense_edit);
+    EXPECT_EQ(client::staleCapturedTerrainLodColumns(columns, world, batch), stale_after_dense_edit);
     std::array<shared::EditedChunkRevision, 0U> no_requirements{};
     ASSERT_TRUE(world.setEditedChunkRequirements({2, 1, 0}, no_requirements));
-    EXPECT_TRUE(client::staleTerrainLodColumns(columns, world, terrain->identity()).empty());
+    EXPECT_TRUE(client::staleCapturedTerrainLodColumns(columns, world, batch).empty());
 
     auto const replacement_terrain = presentationWorld(512U);
     ASSERT_EQ(replacement_terrain->identity().seed, terrain->identity().seed);
@@ -1237,7 +1232,19 @@ TEST(TerrainLodPresentationTest, BatchedValidationRefreshesSharedTileStateAndAva
                 replacement_terrain->sampleSurface({.x = x, .y = y, .z = 0})));
         }
     }
-    EXPECT_EQ(client::staleTerrainLodColumns(columns, world, terrain->identity()),
+    EXPECT_EQ(client::staleCapturedTerrainLodColumns(columns, world, batch),
+        (std::vector<client::TerrainLodColumnCoordinate>{{1U, 1U}, {2U, 1U}}));
+    auto const old_batch_columns = columns;
+    EXPECT_EQ(client::captureTerrainLodColumnForBatch(world, 1U, 1U, batch), nullptr);
+    batch.reset();
+    columns = {
+        client::captureTerrainLodColumnForBatch(world, 1U, 1U, batch),
+        client::captureTerrainLodColumnForBatch(world, 2U, 1U, batch),
+    };
+    ASSERT_NE(columns[0], nullptr);
+    ASSERT_NE(columns[1], nullptr);
+    EXPECT_TRUE(client::staleCapturedTerrainLodColumns(columns, world, batch).empty());
+    EXPECT_EQ(client::staleCapturedTerrainLodColumns(old_batch_columns, world, batch),
         (std::vector<client::TerrainLodColumnCoordinate>{{1U, 1U}, {2U, 1U}}));
 }
 

@@ -274,8 +274,8 @@ private:
     std::shared_ptr<shared::TerrainWorld const> m_job_world;
     std::shared_ptr<TerrainLodScene const> m_pending;
     std::stop_source m_cancellation;
-    std::vector<std::shared_ptr<TerrainLodColumnInput const>> m_columns;
-    std::optional<shared::TerrainIdentity> m_columns_identity;
+    std::vector<std::shared_ptr<TerrainLodCapturedColumn const>> m_columns;
+    TerrainLodAuthorityBatch m_columns_authority_batch;
     uint32_t m_center_x = 0U;
     uint32_t m_center_y = 0U;
     uint64_t m_discovery_revision = 0U;
