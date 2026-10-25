@@ -20304,5 +20304,42 @@
     "docs_review": "Documented CLI, diagnostic-only evidence mode, requested-state semantics, deadline and overwrite rules in docs/ACCEPTANCE.md.",
     "environment_review": "Private candidate only; explicit VCPKG_MANIFEST_INSTALL=OFF with existing prefixes. Mac graphical commands used outer escalated execution, no focus control or OS reset.",
     "backlog_review": "Only0571 is added.0540 sweep and0483 finalV9 Windows UI/FPS gates remain open."
+  },
+  {
+    "id": "MC-AI-0574",
+    "title": "Keep the terrain change journal off caller stacks",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Remove the production SparseWorld inline journal stack-footprint regression while preserving the fixed4096-entry ring, cursor/overflow semantics, existing move-only ownership and allocation-free event recording including noexcept mutation paths. Allocate journal backing storage once during construction; do not alter Runtime or SparseWorld.cpp, raise analyzer limits, or move individual test fixtures to hide the production issue. Verify object size, meaningful journal/differential tests and allocation behavior; Windows five-translation-unit strict readback remains coordinator-owned after reviewed overlay.",
+    "evidence": "A regression test reproduced sizeof(SparseWorld)=49,832 bytes before the change and passes after the header-only storage change at704 bytes on Mac arm64. The configured Release mc_main/mc_tests build and107 focused SparseWorld/terrain-presentation/runtime tests pass. A global-allocation probe observes exactly one49,152-byte journal allocation during construction, zero allocations across8,192 recorded mutations/two ring wraps, and zero during actual noexcept preview eviction. Move construction/assignment preserves destination journal history and independent instances. Source/binary hashes and logs are under /Users/core-just/.codex/task-evidence/mc0574-journal-storage-20261025/. Actual Windows strict five-TU rerun remains GUI/coordinator-owned; no analyzer pass is inferred from local checks.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Fix the0570 production object bloat causing actual Windows C6262 frames49,992/53,872 bytes under the unchanged16KiB analyzer policy.",
+    "context": "The journal was an inline4096-coordinate array adding49,152 bytes to each SparseWorld object. SparseWorld already cannot be copied because TerrainGenerator deletes copying; existing move-only semantics are retained. The bounded journal buffer is now a constructor-sized vector; event methods keep the same indexed writes without resizing or allocating.",
+    "complexity": "low",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Replaced only inline journal storage with one fixed-size heap allocation in the member initializer. No Runtime or SparseWorld.cpp changes, no analyzer-cap change and no fixture heap workaround. Added object-footprint and moved-to journal-history regressions; original journal/differential tests remain unchanged.",
+    "plan": [],
+    "product_changes": [
+      "Keep production SparseWorld objects small enough for ordinary caller stack budgets without changing journal behavior."
+    ],
+    "code_changes": [
+      "src/shared/include/shared/world/SparseWorld.hpp",
+      "tests/core/sparse_world_tests.cpp"
+    ],
+    "baseline_commit": "64d2592852586a45ad22939dba5c97c504a1649d",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "The0570 inline ring introduced a real production stack regression. Fixing the owner object removes the cause; per-fixture heap changes or analyzer-threshold increases would preserve it.",
+    "docs_review": "Header comment records construction-only allocation and no resize/allocation during noexcept recording; owning guide semantics are unchanged. Source registry refreshed/checked.",
+    "environment_review": "Private candidate, explicit VCPKG_MANIFEST_INSTALL=OFF with existing pinned dependencies; no root production edits.",
+    "backlog_review": "Local source regression fix complete; Windows strict rerun and parent0483/FPS gates remain open."
   }
 ]

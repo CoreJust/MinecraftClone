@@ -2253,3 +2253,33 @@ TEST(SparseWorldTest, ColumnJournalTracksPreviewAvailabilityWithoutReplacementCh
     world.readAuthoritativeColumnChanges(cursor, changes);
     EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{{1, 2, 0}}));
 }
+
+TEST(SparseWorldTest, JournalStorageKeepsWorldBelowDefaultWindowsStackBudget)
+{
+    EXPECT_LT(sizeof(shared::SparseWorld), 16'384U);
+}
+
+TEST(SparseWorldTest, MovedWorldKeepsJournalHistoryAndIndependentInstances)
+{
+    shared::SparseWorld original{{}, shared::SparseWorldGenerationMode::MaterializedOnly};
+    shared::EditedChunkRevision const initial{{0, 0, 0}, 1U};
+    ASSERT_TRUE(original.setEditedChunkRequirements({0, 0, 0}, std::span{&initial, 1U}));
+    shared::AuthoritativeColumnChanges changes;
+    original.readAuthoritativeColumnChanges(0U, changes);
+    uint64_t const cursor = changes.cursor;
+    shared::SparseWorld moved = std::move(original);
+    shared::SparseWorld assigned{{}, shared::SparseWorldGenerationMode::MaterializedOnly};
+    assigned = std::move(moved);
+    shared::EditedChunkRevision const first{{1, 0, 0}, 1U};
+    ASSERT_TRUE(assigned.setEditedChunkRequirements({1, 0, 0}, std::span{&first, 1U}));
+    assigned.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_FALSE(changes.full_resync);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{{1, 0, 0}}));
+    shared::SparseWorld independent{{}, shared::SparseWorldGenerationMode::MaterializedOnly};
+    shared::EditedChunkRevision const second{{2, 0, 0}, 1U};
+    ASSERT_TRUE(independent.setEditedChunkRequirements({2, 0, 0}, std::span{&second, 1U}));
+    assigned.readAuthoritativeColumnChanges(0U, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{{0, 0, 0}, {1, 0, 0}}));
+    independent.readAuthoritativeColumnChanges(0U, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{{2, 0, 0}}));
+}

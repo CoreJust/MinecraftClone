@@ -397,7 +397,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "d0665e3990f07ead8f7bac1d267549869331ded29009289b49c934ded497cb12"
+      "sources_sha256": "74b296e1cf07ba04ab74c1d669757a7b0691d052243a433c706332cb4d1a9f84"
     },
     {
       "guide": "docs/code/GENERATION.md",

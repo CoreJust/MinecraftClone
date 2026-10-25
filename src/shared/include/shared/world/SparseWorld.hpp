@@ -507,7 +507,9 @@ private:
     uint64_t m_access_clock = 0U;
     mutable uint64_t m_surface_metadata_clock = 0U;
     static constexpr size_t AUTHORITATIVE_CHANGE_CAPACITY = 4096U;
-    std::array<ChunkCoordinate, AUTHORITATIVE_CHANGE_CAPACITY> m_authoritative_changes{};
+    // Fixed at construction: recording, including noexcept eviction, never resizes or allocates.
+    std::vector<ChunkCoordinate> m_authoritative_changes =
+        std::vector<ChunkCoordinate>(AUTHORITATIVE_CHANGE_CAPACITY);
     uint64_t m_authoritative_change_cursor = 0U;
     uint64_t m_authoritative_change_reset = 0U;
 };
