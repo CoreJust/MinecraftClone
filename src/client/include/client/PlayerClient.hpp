@@ -775,7 +775,7 @@ private:
     std::vector<PlayerRenderData> m_render_data;
     DebugHudToggleLatch m_debug_hud_toggle;
     DebugHudToggleLatch m_hud_style_toggle;
-    TextStyle m_hud_text_style = TextStyle::Fixed;
+    TextStyle m_hud_text_style = TextStyle::ColoredAdaptive;
     DebugHudToggleLatch m_speedup_increase_latch;
     DebugHudToggleLatch m_speedup_decrease_latch;
     DebugHudToggleLatch m_acceleration_toggle_latch;

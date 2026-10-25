@@ -178,9 +178,18 @@ void main() {
         const float luminance = dot(background, weights);
         const bool choose_light = contrast(dot(linear_light, weights), luminance)
             >= contrast(dot(linear_dark, weights), luminance);
-        const vec3 chosen = choose_light ? linear_light : linear_dark;
-        out_color = vec4(chosen,
-            color.a * (choose_light ? light.a : dark.a));
+        if ((in_character & 0x200u) != 0u) {
+            // Keep category hues where readable; sample the scene separately at every ink pixel.
+            const vec3 category = srgbToLinear(color.rgb);
+            const float category_contrast = contrast(dot(category, weights), luminance);
+            const vec3 polarity = contrast(1.0, luminance) >= contrast(0.0, luminance)
+                ? vec3(1.0) : vec3(0.0);
+            out_color = vec4(category_contrast >= 4.5 ? category : polarity, color.a);
+        } else {
+            const vec3 chosen = choose_light ? linear_light : linear_dark;
+            out_color = vec4(chosen,
+                color.a * (choose_light ? light.a : dark.a));
+        }
     } else if (encoded_scene) {
         out_color.rgb = srgbToLinear(out_color.rgb);
     }

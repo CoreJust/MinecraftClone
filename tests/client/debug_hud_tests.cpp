@@ -371,7 +371,7 @@ TEST(DebugHudTest, BuildsPrototypeReadoutGroupsFromAvailableRuntimeValues)
     };
     EXPECT_TRUE(hasLabel("FPS 60"));
     EXPECT_TRUE(hasLabel("Uptime 02:14"));
-    EXPECT_TRUE(hasLabel("Chunks 18"));
+    EXPECT_TRUE(hasLabel("Chunks resident 18"));
     EXPECT_TRUE(hasLabel("Memory 42 MiB"));
     EXPECT_TRUE(hasLabel("Position"));
     EXPECT_TRUE(hasLabel("Movement"));
@@ -542,11 +542,12 @@ TEST(DebugHudTest, CompactWindowKeepsTelemetryReadableWithinHalfTheCanvas)
         };
         EXPECT_TRUE(hasLabel("FPS 60"));
         EXPECT_TRUE(hasLabel("Up 1440:00"));
-        EXPECT_TRUE(hasLabel("Chunks 513"));
+        EXPECT_TRUE(hasLabel("Chunks resident 513"));
         EXPECT_TRUE(hasLabel("RSS 42 MiB"));
         EXPECT_TRUE(hasLabel("Position"));
-        EXPECT_TRUE(hasLabel("X 37888.0  Z 28672.0  Y 84.1")
-            || (hasLabel("X 37888.0  Z 28672.0  Y") && hasLabel("84.1")));
+        EXPECT_TRUE(hasLabel("X 37888.0"));
+        EXPECT_TRUE(hasLabel("Z 28672.0"));
+        EXPECT_TRUE(hasLabel("Y 84.1"));
         EXPECT_TRUE(hasText("X 37888.0"));
         EXPECT_TRUE(hasText("Z 28672.0"));
         EXPECT_TRUE(hasText("84.1"));
@@ -638,7 +639,8 @@ TEST(DebugHudTest, HiddenGameplayHudRetainsOnlyGameControlHints)
 
 TEST(DebugHudTest, FixedPrototypeKeepsSemanticFacesAndDarkOutlinesByDefault)
 {
-    client::DebugHudSnapshot const snapshot{.enabled = true};
+    client::DebugHudSnapshot snapshot{.enabled = true};
+    snapshot.input.text_style = client::TextStyle::Fixed;
     client::TextRenderer output;
     client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(844U, 346U, 1.0F), output);
     auto const& labels = output.labels();
@@ -659,6 +661,7 @@ TEST(DebugHudTest, AdaptivePrototypeUsesOneFacePerLabelAndPreservesMixedStyleGly
 {
     auto const layout = client::layoutDebugHud(844U, 346U, 1.0F);
     client::DebugHudSnapshot snapshot{.enabled = true};
+    snapshot.input.text_style = client::TextStyle::Fixed;
     client::TextRenderer fixed;
     client::buildDebugHudPresentation(snapshot, layout, fixed);
     snapshot.input.text_style = client::TextStyle::Adaptive;
@@ -698,4 +701,73 @@ TEST(DebugHudTest, AdaptivePrototypeUsesOneFacePerLabelAndPreservesMixedStyleGly
     EXPECT_NE(adaptive_batch.glyphs[0U].character & 0x100U, 0U);
     EXPECT_EQ(adaptive_batch.glyphs[0U].light_color, adaptive.labels()[0U].placement.light_color.packed());
     EXPECT_EQ(adaptive_batch.glyphs[0U].dark_color, 0xFF2D'2414U);
+}
+
+TEST(DebugHudTest, DefaultColoredContrastKeepsDistinctAxesAndReportsResidentCapacity)
+{
+    client::DebugHudSnapshot snapshot{.enabled = true};
+    snapshot.input.loaded_dense_chunks_available = true;
+    snapshot.input.loaded_dense_chunks = 1024U;
+    snapshot.input.resident_chunk_capacity = 1024U;
+    snapshot.input.ready_terrain_columns = 2786U;
+    snapshot.input.required_terrain_columns = 6561U;
+    client::TextRenderer output;
+    client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(1280U, 676U, 1.0F), output);
+    std::array<uint32_t, 3U> axes{};
+    bool resident = false;
+    for (auto const& label : output.labels()) {
+        EXPECT_EQ(label.placement.style, client::TextStyle::ColoredAdaptive);
+        if (label.value.starts_with("X ")) { axes[0] = label.color.packed(); }
+        if (label.value.starts_with("Y ")) { axes[1] = label.color.packed(); }
+        if (label.value.starts_with("Z ")) { axes[2] = label.color.packed(); }
+        resident = resident || label.value == "Chunks resident 1024/1024";
+    }
+    EXPECT_TRUE(resident);
+    EXPECT_TRUE(std::any_of(output.labels().begin(), output.labels().end(), [](auto const& label) {
+        return label.value == "Terrain ready 2786/6561";
+    }));
+    EXPECT_NE(axes[0], 0U);
+    EXPECT_NE(axes[1], 0U);
+    EXPECT_NE(axes[2], 0U);
+    EXPECT_NE(axes[0], axes[1]);
+    EXPECT_NE(axes[0], axes[2]);
+    EXPECT_NE(axes[1], axes[2]);
+}
+
+TEST(DebugHudTest, WrappedSessionCountersDoNotOverlapInNarrowCompactWindow)
+{
+    client::DebugHudSnapshot snapshot{.enabled = true};
+    snapshot.input.loaded_dense_chunks_available = true;
+    snapshot.input.loaded_dense_chunks = 1024U;
+    snapshot.input.resident_chunk_capacity = 1024U;
+    snapshot.input.ready_terrain_columns = 2786U;
+    snapshot.input.required_terrain_columns = 6561U;
+    client::TextRenderer output;
+    client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(400U, 600U, 1.0F, true), output);
+    float heading_y = 600.0F;
+    for (auto const& label : output.labels()) {
+        if (label.value == "Position") { heading_y = label.placement.position[1]; }
+    }
+    auto const labels = output.labels();
+    for (size_t index = 0U; index < labels.size(); ++index) {
+        auto const& first = labels[index];
+        if (first.placement.position[1] >= heading_y) { continue; }
+        for (size_t other = index + 1U; other < labels.size(); ++other) {
+            auto const& second = labels[other];
+            if (second.placement.position[1] >= heading_y) { continue; }
+            float const first_right = first.placement.position[0]
+                + static_cast<float>(first.value.size()) * client::DEBUG_HUD_GLYPH_WIDTH_PIXELS * first.placement.scale;
+            float const second_right = second.placement.position[0]
+                + static_cast<float>(second.value.size()) * client::DEBUG_HUD_GLYPH_WIDTH_PIXELS * second.placement.scale;
+            bool const disjoint = first_right <= second.placement.position[0]
+                || second_right <= first.placement.position[0]
+                || first.placement.position[1]
+                    + client::DEBUG_HUD_GLYPH_HEIGHT_PIXELS * first.placement.scale
+                    <= second.placement.position[1]
+                || second.placement.position[1]
+                    + client::DEBUG_HUD_GLYPH_HEIGHT_PIXELS * second.placement.scale
+                    <= first.placement.position[1];
+            EXPECT_TRUE(disjoint) << first.value << " overlaps " << second.value;
+        }
+    }
 }

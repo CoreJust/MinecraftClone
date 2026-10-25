@@ -20950,5 +20950,53 @@
     "docs_review": "GAMEPLAY documents six-block eye reach and unchanged material break durations. RENDERING documents north-up +Y, heading cardinals, and raster/marker/pointer alignment while preserving generation-painter and phase contracts. The 0583 prepared-world reuse and 0581 12,678-byte cap notes remain present. ai_docs.py refresh and check passed on the rebased private candidate; RENDERING is at the 900-word limit.",
     "environment_review": "The previously tested bdcde candidate passed the 44 focused Release CTests. The 0584 source hunks merge cleanly onto fe98; no build or retest is claimed for this metadata preparation. Windows and Android behavior remain unverified.",
     "backlog_review": "Closes only this local implementation/test milestone for feedback items 1–2. MC-AI-0483 remains active and unfinalized; owner platform acceptance, feedback items 3–7 and aggregate S2 gates remain open."
+  },
+  {
+    "id": "MC-AI-0585",
+    "title": "Improve HUD contrast and terrain readiness telemetry",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Implement feedback-seven items 3 and 6 locally: default the HUD to per-pixel Colored Adaptive text with distinct X/Y/Z hues; retain a category hue only when the sampled scene pixel meets the chosen 4.5:1 contrast threshold, otherwise choose the higher-contrast black or white polarity. Show dense resident chunks with capacity and authoritative terrain-ready columns with required columns so capacity is not presented as live progress. Keep the full 0483 Windows/Android owner acceptance and remaining S2 feedback/gates open.",
+    "evidence": "Owner request: /Users/core-just/.codex/task-evidence/mc-s2-20261025/task-0585/prepared-on-65a38d/sources/request.txt SHA-256 c686c91d759945f6ff428a53014a29d0cb2446a0c6f9eb15e0883cb3bb3b91d0; ordered feedback ledger: sources/requirements.json SHA-256 44e7fca47dc141b9086bb2442a498e27baf3ec20cb0b872d0a681fc3c19dc6b8. The exact 10-path source patch is source.patch SHA-256 125e2dc78cd3d37603edc5333e3f7f88f079a83b843b5da1305a5646323a5743. Original base bdcde292c46f9b887dcb89d78ec600e8bcd210e9, manifest source-manifest-bdcde.json SHA-256 9ee3cc3bb621500c272555c14612f71eed272c7984a9aa1e9a669a2f6978d3f7. Focused unit log unit/focused-32.log SHA-256 46eedd3bd55bdd51e5ee205f2a38c1fe2f9f4ca471c758a3fa5b687dce6a5c0d: DebugHudTest and TextRendererTest passed 32/32 (22+10); binary SHA-256 4b5b4eb3869e82733985d667e1a2ccffa266e9b2a38461a1d56066b3faf39460. Apple M3 Pro Vulkan native smoke passed RendererSmokeTest.ColoredHudContrastUsesNativeScenePixels 1/1 in 207 ms; log native/native-contrast-1.log SHA-256 cafe5576eab95bd77b35532a0bb47e194e757bea2eba887ac4461aa811f83570; binary SHA-256 7856ac1bc4409c78c43ae26393bf7bfcf8ba23c24abd2ccfa9914ee61483004a. Capture native/native-default-hud-contrast-final.png SHA-256 31432ea7af39b96b422f8bf52fd8a5d50cb9d937cea1f0cda9c8a2ae31558cae and PPM SHA-256 6ce29ae02d605e3f9c68d6f4ffe883f586b03a62e4e1d5515aaf0a0346c8ff7c. The native fixture samples synthetic sky/snow/dark/matching-blue scene pixels and allows 4.45 after 8-bit readback quantization; shader chooses the colored hue only at >=4.5. These checks were run on the original bdcde+patch source, not rerun on this rebased candidate. The rebased base is 65a38d0627b2b78236a0992211ab4dda7302d5fc; final candidate manifest records the composed 0584 PlayerClient hunks. No Windows/Android runtime or owner acceptance, remaining feedback items, FPS, or aggregate S2 closure claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "The owner reports that blue XYZ is hard to read against sky and that the chunks count appears stuck at 1024.",
+    "context": "Authoritative request and ordered criteria are feedback-seven/request.txt and requirements.json. The 4.5:1 shader threshold is the chosen implementation rule for the requested contrast behavior, not a WCAG conformance claim. Scope is feedback items 3 and 6 and the accepted S2 HUD contract only; no other feedback items, platform acceptance or aggregate S2 closure.",
+    "complexity": "medium",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Defaulted the HUD to per-pixel Colored Adaptive text, assigned distinct XYZ hues, and added resident/capacity plus authoritative-ready/required telemetry. Added or updated tests for style selection, axis colors, telemetry, and native scene-pixel contrast.",
+    "plan": [
+      "Set Colored Adaptive as the default and use scene sampling per ink pixel to preserve XYZ hues only when the contrast threshold passes.",
+      "Show dense resident count/capacity and authoritative terrain-ready/required columns."
+    ],
+    "product_changes": [
+      "Default gameplay coordinates remain colored where legible and switch per pixel to black or white for contrast; HUD residency/readiness telemetry distinguishes current values from capacity."
+    ],
+    "code_changes": [
+      "src/client/render/TextRenderer.cpp",
+      "src/client/render/shaders/text_glyph.glsl",
+      "src/client/render/DebugHud.cpp",
+      "src/client/PlayerClient.cpp",
+      "tests/client/debug_hud_tests.cpp",
+      "tests/client/renderer_smoke_tests.cpp",
+      "tests/client/text_renderer_tests.cpp",
+      "src/client/include/client/PlayerClient.hpp",
+      "src/client/include/client/render/DebugHud.hpp",
+      "src/client/include/client/render/TextRenderer.hpp"
+    ],
+    "baseline_commit": "65a38d0627b2b78236a0992211ab4dda7302d5fc",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Separate dense chunk count/capacity from terrain-ready/required columns so a stable capacity does not masquerade as changing readiness.",
+    "docs_review": "Updated only the HUD paragraph in RENDERING.md; preserved the 0582 canonical generation painter/ice paragraph and existing R6 consumer. The guide remains within its 900-word limit; ai_docs.py refresh/check pass on the private candidate.",
+    "environment_review": "Focused DebugHud/TextRenderer suites passed 32/32 and the native Apple M3 Pro Vulkan pixel smoke passed 1/1 on the original bdcde+0585 source. No tests/build were rerun after rebasing to 65a38d; Windows, Android, live gameplay owner acceptance and aggregate S2 gates remain open.",
+    "backlog_review": "Closes only local implementation and native fixture verification for feedback items 3 and 6. MC-AI-0483 remains active and unfinalized; items 4, 5, 7, platform owner acceptance and aggregate S2 closure remain open."
   }
 ]

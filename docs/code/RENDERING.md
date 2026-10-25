@@ -83,10 +83,7 @@ cover builder/selector.
 
 ## Text and GUI boundary
 
-`TextRenderer` expands screen/world ASCII (UTF-8 fallback); >16384 glyphs fails.
-World text is depth-tested; GUI is not. HUD defaults to Fixed; F7 enables Adaptive
-only during captured-look Playing with map closed and no start transition.
-Non-maximized windows force compact HUD; logical width <1050 or height <520 too.
+Text: ASCII, UTF-8 fallback, 16,384-glyph cap; world depth-tested, GUI not. HUD default: per-pixel Colored Adaptive (4.5:1, distinct XYZ hues). F7 toggles styles only in captured-look Playing, map closed, no transition. Resident/capacity chunks; ready/required columns. Compact: windowed, width <1050 or height <520.
 `BlockInteractionEffects` draws authoritative targets/cracks; accepted receipts
 spawn ≤16 particles each, 256 live total, one-second lifetime. Count successful
 presentations; validation explains errors.

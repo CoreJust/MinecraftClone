@@ -5923,11 +5923,13 @@ void PlayerClient::render() {
     if (m_continuous_look_active && loading_status.state == WorldLoadingState::Playing
         && !m_s2_world_map_open && !hasStartTransitionInputs()
         && m_hud_style_toggle.update(hud_style_pressed)) {
-        m_hud_text_style = m_hud_text_style == TextStyle::Fixed ? TextStyle::Adaptive : TextStyle::Fixed;
+        m_hud_text_style = m_hud_text_style == TextStyle::Adaptive ? TextStyle::ColoredAdaptive : TextStyle::Adaptive;
     }
     DebugHudInput const debug_hud_input = [&] {
         DebugHudInput input;
         input.text_style = m_hud_text_style;
+        input.ready_terrain_columns = loading_status.resident_authoritative_columns;
+        input.required_terrain_columns = loading_status.required_authoritative_columns;
         input.gameplay_ui = loading_status.state == WorldLoadingState::Playing && !m_s2_world_map_open;
         input.compact_window = glfwGetWindowAttrib(m_window.nativeHandle(), GLFW_MAXIMIZED) != GLFW_TRUE
             && glfwGetWindowMonitor(m_window.nativeHandle()) == nullptr;
@@ -5937,6 +5939,7 @@ void PlayerClient::render() {
         if (shared::SparseWorld const* const world = authoritativeWorld()) {
             input.loaded_dense_chunks_available = true;
             input.loaded_dense_chunks = world->residentChunkCount();
+            input.resident_chunk_capacity = world->maxResidentChunks();
         }
         if (m_client_memory_rss_sampled_at == std::chrono::steady_clock::time_point{}
             || now - m_client_memory_rss_sampled_at >= std::chrono::seconds{ 1 }) {

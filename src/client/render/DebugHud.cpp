@@ -45,6 +45,8 @@ constexpr TextColor HUD_FOREGROUND = colorFromHex(0xF3'EAD2U);
 constexpr TextColor HUD_OUTLINE = colorFromHex(0x14'242DU);
 constexpr TextColor HUD_HINT = colorFromHex(0xE5'D29BU);
 constexpr TextColor HUD_COORDINATES = colorFromHex(0x9A'DBE5U);
+constexpr TextColor HUD_COORDINATE_Y = colorFromHex(0xB2'D39CU);
+constexpr TextColor HUD_COORDINATE_Z = colorFromHex(0xE5'C798U);
 constexpr TextColor HUD_HEADING = colorFromHex(0xE5'C798U);
 constexpr TextColor HUD_ACTIVE = colorFromHex(0xB2'D39CU);
 constexpr TextColor HUD_INACTIVE = colorFromHex(0xB5'BDB7U);
@@ -208,7 +210,8 @@ void submitOutlined(
             * DEBUG_HUD_GLYPH_WIDTH_PIXELS * scale;
         if (cursor_x > x && cursor_x + entry_width > max_x) {
             cursor_x = x;
-            cursor_y += line_advance;
+            cursor_y = (std::max)(cursor_y + line_advance,
+                bottom + line_advance - DEBUG_HUD_GLYPH_HEIGHT_PIXELS * scale);
         }
         bottom = (std::max)(bottom, submitWrapped(
             output,
@@ -397,7 +400,7 @@ void buildDebugHudPresentation(
             (std::min)(logical_width - logical_margin, map_left) - logical_margin
         ) * dpi_scale;
         float const session_y = (layout.compact ? 8.0F : 12.0F) * dpi_scale;
-        std::array<HudFlowEntry, 4U> const session{
+        std::array<HudFlowEntry, 5U> const session{
             HudFlowEntry{ "FPS " + formatNumber(snapshot.presented_fps, 0), HUD_FOREGROUND },
             HudFlowEntry{
                 std::string{ layout.compact ? "Up " : "Uptime " }
@@ -405,8 +408,18 @@ void buildDebugHudPresentation(
                 HUD_FOREGROUND,
             },
             HudFlowEntry{
-                "Chunks " + (snapshot.input.loaded_dense_chunks_available
+                "Chunks resident " + (snapshot.input.loaded_dense_chunks_available
                     ? formatNumber(static_cast<double>(snapshot.input.loaded_dense_chunks), 0)
+                        + (snapshot.input.resident_chunk_capacity > 0U
+                            ? "/" + formatNumber(static_cast<double>(snapshot.input.resident_chunk_capacity), 0)
+                            : "")
+                    : "--"),
+                HUD_FOREGROUND,
+            },
+            HudFlowEntry{
+                "Terrain ready " + (snapshot.input.required_terrain_columns > 0U
+                    ? formatNumber(snapshot.input.ready_terrain_columns, 0) + "/"
+                        + formatNumber(snapshot.input.required_terrain_columns, 0)
                     : "--"),
                 HUD_FOREGROUND,
             },
@@ -457,12 +470,15 @@ void buildDebugHudPresentation(
                 outline_offset
             );
 
-            std::array<HudFlowEntry, 2U> const position{
+            std::array<HudFlowEntry, 4U> const position{
                 HudFlowEntry{
-                    "X " + formatNumber(snapshot.input.player_x, 1)
-                        + "  Z " + formatNumber(snapshot.input.player_y, 1)
-                        + "  Y " + formatNumber(snapshot.input.player_z, 1),
-                    HUD_COORDINATES,
+                    "X " + formatNumber(snapshot.input.player_x, 1), HUD_COORDINATES,
+                },
+                HudFlowEntry{
+                    "Z " + formatNumber(snapshot.input.player_y, 1), HUD_COORDINATE_Z,
+                },
+                HudFlowEntry{
+                    "Y " + formatNumber(snapshot.input.player_z, 1), HUD_COORDINATE_Y,
                 },
                 HudFlowEntry{
                     "YPR " + formatNumber(snapshot.input.camera_yaw_degrees, 1)
@@ -471,17 +487,10 @@ void buildDebugHudPresentation(
                     HUD_FOREGROUND,
                 },
             };
-            float const position_bottom = submitFields(
-                output,
-                style,
-                position,
-                layout.left_column_x,
-                readout_y,
-                layout.column_width_pixels,
-                body_scale,
-                body_line_advance,
-                outline_offset,
-                dpi_scale
+            float const position_bottom = submitFlow(
+                output, style, position, layout.left_column_x, readout_y,
+                layout.column_width_pixels, body_scale, 12.0F * dpi_scale,
+                body_line_advance, outline_offset
             );
 
             std::array<HudFlowEntry, 3U> const movement{
@@ -559,11 +568,11 @@ void buildDebugHudPresentation(
                 },
                 HudFlowEntry{
                     makeFieldRow("Z", formatNumber(snapshot.input.player_y, 1), 7U),
-                    HUD_COORDINATES,
+                    HUD_COORDINATE_Z,
                 },
                 HudFlowEntry{
                     makeFieldRow("Y", formatNumber(snapshot.input.player_z, 1), 7U),
-                    HUD_COORDINATES,
+                    HUD_COORDINATE_Y,
                 },
                 HudFlowEntry{
                     makeFieldRow(
@@ -703,13 +712,13 @@ void buildDebugHudPresentation(
         HudFlowEntry{ "M World map", HUD_HINT },
         HudFlowEntry{ "Esc Leave game", HUD_HINT },
         HudFlowEntry{ "F2 Copy screenshot", HUD_HINT },
-        HudFlowEntry{ style == TextStyle::Fixed ? "F7 Adaptive HUD" : "F7 Colored HUD", HUD_HINT },
+        HudFlowEntry{ style == TextStyle::Adaptive ? "F7 Colored HUD" : "F7 Adaptive HUD", HUD_HINT },
     };
 #else
     std::array<HudFlowEntry, 3U> const primary_hints{
         HudFlowEntry{ "M World map", HUD_HINT },
         HudFlowEntry{ "Esc Leave game", HUD_HINT },
-        HudFlowEntry{ style == TextStyle::Fixed ? "F7 Adaptive HUD" : "F7 Colored HUD", HUD_HINT },
+        HudFlowEntry{ style == TextStyle::Adaptive ? "F7 Colored HUD" : "F7 Adaptive HUD", HUD_HINT },
     };
 #endif
     float const logical_width = layout.framebuffer_width_pixels / dpi_scale;

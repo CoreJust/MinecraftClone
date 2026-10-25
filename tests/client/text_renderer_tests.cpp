@@ -167,3 +167,19 @@ TEST(TextRendererTest, AdaptiveScreenStyleRetainsBothCandidatesAndFixedWorldText
     client::packText(document, batch, placement);
     EXPECT_EQ(batch.glyphs[0].character, static_cast<uint32_t>('A'));
 }
+
+TEST(TextRendererTest, ColoredContrastMarksScreenGlyphsAndPreservesCategoryColor)
+{
+    client::TextDocument document;
+    client::TextColor const blue{ 0.2F, 0.4F, 1.0F, 1.0F };
+    ASSERT_TRUE(client::appendText(document, "X", blue));
+    client::TextPlacement placement{ .style = client::TextStyle::ColoredAdaptive };
+    client::TextBatch batch;
+    client::packText(document, batch, placement, {}, blue);
+    ASSERT_EQ(batch.glyphs.size(), 1U);
+    EXPECT_EQ(batch.glyphs[0].character, static_cast<uint32_t>('X') | 0x300U);
+    EXPECT_EQ(batch.glyphs[0].packed_color, blue.packed());
+    placement.space = client::TextSpace::World;
+    client::packText(document, batch, placement, {}, blue);
+    EXPECT_EQ(batch.glyphs[0].character, static_cast<uint32_t>('X'));
+}

@@ -42,6 +42,7 @@ constexpr TextShaderMode textShaderMode(TextSpace const space) noexcept
 enum class TextStyle : uint8_t {
     Fixed,
     Adaptive,
+    ColoredAdaptive,
 };
 
 struct TextPlacement final {
