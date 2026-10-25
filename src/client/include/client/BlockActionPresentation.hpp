@@ -9,6 +9,19 @@
 
 namespace client::detail {
 
+struct BlockPlaceInputState final {
+    bool active = false;
+    std::chrono::steady_clock::time_point next_placement{};
+};
+
+[[nodiscard]] bool updateBlockPlaceInput(
+    BlockPlaceInputState& state,
+    bool held,
+    bool fresh_press,
+    bool permitted,
+    std::chrono::steady_clock::time_point now
+) noexcept;
+
 struct BlockBreakInputState final {
     bool active = false;
     std::optional<shared::WorldCoordinate> target;

@@ -694,7 +694,7 @@ private:
     void rememberBlockAction(uint32_t sequence, shared::BlockActionKind kind,
         std::optional<shared::WorldCoordinate> target, shared::Block material);
     void resetWorldMapSource();
-    void releaseActiveBreakAction();
+    void releaseActiveBreakAction(bool cancel_placement = true);
     void setScreenshotFeedback(std::string message, bool successful = false);
     void captureStartTransitionInputs();
     [[nodiscard]] bool hasStartTransitionInputs() const noexcept;
@@ -812,6 +812,7 @@ private:
     static constexpr size_t PENDING_BLOCK_ACTION_PRESENTATIONS = 64U;
     std::array<PendingBlockActionPresentation, PENDING_BLOCK_ACTION_PRESENTATIONS> m_pending_block_actions{};
     detail::BlockBreakInputState m_block_break_input;
+    detail::BlockPlaceInputState m_block_place_input;
     shared::Block m_selected_block = shared::Block::Stone;
     std::optional<shared::BlockTarget> m_interaction_target;
     uint32_t m_client_block_action_sequence = 1U;

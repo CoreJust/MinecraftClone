@@ -83,6 +83,8 @@ struct GameClientBenchmarkHooks final {
 };
 
 class GameClient : public core::Client {
+    friend struct PlayerClientFocusTestAccess;
+
 public:
     static constexpr uint32_t MAX_PENDING_INPUTS = 64;
 

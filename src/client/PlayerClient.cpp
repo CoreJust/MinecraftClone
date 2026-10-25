@@ -4360,6 +4360,7 @@ shared::ServerBlockActionResultMessage const* PlayerClient::currentBlockActionSt
 
 void PlayerClient::clearPendingBlockActions() noexcept
 {
+    m_block_place_input = {};
     m_pending_block_actions.fill({});
     m_client_block_action_sequence = 1U;
     m_pending_game_mode.reset();
@@ -4483,13 +4484,20 @@ void PlayerClient::updateBlockActionInput(
         return;
     }
 
+    if (m_pending_game_mode) {
+        releaseActiveBreakAction();
+        return;
+    }
     std::optional<shared::VoxelRay> const ray = interactionEyeRay();
     std::optional<shared::BlockTarget> const target = resolveInteractionTarget();
-    bool const place_pressed = right_pressed && !right_was_pressed;
-    if (place_pressed) {
-        releaseActiveBreakAction();
-        if (status && target && ray && action_allowed(shared::InteractionAction::Place)
-            && material_allowed(status->place_materials, m_selected_block)) {
+    bool const can_place = status && target && ray && action_allowed(shared::InteractionAction::Place)
+        && material_allowed(status->place_materials, m_selected_block);
+    bool const submit_place = detail::updateBlockPlaceInput(
+        m_block_place_input, right_pressed, right_pressed && !right_was_pressed, can_place, now
+    );
+    if (right_pressed) {
+        releaseActiveBreakAction(false);
+        if (submit_place) {
             static_cast<void>(submitTrackedBlockAction(
                 shared::BlockActionKind::PlacePress,
                 *ray,
@@ -4694,8 +4702,11 @@ void PlayerClient::updateBlockInteractionPresentation(std::chrono::steady_clock:
     }
 }
 
-void PlayerClient::releaseActiveBreakAction()
+void PlayerClient::releaseActiveBreakAction(bool const cancel_placement)
 {
+    if (cancel_placement) {
+        m_block_place_input = {};
+    }
     if (!m_block_break_input.active) {
         return;
     }

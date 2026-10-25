@@ -247,7 +247,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "a6a38bfc97c0577e4ab064e6c7d9c0361c4a1408ec7f1a9d1930ed7369c761ee",
+      "guide_sha256": "36105544d9463a9f340464ea5870509aadadfe6cfc9dc8fb81508a098ca95d21",
       "id": "gameplay",
       "sources": [
         "src/client/BlockActionPresentation.cpp",
@@ -398,7 +398,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "9b75855b42c57e2c63baa7790b68e93dc5484d8b64d3becb9cbf8f7200370914"
+      "sources_sha256": "8f005956dc76182b2a63c09cb7ad6465c4da1a90ff92b1077f1a12388e2f1141"
     },
     {
       "guide": "docs/code/GENERATION.md",
@@ -1139,7 +1139,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "fcedf8dbefd5efcb7ebbedd3e6afa132569fbf53c8db325e105d6ff11f179a0b"
+      "sources_sha256": "4b4c09dc0433b8213c150ec2981672ec98b441df62086ae12b164432d89033ad"
     }
   ],
   "version": 1

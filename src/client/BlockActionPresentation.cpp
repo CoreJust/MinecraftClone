@@ -5,6 +5,29 @@
 
 namespace client::detail {
 
+bool updateBlockPlaceInput(
+    BlockPlaceInputState& state,
+    bool const held,
+    bool const fresh_press,
+    bool const permitted,
+    std::chrono::steady_clock::time_point const now
+) noexcept
+{
+    if (!held) {
+        state = {};
+        return false;
+    }
+    if (fresh_press) {
+        state.active = true;
+        state.next_placement = now;
+    }
+    if (!state.active || !permitted || now < state.next_placement) {
+        return false;
+    }
+    state.next_placement = now + std::chrono::milliseconds{200};
+    return true;
+}
+
 BlockBreakInputActions updateBlockBreakInput(
     BlockBreakInputState& state,
     BlockBreakInputSample const& input

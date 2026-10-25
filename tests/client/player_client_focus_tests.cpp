@@ -39,6 +39,7 @@
 #include <optional>
 #include <set>
 #include <span>
+#include <sstream>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -380,6 +381,72 @@ struct PlayerClientFocusTestAccess final {
         return player_client.m_client_block_action_sequence;
     }
 
+    static bool connectPlacementTest(PlayerClient& player, core::Address const address)
+    {
+        if (!player.beginLoadingRequest(std::chrono::steady_clock::now())) { return false; }
+        player.m_local_character = '@';
+        return player.connect(address, std::chrono::seconds{2}) && player.sendJoinRequest();
+    }
+
+    static void pumpPlacementTest(PlayerClient& player)
+    {
+        player.poll();
+        player.processPendingHeightTileDeliveries();
+        player.processPendingMaterializedChunks(std::chrono::steady_clock::now());
+        if (player.worldLoadingStatus().state != WorldLoadingState::Playing) {
+            player.render();
+            if (player.worldLoadingStatus().state == WorldLoadingState::ReadyForStart
+                && player.worldLoadingStatus().ready_prompt_frame_rendered_at) {
+                static_cast<void>(player.acceptLoadingStartInput(std::chrono::steady_clock::now()));
+            }
+        }
+        player.flush();
+    }
+
+    static bool sendPlacementTestMovement(PlayerClient& player, shared::Direction const direction,
+        std::chrono::steady_clock::time_point const now)
+    {
+        auto const input = player.predictInput(direction, now);
+        return input && player.send(*input);
+    }
+
+    static void sampleHeldPlacement(PlayerClient& player_client, bool const held, bool const fresh_press,
+        std::chrono::steady_clock::time_point const now)
+    {
+        player_client.updateBlockActionInput(false, false, held, held && !fresh_press,
+            false, false, false, false, now);
+    }
+
+    static void setPendingPlacementMode(PlayerClient& player, bool const pending)
+    {
+        player.m_pending_game_mode = pending
+            ? std::optional{std::pair{1U, shared::GameMode::Creative}} : std::nullopt;
+    }
+
+    static void clearPlacementSession(PlayerClient& player)
+    {
+        player.clearPendingBlockActions();
+    }
+
+    static std::string placementDiagnostic(PlayerClient const& player)
+    {
+        std::ostringstream stream;
+        auto const status = player.currentBlockActionStatus();
+        auto const target = player.resolveInteractionTarget();
+        stream << "loading=" << static_cast<int>(player.worldLoadingStatus().state)
+            << " status=" << (status ? static_cast<int>(status->status) : -1)
+            << " sequence=" << (status ? status->sequence : 0U)
+            << " rights=" << (status ? static_cast<int>(status->effective_actions) : -1)
+            << " target=" << target.has_value() << " active=" << player.m_block_place_input.active
+            << " next=" << player.m_client_block_action_sequence;
+        return stream.str();
+    }
+
+    static bool placementInputActive(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_block_place_input.active;
+    }
+
     static bool breakInputActive(PlayerClient const& player_client) noexcept
     {
         return player_client.m_block_break_input.active;
@@ -390,6 +457,7 @@ struct PlayerClientFocusTestAccess final {
         shared::BlockTarget const target{.cell = {512, 514, 513}, .block = shared::Block::Stone};
         player_client.m_renderer.clearBlockInteractionEffects();
         player_client.m_interaction_target = target;
+        player_client.m_block_place_input.active = true;
         player_client.m_block_break_input.active = true;
         player_client.m_block_break_input.target = target.cell;
         player_client.rememberBlockAction(7U, shared::BlockActionKind::BreakHold, target.cell, target.block);
@@ -1063,6 +1131,37 @@ TEST(PlayerClientFocusTest, ContinuousLookRequiresPlayingAndWindowFocus)
         true,
         true
     ));
+}
+
+TEST(PlayerClientFocusTest, HeldPlacementRepeatsWithoutFreshEdgesAndNeverCatchesUpInBursts)
+{
+    using namespace std::chrono_literals;
+    client::detail::BlockPlaceInputState state;
+    auto const now = std::chrono::steady_clock::time_point{};
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, true, true, now));
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 199ms));
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 200ms));
+    // A changed target or receipt does not supply another physical press.
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 400ms));
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 5s));
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 5s));
+}
+
+TEST(PlayerClientFocusTest, HeldPlacementWaitsForValidTargetAndRequiresRearmingAfterOwnershipLoss)
+{
+    using namespace std::chrono_literals;
+    client::detail::BlockPlaceInputState state;
+    auto const now = std::chrono::steady_clock::time_point{};
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, false, true, now));
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, true, false, now));
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 200ms));
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, false, false, now + 400ms));
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 600ms));
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, false, false, true, now + 800ms));
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 1s));
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, true, true, now + 1s));
+    state = {}; // Focus/map/mode/session cancellation discards ownership.
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 2s));
 }
 
 TEST(PlayerClientFocusTest, BlockBreakInputStartsRenewsAndReleasesOnlyOneAuthorizedHold)
@@ -2748,6 +2847,7 @@ TEST(PlayerClientFocusTest, FocusAndMapTransitionsClearBlockEffectsAndPendingRec
     glfwFocusWindow(focus_sink.nativeHandle());
     ASSERT_TRUE(waitForFocusState(player_client, false));
     EXPECT_FALSE(Access::breakInputActive(player_client));
+    EXPECT_FALSE(Access::placementInputActive(player_client));
     EXPECT_FALSE(Access::hasStoredBlockTarget(player_client));
     EXPECT_FALSE(Access::hasPendingBreakReceipt(player_client));
     EXPECT_TRUE(Access::acceptSeededParticleReceipt(player_client));
@@ -2762,6 +2862,7 @@ TEST(PlayerClientFocusTest, FocusAndMapTransitionsClearBlockEffectsAndPendingRec
     // Map opening must clear effects before the next presentation update.
     Access::setWorldMapOpen(player_client, true);
     EXPECT_FALSE(Access::breakInputActive(player_client));
+    EXPECT_FALSE(Access::placementInputActive(player_client));
     EXPECT_FALSE(Access::hasStoredBlockTarget(player_client));
     EXPECT_FALSE(Access::hasPendingBreakReceipt(player_client));
     EXPECT_TRUE(Access::acceptSeededParticleReceipt(player_client));
@@ -2769,6 +2870,148 @@ TEST(PlayerClientFocusTest, FocusAndMapTransitionsClearBlockEffectsAndPendingRec
     EXPECT_TRUE(Access::acceptSeededParticleReceipt(player_client));
     Access::setWorldMapOpen(player_client, false);
     EXPECT_FALSE(Access::breakInputActive(player_client));
+    EXPECT_FALSE(Access::placementInputActive(player_client));
+}
+
+TEST(PlayerClientFocusTest, ModeAndSessionCancellationDisarmHeldPlacementUntilAnotherPhysicalPress)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    client::PlayerClient player;
+    ASSERT_TRUE(Access::beginPlayingWorld(player));
+    auto const now = std::chrono::steady_clock::now();
+    Access::sampleHeldPlacement(player, true, true, now);
+    ASSERT_TRUE(Access::placementInputActive(player));
+    Access::setPendingPlacementMode(player, true);
+    Access::sampleHeldPlacement(player, true, false, now);
+    EXPECT_FALSE(Access::placementInputActive(player));
+    Access::setPendingPlacementMode(player, false);
+    Access::sampleHeldPlacement(player, true, false, now);
+    EXPECT_FALSE(Access::placementInputActive(player));
+    Access::sampleHeldPlacement(player, false, false, now);
+    Access::sampleHeldPlacement(player, true, true, now);
+    ASSERT_TRUE(Access::placementInputActive(player));
+    Access::clearPlacementSession(player);
+    Access::sampleHeldPlacement(player, true, false, now);
+    EXPECT_FALSE(Access::placementInputActive(player));
+}
+
+TEST(PlayerClientFocusTest, HeldRmbPlacesAcrossAuthoritativeRetargetsDuringOrdinaryUpwardFlight)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    using Clock = std::chrono::steady_clock;
+    using namespace std::chrono_literals;
+    auto const configuration = shared::World::canonicalConfiguration();
+    generation::GenerationConfiguration generation_configuration{};
+    generation_configuration.seed = configuration.seed;
+    generation_configuration.epochs = 1U;
+    generation_configuration.erosion_steps = 0U;
+    generation_configuration.initial_climate_iterations = 1U;
+    generation_configuration.climate_iterations = 1U;
+    generation_configuration.currents = false;
+    generation_configuration.coastal_elaboration = false;
+    auto preparation = std::make_shared<server::WorldPreparation>(
+        generation_configuration, configuration.algorithm_version);
+    auto const preparation_deadline = Clock::now() + 30s;
+    while (preparation->latest().state == server::WorldPreparationState::Preparing
+        && Clock::now() < preparation_deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
+    ASSERT_EQ(preparation->latest().state, server::WorldPreparationState::Ready);
+    client::PlayerClient player{shared::WorldMode::Flight, std::nullopt, std::nullopt,
+        [preparation](shared::TerrainSessionIdentity const&) {
+            return client::PreparedTerrainWorldStatus{
+                .state = client::PreparedTerrainWorldState::Ready, .world = preparation->readyWorld()};
+        }};
+    glfwFocusWindow(Access::nativeWindow(player));
+    ASSERT_TRUE(waitForFocusState(player, true));
+    ASSERT_TRUE(Access::setLookAngles(player, {.yaw_degrees = 0.0, .pitch_degrees = -89.0}));
+    server::GameServer server{0U, {}, shared::WorldMode::Flight, configuration,
+        2U, nullptr, preparation, server::GameServer::BindMode::Loopback};
+    ASSERT_TRUE(server.isValid());
+    std::jthread server_thread{[&](std::stop_token const& stop) {
+        std::atomic_bool stopped{false};
+        std::stop_callback callback{stop, [&] { stopped.store(true); }};
+        server.run(stopped);
+    }};
+    ASSERT_TRUE(Access::connectPlacementTest(player, core::Address::localhost(server.port())));
+    bool pressed = false;
+    bool hold_started = false;
+    std::optional<double> initial_z;
+    double highest_z = 0.0;
+    std::vector<shared::WorldCoordinate> placed_cells;
+    std::vector<double> placement_heights;
+    std::optional<Clock::time_point> released_at;
+    uint32_t submissions_at_release = 0U;
+    auto next_movement = Clock::now();
+    std::optional<Clock::time_point> playing_at;
+    auto const deadline = Clock::now() + 60s;
+    while (Clock::now() < deadline && (!released_at || Clock::now() < *released_at + 600ms)) {
+        Access::pumpPlacementTest(player);
+        if (player.worldLoadingStatus().state != client::WorldLoadingState::Playing) {
+            std::this_thread::sleep_for(1ms);
+            continue;
+        }
+        if (!playing_at) { playing_at = Clock::now(); }
+        if (Clock::now() >= *playing_at + 5s) { break; }
+        auto const pose = Access::editLatencyPlayer(player);
+        if (!pose) { break; }
+        double const z = shared::playerPositionZ(*pose);
+        if (!initial_z) { initial_z = z; }
+        highest_z = std::max(highest_z, z);
+        while (auto const result = player.consumeAcceptedBlockActionResult()) {
+            if (result->sequence != 0U && result->status == shared::BlockActionStatus::Accepted
+                && std::find(placed_cells.begin(), placed_cells.end(), result->target) == placed_cells.end()) {
+                placed_cells.push_back(result->target);
+                placement_heights.push_back(z);
+            }
+        }
+        // Retarget a second reachable ground cell while stationary, then
+        // return to the column below and keep the same hold during ascent.
+        if (placed_cells.size() == 1U) {
+            shared::VoxelRay ray;
+            shared::BlockTarget target;
+            static_cast<void>(Access::editLatencyAim(player, ray, target));
+        } else if (placed_cells.size() >= 2U) {
+            EXPECT_TRUE(Access::setLookAngles(player, {.yaw_degrees = 0.0, .pitch_degrees = -89.0}));
+        }
+        auto const now = Clock::now();
+        if (placed_cells.size() >= 3U && !released_at) {
+            released_at = now;
+            submissions_at_release = Access::nextBlockActionSequence(player);
+        }
+        // Rise through ordinary input before aiming below: the default spawn
+        // stands on terrain, where placement would correctly overlap the body.
+        hold_started = hold_started || z >= *initial_z + 1.1;
+        bool const held = hold_started && !released_at.has_value();
+        Access::sampleHeldPlacement(player, held, held && !pressed, now);
+        pressed = held;
+        if (now >= next_movement) {
+            EXPECT_TRUE(Access::sendPlacementTestMovement(player,
+                shared::Direction{.z = static_cast<uint8_t>(
+                    !hold_started || (placed_cells.size() >= 2U && !released_at) ? 127U : 0U)}, now));
+            next_movement = now + 100ms;
+        }
+        player.flush();
+        std::this_thread::sleep_for(1ms);
+    }
+    server_thread.request_stop();
+    server_thread.join();
+    ASSERT_TRUE(released_at.has_value()) << Access::placementDiagnostic(player)
+        << " accepted=" << placed_cells.size() << " initial_z=" << initial_z.value_or(-1.0)
+        << " highest_z=" << highest_z;
+    ASSERT_EQ(placed_cells.size(), 3U);
+    ASSERT_TRUE(initial_z.has_value());
+    ASSERT_EQ(placement_heights.size(), 3U);
+    EXPECT_NEAR(placement_heights[0], placement_heights[1], 0.001);
+    EXPECT_GT(placement_heights[2], placement_heights[1]);
+    EXPECT_GT(highest_z, *initial_z + 1.0);
+    EXPECT_EQ(Access::nextBlockActionSequence(player), submissions_at_release);
+    for (auto const cell : placed_cells) {
+        auto const* world = Access::editLatencyWorld(player);
+        ASSERT_NE(world, nullptr);
+        EXPECT_EQ(world->queryBlock(cell).block, shared::Block::Stone);
+        EXPECT_GT(world->cellVersion(cell), 0U);
+    }
 }
 
 TEST(PlayerClientFocusTest, AuthoritativeEditsReachCompletedNativeFramesWithinThreeFrames)

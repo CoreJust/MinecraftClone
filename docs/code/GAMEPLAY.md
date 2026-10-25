@@ -33,11 +33,11 @@ state.
 ≤256 events/1 ms; active/idle waits are 1/5 ms. Ticks serialize one action/player;
 idle gravity advances revisions without inventing ACKs. Invalid joins, duplicate characters and pre-join inputs fail; disconnects remove players.
 
-Sequenced intents validate session, accepted eye aim, reach, visibility,
-mode/rights and cell version. Hard vetoes win. Breaks lose credit on target,
-version/policy changes, release or lease expiry. Placement needs a fresh press
-and rejects body overlap. Duplicates cannot recommit. Loopback mode
-requests use the local grant; remote requests require `minecraft:mode.change`.
+Sequenced intents check session, accepted aim, reach/visibility, mode/rights,
+version; hard vetoes win. Break credit resets on target/version/policy change,
+release or lease expiry. Each placement sequence rejects body overlap; duplicates
+cannot recommit. Loopback uses local mode grants; remote changes require
+`minecraft:mode.change`.
 
 Preview batches cap at 64 operations/12,678 bytes and fit a maximum 16-bit tile. Eight credits share 34,356 bytes within ENet's 65,536-byte window. Removals reserve capacity; interest, heading and ACKs reorder work. Missing entries rotate fairly. Preview cancellation excludes authority jobs; session/epoch and replay-safe credits remain separate.
 
@@ -86,11 +86,12 @@ Hooks bind deadlines, inputs, accepted poses and camera. [Qualification](../ai/G
 separates S1's turning x30/640-profile route from generic 320 geometry and x200
 stress. T0 never resets; legacy 180-second warmup is non-gating.
 
-[PlayerClient](../../src/client/PlayerClient.cpp) uses GLFW/Vulkan. Cursor aims;
-camera-relative WASD. LMB breaks while held; RMB places once; B cycles blocks, G
-requests mode.
-F5 cycles views without changing input/interest; first-person hides the body.
-Camera collision-clips; R reloads.
+[PlayerClient](../../src/client/PlayerClient.cpp) uses GLFW/Vulkan: cursor aiming,
+camera-relative WASD. `LMB` breaks while held; `RMB` places immediately and every
+`200 ms` at the current target. Release, focus/map/mode change or session reset
+requires a new press. `B` cycles blocks; `G` requests mode; `F5` changes views
+without changing input/interest. First-person hides the body; camera
+collision-clips; `R` reloads.
 
 ## Canonical chunks and mesh
 
