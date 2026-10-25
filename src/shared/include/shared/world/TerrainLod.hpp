@@ -39,6 +39,9 @@ struct TerrainLodSample final {
     Block top_material = Block::Dirt;
     double temperature = 0.0;
     double precipitation = 0.0;
+    double source_l0_elevation_m = 0.0;
+    uint8_t source_biome_id = 255U;
+    bool source_native_coast_adjacent = false;
     bool operator==(TerrainLodSample const&) const = default;
 };
 

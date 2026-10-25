@@ -247,7 +247,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "7f4c43c923a55d6ad4975d1784ab9c446e4c494bd1d5d01573bc0270aba27c6a",
+      "guide_sha256": "38cb219ebd1fb6d51f39cc90edc20be75d66df42c65f563899577d696faf5585",
       "id": "gameplay",
       "sources": [
         "src/client/BlockActionPresentation.cpp",
@@ -397,11 +397,11 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "da3e774d16b11b8f7eeef9da13664d110bbb8b6892f482186f121d0e7d648674"
+      "sources_sha256": "cf36e09dca2505d75bd33ddd9ec17f992dd19aaf7ebe321c76a4c6ed66bacd9b"
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "29d5e442a7eb8f5a9bbcc89868090d2b4374ae5cc7e036c824a34d4da0741e0f",
+      "guide_sha256": "9bce46cd66492ef6a6021194b86409f66123af9c77af1e6caa19140e5b5bc1c3",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -1010,15 +1010,16 @@
         "tests/generation/v9_terrain_tests.cpp",
         "tests/generation/v9_water_tests.cpp"
       ],
-      "sources_sha256": "f1acf0fc3de3bdcbeb7e2446c86c8564dbd8cd1ad91fb3276da5e833c40c2116"
+      "sources_sha256": "14cff785e757c148bf273c8e53be496cf61feb9e002cbbe816fc0eab62d3bac2"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "25025151fad8ab80db3efdb66a055dab99fd1159b6fb40a51ba28ffab97eae48",
+      "guide_sha256": "9ffabaa478efe7b3c59d262188274f8cd9d2df634d862e1b6c801005efca9505",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
         "src/client/include/client/render/BlockInteractionEffects.hpp",
+        "src/client/include/client/render/CanonicalTerrainField.hpp",
         "src/client/include/client/render/DebugHud.hpp",
         "src/client/include/client/render/DepthFormat.hpp",
         "src/client/include/client/render/GuiRenderer.hpp",
@@ -1040,6 +1041,7 @@
         "src/client/include/client/render/VulkanFrustum.hpp",
         "src/client/include/client/render/VulkanRenderer.hpp",
         "src/client/render/BlockInteractionEffects.cpp",
+        "src/client/render/CanonicalTerrainField.cpp",
         "src/client/render/DebugHud.cpp",
         "src/client/render/GuiRenderer.cpp",
         "src/client/render/HeightTileDrawIndex.cpp",
@@ -1136,7 +1138,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "38da5cfab598ff1099039bc68323405abedf1f452b56af9f2261053a755eefc4"
+      "sources_sha256": "9d752197e070f8e17d3c626e8e22863de66be1f1e8da047abba0675e8a69270d"
     }
   ],
   "version": 1

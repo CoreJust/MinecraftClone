@@ -180,6 +180,83 @@ TEST(TerrainWorldTest, MaterialIntervalsMatchInclusiveSeaAndBedrockRules)
     EXPECT_EQ(seabed.materialAt(SEA_LEVEL - 5U, SEA_LEVEL), shared::Block::Stone);
 }
 
+TEST(TerrainWorldTest, V9SandSnowValidationUsesSourceBiomeWaterAndStrictSummitTemperature)
+{
+    static constexpr uint32_t SEA_LEVEL = 384U;
+    shared::TerrainColumn coast{
+        .highest_solid_z = 384U,
+        .water_height_z = 384U,
+        .water_present = false,
+        .submerged = false,
+        .geological_elevation_km = 0.001,
+        .temperature_celsius = 12.0,
+        .precipitation = 0.3,
+        .top_material = shared::Block::Sand,
+        .ground_material = shared::Block::Dirt,
+        .ground_first_z = 380U,
+        .ground_end_z = 384U,
+        .source_l0_elevation_m = 20.0,
+        .source_biome_id = 4U,
+        .source_native_coast_adjacent = true,
+    };
+    EXPECT_EQ(static_cast<uint8_t>(shared::Block::Sand), 7U);
+    EXPECT_TRUE(shared::isValidBlock(shared::Block::Sand));
+    EXPECT_TRUE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+
+    coast.source_l0_elevation_m = 20.001;
+    EXPECT_FALSE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+    coast.source_l0_elevation_m = 20.0;
+    coast.water_present = true;
+    EXPECT_FALSE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+
+    coast.water_present = false;
+    coast.source_biome_id = 4U;
+    coast.source_native_coast_adjacent = false;
+    coast.top_material = shared::Block::Sand;
+    EXPECT_FALSE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+
+    coast.source_biome_id = 5U;
+    coast.source_l0_elevation_m = 100.0;
+    EXPECT_TRUE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+
+    shared::TerrainColumn const submerged_desert{
+        .highest_solid_z = 383U,
+        .water_height_z = 384U,
+        .water_present = true,
+        .submerged = true,
+        .geological_elevation_km = -0.001,
+        .temperature_celsius = 12.0,
+        .precipitation = 0.3,
+        .top_material = shared::Block::Dirt,
+        .ground_material = shared::Block::Dirt,
+        .ground_first_z = 380U,
+        .ground_end_z = 384U,
+        .source_l0_elevation_m = -1.0,
+        .source_biome_id = 5U,
+    };
+    EXPECT_TRUE(shared::isValidTerrainColumn(submerged_desert, SEA_LEVEL));
+    auto sand_underwater = submerged_desert;
+    sand_underwater.top_material = shared::Block::Sand;
+    EXPECT_FALSE(shared::isValidTerrainColumn(sand_underwater, SEA_LEVEL));
+
+    coast.source_biome_id = 0U;
+    coast.source_l0_elevation_m = 1'000.0;
+    coast.temperature_celsius = -0.001;
+    coast.top_material = shared::Block::Snow;
+    EXPECT_TRUE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+    coast.temperature_celsius = 0.0;
+    EXPECT_FALSE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+    coast.top_material = shared::Block::Grass;
+    EXPECT_TRUE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+
+    coast.source_biome_id = 4U;
+    coast.temperature_celsius = -1.0;
+    coast.top_material = shared::Block::Snow;
+    EXPECT_FALSE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+    coast.top_material = shared::Block::Grass;
+    EXPECT_TRUE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+}
+
 TEST(TerrainWorldTest, SamplesClimateMaterialsAndMaterializesMatchingChunks)
 {
     shared::TerrainWorld const warm_wet{ makeAtlas(384) };

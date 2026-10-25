@@ -42,7 +42,7 @@ std::optional<shared::Block> nextPlaceableBlock(
 ) noexcept
 {
     uint8_t constexpr FIRST_SOLID = static_cast<uint8_t>(shared::Block::Stone);
-    uint8_t constexpr LAST_SOLID = static_cast<uint8_t>(shared::Block::Ice);
+    uint8_t constexpr LAST_SOLID = static_cast<uint8_t>(shared::Block::Sand);
     uint8_t const selected_value = static_cast<uint8_t>(selected);
     bool const selected_is_allowed = selected_value >= FIRST_SOLID && selected_value <= LAST_SOLID
         && (allowed_materials & static_cast<uint8_t>(1U << selected_value)) != 0U;
@@ -102,6 +102,7 @@ bool hasCustomBlockActionGrants(shared::ServerBlockActionResultMessage const& st
         shared::Block::Bedrock,
         shared::Block::Snow,
         shared::Block::Ice,
+        shared::Block::Sand,
     }) {
         uint8_t const bit = static_cast<uint8_t>(1U << static_cast<uint8_t>(material));
         if (base.canBreak(material)) {

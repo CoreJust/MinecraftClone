@@ -10,6 +10,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <unordered_map>
@@ -63,6 +64,9 @@ struct TerrainColumn {
     Block ground_material = Block::Dirt;
     uint16_t ground_first_z = 0U;
     uint16_t ground_end_z = 0U;
+    double source_l0_elevation_m = 0.0;
+    uint8_t source_biome_id = 255U;
+    bool source_native_coast_adjacent = false;
 
     [[nodiscard]]
     Block materialAt(uint16_t z, uint32_t block_sea_level) const noexcept;
@@ -109,6 +113,9 @@ private:
     TerrainIdentity m_identity;
     std::shared_ptr<generation::GlobalAtlas const> m_atlas;
     std::shared_ptr<RegionalArtifact const> m_parent;
+    std::span<double const> m_v9_l0_elevation;
+    std::span<uint8_t const> m_v9_ocean_mask;
+    std::span<uint8_t const> m_v9_lake_mask;
     std::array<Node, TERRAIN_REGION_NODE_COUNT> m_nodes{};
     std::array<bool, TERRAIN_REGION_NODE_COUNT> m_node_ready{};
 };
@@ -157,6 +164,13 @@ public:
     // Samples one canonical R6 solid-column height at periodic block XY.
     [[nodiscard]]
     uint16_t sampleSurfaceHeight(uint32_t world_x, uint32_t world_y) const;
+
+    // V9 material classification shares the immutable native L0 fields used by its source query.
+    [[nodiscard]]
+    double sourceV9L0ElevationAt(uint32_t world_x, uint32_t world_y) const noexcept;
+
+    [[nodiscard]]
+    bool hasAdjacentV9OceanOrLake(uint32_t world_x, uint32_t world_y) const noexcept;
 
     // True only when every integer column in this exact atlas cell has canonical water presence.
     [[nodiscard]]
@@ -238,6 +252,9 @@ private:
 private:
     std::shared_ptr<generation::GlobalAtlas const> m_atlas;
     TerrainIdentity m_identity;
+    std::span<double const> m_v9_l0_elevation;
+    std::span<uint8_t const> m_v9_ocean_mask;
+    std::span<uint8_t const> m_v9_lake_mask;
     mutable std::mutex m_cache_mutex;
     mutable std::unordered_map<TerrainRegionKey, RegionCacheEntry, RegionKeyHash> m_region_cache;
     mutable std::list<TerrainRegionKey> m_region_lru;

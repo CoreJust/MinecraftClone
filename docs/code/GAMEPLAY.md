@@ -14,16 +14,16 @@ Bypass requires flight ([POLICY.md](POLICY.md)). [`BlockInteraction.hpp`](../../
 
 ## Wire protocol
 
-[Message.hpp](../../src/shared/include/shared/net/Message.hpp) defines Protocol 21:
-server-authoritative action intents/results, revisioned deltas, sparse edit
-snapshots and complete edited-column manifests. Sessions carry a server nonce;
-terrain deliveries also validate coverage epoch and delivery token. Profiles
-certify generated base columns; explicit edits require every manifested Z-chunk
-revision. Dense delivery retains separate credits/receipts. Bulk/control use
-channels 1/0; peer/class pending caps are 49,152/16,384 bytes including old-epoch
-debt. Coverage advertises actual 640/visual 320; dense collision/start caches use
-48/80. Inputs carry XYZ/heading/sequence; positions carry subcells/palette/ACK.
-Capabilities 0/1/3 are valid; invalid input and stale ACKs cannot mutate state.
+[Message.hpp](../../src/shared/include/shared/net/Message.hpp) defines Protocol 24
+for authoritative actions/results, revisioned deltas, sparse edit snapshots and
+manifests. Sessions use nonce; deliveries validate epoch/token. Profiles certify
+columns; edits require manifested Z-chunk revisions. Dense credits/receipts stay
+separate. Bulk/control channels 1/0; caps: peer 49,152, class 16,384 bytes with
+old-epoch debt. Coverage actual/visual: 640/320; caches: 48/80. Inputs:
+XYZ/heading/sequence; positions: subcells/palette/ACK. IDs 0–6 fixed; Sand 7;
+v23 peers reject v24 frames. Height tiles carry V9 source elevation, biome and
+coast metadata. Rights masks allow IDs 1–7. Capabilities
+0/1/3; invalid input/stale ACKs cannot mutate state.
 
 ## Server authority
 

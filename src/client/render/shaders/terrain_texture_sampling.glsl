@@ -9,9 +9,9 @@ layout(push_constant) uniform StoneOutputPushConstants {
 } terrain_output;
 
 const uint kTerrainFaceCount = 6u;
-const uint kTerrainMaterialCount = 7u;
+const uint kTerrainMaterialCount = 8u;
 const uint kGrassMaterial = 2u;
-const uint kGrassSideOverlayTile = 42u;
+const uint kGrassSideOverlayTile = 48u;
 const vec3 kGrassTintSrgb = vec3(145.0, 189.0, 89.0) / 255.0;
 
 // Terrain texture samples are decoded from the sRGB image format by Vulkan.
@@ -75,26 +75,47 @@ layout(set = 0, binding = 2, std430) readonly buffer CanonicalTerrainField {
     uint entry_count;
     float sea_level;
     uint enabled;
-    vec2 values[];
+    vec4 values[];
 } canonical_terrain;
 
-vec2 canonicalTerrainSample(vec2 world_xy) {
-    const vec2 coordinate = mod(world_xy, vec2(65536.0)) * float(canonical_terrain.resolution) / 65536.0;
+vec2 canonicalTerrainCoordinate(vec2 world_xy) {
+    return mod(world_xy, vec2(65536.0)) * float(canonical_terrain.resolution) / 65536.0;
+}
+
+vec4 canonicalTerrainSample(vec2 world_xy) {
+    const vec2 coordinate = canonicalTerrainCoordinate(world_xy);
     const uvec2 low = uvec2(floor(coordinate)) % canonical_terrain.resolution;
     const uvec2 high = (low + 1u) % canonical_terrain.resolution;
     const vec2 fraction = fract(coordinate);
-    const vec2 a = canonical_terrain.values[low.y * canonical_terrain.resolution + low.x];
-    const vec2 b = canonical_terrain.values[low.y * canonical_terrain.resolution + high.x];
-    const vec2 c = canonical_terrain.values[high.y * canonical_terrain.resolution + low.x];
-    const vec2 d = canonical_terrain.values[high.y * canonical_terrain.resolution + high.x];
+    const vec4 a = canonical_terrain.values[low.y * canonical_terrain.resolution + low.x];
+    const vec4 b = canonical_terrain.values[low.y * canonical_terrain.resolution + high.x];
+    const vec4 c = canonical_terrain.values[high.y * canonical_terrain.resolution + low.x];
+    const vec4 d = canonical_terrain.values[high.y * canonical_terrain.resolution + high.x];
     return mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
+}
+
+uint v9CanonicalSurfaceMaterial(vec2 world_xy, vec2 height_temperature) {
+    const float height = floor(height_temperature.x);
+    const float sea = terrain_output.surface.x;
+    if (height < sea - 4.0) return 1u;
+    if (height < sea) {
+        const float temperature = canonicalTerrainSample(world_xy).x;
+        return temperature <= -2.0 ? 6u : 3u;
+    }
+    const vec2 coordinate = canonicalTerrainCoordinate(world_xy);
+    const uvec2 source_cell = uvec2(floor(coordinate + vec2(0.5))) % canonical_terrain.resolution;
+    const float material = canonical_terrain.values[source_cell.y * canonical_terrain.resolution + source_cell.x].z;
+    return uint(round(material));
 }
 
 uint canonicalSurfaceMaterial(vec2 world_xy, vec2 height_temperature) {
     if (canonical_terrain.enabled == 0u) {
         return interpolatedSurfaceMaterial(height_temperature);
     }
-    const vec2 sample_value = canonicalTerrainSample(world_xy);
+    if (canonical_terrain.enabled == 2u) {
+        return v9CanonicalSurfaceMaterial(world_xy, height_temperature);
+    }
+    const vec4 sample_value = canonicalTerrainSample(world_xy);
     const bool cold = sample_value.x <= -2.0;
     if (sample_value.y >= canonical_terrain.sea_level) {
         return cold ? 5u : 2u;

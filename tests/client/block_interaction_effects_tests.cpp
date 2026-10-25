@@ -61,3 +61,20 @@ TEST(BlockInteractionEffectsTest, InvalidTargetsAndMaterialsDoNotCreateEffects)
         std::numeric_limits<float>::quiet_NaN());
     EXPECT_EQ(effects.boxes(now).size(), 12U);
 }
+
+TEST(BlockInteractionEffectsTest, SandBreakParticlesUseWarmMaterialColor)
+{
+    BlockInteractionEffects effects;
+    auto const now = BlockInteractionEffects::Clock::time_point{};
+
+    ASSERT_TRUE(effects.acceptBreak({1U, 1U, 1U, 1U}, {}, shared::Block::Sand, now));
+    auto const particles = effects.boxes(now + 100ms);
+
+    ASSERT_EQ(particles.size(), BlockInteractionEffects::PARTICLES_PER_BREAK);
+    for (BlockEffectBox const& particle : particles) {
+        EXPECT_FLOAT_EQ(particle.color.r, 0.88F);
+        EXPECT_FLOAT_EQ(particle.color.g, 0.78F);
+        EXPECT_FLOAT_EQ(particle.color.b, 0.57F);
+        EXPECT_FLOAT_EQ(particle.color.a, 1.0F);
+    }
+}

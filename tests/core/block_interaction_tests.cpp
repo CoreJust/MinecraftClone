@@ -54,11 +54,13 @@ TEST(BlockInteractionTest, ModeDefaultsKeepActionGrantsSeparateAndApplyMaterialR
     EXPECT_TRUE(creative.allows(shared::InteractionAction::QuickBreak));
     EXPECT_TRUE(creative.canBreak(shared::Block::Bedrock));
     EXPECT_TRUE(creative.canPlace(shared::Block::Stone));
+    EXPECT_TRUE(creative.canPlace(shared::Block::Sand));
 
     EXPECT_FALSE(survival.allows(shared::InteractionAction::Flight));
     EXPECT_FALSE(survival.allows(shared::InteractionAction::CollisionBypass));
     EXPECT_FALSE(survival.allows(shared::InteractionAction::QuickBreak));
     EXPECT_TRUE(survival.canBreak(shared::Block::Stone));
+    EXPECT_TRUE(survival.canBreak(shared::Block::Sand));
     EXPECT_FALSE(survival.canBreak(shared::Block::Bedrock));
     EXPECT_FALSE(survival.canPlace(shared::Block::Air));
 }
@@ -111,15 +113,16 @@ TEST(BlockInteractionTest, BreakDurationsCountOnlyFullIntervalsAfterTheStartTick
         shared::Block block;
         uint16_t intervals;
     };
-    constexpr DurationCase cases[] = {
+    static constexpr DurationCase CASES[] = {
         {shared::Block::Snow, 10U},
         {shared::Block::Dirt, 15U},
         {shared::Block::Grass, 15U},
+        {shared::Block::Sand, 15U},
         {shared::Block::Ice, 20U},
         {shared::Block::Stone, 30U},
     };
 
-    for (DurationCase const test_case : cases) {
+    for (DurationCase const test_case : CASES) {
         SCOPED_TRACE(static_cast<int>(test_case.block));
         auto const timing = shared::breakTiming(survival, test_case.block);
         ASSERT_TRUE(timing.has_value());

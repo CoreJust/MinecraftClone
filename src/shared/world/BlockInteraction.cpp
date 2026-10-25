@@ -389,6 +389,7 @@ std::optional<BreakTiming> breakTiming(
         return BreakTiming{.required_full_intervals_after_start = 10U};
     case Block::Dirt:
     case Block::Grass:
+    case Block::Sand:
         return BreakTiming{.required_full_intervals_after_start = 15U};
     case Block::Ice:
         return BreakTiming{.required_full_intervals_after_start = 20U};

@@ -316,6 +316,9 @@ void appendSurfaceTile(std::vector<uint8_t>& bytes, SurfaceTile const& tile)
         bytes.push_back(static_cast<uint8_t>(column.ground_material));
         appendUint16(bytes, column.ground_first_z);
         appendUint16(bytes, column.ground_end_z);
+        appendUint64(bytes, std::bit_cast<uint64_t>(column.source_l0_elevation_m));
+        bytes.push_back(column.source_biome_id);
+        bytes.push_back(static_cast<uint8_t>(column.source_native_coast_adjacent));
     }
 }
 
@@ -921,9 +924,14 @@ std::optional<SurfaceTile> readSurfaceTile(MessageReader& reader, HeightTileKey 
         auto const ground_material = reader.readUint8();
         auto const ground_first_z = reader.readUint16();
         auto const ground_end_z = reader.readUint16();
+        auto const source_l0_elevation_m = reader.readDouble();
+        auto const source_biome_id = reader.readUint8();
+        auto const source_native_coast_adjacent = reader.readUint8();
         if (!highest_solid_z || !water_height_z || !water_present || *water_present > 1U
             || !submerged || *submerged > 1U || !geological_elevation_km || !temperature_celsius
-            || !precipitation || !top_material || !ground_material || !ground_first_z || !ground_end_z) {
+            || !precipitation || !top_material || !ground_material || !ground_first_z || !ground_end_z
+            || !source_l0_elevation_m || !source_biome_id || !source_native_coast_adjacent
+            || *source_native_coast_adjacent > 1U) {
             return std::nullopt;
         }
         column = TerrainColumn{
@@ -938,6 +946,9 @@ std::optional<SurfaceTile> readSurfaceTile(MessageReader& reader, HeightTileKey 
             .ground_material = static_cast<Block>(*ground_material),
             .ground_first_z = *ground_first_z,
             .ground_end_z = *ground_end_z,
+            .source_l0_elevation_m = *source_l0_elevation_m,
+            .source_biome_id = *source_biome_id,
+            .source_native_coast_adjacent = *source_native_coast_adjacent == 1U,
         };
     }
     return surface;
@@ -1469,7 +1480,7 @@ bool isValidMessage(Message const& message) noexcept
                 && (value.sequence != 0U || value.status == BlockActionStatus::Accepted)
                 && value.status <= BlockActionStatus::InvalidMode && value.mode <= GameMode::Survival
                 && value.effective_actions < (1U << INTERACTION_ACTION_COUNT)
-                && value.break_materials < (1U << 7U) && value.place_materials < (1U << 7U);
+                && (value.break_materials & 1U) == 0U && (value.place_materials & 1U) == 0U;
         } else if constexpr (std::is_same_v<Value, ServerBlockDeltaMessage>) {
             auto const normalized = WorldBounds::normalize(value.coordinate);
             return isValidTerrainSessionIdentity(value.session) && normalized && *normalized == value.coordinate

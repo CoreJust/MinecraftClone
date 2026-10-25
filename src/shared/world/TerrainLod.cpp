@@ -19,6 +19,10 @@
 namespace {
 
 constexpr uint32_t PERIOD = generation::WORLD_SIZE_BLOCKS;
+constexpr uint8_t NO_V9_BIOME = 255U;
+constexpr uint8_t V9_COLD_SUMMIT_BIOME = 0U;
+constexpr uint8_t V9_HOT_DESERT_BIOME = 5U;
+constexpr double V9_COAST_SAND_MAX_ELEVATION_M = 20.0;
 
 void checkCancellation(std::stop_token const& cancellation)
 {
@@ -100,10 +104,37 @@ shared::Block surfaceMaterial(shared::TerrainLodSample const& sample, uint32_t c
 {
     shared::TerrainColumn column;
     column.highest_solid_z = static_cast<uint16_t>(std::floor(sample.height));
-    column.top_material = sample.temperature <= -2.0 ? shared::Block::Snow : shared::Block::Grass;
+    column.submerged = column.highest_solid_z < sea_level;
+    column.water_present = sample.water_present;
+    column.source_l0_elevation_m = sample.source_l0_elevation_m;
+    column.source_biome_id = sample.source_biome_id;
+    column.source_native_coast_adjacent = sample.source_native_coast_adjacent;
+    if (sample.source_biome_id != NO_V9_BIOME) {
+        bool const exposed_dry_land = !column.submerged && !sample.water_present;
+        bool const low_coast = sample.source_native_coast_adjacent && sample.source_l0_elevation_m > 0.0
+            && sample.source_l0_elevation_m <= V9_COAST_SAND_MAX_ELEVATION_M;
+        column.top_material = exposed_dry_land
+                && (sample.source_biome_id == V9_HOT_DESERT_BIOME || low_coast)
+            ? shared::Block::Sand
+            : (column.submerged
+                    ? shared::Block::Dirt
+                    : (exposed_dry_land && sample.source_biome_id == V9_COLD_SUMMIT_BIOME
+                            && sample.temperature < 0.0
+                        ? shared::Block::Snow
+                        : shared::Block::Grass));
+    } else {
+        column.top_material = column.submerged
+            ? shared::Block::Dirt
+            : (sample.temperature <= -2.0 ? shared::Block::Snow : shared::Block::Grass);
+    }
     column.ground_material = sample.temperature <= -2.0 ? shared::Block::Ice : shared::Block::Dirt;
-    column.ground_first_z = static_cast<uint16_t>(sea_level > 4U ? sea_level - 4U : 1U);
-    column.ground_end_z = static_cast<uint16_t>(column.highest_solid_z + 1U);
+    uint32_t const ground_first = column.submerged
+        ? (sea_level > 4U ? sea_level - 4U : 1U)
+        : (column.highest_solid_z > 4U ? column.highest_solid_z - 4U : 1U);
+    column.ground_first_z = static_cast<uint16_t>(ground_first);
+    column.ground_end_z = static_cast<uint16_t>(column.submerged
+        ? static_cast<uint32_t>(column.highest_solid_z) + 1U
+        : column.highest_solid_z);
     return column.materialAt(column.highest_solid_z, sea_level);
 }
 
@@ -119,7 +150,7 @@ shared::TerrainLodSample makeSample(
 {
     auto const& atlas = *world.atlas();
     shared::TerrainLodSample sample;
-    if (atlas.configuration.model_tag == generation::TerrainModelTag::V9) {
+    if (atlas.configuration.model_tag == generation::TerrainModelTag::V9 && level != shared::TerrainLodLevel::L3) {
         generation::V9SurfaceSample const source = generation::sampleV9Surface(
             atlas, x, y, static_cast<uint32_t>(level)
         );
@@ -128,7 +159,11 @@ shared::TerrainLodSample makeSample(
         sample.precipitation = source.precipitation_mm_year;
         sample.water_present = source.ocean || source.lake || source.river;
         sample.water_height = generation::mapV9WaterLevelToBlock(source.water_level_m);
-    } else {
+        sample.source_l0_elevation_m = world.sourceV9L0ElevationAt(x, y);
+        sample.source_biome_id = source.biome_id;
+        sample.source_native_coast_adjacent = world.hasAdjacentV9OceanOrLake(x, y);
+    } else if (atlas.configuration.model_tag != generation::TerrainModelTag::V9
+        && level != shared::TerrainLodLevel::L3) {
         size_t const index = atlasIndex(atlas, x, y);
         sample.height = level == shared::TerrainLodLevel::L3 ? 0.0 : world.sampleSurfaceHeight(x, y);
         auto const climate = world.sampleClimate(x, y);
@@ -138,7 +173,9 @@ shared::TerrainLodSample makeSample(
         sample.water_height = static_cast<uint16_t>(std::clamp(std::floor(atlas.block_sea_level
             + atlas.vertical_scale * (atlas.water_level[index] - atlas.sea_level)), 0.0, 1023.0));
     }
-    sample.top_material = surfaceMaterial(sample, atlas.block_sea_level);
+    if (level != shared::TerrainLodLevel::L3) {
+        sample.top_material = surfaceMaterial(sample, atlas.block_sea_level);
+    }
     if (level == shared::TerrainLodLevel::L3) {
         uint64_t const key = static_cast<uint64_t>(y / shared::Chunk::SIDE_LENGTH) * PERIOD
             + x / shared::Chunk::SIDE_LENGTH;
@@ -157,6 +194,9 @@ shared::TerrainLodSample makeSample(
         sample.top_material = column.materialAt(column.highest_solid_z, atlas.block_sea_level);
         sample.temperature = column.temperature_celsius;
         sample.precipitation = column.precipitation;
+        sample.source_l0_elevation_m = column.source_l0_elevation_m;
+        sample.source_biome_id = column.source_biome_id;
+        sample.source_native_coast_adjacent = column.source_native_coast_adjacent;
     }
     sample.parent_height = parentHeight(
         world, level, shared::TerrainLodNodeKey{.x = x, .y = y}, sample.height, parent_height_cache
@@ -265,6 +305,8 @@ TerrainLodSample sampleTerrainLod(TerrainLodArtifact const& artifact, double wor
     result.temperature = blend(blend(a.temperature, b.temperature, fx), blend(c.temperature, d.temperature, fx), fy);
     result.precipitation = blend(blend(a.precipitation, b.precipitation, fx),
         blend(c.precipitation, d.precipitation, fx), fy);
+    result.source_l0_elevation_m = blend(blend(a.source_l0_elevation_m, b.source_l0_elevation_m, fx),
+        blend(c.source_l0_elevation_m, d.source_l0_elevation_m, fx), fy);
     result.top_material = surfaceMaterial(result, artifact.terrain_identity.terrain_version
         == generation::terrainVersion(generation::TerrainModelTag::V9)
         ? generation::V9_BLOCK_SEA_LEVEL : generation::BLOCK_SEA_LEVEL);

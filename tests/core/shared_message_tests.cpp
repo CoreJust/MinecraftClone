@@ -158,6 +158,45 @@ shared::ServerHeightTileMessage materialHeightTileMessage()
     return message;
 }
 
+shared::ServerHeightTileMessage v9HeightTileMessage()
+{
+    generation::GenerationConfiguration configuration{};
+    configuration.model_tag = generation::TerrainModelTag::V9;
+    shared::ServerHeightTileMessage message = heightTileMessage();
+    message.heights.fill(391U);
+    message.surface.block_sea_level = generation::V9_BLOCK_SEA_LEVEL;
+    message.surface.max_height = generation::V9_MAX_HEIGHT;
+    message.surface.identity = {
+        .terrain_version = generation::terrainVersion(generation::TerrainModelTag::V9),
+        .revision = message.revision,
+        .seed = configuration.seed,
+        .configuration_identity = generation::configurationIdentity(configuration),
+    };
+    message.surface.columns.fill(terrainColumn(390U));
+    for (shared::TerrainColumn& column : message.surface.columns) {
+        column.source_l0_elevation_m = 100.0;
+        column.source_biome_id = 1U;
+    }
+
+    shared::TerrainColumn& coastal_sand = message.surface.columns[0U];
+    coastal_sand.source_l0_elevation_m = 12.5;
+    coastal_sand.source_biome_id = 2U;
+    coastal_sand.source_native_coast_adjacent = true;
+    coastal_sand.top_material = shared::Block::Sand;
+
+    shared::TerrainColumn& desert_sand = message.surface.columns[1U];
+    desert_sand.source_biome_id = 5U;
+    desert_sand.top_material = shared::Block::Sand;
+
+    shared::TerrainColumn& snowy_summit = message.surface.columns[2U];
+    snowy_summit.temperature_celsius = -5.0;
+    snowy_summit.source_l0_elevation_m = 1200.0;
+    snowy_summit.source_biome_id = 0U;
+    snowy_summit.top_material = shared::Block::Snow;
+    snowy_summit.ground_material = shared::Block::Ice;
+    return message;
+}
+
 shared::ServerHeightTileBatchMessage heightTileBatchMessage()
 {
     shared::ServerHeightTileBatchMessage batch{
@@ -889,6 +928,68 @@ TEST(MessageTest, PreservesEveryStableBlockIdInSingleAndBatchTileCodecs)
     verify_materials(decoded_batch->tiles[1U]);
 }
 
+TEST(MessageTest, PreservesV9SurfaceSourceMetadataAndR6Sentinels)
+{
+    auto const r6_packet = shared::encodeMessage(heightTileMessage());
+    auto const r6_decoded = shared::decodeMessage(r6_packet);
+    ASSERT_TRUE(r6_decoded.has_value());
+    auto const* const r6_tile = std::get_if<shared::ServerHeightTileMessage>(&*r6_decoded);
+    ASSERT_NE(r6_tile, nullptr);
+    EXPECT_EQ(r6_tile->surface.columns[0U].source_l0_elevation_m, 0.0);
+    EXPECT_EQ(r6_tile->surface.columns[0U].source_biome_id, 255U);
+    EXPECT_FALSE(r6_tile->surface.columns[0U].source_native_coast_adjacent);
+
+    shared::ServerHeightTileMessage const source = v9HeightTileMessage();
+    auto const packet = shared::encodeMessage(source);
+    ASSERT_FALSE(packet.empty());
+    auto const decoded = shared::decodeMessage(packet);
+    ASSERT_TRUE(decoded.has_value());
+    auto const* const tile = std::get_if<shared::ServerHeightTileMessage>(&*decoded);
+    ASSERT_NE(tile, nullptr);
+    EXPECT_EQ(tile->surface.identity.terrain_version, source.surface.identity.terrain_version);
+
+    auto const& coastal_sand = tile->surface.columns[0U];
+    EXPECT_EQ(coastal_sand.top_material, shared::Block::Sand);
+    EXPECT_DOUBLE_EQ(coastal_sand.source_l0_elevation_m, 12.5);
+    EXPECT_EQ(coastal_sand.source_biome_id, 2U);
+    EXPECT_TRUE(coastal_sand.source_native_coast_adjacent);
+
+    auto const& desert_sand = tile->surface.columns[1U];
+    EXPECT_EQ(desert_sand.top_material, shared::Block::Sand);
+    EXPECT_DOUBLE_EQ(desert_sand.source_l0_elevation_m, 100.0);
+    EXPECT_EQ(desert_sand.source_biome_id, 5U);
+    EXPECT_FALSE(desert_sand.source_native_coast_adjacent);
+
+    auto const& snowy_summit = tile->surface.columns[2U];
+    EXPECT_EQ(snowy_summit.top_material, shared::Block::Snow);
+    EXPECT_DOUBLE_EQ(snowy_summit.source_l0_elevation_m, 1200.0);
+    EXPECT_EQ(snowy_summit.source_biome_id, 0U);
+    EXPECT_FALSE(snowy_summit.source_native_coast_adjacent);
+}
+
+TEST(MessageTest, RejectsMalformedV9SurfaceSourceMetadata)
+{
+    shared::ServerHeightTileMessage const source = v9HeightTileMessage();
+    std::vector<uint8_t> const valid_packet = shared::encodeMessage(source);
+    ASSERT_FALSE(valid_packet.empty());
+
+    static constexpr size_t MESSAGE_HEADER_BYTES = 3U;
+    static constexpr size_t HEIGHT_TILE_HEADER_BYTES = 27U;
+    static constexpr size_t SURFACE_HEADER_BYTES = 8U + 22U;
+    static constexpr size_t SOURCE_BIOME_ID_COLUMN_OFFSET = 44U;
+    static constexpr size_t SOURCE_COAST_FLAG_COLUMN_OFFSET = 45U;
+    size_t const columns_offset = MESSAGE_HEADER_BYTES + HEIGHT_TILE_HEADER_BYTES + SURFACE_HEADER_BYTES
+        + source.surface.identity.configuration_identity.size();
+
+    auto malformed_coast_flag = valid_packet;
+    malformed_coast_flag[columns_offset + SOURCE_COAST_FLAG_COLUMN_OFFSET] = 2U;
+    EXPECT_FALSE(shared::decodeMessage(malformed_coast_flag).has_value());
+
+    auto malformed_biome = valid_packet;
+    malformed_biome[columns_offset + SOURCE_BIOME_ID_COLUMN_OFFSET] = 13U;
+    EXPECT_FALSE(shared::decodeMessage(malformed_biome).has_value());
+}
+
 TEST(MessageTest, RejectsTruncatedAndUnknownPayloads) {
     std::array<shared::Message, 11> const messages{
         shared::JoinRequestMessage{ .ch = '@' },
@@ -1293,6 +1394,10 @@ TEST(MessageTest, RejectsOldAndMixedProtocolVersions) {
     EXPECT_FALSE(shared::decodeMessage(packet).has_value());
 
     packet = shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' });
+    packet[1] = 23U;
+    EXPECT_FALSE(shared::decodeMessage(packet).has_value());
+
+    packet = shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' });
     packet[1] = 11U;
     EXPECT_FALSE(shared::decodeMessage(packet).has_value());
 
@@ -1316,7 +1421,7 @@ TEST(MessageTest, MapsExactDiskCardinalitiesToEverySupportedRadius)
         shared::heightTileInterestCount(257U),
     };
 
-    EXPECT_EQ(shared::PROTOCOL_VERSION, 23U);
+    EXPECT_EQ(shared::PROTOCOL_VERSION, 24U);
     EXPECT_EQ(shared::HEIGHT_TILE_BATCH_CAPACITY, 64U);
     EXPECT_EQ(shared::HEIGHT_TILE_RESIDENCY_RECEIPT_KEY_CAPACITY, 128U);
     EXPECT_EQ(
@@ -1507,6 +1612,74 @@ TEST(MessageTest, BlockActionIntentKeepsSessionSequenceAimAndPressIdentity)
     EXPECT_EQ(result.material, request.material);
     request.sequence = 0U;
     EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(request)));
+}
+
+TEST(MessageTest, SandBlockActionsAndEditReplicationRoundTripAtProtocol24)
+{
+    static constexpr uint8_t SAND_BIT = static_cast<uint8_t>(1U << static_cast<uint8_t>(shared::Block::Sand));
+
+    shared::ClientBlockActionMessage const action{
+        .session = terrainSessionIdentity(), .sequence = 1U,
+        .kind = shared::BlockActionKind::PlacePress,
+        .aim_y = 32'767, .target_hint = {4, 5, 6}, .material = shared::Block::Sand,
+    };
+    auto const action_packet = shared::encodeMessage(action);
+    ASSERT_EQ(action_packet[1U], 24U);
+    auto decoded = shared::decodeMessage(action_packet);
+    ASSERT_TRUE(decoded);
+    EXPECT_EQ(std::get<shared::ClientBlockActionMessage>(*decoded).material, shared::Block::Sand);
+
+    shared::ServerBlockActionResultMessage const rights{
+        .session = action.session, .sequence = 1U,
+        .status = shared::BlockActionStatus::Accepted, .mode = shared::GameMode::Creative,
+        .break_materials = SAND_BIT, .place_materials = SAND_BIT,
+    };
+    decoded = shared::decodeMessage(shared::encodeMessage(rights));
+    ASSERT_TRUE(decoded);
+    auto const& received_rights = std::get<shared::ServerBlockActionResultMessage>(*decoded);
+    EXPECT_EQ(received_rights.break_materials, SAND_BIT);
+    EXPECT_EQ(received_rights.place_materials, SAND_BIT);
+
+    shared::ServerBlockDeltaMessage const delta{
+        .session = action.session, .coordinate = {4, 5, 6}, .from_revision = 0U,
+        .to_revision = 1U, .cell_version = 1U, .material = shared::Block::Sand,
+    };
+    decoded = shared::decodeMessage(shared::encodeMessage(delta));
+    ASSERT_TRUE(decoded);
+    EXPECT_EQ(std::get<shared::ServerBlockDeltaMessage>(*decoded).material, shared::Block::Sand);
+
+    shared::ServerEditChunkSnapshotMessage const snapshot{
+        .session = action.session, .revision = 1U,
+        .chunk = uniformChunkPayload({0, 0, 0}, shared::Block::Air),
+        .edits = {{{1U, 2U, 3U}, shared::Block::Sand, 1U}},
+    };
+    decoded = shared::decodeMessage(shared::encodeMessage(snapshot));
+    ASSERT_TRUE(decoded);
+    auto const& received = std::get<shared::ServerEditChunkSnapshotMessage>(*decoded);
+    ASSERT_EQ(received.edits.size(), 1U);
+    EXPECT_EQ(received.edits.front().material, shared::Block::Sand);
+}
+
+TEST(MessageTest, RejectsAirInReplicatedInteractionMaterialMasks)
+{
+    shared::ServerBlockActionResultMessage const response{
+        .session = terrainSessionIdentity(), .sequence = 1U,
+        .status = shared::BlockActionStatus::Accepted, .mode = shared::GameMode::Creative,
+        .place_materials = 1U,
+    };
+    EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(response)));
+}
+
+TEST(MessageTest, Protocol23RejectsAFrameContainingTheNewSandBlockID)
+{
+    shared::ClientBlockActionMessage const action{
+        .session = terrainSessionIdentity(), .sequence = 1U,
+        .kind = shared::BlockActionKind::PlacePress,
+        .aim_y = 32'767, .target_hint = {4, 5, 6}, .material = shared::Block::Sand,
+    };
+    auto packet = shared::encodeMessage(action);
+    packet[1U] = 23U;
+    EXPECT_FALSE(shared::decodeMessage(packet));
 }
 
 TEST(MessageTest, LiveEditFramesPreserveChunkContinuityAndCompleteVerticalManifest)

@@ -867,6 +867,57 @@ TEST(SparseWorldTest, AuthoritativeProfilesCoverEveryVoxelWithoutDenseClientGene
     EXPECT_EQ(authoritative_column->dense_blocks, nullptr);
 }
 
+TEST(SparseWorldTest, V9SandTopRemainsSolidAcrossAuthorityQueryAndChunkMaterialization)
+{
+    generation::GenerationConfiguration const configuration{
+        .seed = 42U,
+        .model_tag = generation::TerrainModelTag::V9,
+    };
+    shared::TerrainIdentity const identity{
+        .terrain_version = generation::terrainVersion(generation::TerrainModelTag::V9),
+        .revision = 1U,
+        .seed = configuration.seed,
+        .configuration_identity = generation::configurationIdentity(configuration),
+    };
+    shared::SurfaceTile surface;
+    surface.coordinate = {.x = 4, .y = 5, .z = 0};
+    surface.block_sea_level = generation::V9_BLOCK_SEA_LEVEL;
+    surface.max_height = generation::V9_MAX_HEIGHT;
+    surface.identity = identity;
+    for (shared::TerrainColumn& column : surface.columns) {
+        column.highest_solid_z = static_cast<uint16_t>(surface.block_sea_level);
+        column.water_height_z = static_cast<uint16_t>(surface.block_sea_level);
+        column.geological_elevation_km = 0.001;
+        column.temperature_celsius = 12.0;
+        column.precipitation = 0.3;
+        column.top_material = shared::Block::Grass;
+        column.ground_material = shared::Block::Dirt;
+        column.ground_first_z = static_cast<uint16_t>(surface.block_sea_level - 4U);
+        column.ground_end_z = static_cast<uint16_t>(surface.block_sea_level);
+        column.source_l0_elevation_m = 100.0;
+        column.source_biome_id = 4U;
+    }
+    surface.columns.front().top_material = shared::Block::Sand;
+    surface.columns.front().source_biome_id = 5U;
+    ASSERT_TRUE(shared::isValidSurfaceTile(surface));
+
+    shared::SparseWorld world(
+        {.seed = 42U, .max_resident_chunks = 2U, .revision = 1U},
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishSurfaceMetadata(surface));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+    EXPECT_EQ(world.queryBlock({64, 80, surface.block_sea_level}).block, shared::Block::Sand);
+    shared::Chunk const* const chunk = world.ensureChunk({
+        4,
+        5,
+        static_cast<int32_t>(surface.block_sea_level / shared::Chunk::SIDE_LENGTH),
+    });
+    ASSERT_NE(chunk, nullptr);
+    EXPECT_EQ(chunk->blockAt({.x = 0U, .y = 0U, .z = 0U}), shared::Block::Sand);
+}
+
 TEST(SparseWorldTest, AuthoritativeProfilesPreserveDenseEditsAndInvalidateOnIdentityChange)
 {
     auto const identity = testsupport::makeTerrainIdentity(42U, 1U);

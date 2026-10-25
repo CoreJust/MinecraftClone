@@ -15,9 +15,12 @@ Canonical regional elaboration inherits parent samples. `TerrainWorld` provides
 typed columns and builds actual chunks; [GAMEPLAY.md](GAMEPLAY.md) covers
 authority, replication, coverage and edits. Columns begin with Bedrock, then top
 material, four ground layers and Stone; below sea level, ground uses the four
-blocks immediately beneath it. R6 selects Grass above −2 °C and Snow otherwise;
-atlas height and ground stay unchanged. Climate queries return periodic
-bilinear temperature and precipitation.
+blocks immediately beneath it. R6 uses Grass above −2 °C and Snow otherwise.
+V9 preserves model height: exposed biome 5 is Sand; biome 0 is Snow only below
+0 °C. Non-desert coast Sand requires dry land, native L0 ocean/lake adjacency
+and elevation through 20 m above MSL; rivers alone do not qualify. LOD retains
+these source fields. Climate queries return periodic bilinear temperature and
+precipitation.
 
 Numerics and provenance: [versioned contract](../ai/decisions/earlydev_0_1_1_s1_numerics.md).
 R3 references stay frozen. R4 uses binary64 shelf exponentials then binary32,

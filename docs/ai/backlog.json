@@ -20422,5 +20422,46 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0561",
+    "title": "Apply model-driven Snow and Sand after native model integration",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0560"
+    ],
+    "acceptance": "Append Sand material and integrate rendering, editing, replication, and map support. Classify V9 hot-desert and eligible low ocean/lake coast Sand and strict-below-zero biome-0 summit Snow from the adopted model; preserve canonical query, collision, mesh and edit behavior, material IDs 0–6, and R6 output. Verify source metadata, fixed-seed generation, protocol-24 height-tile round trips, and authoritative queries. Do not infer Snow without model temperature. Native visual/runtime, Windows, and platform qualification remain separate MC-AI-0483 gates.",
+    "evidence": "Candidate /private/tmp/mc-ai-0561-2df825 at base 2df825b2f284a1466bc35716ff9f1a068145a1f2 used existing macOS arm64 CoreCpp/CoreProject2026/vcpkg prefixes with VCPKG_MANIFEST_INSTALL=OFF. mc_tests and mc_main built; after protocol-24 SurfaceTile metadata serialization, mc_tests rebuilt successfully. The first 38-test focused run had one fixture expectation failure (biome 4 at -1 C with Grass is valid); after correcting the fixture to assert Snow rejection and Grass acceptance, that test passed 1/1. Protocol tests for V9 source metadata and R6 sentinels, malformed biome/coast rejection, and old protocol rejection passed 3/3. The seed-42 provider integration passed in 191.4 s and verified actual biome-5 desert Sand, eligible low coastal Sand, and biome-0 summit Snow below 0 C; for each generated SurfaceTile, protocol-24 encode/decode preserved source metadata and material, and a MaterializedOnly SparseWorld authoritative query returned the expected block. Documentation integrity and task validation pass after final metadata refresh. No native visual/runtime capture, Windows build/capture, or performance qualification is claimed; those remain parent MC-AI-0483 gates. Renderer review fixes add the Sand shader material range and discrete CPU-classified V9 source-cell top material in the std430 field; R6 keeps its existing temperature/elevation path. The final shallow-water shader delta preserves Ice at canonical temperature <= -2 C from sea-4 through sea, Dirt otherwise, and Stone deeper; both focused shader contract tests passed after rebuilding stone.frag and stone_solid.frag. The seed-42 generated render-field Sand/Snow assertions passed before this shader-only shallow-water correction; native rendered pixels remain unverified.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Show the integrated model with cold summit snow and suitable desert/beach sand.",
+    "context": "Owner explicitly requires this only after the replacement model lands and is used; MC-AI-0560 must complete first. Generated terrain remains solid layered columns then air.",
+    "complexity": "high",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added Sand block ID 7 and V9 source-driven desert, low coastal shore, and sub-zero summit materials; integrated rendering, maps, edit actions, and protocol-24 height-tile source-metadata replication.",
+    "plan": [],
+    "product_changes": [
+      "V9 exposes biome-driven Sand on hot deserts and eligible low ocean/lake coasts, and Snow only on biome-0 surfaces below 0 C; existing material IDs 0-6 and R6 output remain stable.",
+      "Sand ID 7 has atlas, map, label, interaction, rights, and protocol-24 edit/replication support."
+    ],
+    "code_changes": [
+      "Canonical TerrainWorld columns and LOD retain source biome, elevation, and coast metadata for consistent Sand/Snow classification.",
+      "Sand support is carried through procedural atlas/shader tiles, map palettes, interaction actions, authoritative permission filtering, and protocol 24 codecs.",
+      "V9 smooth LOD nearest-samples canonical source-cell surface material through the vec4 SSBO while R6 keeps temperature/elevation shading; the shader retains cold shallow Ice."
+    ],
+    "baseline_commit": "d55377d5a745eab22635cc0692b52c649a3c3f6d",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "GENERATION.md documents V9 source material rules while preserving R6 behavior; GAMEPLAY.md documents protocol-24 source metadata; RENDERING.md documents Sand atlas and discrete V9 field upload. ai_docs refresh/check passed.",
+    "environment_review": "Candidate /private/tmp/mc-ai-0561-2df825 at exact base 2df825b2f284a1466bc35716ff9f1a068145a1f2; macOS arm64 debug build used existing CoreCpp/CoreProject2026/vcpkg prefixes with VCPKG_MANIFEST_INSTALL=OFF. No new dependencies or installs.",
+    "backlog_review": "Only MC-AI-0561 is finalized in this private candidate; shared root backlog/index are untouched. Parent MC-AI-0483 native visual, Windows, platform, runtime, and performance qualification remain open."
   }
 ]

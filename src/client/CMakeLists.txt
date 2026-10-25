@@ -11,6 +11,8 @@ target_sources(mc
         UiPresentation.cpp
         S2MapPresentation.cpp
         PlayerPreviewLod.cpp
+        render/CanonicalTerrainField.cpp
+        include/client/render/CanonicalTerrainField.hpp
         render/BlockInteractionEffects.cpp
         render/DebugHud.cpp
         render/GuiRenderer.cpp

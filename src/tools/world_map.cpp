@@ -569,7 +569,7 @@ Rgb waterColor(
 [[nodiscard]]
 Rgb materialColor(shared::Block const material)
 {
-    constexpr std::array<Rgb, 7U> palette = {
+    constexpr std::array<Rgb, 8U> palette = {
         Rgb{0U, 0U, 0U},
         Rgb{99U, 96U, 91U},
         Rgb{87U, 142U, 56U},
@@ -577,6 +577,7 @@ Rgb materialColor(shared::Block const material)
         Rgb{55U, 53U, 58U},
         Rgb{235U, 240U, 242U},
         Rgb{119U, 177U, 203U},
+        Rgb{214U, 192U, 135U},
     };
     if (!shared::isValidBlock(material)) {
         throw std::runtime_error("regional sampler returned an invalid top-material ID");
@@ -1052,7 +1053,8 @@ void writeMetadata(
         << "    \"3\": {\"name\": \"Dirt\", \"rgb\": [132, 91, 55]},\n"
         << "    \"4\": {\"name\": \"Bedrock\", \"rgb\": [55, 53, 58]},\n"
         << "    \"5\": {\"name\": \"Snow\", \"rgb\": [235, 240, 242]},\n"
-        << "    \"6\": {\"name\": \"Ice\", \"rgb\": [119, 177, 203]}\n"
+        << "    \"6\": {\"name\": \"Ice\", \"rgb\": [119, 177, 203]},\n"
+        << "    \"7\": {\"name\": \"Sand\", \"rgb\": [214, 192, 135]}\n"
         << "  },\n"
         << "  \"timing_ms\": {\n"
         << "    \"simulation\": " << timing.simulation_ms << ",\n"

@@ -196,13 +196,17 @@ TEST(ShaderAssetsTest, StoneMaterialInterfaceLinksBothVertexPathsToBothFragments
     }
 }
 
-TEST(ShaderAssetsTest, TerrainTextureAtlasPreservesGrassFaceMappingAndOverlayAlpha)
+TEST(ShaderAssetsTest, TerrainTextureAtlasIncludesSandFacesAndPreservesGrassOverlayAlpha)
 {
     namespace terrain_textures = client::render::terrain_textures;
 
     EXPECT_EQ(terrain_textures::tileIndex(2U, 4U), 16U);
     EXPECT_EQ(terrain_textures::tileIndex(2U, 5U), 17U);
-    EXPECT_EQ(terrain_textures::GRASS_SIDE_OVERLAY_TILE_INDEX, 42U);
+    for (uint32_t face = 0U; face < terrain_textures::FACE_COUNT; ++face) {
+        EXPECT_EQ(terrain_textures::tileIndex(static_cast<uint8_t>(shared::Block::Sand), face), 42U + face);
+    }
+    EXPECT_EQ(terrain_textures::TILE_COUNT, 49U);
+    EXPECT_EQ(terrain_textures::GRASS_SIDE_OVERLAY_TILE_INDEX, 48U);
     EXPECT_EQ(terrain_textures::GRASS_TINT_RGBA8, 0xFF59'BD91U);
     EXPECT_EQ(terrain_textures::tileIndex(terrain_textures::MATERIAL_COUNT, 0U),
         terrain_textures::INVALID_TILE_INDEX);
@@ -210,6 +214,20 @@ TEST(ShaderAssetsTest, TerrainTextureAtlasPreservesGrassFaceMappingAndOverlayAlp
         terrain_textures::INVALID_TILE_INDEX);
 
     EXPECT_EQ(terrain_textures::RGBA8[0U], 0U);
+    for (uint32_t face = 0U; face < terrain_textures::FACE_COUNT; ++face) {
+        uint64_t const sand_start = static_cast<uint64_t>(terrain_textures::tileIndex(
+            static_cast<uint8_t>(shared::Block::Sand), face)) * terrain_textures::PIXELS_PER_TILE;
+        uint32_t const first_sand_pixel = terrain_textures::RGBA8[sand_start];
+        bool has_texture_variation = false;
+        for (uint32_t pixel = 0U; pixel < terrain_textures::PIXELS_PER_TILE; ++pixel) {
+            uint32_t const value = terrain_textures::RGBA8[sand_start + pixel];
+            EXPECT_EQ(static_cast<uint8_t>(value >> 24U), 255U);
+            EXPECT_GT(static_cast<uint8_t>(value), static_cast<uint8_t>(value >> 16U));
+            has_texture_variation |= value != first_sand_pixel;
+        }
+        EXPECT_TRUE(has_texture_variation) << "face=" << face;
+    }
+
     uint32_t const overlay_first_pixel = terrain_textures::RGBA8[
         static_cast<uint64_t>(terrain_textures::GRASS_SIDE_OVERLAY_TILE_INDEX)
             * terrain_textures::PIXELS_PER_TILE

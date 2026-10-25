@@ -1,7 +1,10 @@
 #include "V9Terrain.hpp"
 
 #include <client/S2MapPresentation.hpp>
+#include <client/render/CanonicalTerrainField.hpp>
 
+#include <shared/net/Message.hpp>
+#include <shared/world/SparseWorld.hpp>
 #include <shared/world/TerrainLod.hpp>
 #include <shared/world/TerrainWorld.hpp>
 #include <generation/Generation.hpp>
@@ -137,6 +140,175 @@ TEST(V9ProviderTests, BuildsSeededAtlasAndFeedsWorldQueriesAndMapLayers)
     EXPECT_EQ(world.identity().configuration_identity, generation::configurationIdentity(configuration));
 
     uint32_t const cell_extent = generation::WORLD_SIZE_BLOCKS / SOURCE_RESOLUTION;
+
+    auto const hasWater = [&](uint32_t const x, uint32_t const y) {
+        size_t const index = static_cast<size_t>(y) * SOURCE_RESOLUTION + x;
+        return ocean_values[index] != 0U || lake_values[index] != 0U || river_values[index] != 0U;
+    };
+    auto const hasAdjacentOceanOrLake = [&](uint32_t const x, uint32_t const y) {
+        for (int32_t dy = -1; dy <= 1; ++dy) {
+            for (int32_t dx = -1; dx <= 1; ++dx) {
+                if (dx == 0 && dy == 0) {
+                    continue;
+                }
+                uint32_t const neighbor_x = static_cast<uint32_t>(
+                    (static_cast<int32_t>(x) + dx + static_cast<int32_t>(SOURCE_RESOLUTION))
+                    % static_cast<int32_t>(SOURCE_RESOLUTION)
+                );
+                uint32_t const neighbor_y = static_cast<uint32_t>(
+                    (static_cast<int32_t>(y) + dy + static_cast<int32_t>(SOURCE_RESOLUTION))
+                    % static_cast<int32_t>(SOURCE_RESOLUTION)
+                );
+                size_t const neighbor = static_cast<size_t>(neighbor_y) * SOURCE_RESOLUTION + neighbor_x;
+                if (ocean_values[neighbor] != 0U || lake_values[neighbor] != 0U) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    auto const meanTemperatureAt = [&](size_t const index) {
+        double result = 0.0;
+        for (size_t phase = 0U; phase < 8U; ++phase) {
+            result += temperature_values[phase * SOURCE_COUNT + index];
+        }
+        return result / 8.0;
+    };
+    auto const findExposedCell = [&](auto const& eligible)
+        -> std::optional<std::array<uint32_t, 2U>> {
+        for (uint32_t y = 0U; y < SOURCE_RESOLUTION; ++y) {
+            for (uint32_t x = 0U; x < SOURCE_RESOLUTION; ++x) {
+                size_t const index = static_cast<size_t>(y) * SOURCE_RESOLUTION + x;
+                if (!eligible(index, x, y)) {
+                    continue;
+                }
+                uint32_t const world_x = x * cell_extent;
+                uint32_t const world_y = y * cell_extent;
+                shared::SurfaceTile const surface = world.sampleSurface({
+                    .x = static_cast<int32_t>(world_x / shared::Chunk::SIDE_LENGTH),
+                    .y = static_cast<int32_t>(world_y / shared::Chunk::SIDE_LENGTH),
+                    .z = 0,
+                });
+                shared::TerrainColumn const* const column = surface.columnAt({.x = 0U, .y = 0U});
+                if (column == nullptr || column->submerged || column->water_present) {
+                    continue;
+                }
+                return std::array<uint32_t, 2U>{x, y};
+            }
+        }
+        return std::nullopt;
+    };
+    auto const desert_cell = findExposedCell([&](size_t const index, uint32_t, uint32_t) {
+        return biome_values[index] == 5U && elevation_values[index] > 0.0 && !hasWater(
+            static_cast<uint32_t>(index % SOURCE_RESOLUTION),
+            static_cast<uint32_t>(index / SOURCE_RESOLUTION)
+        );
+    });
+    auto const summit_cell = findExposedCell([&](size_t const index, uint32_t const x, uint32_t const y) {
+        return biome_values[index] == 0U && meanTemperatureAt(index) < 0.0
+            && elevation_values[index] > 0.0 && !hasWater(x, y)
+            && !hasAdjacentOceanOrLake(x, y);
+    });
+    auto const coast_cell = findExposedCell([&](size_t const index, uint32_t const x, uint32_t const y) {
+        return biome_values[index] != 0U && biome_values[index] != 5U
+            && elevation_values[index] > 0.0 && elevation_values[index] <= 20.0
+            && !hasWater(x, y) && hasAdjacentOceanOrLake(x, y);
+    });
+    ASSERT_TRUE(desert_cell.has_value()) << "seed 42 must retain an exposed hot-desert source cell";
+    ASSERT_TRUE(summit_cell.has_value()) << "seed 42 must retain an exposed sub-zero summit source cell";
+    ASSERT_TRUE(coast_cell.has_value()) << "seed 42 must retain an exposed low coastal source cell";
+
+    std::vector<client::render::CanonicalTerrainFieldValue> const canonical_render_fields =
+        client::render::buildV9CanonicalTerrainFieldValues(*atlas);
+    ASSERT_EQ(canonical_render_fields.size(), SOURCE_COUNT);
+    auto const expectCanonicalRenderMaterial = [&](std::array<uint32_t, 2U> const cell, shared::Block const material) {
+        size_t const index = static_cast<size_t>(cell[1U]) * SOURCE_RESOLUTION + cell[0U];
+        EXPECT_EQ(static_cast<uint8_t>(canonical_render_fields[index][2U]), static_cast<uint8_t>(material));
+    };
+    expectCanonicalRenderMaterial(*desert_cell, shared::Block::Sand);
+    expectCanonicalRenderMaterial(*coast_cell, shared::Block::Sand);
+    expectCanonicalRenderMaterial(*summit_cell, shared::Block::Snow);
+
+    auto const expectSourceMaterialAndL3 = [&](std::array<uint32_t, 2U> const cell,
+        shared::Block const expected_material) {
+        uint32_t const world_x = cell[0U] * cell_extent;
+        uint32_t const world_y = cell[1U] * cell_extent;
+        size_t const source_index = static_cast<size_t>(cell[1U]) * SOURCE_RESOLUTION + cell[0U];
+        shared::SurfaceTile const surface = world.sampleSurface({
+            .x = static_cast<int32_t>(world_x / shared::Chunk::SIDE_LENGTH),
+            .y = static_cast<int32_t>(world_y / shared::Chunk::SIDE_LENGTH),
+            .z = 0,
+        });
+        shared::TerrainColumn const* const column = surface.columnAt({.x = 0U, .y = 0U});
+        ASSERT_NE(column, nullptr);
+        ASSERT_FALSE(column->submerged);
+        EXPECT_EQ(column->source_biome_id, biome_values[source_index]);
+        EXPECT_DOUBLE_EQ(column->source_l0_elevation_m, elevation_values[source_index]);
+        bool const source_coast = hasAdjacentOceanOrLake(cell[0U], cell[1U]);
+        EXPECT_EQ(column->source_native_coast_adjacent, source_coast);
+        if (expected_material == shared::Block::Snow) {
+            EXPECT_LT(column->temperature_celsius, 0.0);
+        }
+        EXPECT_EQ(column->top_material, expected_material);
+        EXPECT_EQ(column->materialAt(column->highest_solid_z, surface.block_sea_level), expected_material);
+
+        auto const lod = shared::buildTerrainLod(
+            world,
+            shared::TerrainLodLevel::L3,
+            world_x,
+            world_y,
+            shared::Chunk::SIDE_LENGTH
+        );
+        ASSERT_NE(lod, nullptr);
+        shared::TerrainLodSample const sample = shared::sampleTerrainLod(
+            *lod, static_cast<double>(world_x), static_cast<double>(world_y)
+        );
+        EXPECT_EQ(sample.source_biome_id, column->source_biome_id);
+        EXPECT_EQ(sample.source_native_coast_adjacent, column->source_native_coast_adjacent);
+        EXPECT_EQ(sample.top_material, expected_material);
+
+        shared::ServerHeightTileMessage const height_tile{
+            .key = {.x = surface.coordinate.x, .y = surface.coordinate.y},
+            .revision = surface.identity.revision,
+            .token = 1U,
+            .surface = surface,
+        };
+        auto encoded_height_tile = height_tile;
+        for (uint32_t index = 0U; index < encoded_height_tile.heights.size(); ++index) {
+            encoded_height_tile.heights[index] = static_cast<uint16_t>(
+                encoded_height_tile.surface.columns[index].highest_solid_z + 1U
+            );
+        }
+        auto const decoded_message = shared::decodeMessage(shared::encodeMessage(encoded_height_tile));
+        ASSERT_TRUE(decoded_message);
+        auto const* const decoded_height_tile = std::get_if<shared::ServerHeightTileMessage>(&*decoded_message);
+        ASSERT_NE(decoded_height_tile, nullptr);
+        shared::TerrainColumn const* const decoded_column = decoded_height_tile->surface.columnAt({.x = 0U, .y = 0U});
+        ASSERT_NE(decoded_column, nullptr);
+        EXPECT_EQ(decoded_column->source_biome_id, column->source_biome_id);
+        EXPECT_DOUBLE_EQ(decoded_column->source_l0_elevation_m, column->source_l0_elevation_m);
+        EXPECT_EQ(decoded_column->source_native_coast_adjacent, column->source_native_coast_adjacent);
+        EXPECT_EQ(decoded_column->top_material, expected_material);
+
+        shared::SparseWorld authoritative_world{
+            {
+                .seed = decoded_height_tile->surface.identity.seed,
+                .revision = decoded_height_tile->surface.identity.revision,
+            },
+            shared::SparseWorldGenerationMode::MaterializedOnly,
+        };
+        ASSERT_TRUE(authoritative_world.setTerrainIdentity(decoded_height_tile->surface.identity));
+        ASSERT_TRUE(authoritative_world.publishAuthoritativeSurface(decoded_height_tile->surface));
+        shared::SparseBlockQuery const authoritative_query = authoritative_world.queryBlock({
+            .x = static_cast<int64_t>(world_x),
+            .y = static_cast<int64_t>(world_y),
+            .z = decoded_column->highest_solid_z,
+        });
+        EXPECT_EQ(authoritative_query.block, std::optional<shared::Block>{expected_material});
+    };
+    expectSourceMaterialAndL3(*desert_cell, shared::Block::Sand);
+    expectSourceMaterialAndL3(*coast_cell, shared::Block::Sand);
+    expectSourceMaterialAndL3(*summit_cell, shared::Block::Snow);
     auto const allNearestWaterCellsWet = [&](uint32_t const x, uint32_t const y) {
         uint32_t const next_x = (x + 1U) % SOURCE_RESOLUTION;
         uint32_t const next_y = (y + 1U) % SOURCE_RESOLUTION;

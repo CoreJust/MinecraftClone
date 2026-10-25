@@ -1168,10 +1168,12 @@ TEST(PlayerClientFocusTest, BlockBreakInputRequiresFreshPressAndRestartsOnTarget
 TEST(PlayerClientFocusTest, PlacementMaterialCycleUsesOnlyServerAllowedSolids)
 {
     constexpr uint8_t ALLOWED = static_cast<uint8_t>((1U << static_cast<uint8_t>(shared::Block::Dirt))
-        | (1U << static_cast<uint8_t>(shared::Block::Ice)));
+        | (1U << static_cast<uint8_t>(shared::Block::Ice))
+        | (1U << static_cast<uint8_t>(shared::Block::Sand)));
 
     EXPECT_EQ(client::detail::nextPlaceableBlock(ALLOWED, shared::Block::Dirt), shared::Block::Ice);
-    EXPECT_EQ(client::detail::nextPlaceableBlock(ALLOWED, shared::Block::Ice), shared::Block::Dirt);
+    EXPECT_EQ(client::detail::nextPlaceableBlock(ALLOWED, shared::Block::Ice), shared::Block::Sand);
+    EXPECT_EQ(client::detail::nextPlaceableBlock(ALLOWED, shared::Block::Sand), shared::Block::Dirt);
     EXPECT_EQ(client::detail::nextPlaceableBlock(ALLOWED, shared::Block::Stone), shared::Block::Dirt);
     EXPECT_FALSE(client::detail::nextPlaceableBlock(0U, shared::Block::Stone).has_value());
     EXPECT_FALSE(client::detail::nextPlaceableBlock(

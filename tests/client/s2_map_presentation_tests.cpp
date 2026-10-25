@@ -293,6 +293,21 @@ TEST(S2MapPresentationTest, MinimapUsesTheSuppliedLocalProjectionAndHeading)
     EXPECT_DOUBLE_EQ(east.heading_degrees, 90.0);
 }
 
+TEST(S2MapPresentationTest, MinimapUsesWarmSandColorForSandSurfaceSamples)
+{
+    auto lod = localLod();
+    for (shared::TerrainLodNode& node : lod.nodes) {
+        node.sample.height = 400.0;
+        node.sample.top_material = shared::Block::Sand;
+        node.sample.water_present = false;
+    }
+
+    auto const image = client::rasterizeS2Minimap(lod);
+
+    ASSERT_TRUE(image.has_value());
+    EXPECT_EQ(image->rgba[image->width + 1U], (std::array<uint8_t, 4U>{211U, 194U, 149U, 255U}));
+}
+
 TEST(S2MapPresentationTest, MinimapPointerIsAHeadingRotatedFilledScreenShape)
 {
     client::S2MinimapMarker north{.x = 60.0F, .y = 70.0F, .heading_degrees = 0.0, .visible = true};

@@ -53,7 +53,7 @@ namespace {
 uint8_t allowedInteractionMaterials(shared::EffectiveInteractionRights const& rights, bool const breaking)
 {
     uint8_t materials = 0U;
-    for (uint8_t value = 1U; value <= static_cast<uint8_t>(shared::Block::Ice); ++value) {
+    for (uint8_t value = 1U; value <= static_cast<uint8_t>(shared::Block::Sand); ++value) {
         shared::Block const block = static_cast<shared::Block>(value);
         if (breaking ? rights.canBreak(block) : rights.canPlace(block)) {
             materials |= static_cast<uint8_t>(1U << value);
@@ -3470,8 +3470,8 @@ shared::EffectiveInteractionRights GameServer::interactionRights(
                     }));
                 }
             }
-            std::array<std::string_view, 7> const materials{
-                "air", "stone", "grass", "dirt", "bedrock", "snow", "ice",
+            std::array<std::string_view, 8> const materials{
+                "air", "stone", "grass", "dirt", "bedrock", "snow", "ice", "sand",
             };
             for (uint8_t material = 0U; material < materials.size(); ++material) {
                 for (bool const breaking : {true, false}) {

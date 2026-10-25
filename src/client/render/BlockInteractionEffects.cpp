@@ -13,6 +13,7 @@ glm::vec4 materialColor(shared::Block material)
     case shared::Block::Dirt: return {0.49F, 0.38F, 0.26F, 1.0F};
     case shared::Block::Snow: return {0.96F, 0.97F, 0.98F, 1.0F};
     case shared::Block::Ice: return {0.50F, 0.79F, 0.84F, 1.0F};
+    case shared::Block::Sand: return {0.88F, 0.78F, 0.57F, 1.0F};
     default: return {0.50F, 0.50F, 0.50F, 1.0F};
     }
 }

@@ -482,6 +482,7 @@ struct CurrentNearProbe final {
     case shared::Block::Bedrock: return "Bedrock";
     case shared::Block::Snow: return "Snow";
     case shared::Block::Ice: return "Ice";
+    case shared::Block::Sand: return "Sand";
     }
     return "Unknown";
 }
@@ -506,6 +507,7 @@ struct CurrentNearProbe final {
              shared::Block::Bedrock,
              shared::Block::Snow,
              shared::Block::Ice,
+             shared::Block::Sand,
          }) {
         if (!detail::interactionMaterialAllowed(mask, block)) {
             continue;

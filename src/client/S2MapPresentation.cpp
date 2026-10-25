@@ -225,6 +225,7 @@ Color materialColor(shared::Block const block) noexcept
     case shared::Block::Dirt: return {124.0F, 97.0F, 66.0F};
     case shared::Block::Snow: return {244.0F, 247.0F, 250.0F};
     case shared::Block::Ice: return {128.0F, 201.0F, 214.0F};
+    case shared::Block::Sand: return {229.0F, 211.0F, 162.0F};
     }
     return {128.0F, 128.0F, 128.0F};
 }

@@ -2,6 +2,7 @@
 #include <client/PlayerPresentation.hpp>
 #include <client/TerrainLodPresentation.hpp>
 #include <client/TerrainLodSelection.hpp>
+#include <client/render/CanonicalTerrainField.hpp>
 #include <client/render/DebugHud.hpp>
 #include <client/render/DepthFormat.hpp>
 #include <client/render/GuiRenderer.hpp>
@@ -1005,49 +1006,26 @@ public:
             || !std::isfinite(v9 ? 0.0F : m_atlas->sea_level))) {
             throw std::invalid_argument("Canonical terrain shading atlas is incomplete");
         }
-        std::vector<std::byte> data(sizeof(Header) + count * sizeof(std::array<float, 2>));
+        std::vector<std::byte> data(sizeof(Header) + count * sizeof(render::CanonicalTerrainFieldValue));
         Header const header{resolution, static_cast<uint32_t>(count), m_atlas ? (v9 ? 0.0F : m_atlas->sea_level) : 0.0F,
-            m_atlas ? 1U : 0U};
+            m_atlas ? (v9 ? 2U : 1U) : 0U};
         std::memcpy(data.data(), &header, sizeof(header));
         if (m_atlas) {
             if (v9) {
-                auto const fields = generation::v9RegisteredFields(*m_atlas);
-                auto const elevation = std::find_if(fields.begin(), fields.end(), [](auto const& field) {
-                    return field.name == "elevation";
-                });
-                auto const temperature = std::find_if(fields.begin(), fields.end(), [](auto const& field) {
-                    return field.name == "temperature_C";
-                });
-                constexpr size_t SOURCE_COUNT = static_cast<size_t>(V9_SOURCE_RESOLUTION) * V9_SOURCE_RESOLUTION;
-                if (elevation == fields.end() || temperature == fields.end()
-                    || elevation->type != generation::V9FieldType::Float64
-                    || elevation->shape != std::vector<uint32_t>{V9_SOURCE_RESOLUTION, V9_SOURCE_RESOLUTION}
-                    || temperature->type != generation::V9FieldType::Float32
-                    || temperature->shape != std::vector<uint32_t>{8U, V9_SOURCE_RESOLUTION, V9_SOURCE_RESOLUTION}) {
-                    throw std::invalid_argument("V9 canonical terrain fields have unexpected source shapes or types");
+                std::vector<render::CanonicalTerrainFieldValue> const values =
+                    render::buildV9CanonicalTerrainFieldValues(*m_atlas);
+                if (values.size() != count) {
+                    throw std::invalid_argument("V9 canonical terrain fields have an unexpected source count");
                 }
-                auto const* elevation_values = std::get_if<std::span<double const>>(&elevation->values);
-                auto const* temperature_values = std::get_if<std::span<float const>>(&temperature->values);
-                if (elevation_values == nullptr || temperature_values == nullptr
-                    || elevation_values->size() != SOURCE_COUNT || temperature_values->size() != SOURCE_COUNT * 8U) {
-                    throw std::invalid_argument("V9 canonical terrain fields do not match their registered sizes");
-                }
-                for (size_t i = 0U; i < SOURCE_COUNT; ++i) {
-                    double phase_mean = 0.0;
-                    for (size_t phase = 0U; phase < 8U; ++phase) {
-                        phase_mean += (*temperature_values)[phase * SOURCE_COUNT + i];
-                    }
-                    std::array<float, 2> const value{
-                        static_cast<float>(phase_mean / 8.0), static_cast<float>((*elevation_values)[i]),
-                    };
-                    if (!std::isfinite(value[0]) || !std::isfinite(value[1])) {
-                        throw std::invalid_argument("V9 canonical terrain fields contain nonfinite values");
-                    }
+                for (size_t i = 0U; i < count; ++i) {
+                    render::CanonicalTerrainFieldValue const& value = values[i];
                     std::memcpy(data.data() + sizeof(Header) + i * sizeof(value), value.data(), sizeof(value));
                 }
             } else {
                 for (size_t i = 0U; i < count; ++i) {
-                    std::array<float, 2> const value{m_atlas->temperature[i], m_atlas->elevation[i]};
+                    render::CanonicalTerrainFieldValue const value{
+                        m_atlas->temperature[i], m_atlas->elevation[i], 0.0F, 0.0F,
+                    };
                     if (!std::isfinite(value[0]) || !std::isfinite(value[1])) {
                         throw std::invalid_argument("Canonical terrain shading atlas contains nonfinite values");
                     }

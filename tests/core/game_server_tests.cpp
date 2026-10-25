@@ -562,7 +562,9 @@ shared::PolicyCapabilityRegistry blockPolicyRegistry()
     for (auto& definition : registry.definitions) {
         definition.default_value = 0;
     }
-    for (std::string const key : {"minecraft:block.break", "minecraft:block.place.stone"}) {
+    for (std::string const key : {
+        "minecraft:block.break", "minecraft:block.place.stone", "minecraft:block.place.sand",
+    }) {
         registry.definitions.push_back({.key = key, .default_value = 1,
             .minimum_value = 0, .maximum_value = 1, .hard_restriction = shared::PolicyRestriction::Maximum});
     }
@@ -576,6 +578,7 @@ std::expected<shared::PolicyCompilation, shared::PolicyDiagnostic> denyBlockPoli
 pub fn policy() {
     policyRule("lock", "minecraft:block.break", 0i64, 1u8)
     policyRule("lock", "minecraft:block.place.stone", 0i64, 1u8)
+    policyRule("lock", "minecraft:block.place.sand", 0i64, 1u8)
     policyAssign("all", "lock", 1u8)
 }
 )core";
@@ -808,6 +811,8 @@ TEST(GameServerActionTest, LocalModeRequestsAndDuplicateSequencesRetainServerOwn
 
 TEST(GameServerActionTest, CreativeActionsUseAuthoritativeTargetAndDuplicateCommitOnlyOnce)
 {
+    static constexpr uint8_t SAND_BIT = static_cast<uint8_t>(1U << static_cast<uint8_t>(shared::Block::Sand));
+
     auto const preparation = quickPreparedFlightWorld();
     ASSERT_TRUE(waitUntilPrepared(preparation));
     auto const configuration = shared::World::canonicalConfiguration();
@@ -923,6 +928,7 @@ TEST(GameServerActionTest, CreativeActionsUseAuthoritativeTargetAndDuplicateComm
     }));
     request.sequence = 3U;
     request.kind = shared::BlockActionKind::PlacePress;
+    request.material = shared::Block::Sand;
     request.target_hint = {target->x, target->y, target->z - 1};
     auto result = [&](uint32_t const sequence, shared::BlockActionStatus const status) {
         return std::ranges::any_of(client.messages, [=](auto const& message) {
@@ -932,6 +938,14 @@ TEST(GameServerActionTest, CreativeActionsUseAuthoritativeTargetAndDuplicateComm
     };
     ASSERT_TRUE(client.sendMessage(request));
     ASSERT_TRUE(pumpUntil(server, client, [&] { return result(3U, shared::BlockActionStatus::Accepted); }));
+    auto const accepted_place = std::ranges::find_if(client.messages, [](auto const& message) {
+        auto const* response = std::get_if<shared::ServerBlockActionResultMessage>(&message);
+        return response && response->sequence == 3U && response->status == shared::BlockActionStatus::Accepted;
+    });
+    ASSERT_NE(accepted_place, client.messages.end());
+    auto const& place_rights = std::get<shared::ServerBlockActionResultMessage>(*accepted_place);
+    EXPECT_NE(place_rights.break_materials & SAND_BIT, 0U);
+    EXPECT_NE(place_rights.place_materials & SAND_BIT, 0U);
     ASSERT_TRUE(client.sendMessage(request));
     ASSERT_TRUE(pumpUntil(server, client, [&] {
         return std::ranges::count_if(client.messages, [](auto const& message) {
@@ -941,7 +955,7 @@ TEST(GameServerActionTest, CreativeActionsUseAuthoritativeTargetAndDuplicateComm
     }));
     EXPECT_TRUE(std::ranges::any_of(client.messages, [&](auto const& message) {
         auto const* placement = std::get_if<shared::ServerBlockDeltaMessage>(&message);
-        return placement && placement->coordinate == *target && placement->material == shared::Block::Stone
+        return placement && placement->coordinate == *target && placement->material == shared::Block::Sand
             && placement->from_revision == 1U && placement->to_revision == 2U;
     }));
     request.sequence = 4U;
@@ -959,7 +973,7 @@ TEST(GameServerActionTest, CreativeActionsUseAuthoritativeTargetAndDuplicateComm
         return std::ranges::any_of(observer.messages, [&](auto const& message) {
             auto const* delta = std::get_if<shared::ServerBlockDeltaMessage>(&message);
             return delta && delta->session == observer_session && delta->coordinate == *target
-                && delta->material == shared::Block::Stone && delta->from_revision == 1U
+                && delta->material == shared::Block::Sand && delta->from_revision == 1U
                 && delta->to_revision == 2U;
         });
     }));
@@ -998,11 +1012,11 @@ TEST(GameServerActionTest, CreativeActionsUseAuthoritativeTargetAndDuplicateComm
     auto const& current_snapshot = std::get<shared::ServerEditChunkSnapshotMessage>(*current);
     EXPECT_EQ(current_snapshot.session, rejoined_session);
     ASSERT_EQ(current_snapshot.edits.size(), 1U);
-    EXPECT_EQ(current_snapshot.edits.front().material, shared::Block::Stone);
+    EXPECT_EQ(current_snapshot.edits.front().material, shared::Block::Sand);
     EXPECT_EQ(current_snapshot.edits.front().cell_version, 2U);
     auto const effective = shared::materializeChunkPayload(current_snapshot.chunk);
     ASSERT_TRUE(effective);
-    EXPECT_EQ(effective->blockAt(current_snapshot.edits.front().coordinate), shared::Block::Stone);
+    EXPECT_EQ(effective->blockAt(current_snapshot.edits.front().coordinate), shared::Block::Sand);
 }
 
 TEST(GameServerActionTest, SurvivalBreakRequiresFullIntervalsAndFreshLeaseRenewal)
@@ -1150,7 +1164,7 @@ TEST(GameServerActionTest, PublishingPolicyCancelsTheActiveBreakBeforeFreshReque
     }), 0);
 }
 
-TEST(GameServerActionTest, PublishedHardVetoBlocksCreativeBreakAndSelectedPlacementMaterial)
+TEST(GameServerActionTest, PublishedHardVetoBlocksCreativeBreakAndStoneAndSandPlacement)
 {
     PreparedActionHarness harness;
     ASSERT_TRUE(harness.initialize());
@@ -1164,6 +1178,13 @@ TEST(GameServerActionTest, PublishedHardVetoBlocksCreativeBreakAndSelectedPlacem
     ASSERT_TRUE(harness.actor.sendMessage(harness.action(2U, shared::BlockActionKind::PlacePress, harness.ground)));
     ASSERT_TRUE(harness.wait([&] { return PreparedActionHarness::result(harness.actor, 2U).has_value(); }));
     EXPECT_EQ(PreparedActionHarness::result(harness.actor, 2U)->status, shared::BlockActionStatus::Denied);
+    shared::ClientBlockActionMessage sand_placement = harness.action(
+        3U, shared::BlockActionKind::PlacePress, harness.ground
+    );
+    sand_placement.material = shared::Block::Sand;
+    ASSERT_TRUE(harness.actor.sendMessage(sand_placement));
+    ASSERT_TRUE(harness.wait([&] { return PreparedActionHarness::result(harness.actor, 3U).has_value(); }));
+    EXPECT_EQ(PreparedActionHarness::result(harness.actor, 3U)->status, shared::BlockActionStatus::Denied);
     EXPECT_EQ(std::ranges::count_if(harness.actor.messages, [](auto const& message) {
         return std::holds_alternative<shared::ServerBlockDeltaMessage>(message);
     }), 0);

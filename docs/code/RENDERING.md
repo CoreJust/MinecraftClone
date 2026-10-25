@@ -12,10 +12,11 @@ without steady-state `vkDeviceWaitIdle`. Slot fences protect indirect buffers.
 Batches honor `maxDrawIndirectCount`; direct fallback preserves logical counts on
 allocation/mapping failure. Quads use 0,1,2,0,2,3. Direction 6 reuses 32-byte
 instances for linear triangles at 1/32-block heights; corner 3 repeats vertex 0.
-Flagged triangles retain corner temperatures. Fragments bilinearly sample canonical
-R6 temperature/elevation from atlas SSBO, independent of geometry. Represented depth
-controls deep Stone; universal depth/material parity is unproven. Materials stay
-explicit. Stone/player/text pushes are 128/128/96 bytes; normals slope-light.
+Triangles pack temperatures. R6 bilinearly samples atlas temperature/elevation;
+V9 nearest-samples the discrete source-cell material from biome, water and elevation.
+Depth controls Stone; depth/material parity remains unproven. Stone/player/text pushes
+are 128/128/96 bytes; normals slope-light. The [field builder](../../src/client/render/CanonicalTerrainField.cpp)
+and [GPU record](../../src/client/include/client/render/CanonicalTerrainField.hpp) define this V9 upload.
 Text overwrites and per-image depth reuse are ordered across slots. Scene/HUD
 receipts advance only on submission, excluding undrawn publication.
 
@@ -46,20 +47,20 @@ Fog starts in the horizon's final 4% (altitude-aware tangent, sea 384), capped
 at 32768. Adaptive projection covers altitude, terrain and maximum bend;
 simulation and GUI stay flat. Captures remain open.
 
-Blocks carry material IDs; flagged smooth triangles pack temperatures. The
-[pinned vanilla atlas](../../assets/textures/terrain/README.md) repeats per block:
-tinted Grass tops, layered sides, Dirt bottoms. Each isolated sRGB array layer has
-five mips (16x16 to 1x1), built from linear-light color averages. Grass-side overlay
-color is premultiplied before filtering. Nearest magnification and trilinear
-minification. Decode sRGB before lighting; encode for UNORM in shader or use sRGB
-attachments. Capture `srgb_encoded` labels pixel encoding; offscreen stays linear.
+Material IDs stay fixed; Sand is 7. Flagged smooth triangles pack temperatures.
+The [pinned vanilla atlas](../../assets/textures/terrain/README.md) keeps tinted
+Grass tops, layered sides and Dirt bottoms; six deterministic Sand faces precede
+the overlay. Each sRGB layer has five linear-light mips (16×16–1×1).
+Premultiply overlay before filtering; magnify nearest, minify trilinear. Decode
+sRGB for lighting; encode for UNORM/sRGB output. Capture `srgb_encoded` reports
+pixel encoding; offscreen stays linear.
 
-Two RGBA8 slots (≤512²) support eight nearest-sampled draws; unchanged uploads skip.
-Preparing/Connecting use backdrops; generation pairs status/counters with a square map on
-dark canvas; fallback hides until Playing. Drift averages a 2× raster; land shading
-follows the winning mapped source’s scaled/uplifted relief; water/fill avoids hillshade.
-Five 5-second phases end at Arrival (25 s); True Ready selects the exact final map.
-Pause hidden motion; Desktop/Android ship map shaders.
+Two RGBA8 slots ≤512² serve eight nearest draws. Preparing/Connecting show
+backdrops; generation shows status and a square dark map, hiding fallback until
+Playing. Drift averages 2×; shading follows winning scaled/uplifted relief;
+water/fill avoids hillshade. Five 5-second phases reach Arrival (25 s); True Ready
+selects the final map. Pause hidden motion; Desktop/Android ship map shaders. S2
+shows Sand/Snow materials and V9 model biomes.
 
 `setFrameCompletionTracking(true)` exposes `frameProgress()`;
 sequence IDs include swapchain generation. Failed submits do not advance; toggling
