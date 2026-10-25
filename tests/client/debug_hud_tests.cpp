@@ -377,7 +377,7 @@ TEST(DebugHudTest, BuildsPrototypeReadoutGroupsFromAvailableRuntimeValues)
     EXPECT_TRUE(hasLabel("Movement"));
     EXPECT_TRUE(hasLabel("Local climate"));
     EXPECT_TRUE(hasLabel("Temperature 16.6 C"));
-    EXPECT_TRUE(std::any_of(labels.labels().begin(), labels.labels().end(), [](auto const& label) {
+    EXPECT_TRUE(std::none_of(labels.labels().begin(), labels.labels().end(), [](auto const& label) {
         return label.value.starts_with("Humidity") && label.value.find("Unavailable") != std::string::npos;
     }));
     EXPECT_TRUE(std::none_of(labels.labels().begin(), labels.labels().end(), [](auto const& label) {
@@ -439,7 +439,7 @@ TEST(DebugHudTest, PrototypeReadoutsRemainInsideDesktopCompactAndHiDpiCanvases)
         }));
         EXPECT_TRUE(std::any_of(labels.labels().begin(), labels.labels().end(), [&layout](auto const& label) {
             return label.value == (layout.compact
-                ? "Temp 16.6 C  Humidity unavailable"
+                ? "Temp 16.6 C"
                 : "Local climate");
         }));
         for (auto const& label : labels.labels()) {
@@ -552,10 +552,12 @@ TEST(DebugHudTest, CompactWindowKeepsTelemetryReadableWithinHalfTheCanvas)
         EXPECT_TRUE(hasText("Z 28672.0"));
         EXPECT_TRUE(hasText("84.1"));
         EXPECT_TRUE(hasLabel("YPR 180.0 / -42.0 / 0.0"));
-        EXPECT_TRUE(hasLabel("Speed 1x  Selected 99x"));
-        EXPECT_TRUE(hasLabel("Accel ON  Bypass ON"));
+        EXPECT_TRUE(hasLabel("Speed 1x"));
+        EXPECT_TRUE(hasLabel("Selected 99x"));
+        EXPECT_TRUE(hasLabel("Accel ON"));
+        EXPECT_TRUE(hasLabel("Bypass ON"));
         EXPECT_TRUE(hasLabel("Flight ON"));
-        EXPECT_TRUE(hasLabel("Temp 16.6 C  Humidity unavailable"));
+        EXPECT_TRUE(hasLabel("Temp 16.6 C"));
         EXPECT_TRUE(hasLabel("F5/5 View"));
         EXPECT_TRUE(hasLabel("F6/6 Movement"));
         EXPECT_TRUE(hasLabel("+/- Speed"));
@@ -716,7 +718,8 @@ TEST(DebugHudTest, DefaultColoredContrastKeepsDistinctAxesAndReportsResidentCapa
     std::array<uint32_t, 3U> axes{};
     bool resident = false;
     for (auto const& label : output.labels()) {
-        EXPECT_EQ(label.placement.style, client::TextStyle::ColoredAdaptive);
+        EXPECT_TRUE(label.placement.style == client::TextStyle::ColoredAdaptive
+            || label.placement.style == client::TextStyle::AdaptiveHalo);
         if (label.value.starts_with("X ")) { axes[0] = label.color.packed(); }
         if (label.value.starts_with("Y ")) { axes[1] = label.color.packed(); }
         if (label.value.starts_with("Z ")) { axes[2] = label.color.packed(); }
@@ -751,10 +754,12 @@ TEST(DebugHudTest, WrappedSessionCountersDoNotOverlapInNarrowCompactWindow)
     auto const labels = output.labels();
     for (size_t index = 0U; index < labels.size(); ++index) {
         auto const& first = labels[index];
-        if (first.placement.position[1] >= heading_y) { continue; }
+        if (first.placement.position[1] >= heading_y
+            || first.placement.style == client::TextStyle::AdaptiveHalo) { continue; }
         for (size_t other = index + 1U; other < labels.size(); ++other) {
             auto const& second = labels[other];
-            if (second.placement.position[1] >= heading_y) { continue; }
+            if (second.placement.position[1] >= heading_y
+                || second.placement.style == client::TextStyle::AdaptiveHalo) { continue; }
             float const first_right = first.placement.position[0]
                 + static_cast<float>(first.value.size()) * client::DEBUG_HUD_GLYPH_WIDTH_PIXELS * first.placement.scale;
             float const second_right = second.placement.position[0]
@@ -769,5 +774,50 @@ TEST(DebugHudTest, WrappedSessionCountersDoNotOverlapInNarrowCompactWindow)
                     <= first.placement.position[1];
             EXPECT_TRUE(disjoint) << first.value << " overlaps " << second.value;
         }
+    }
+}
+
+TEST(DebugHudTest, ColoredAxesShareOneRowAndUnavailableHumidityIsOmitted)
+{
+    client::DebugHudSnapshot snapshot{.enabled = true};
+    snapshot.input.player_x = 12'345.6F;
+    snapshot.input.player_y = -12'345.6F;
+    snapshot.input.player_z = 123.4F;
+    for (uint32_t width : {400U, 844U, 1280U}) {
+        client::TextRenderer output;
+        client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(width, 600U, 1.0F, width < 900U), output);
+        std::array<float, 3U> row_y{};
+        std::array<float, 3U> speed_y{};
+        std::array<uint32_t, 3U> colors{};
+        for (auto const& label : output.labels()) {
+            EXPECT_EQ(label.value.find("Humidity"), std::string::npos);
+            if (label.placement.style != client::TextStyle::ColoredAdaptive) { continue; }
+            if (label.value.starts_with("Speed ")) { speed_y[0] = label.placement.position[1]; }
+            if (label.value.starts_with("Selected ")) { speed_y[1] = label.placement.position[1]; }
+            if (label.value.starts_with("Accel ")) { speed_y[2] = label.placement.position[1]; }
+            for (size_t axis = 0U; axis < 3U; ++axis) {
+                if (label.value.starts_with(std::string{static_cast<char>('X' + axis)} + " ")) {
+                    row_y[axis] = label.placement.position[1];
+                    colors[axis] = label.color.packed();
+                }
+            }
+        }
+        if (width >= 844U) {
+            EXPECT_FLOAT_EQ(speed_y[0], speed_y[1]);
+            EXPECT_FLOAT_EQ(speed_y[1], speed_y[2]);
+            EXPECT_FLOAT_EQ(row_y[0], row_y[1]);
+            EXPECT_FLOAT_EQ(row_y[1], row_y[2]);
+        }
+        for (auto const& label : output.labels()) {
+            bool const readout = label.value.starts_with("X ") || label.value.starts_with("Y ")
+                || label.value.starts_with("Z ") || label.value.starts_with("Speed ")
+                || label.value.starts_with("Selected ") || label.value.starts_with("Accel ");
+            if (readout && label.placement.style == client::TextStyle::ColoredAdaptive) {
+                EXPECT_GE(label.placement.scale, width < 900U ? 0.375F : 0.75F);
+            }
+        }
+        EXPECT_NE(colors[0], colors[1]);
+        EXPECT_NE(colors[0], colors[2]);
+        EXPECT_NE(colors[1], colors[2]);
     }
 }

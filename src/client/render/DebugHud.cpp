@@ -44,9 +44,9 @@ constexpr float MAX_DPI_SCALE = 8.0F;
 constexpr TextColor HUD_FOREGROUND = colorFromHex(0xF3'EAD2U);
 constexpr TextColor HUD_OUTLINE = colorFromHex(0x14'242DU);
 constexpr TextColor HUD_HINT = colorFromHex(0xE5'D29BU);
-constexpr TextColor HUD_COORDINATES = colorFromHex(0x9A'DBE5U);
-constexpr TextColor HUD_COORDINATE_Y = colorFromHex(0xB2'D39CU);
-constexpr TextColor HUD_COORDINATE_Z = colorFromHex(0xE5'C798U);
+constexpr TextColor HUD_COORDINATES = colorFromHex(0xFF'7070U);
+constexpr TextColor HUD_COORDINATE_Y = colorFromHex(0x75'FF8CU);
+constexpr TextColor HUD_COORDINATE_Z = colorFromHex(0x62'BFFFU);
 constexpr TextColor HUD_HEADING = colorFromHex(0xE5'C798U);
 constexpr TextColor HUD_ACTIVE = colorFromHex(0xB2'D39CU);
 constexpr TextColor HUD_INACTIVE = colorFromHex(0xB5'BDB7U);
@@ -118,7 +118,7 @@ void submitOutlined(
     float const scale,
     float const outline_offset
 ) {
-    if (style == TextStyle::Fixed) {
+    if (style != TextStyle::Adaptive) {
         for (auto const [offset_x, offset_y] : std::array<std::array<float, 2U>, 4U>{
             std::array<float, 2U>{ -outline_offset, 0.0F },
             std::array<float, 2U>{ outline_offset, 0.0F },
@@ -131,6 +131,9 @@ void submitOutlined(
                 TextPlacement{
                     .position = { x + offset_x, y + offset_y, 0.0F },
                     .scale = scale,
+                    .style = style == TextStyle::ColoredAdaptive ? TextStyle::AdaptiveHalo : TextStyle::Fixed,
+                    .light_color = {1.0F, 1.0F, 1.0F, 1.0F},
+                    .dark_color = HUD_OUTLINE,
                 }
             ));
         }
@@ -271,6 +274,65 @@ void submitOutlined(
         y = bottom + 4.0F * dpi_scale;
     }
     return bottom;
+}
+
+[[nodiscard]] float submitSingleRow(
+    TextRenderer& output, TextStyle const style, std::span<HudFlowEntry const> const fields,
+    float const x, float const y, float const width, float const scale,
+    float const line_advance, float const outline_offset
+) {
+    size_t characters = 2U * (fields.size() - 1U);
+    for (auto const& field : fields) { characters += field.value.size(); }
+    float const fitted_scale = (std::min)(scale,
+        width / (static_cast<float>(characters) * DEBUG_HUD_GLYPH_WIDTH_PIXELS));
+    float const row_scale = fitted_scale >= scale * 0.75F ? fitted_scale : scale;
+    return submitFlow(output, style, fields, x, y, width, row_scale,
+        2.0F * DEBUG_HUD_GLYPH_WIDTH_PIXELS * row_scale, line_advance, outline_offset);
+}
+
+[[nodiscard]] float submitCoordinates(
+    TextRenderer& output, TextStyle const style, DebugHudInput const& input,
+    float const x, float const y, float const width, float const scale,
+    float const line_advance, float const outline_offset
+) {
+    std::array<HudFlowEntry, 3U> const axes{
+        HudFlowEntry{"X " + formatNumber(input.player_x, 1), HUD_COORDINATES},
+        HudFlowEntry{"Y " + formatNumber(input.player_z, 1), HUD_COORDINATE_Y},
+        HudFlowEntry{"Z " + formatNumber(input.player_y, 1), HUD_COORDINATE_Z},
+    };
+    float const row_bottom = submitSingleRow(
+        output, style, axes, x, y, width, scale, line_advance, outline_offset
+    );
+    std::string const orientation = "YPR " + formatNumber(input.camera_yaw_degrees, 1)
+        + " / " + formatNumber(input.camera_pitch_degrees, 1)
+        + " / " + formatNumber(input.camera_roll_degrees, 1);
+    return submitWrapped(output, style, orientation, HUD_FOREGROUND, x,
+        (std::max)(y + line_advance, row_bottom + line_advance - DEBUG_HUD_GLYPH_HEIGHT_PIXELS * scale),
+        width, scale, line_advance, outline_offset);
+}
+
+[[nodiscard]] float submitMovement(
+    TextRenderer& output, TextStyle const style, DebugHudInput const& input,
+    float const x, float const y, float const width, float const scale,
+    float const line_advance, float const outline_offset
+) {
+    std::array<HudFlowEntry, 3U> const speed{
+        HudFlowEntry{"Speed " + formatNumber(input.speedup, 0) + "x", HUD_FOREGROUND},
+        HudFlowEntry{"Selected " + formatNumber(input.selected_speedup, 0) + "x", HUD_FOREGROUND},
+        HudFlowEntry{std::string{"Accel "} + (input.acceleration_enabled ? "ON" : "OFF"), HUD_FOREGROUND},
+    };
+    float const speed_bottom = submitSingleRow(
+        output, style, speed, x, y, width, scale, line_advance, outline_offset
+    );
+    std::array<HudFlowEntry, 2U> const mobility{
+        HudFlowEntry{std::string{"Bypass "} + (input.collision_bypass_enabled ? "ON" : "OFF"),
+            input.collision_bypass_enabled ? HUD_ACTIVE : HUD_INACTIVE},
+        HudFlowEntry{std::string{"Flight "} + (input.flight_enabled ? "ON" : "OFF"),
+            input.flight_enabled ? HUD_ACTIVE : HUD_INACTIVE},
+    };
+    return submitSingleRow(output, style, mobility, x,
+        (std::max)(y + line_advance, speed_bottom + line_advance - DEBUG_HUD_GLYPH_HEIGHT_PIXELS * scale),
+        width, scale, line_advance, outline_offset);
 }
 
 [[nodiscard]] size_t formatNumberWithToChars(
@@ -470,57 +532,14 @@ void buildDebugHudPresentation(
                 outline_offset
             );
 
-            std::array<HudFlowEntry, 4U> const position{
-                HudFlowEntry{
-                    "X " + formatNumber(snapshot.input.player_x, 1), HUD_COORDINATES,
-                },
-                HudFlowEntry{
-                    "Z " + formatNumber(snapshot.input.player_y, 1), HUD_COORDINATE_Z,
-                },
-                HudFlowEntry{
-                    "Y " + formatNumber(snapshot.input.player_z, 1), HUD_COORDINATE_Y,
-                },
-                HudFlowEntry{
-                    "YPR " + formatNumber(snapshot.input.camera_yaw_degrees, 1)
-                        + " / " + formatNumber(snapshot.input.camera_pitch_degrees, 1)
-                        + " / " + formatNumber(snapshot.input.camera_roll_degrees, 1),
-                    HUD_FOREGROUND,
-                },
-            };
-            float const position_bottom = submitFlow(
-                output, style, position, layout.left_column_x, readout_y,
-                layout.column_width_pixels, body_scale, 12.0F * dpi_scale,
-                body_line_advance, outline_offset
+            float const position_bottom = submitCoordinates(
+                output, style, snapshot.input, layout.left_column_x, readout_y,
+                layout.column_width_pixels, body_scale, body_line_advance, outline_offset
             );
 
-            std::array<HudFlowEntry, 3U> const movement{
-                HudFlowEntry{
-                    "Speed " + formatNumber(snapshot.input.speedup, 0) + "x  Selected "
-                        + formatNumber(snapshot.input.selected_speedup, 0) + "x",
-                    HUD_FOREGROUND,
-                },
-                HudFlowEntry{
-                    std::string{ "Accel " }
-                        + (snapshot.input.acceleration_enabled ? "ON" : "OFF")
-                        + "  Bypass " + (snapshot.input.collision_bypass_enabled ? "ON" : "OFF"),
-                    snapshot.input.collision_bypass_enabled ? HUD_ACTIVE : HUD_INACTIVE,
-                },
-                HudFlowEntry{
-                    std::string{ "Flight " } + (snapshot.input.flight_enabled ? "ON" : "OFF"),
-                    snapshot.input.flight_enabled ? HUD_ACTIVE : HUD_INACTIVE,
-                },
-            };
-            float const movement_bottom = submitFields(
-                output,
-                style,
-                movement,
-                layout.right_column_x,
-                readout_y,
-                layout.column_width_pixels,
-                body_scale,
-                body_line_advance,
-                outline_offset,
-                dpi_scale
+            float const movement_bottom = submitMovement(
+                output, style, snapshot.input, layout.right_column_x, readout_y,
+                layout.column_width_pixels, body_scale, body_line_advance, outline_offset
             );
 
             float const climate_y = (std::max)(position_bottom, movement_bottom) + 12.0F * dpi_scale;
@@ -530,7 +549,7 @@ void buildDebugHudPresentation(
             submitOutlined(
                 output,
                 style,
-                "Temp " + temperature + "  Humidity unavailable",
+                "Temp " + temperature,
                 snapshot.input.temperature_celsius.has_value() ? HUD_FOREGROUND : HUD_INACTIVE,
                 layout.left_column_x,
                 climate_y,
@@ -561,78 +580,14 @@ void buildDebugHudPresentation(
                 outline_offset
             );
 
-            std::array<HudFlowEntry, 4U> const position{
-                HudFlowEntry{
-                    makeFieldRow("X", formatNumber(snapshot.input.player_x, 1), 7U),
-                    HUD_COORDINATES,
-                },
-                HudFlowEntry{
-                    makeFieldRow("Z", formatNumber(snapshot.input.player_y, 1), 7U),
-                    HUD_COORDINATE_Z,
-                },
-                HudFlowEntry{
-                    makeFieldRow("Y", formatNumber(snapshot.input.player_z, 1), 7U),
-                    HUD_COORDINATE_Y,
-                },
-                HudFlowEntry{
-                    makeFieldRow(
-                        "YPR deg",
-                        formatNumber(snapshot.input.camera_yaw_degrees, 1) + " "
-                            + formatNumber(snapshot.input.camera_pitch_degrees, 1) + " "
-                            + formatNumber(snapshot.input.camera_roll_degrees, 1),
-                        7U
-                    ),
-                    HUD_FOREGROUND,
-                },
-            };
-            float const position_bottom = submitFields(
-                output,
-                style,
-                position,
-                layout.left_column_x,
-                readout_y,
-                layout.column_width_pixels,
-                body_scale,
-                body_line_advance,
-                outline_offset,
-                dpi_scale
+            float const position_bottom = submitCoordinates(
+                output, style, snapshot.input, layout.left_column_x, readout_y,
+                layout.column_width_pixels, body_scale, body_line_advance, outline_offset
             );
 
-            bool const flight = snapshot.input.flight_enabled;
-            bool const bypass = snapshot.input.collision_bypass_enabled;
-            std::array<HudFlowEntry, 5U> const movement{
-                HudFlowEntry{
-                    makeFieldRow("Effective speed", formatNumber(snapshot.input.speedup, 0) + "x", 16U),
-                    HUD_FOREGROUND,
-                },
-                HudFlowEntry{
-                    makeFieldRow("Selected speed", formatNumber(snapshot.input.selected_speedup, 0) + "x", 16U),
-                    HUD_FOREGROUND,
-                },
-                HudFlowEntry{
-                    makeFieldRow("Acceleration", snapshot.input.acceleration_enabled ? "ON" : "OFF", 16U),
-                    snapshot.input.acceleration_enabled ? HUD_ACTIVE : HUD_INACTIVE,
-                },
-                HudFlowEntry{
-                    makeFieldRow("Collision bypass", bypass ? "ON" : "OFF", 16U),
-                    bypass ? HUD_ACTIVE : HUD_INACTIVE,
-                },
-                HudFlowEntry{
-                    makeFieldRow("Flight", flight ? "ON" : "OFF", 16U),
-                    flight ? HUD_ACTIVE : HUD_INACTIVE,
-                },
-            };
-            float const movement_bottom = submitFields(
-                output,
-                style,
-                movement,
-                layout.right_column_x,
-                readout_y,
-                layout.column_width_pixels,
-                body_scale,
-                body_line_advance,
-                outline_offset,
-                dpi_scale
+            float const movement_bottom = submitMovement(
+                output, style, snapshot.input, layout.right_column_x, readout_y,
+                layout.column_width_pixels, body_scale, body_line_advance, outline_offset
             );
 
             float const climate_y = (std::max)(position_bottom, movement_bottom)
@@ -647,7 +602,7 @@ void buildDebugHudPresentation(
                 body_scale,
                 outline_offset
             );
-            std::array<HudFlowEntry, 2U> const climate{
+            std::array<HudFlowEntry, 1U> const climate{
                 HudFlowEntry{
                     makeFieldRow(
                         "Temperature",
@@ -659,10 +614,6 @@ void buildDebugHudPresentation(
                         11U
                     ),
                     snapshot.input.temperature_celsius.has_value() ? HUD_FOREGROUND : HUD_INACTIVE,
-                },
-                HudFlowEntry{
-                    makeFieldRow("Humidity", "Unavailable", 11U),
-                    HUD_INACTIVE,
                 },
             };
             static_cast<void>(submitFields(

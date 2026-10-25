@@ -497,30 +497,6 @@ struct CurrentNearProbe final {
     return "Unknown";
 }
 
-[[nodiscard]] std::string materialMaskDisplayName(uint8_t const mask)
-{
-    std::string result;
-    for (shared::Block const block : {
-             shared::Block::Stone,
-             shared::Block::Grass,
-             shared::Block::Dirt,
-             shared::Block::Bedrock,
-             shared::Block::Snow,
-             shared::Block::Ice,
-             shared::Block::Sand,
-         }) {
-        if (!detail::interactionMaterialAllowed(mask, block)) {
-            continue;
-        }
-        if (!result.empty()) {
-            result += ',';
-            result += ' ';
-        }
-        result += blockDisplayName(block);
-    }
-    return result.empty() ? "none" : result;
-}
-
 } // namespace
 
 uint16_t playerClientCaptureSpeedup(int64_t const distance_subcells) noexcept
@@ -4652,17 +4628,6 @@ void PlayerClient::updateBlockInteractionPresentation(std::chrono::steady_clock:
         } else {
             lines[0] += "none";
         }
-        lines[1] = "Break: ";
-        lines[1] += detail::interactionActionAllowed(status->effective_actions, shared::InteractionAction::Break)
-            ? "yes" : "no";
-        lines[1] += " [";
-        lines[1] += materialMaskDisplayName(status->break_materials);
-        lines[1] += "]  Place: ";
-        lines[1] += detail::interactionActionAllowed(status->effective_actions, shared::InteractionAction::Place)
-            ? "yes" : "no";
-        lines[1] += " [";
-        lines[1] += materialMaskDisplayName(status->place_materials);
-        lines[1] += ']';
         lines[2] = "Quick break: ";
         lines[2] += detail::interactionActionAllowed(status->effective_actions, shared::InteractionAction::QuickBreak)
             ? "yes" : "no";

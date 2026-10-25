@@ -3384,79 +3384,117 @@ TEST(RendererSmokeTest, CurvedBlockOutlineAlignsWithTerrainInsteadOfFlatWorldPos
     EXPECT_EQ(renderer.validationErrorCount(), 0U);
 }
 
-TEST(RendererSmokeTest, ColoredHudContrastUsesNativeScenePixels)
+TEST(RendererSmokeTest, ColoredHudKeepsStableInkOverMovingTexturedStone)
 {
     core::platform::glfw::GlfwWindow window{
         core::platform::glfw::WindowDescriptor{
-            .width = 640U, .height = 360U, .title = "Colored HUD scene contrast",
+            .width = 844U, .height = 480U, .title = "Stable colored HUD over moving stone",
         },
     };
     client::InstalledShaderAssets const shaders;
     client::VulkanRenderer renderer{
         client::VulkanRenderer::createPresentationContext(
-            window, { .require_validation = true, .enable_frame_capture = true }
-        ),
-        shaders, { .require_validation = true, .enable_frame_capture = true },
+            window, {.require_validation = true, .enable_frame_capture = true}),
+        shaders, {.require_validation = true, .enable_frame_capture = true},
     };
-    renderer.setDebugHudEnabled(false);
-    renderer.setFallbackSceneEnabled(false);
-    auto capture = [&]() -> std::optional<client::RendererFrameCapture> {
-        renderer.requestFrameCapture();
-        auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
-        for (uint32_t attempt = 0U; attempt < 20U; ++attempt) {
-            if (!window.nextFrame()) { return std::nullopt; }
-            static_cast<void>(renderer.render({}, deadline));
-            if (auto result = renderer.takeFrameCapture()) { return result; }
-        }
-        return std::nullopt;
-    };
-    std::array<std::array<uint8_t, 4U>, 4U> const backgrounds{
-        std::array<uint8_t, 4U>{100U, 175U, 240U, 255U}, // sky
-        std::array<uint8_t, 4U>{245U, 245U, 245U, 255U}, // snow
-        std::array<uint8_t, 4U>{8U, 12U, 16U, 255U}, // night
-        std::array<uint8_t, 4U>{154U, 219U, 229U, 255U}, // category hue
-    };
-    ASSERT_TRUE(renderer.setMapImage(4U, 1U, backgrounds));
-    auto const baseline = capture();
-    ASSERT_TRUE(baseline);
-    uint32_t const width = baseline->width;
-    uint32_t const height = baseline->height;
-    // Each glyph straddles two backgrounds; adaptation must happen per ink pixel.
-    for (uint32_t index = 1U; index < 4U; ++index) {
-        renderer.addGuiText("MMMM", {
-            .position = {static_cast<float>(width * index / 4U) - 16.0F,
-                static_cast<float>(height / 2U), 0.0F},
-            .style = client::TextStyle::ColoredAdaptive,
-        }, {154.0F / 255.0F, 219.0F / 255.0F, 229.0F / 255.0F, 1.0F});
-    }
     renderer.setDebugHudEnabled(true);
-    auto const drawn = capture();
-    ASSERT_TRUE(drawn);
-    auto linear = [](double const channel) {
-        double const value = channel / 255.0;
-        return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+    renderer.setFallbackSceneEnabled(false);
+    auto scene = std::make_shared<client::TerrainLodScene>();
+    auto build_wall = [&](shared::Block const material) {
+        scene->faces.clear();
+        for (uint8_t z = 0U; z < 32U; ++z) {
+            for (uint8_t x = 0U; x < 32U; ++x) {
+                scene->faces.push_back(client::StoneFaceInstance::fromChunkFace(
+                    {2'047 + x / 16, 2'048, 3 + z / 16}, {
+                        .local_origin = {static_cast<uint8_t>(x % 16U), 0U, static_cast<uint8_t>(z % 16U)},
+                        .direction = shared::FaceDirection::NegativeY, .material = material,
+                    }));
+            }
+        }
     };
-    size_t ink = 0U;
-    for (size_t offset = 0U; offset < drawn->rgba8.size(); offset += 4U) {
-        uint8_t const* const drawn_rgb = drawn->rgba8.data() + offset;
-        uint8_t const* const baseline_rgb = baseline->rgba8.data() + offset;
-        if (std::equal(drawn_rgb, drawn_rgb + 3U, baseline_rgb)) { continue; }
-        auto luminance = [&](auto const& image) {
-            return 0.2126 * linear(image.rgba8[offset])
-                + 0.7152 * linear(image.rgba8[offset + 1U])
-                + 0.0722 * linear(image.rgba8[offset + 2U]);
-        };
-        double const foreground = luminance(*drawn);
-        double const background = luminance(*baseline);
-        EXPECT_GE((std::max(foreground, background) + 0.05)
-            / (std::min(foreground, background) + 0.05), 4.45);
-        ++ink;
+    build_wall(shared::Block::Stone);
+    scene->groups = {{.range = {0U, 1'024U}, .origin_x = 32'752U, .origin_y = 32'768U,
+        .extent = 32U, .minimum_z = 48, .maximum_z = 80}};
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{20};
+    while (!renderer.upsertTerrainLodScene(scene, deadline)) {
+        ASSERT_LT(std::chrono::steady_clock::now(), deadline);
+        std::this_thread::yield();
     }
-    EXPECT_GT(ink, 100U);
-    if (char const* const capture_path = std::getenv("MC_COLORED_HUD_CAPTURE_PATH"); capture_path != nullptr) {
-        auto const written = testsupport::writePpm({.width = width, .height = height,
-            .srgb_encoded = drawn->srgb_encoded, .pixels = drawn->rgba8}, capture_path,
-            "MC-AI-0585 native colored HUD sky snow dark mixed scene contrast");
-        ASSERT_TRUE(written) << written.error();
+    std::array<std::vector<size_t>, 3U> first_ink;
+    std::array<std::array<uint8_t, 3U>, 3U> const colors{{
+        {255U, 112U, 112U}, {117U, 255U, 140U}, {98U, 191U, 255U},
+    }};
+    std::optional<client::RendererFrameCapture> previous;
+    for (uint32_t frame = 0U; frame < 7U; ++frame) {
+        if (frame == 4U) {
+            build_wall(shared::Block::Snow);
+            renderer.clearTerrainLodScene();
+            while (!renderer.upsertTerrainLodScene(scene, deadline)) {
+                ASSERT_LT(std::chrono::steady_clock::now(), deadline);
+                std::this_thread::yield();
+            }
+        }
+        if (frame >= 5U) {
+            renderer.clearTerrainLodScene();
+            std::array<std::array<uint8_t, 4U>, 1U> const background{{
+                frame == 5U ? std::array<uint8_t, 4U>{98U, 191U, 255U, 255U}
+                    : std::array<uint8_t, 4U>{4U, 6U, 9U, 255U},
+            }};
+            ASSERT_TRUE(renderer.setMapImage(1U, 1U, background));
+            std::array<client::MapImageDraw, 1U> const draws{{
+                {.image = 0U, .source = {0.0F, 0.0F, 1.0F, 1.0F},
+                    .destination = {0.0F, 0.0F, static_cast<float>(previous->width),
+                        static_cast<float>(previous->height)}},
+            }};
+            ASSERT_TRUE(renderer.setMapDraws(draws));
+        }
+        renderer.setCamera({.position = {32'768.5 + static_cast<double>(frame) * 0.12,
+            32'752.0, 64.5}}, {.vertical_fov_degrees = 35.0});
+        renderer.requestFrameCapture();
+        std::optional<client::RendererFrameCapture> capture;
+        for (uint32_t attempt = 0U; attempt < 20U && !capture; ++attempt) {
+            ASSERT_TRUE(window.nextFrame());
+            static_cast<void>(renderer.render({}, client::DebugHudInput{
+                .compact_window = true, .player_x = 123.4F, .player_y = 456.7F, .player_z = 89.0F,
+            }, 1.0F, deadline));
+            capture = renderer.takeFrameCapture();
+        }
+        ASSERT_TRUE(capture);
+        std::array<std::vector<size_t>, 3U> ink;
+        for (size_t offset = 0U; offset < capture->rgba8.size(); offset += 4U) {
+            for (size_t category = 0U; category < colors.size(); ++category) {
+                bool match = true;
+                for (size_t channel = 0U; channel < 3U; ++channel) {
+                    match = match && std::abs(static_cast<int>(capture->rgba8[offset + channel])
+                        - static_cast<int>(colors[category][channel])) <= 1;
+                }
+                if (match) { ink[category].push_back(offset); }
+            }
+        }
+        for (size_t category = 0U; category < colors.size(); ++category) {
+            EXPECT_GT(ink[category].size(), 20U);
+            if (frame == 0U) {
+                first_ink[category] = ink[category];
+                RecordProperty("axis_" + std::to_string(category) + "_stable_ink_pixels", ink[category].size());
+            }
+            else {
+                if (frame < 5U) { EXPECT_EQ(ink[category], first_ink[category]); }
+                for (size_t const offset : first_ink[category]) {
+                    for (size_t channel = 0U; channel < 3U; ++channel) {
+                        EXPECT_LE(std::abs(static_cast<int>(capture->rgba8[offset + channel])
+                            - static_cast<int>(colors[category][channel])), 1);
+                    }
+                }
+            }
+        }
+        if (frame > 0U && frame < 4U) { EXPECT_NE(capture->rgba8, previous->rgba8); }
+        previous = capture;
+        if (char const* const prefix = std::getenv("MC_STABLE_HUD_CAPTURE_PREFIX"); prefix != nullptr) {
+            auto const written = testsupport::writePpm({.width = capture->width, .height = capture->height,
+                .srgb_encoded = capture->srgb_encoded, .pixels = capture->rgba8},
+                std::string{prefix} + "-" + std::to_string(frame) + ".ppm", "MC-AI-0591 stable colored HUD");
+            ASSERT_TRUE(written) << written.error();
+        }
     }
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
 }

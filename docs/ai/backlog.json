@@ -17163,7 +17163,7 @@
       "MC-AI-0482"
     ],
     "acceptance": "Reachable target highlighting; cracks and cubic particles; snow 1 s, dirt/grass 1.5 s, ice 2 s, stone 3 s; Creative can break bedrock and Survival cannot fly; block breaking blacklist/whitelist including empty lists and normal/quick speed; explicit Spectator/Creative/Survival capability presets; B placement-block cycling; HUD mode, precise permissions and selected block. Server-authoritative edits update rendering/collision/replication in the ordinary world. Central edit-ray crosshair; HUD/crosshair single-color and two-color dark/light styles; choose adaptive color independently for each pixel from the scene behind it, retaining readability across mixed snow and dark terrain. Adopt the owner-selected qualified replacement terrain model deferred from S1, preserving final S1 loading, actual-volume, streaming and platform/performance gates. Include a gameplay minimap and interactive world map, as added by the owner on 22 October 2026. Improve the four text/background/map-based UI views (pre-connect, generation, game, world map); HUD includes loaded chunks, measured memory and local climate, with inapplicable fields omitted; minimap shows the local L1/L2 area and N/E/S/W. Preserve the complete existing HUD (FPS, uptime/platform help, active/selected speed, movement rights, XYZ, YPR and F1; omit only View text and retain F5/5 control/help), while grouping it compactly with new telemetry. Generation is dynamically engaging through current map-image primitives; the minimap uses game material colors and conspicuous outlined cardinal labels. World-map layers have independent keys and availability/units/legends for plates, heights, temperature, biomes/climate zones, wind, currents, moisture and model precipitation; layer combinations remain legible and map keys remain exclusive. Use accepted232eae68: consistent colored HUD, full-viewport map, continuous translucent T/O/Q, coherent formation and persistent shared ice/weather, ending on the exact normal atlas. Close each broad-review disposition through its recorded fix, final-S1 revalidation or evidence-based decision; require complete public CoreLang contracts, bounded world-script execution/trust boundaries, input/telemetry correctness and reproducible setup. After the new model lands, use its temperature/biome data for below-zero summit snow and Sand in appropriate desert terrain, with canonical query/render/edit/map agreement. Generated terrain keeps solid stacked columns with air above; model-backed sandy beach/desert tops and cold snowy summits are modest extensions after model integration.",
-    "evidence": "PF01–PF07: request.txt/requirements.json (hashes and ordered criteria in feedback ledger). MC-AI-0543 is local-only; Windows owner acceptance remains open. MC-AI-0560 integrates native V9 and eight map layers. MC-AI-0581 fixes the 12,678-byte tile cap. Numeric/seam/domain, cross-platform, performance, Android, multiplayer, and owner-playtest gates remain open.",
+    "evidence": "PF01–PF07: request.txt/requirements.json (hashes and ordered criteria in feedback ledger). MC-AI-0543 is local-only; Windows owner acceptance remains open. MC-AI-0560 integrates native V9 and eight map layers. MC-AI-0581 fixes the 12,678-byte tile cap. Numeric/seam/domain, cross-platform, performance, Android, multiplayer, and owner-playtest gates remain open. MC-AI-0591 records a local HUD readability/compactness implementation and supplied Mac component/native checks; owner acceptance remains open.",
     "blocker": "",
     "owner": "codex",
     "level": "snapshot",
@@ -21098,5 +21098,54 @@
     "docs_review": "GAMEPLAY.md summarizes post-start canonical priority and spare-capacity borrowing while retaining the peer, class, credit, edit, preview and authority fences. GENERATION.md distinguishes NativeV9 direct immutable-atlas sampling from R6 typed-leaf requirements. Source state refreshed; ai_docs check passed.",
     "environment_review": "Release -O3 -DNDEBUG Mac NativeV9. Diagnostic-only setup watchdog 120 s under measured aggregate host contention; shipping timeouts unchanged and movement fixed at 17 s. Fairness fixture preparation wait 90 s; its credit-progress assertions remain 15 s. No FPS/speedup/Windows claim.",
     "backlog_review": "This closes the scoped local implementation/diagnostic milestone only. A separate speed-200 native readiness run remains failed at 0/6,561 actual columns; parent MC-AI-0483, full-volume/high-speed continuity, FPS, Windows, cross-platform and owner acceptance remain open."
+  },
+  {
+    "id": "MC-AI-0591",
+    "title": "Stabilize and compact the adaptive HUD",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0585"
+    ],
+    "acceptance": "In the default gameplay HUD, keep colored adaptive text legible over textured backgrounds without the reported salt-and-pepper glyph appearance; preserve distinct X/Y/Z hues; omit humidity when unavailable; group XYZ on one row when it fits; remove redundant Break yes/Place yes status text; and group effective speed, selected speed and acceleration on one compact row. Preserve the existing HUD controls and compact window layout. This is a local implementation milestone; parent MC-AI-0483 owner acceptance remains open.",
+    "evidence": "Exact owner sources are preserved under /Users/core-just/.codex/task-evidence/mc-s2-20261025/task-0591-hud-stability/prepared-on-d2a0/request-sources; the ordered task ledger is requirements.json SHA-256 68c56ffd411855df73f5f9d11307d26b363a69cb61ad6ad5f3b8eb225c321bbc, source-copy manifest SHA-256 84d1d1e50512a4620080ca93a026ce468c3d54b66c545af318c477447a884fa2. The original seven-path candidate patch was 0f9b2f1f1c8bb2ce02fcd77b57c5b70ee3ab4116b70eed4ed5a5f7746260adef (original base 65a38d0627b2b78236a0992211ab4dda7302d5fc). Supplied focused DebugHud/TextRenderer tests passed 33/33 and the native textured-stone capture test passed 1/1 on that prior candidate; the exact d2a0 rebased candidate has not been rebuilt/retested. Its three-way rebase applied cleanly; six of seven source/test files are byte-identical to the approved candidate, while PlayerClient.cpp retains intervening d2a0 code and the intended Break/Place text removal. The inspected native stone frame shows colored XYZ and compact rows. Owner acceptance of the current desktop package remains pending; no Windows/Android or aggregate acceptance is claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "The owner reported unreadable HUD flicker on textured stone and requested distinct coordinate colors, compact rows, and removal of unavailable/redundant text.",
+    "context": "MC-AI-0585 supplied colored adaptive HUD text, but its native proof used synthetic backgrounds and the owner subsequently reported salt-and-pepper flicker over stone. This task implements the explicitly assigned P6 HUD items 02, 04, 05, 06, 07 and item 13. Held RMB placement is MC-AI-0592; map animation/biome/plate/rain feedback is MC-AI-0593; terrain residency/performance and other UI issues remain separate. The numeric residency examples were corrected and are outside this task.",
+    "complexity": "medium",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added a luminance-aware dark backing for colored adaptive HUD text; restored distinct XYZ hues; grouped coordinates and speed/selected/acceleration fields into compact rows; omitted unavailable humidity and redundant Break/Place status text. Kept the parent owner-acceptance gate open.",
+    "plan": [
+      "Trace the owner’s exact HUD clauses and the prior default colored-adaptive path.",
+      "Apply only the stable-contrast, distinct-axis-color, humidity, compact-row and redundant-label fixes.",
+      "Verify HUD layout contracts and the native textured-stone capture; record the rebased-candidate verification boundary."
+    ],
+    "product_changes": [
+      "The default HUD has stable colored coordinate text and more compact movement/coordinate rows while omitting unavailable or redundant fields."
+    ],
+    "code_changes": [
+      "src/client/PlayerClient.cpp",
+      "src/client/include/client/render/TextRenderer.hpp",
+      "src/client/render/DebugHud.cpp",
+      "src/client/render/TextRenderer.cpp",
+      "src/client/render/shaders/text_glyph.glsl",
+      "tests/client/debug_hud_tests.cpp",
+      "tests/client/renderer_smoke_tests.cpp",
+      "docs/code/RENDERING.md"
+    ],
+    "baseline_commit": "d2a0caffba18b0d7f2dfb8de1c0f9be431792a7c",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Updated RENDERING.md with the adaptive backing and compact HUD layout contract; documentation integrity is checked with the candidate.",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

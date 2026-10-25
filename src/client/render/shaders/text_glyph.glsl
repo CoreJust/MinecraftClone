@@ -137,6 +137,11 @@ float contrast(float candidate, float background) {
 #endif
 
 void main() {
+#ifdef ADAPTIVE_TEXT
+    const vec2 glyph_pixel_size = 1.0 / max(abs(vec2(dFdx(in_pixel_position.x),
+        dFdy(in_pixel_position.y))), vec2(0.001));
+    const vec2 glyph_center = gl_FragCoord.xy + (vec2(4.0, 8.0) - in_pixel_position) * glyph_pixel_size;
+#endif
     const ivec2 pixel = ivec2(floor(in_pixel_position));
     if (pixel.x < 0 || pixel.x >= int(GLYPH_WIDTH)
         || pixel.y < 0 || pixel.y >= int(GLYPH_HEIGHT)) {
@@ -169,6 +174,17 @@ void main() {
     const bool encoded_scene = (params.mode & 2u) != 0u;
     if ((in_character & 0x100u) != 0u) {
         vec3 background = texelFetch(scene_color, ivec2(gl_FragCoord.xy), 0).rgb;
+        if ((in_character & 0x400u) != 0u) {
+            // One coarse neighborhood per glyph keeps textured backgrounds out of the ink shape.
+            background = vec3(0.0);
+            for (int y = -1; y <= 1; ++y) {
+                for (int x = -1; x <= 1; ++x) {
+                    const ivec2 sample_pixel = clamp(ivec2(glyph_center + vec2(x, y) * 4.0 * glyph_pixel_size),
+                        ivec2(0), textureSize(scene_color, 0) - 1);
+                    background += texelFetch(scene_color, sample_pixel, 0).rgb / 9.0;
+                }
+            }
+        }
         if (encoded_scene) { background = srgbToLinear(background); }
         const vec4 light = unpackColor(in_light_color);
         const vec4 dark = unpackColor(in_dark_color);
@@ -178,13 +194,11 @@ void main() {
         const float luminance = dot(background, weights);
         const bool choose_light = contrast(dot(linear_light, weights), luminance)
             >= contrast(dot(linear_dark, weights), luminance);
-        if ((in_character & 0x200u) != 0u) {
-            // Keep category hues where readable; sample the scene separately at every ink pixel.
-            const vec3 category = srgbToLinear(color.rgb);
-            const float category_contrast = contrast(dot(category, weights), luminance);
-            const vec3 polarity = contrast(1.0, luminance) >= contrast(0.0, luminance)
-                ? vec3(1.0) : vec3(0.0);
-            out_color = vec4(category_contrast >= 4.5 ? category : polarity, color.a);
+        if ((in_character & 0x400u) != 0u) {
+            const float coverage = mix(0.55, 1.0, smoothstep(0.02, 0.20, luminance));
+            out_color = vec4(vec3(0.0), color.a * coverage);
+        } else if ((in_character & 0x200u) != 0u) {
+            out_color = vec4(srgbToLinear(color.rgb), color.a);
         } else {
             const vec3 chosen = choose_light ? linear_light : linear_dark;
             out_color = vec4(chosen,

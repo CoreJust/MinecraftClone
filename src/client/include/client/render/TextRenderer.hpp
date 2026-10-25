@@ -43,6 +43,7 @@ enum class TextStyle : uint8_t {
     Fixed,
     Adaptive,
     ColoredAdaptive,
+    AdaptiveHalo,
 };
 
 struct TextPlacement final {
