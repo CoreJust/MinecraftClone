@@ -737,6 +737,14 @@ std::shared_ptr<TerrainLodScene const> buildTerrainLodColumnPatch(
     return scene;
 }
 
+static std::shared_ptr<TerrainLodScene const> buildTerrainLodSceneImpl(
+    shared::TerrainWorld const& world,
+    uint32_t center_x,
+    uint32_t center_y,
+    std::span<TerrainLodActualColumn const> actual_columns,
+    std::span<std::shared_ptr<TerrainLodColumnInput const> const> columns,
+    std::stop_token const& cancellation);
+
 std::shared_ptr<TerrainLodScene const> buildTerrainLodSceneFromColumns(
     shared::TerrainWorld const& world,
     uint32_t const center_x,
@@ -744,17 +752,14 @@ std::shared_ptr<TerrainLodScene const> buildTerrainLodSceneFromColumns(
     std::span<std::shared_ptr<TerrainLodColumnInput const> const> const columns,
     std::stop_token const& cancellation)
 {
-    std::vector<TerrainLodActualColumn> actual;
-    actual.reserve(columns.size());
     for (auto const& input : columns) {
         if (!input->authority_sources.empty()
             && input->authority_sources.front().identity != world.identity()) {
             throw std::invalid_argument("terrain LOD scene column identity is stale");
         }
-        actual.push_back(meshColumn(*input, cancellation));
     }
-    auto scene =
-        std::const_pointer_cast<TerrainLodScene>(buildTerrainLodScene(world, center_x, center_y, actual, cancellation));
+    auto scene = std::const_pointer_cast<TerrainLodScene>(
+        buildTerrainLodSceneImpl(world, center_x, center_y, {}, columns, cancellation));
     std::unordered_set<uint64_t> authority_keys;
     for (auto const& input_column : columns) {
         TerrainLodColumnInput const& column = *input_column;
@@ -775,6 +780,17 @@ std::shared_ptr<TerrainLodScene const> buildTerrainLodScene(
     uint32_t const center_x,
     uint32_t const center_y,
     std::span<TerrainLodActualColumn const> const actual_columns,
+    std::stop_token const& cancellation)
+{
+    return buildTerrainLodSceneImpl(world, center_x, center_y, actual_columns, {}, cancellation);
+}
+
+static std::shared_ptr<TerrainLodScene const> buildTerrainLodSceneImpl(
+    shared::TerrainWorld const& world,
+    uint32_t const center_x,
+    uint32_t const center_y,
+    std::span<TerrainLodActualColumn const> actual_columns,
+    std::span<std::shared_ptr<TerrainLodColumnInput const> const> const columns,
     std::stop_token const& cancellation)
 {
     auto const root = shared::buildTerrainLod(world, shared::TerrainLodLevel::L0, 0U, 0U, PERIOD, cancellation);
@@ -865,16 +881,34 @@ std::shared_ptr<TerrainLodScene const> buildTerrainLodScene(
         shared_heights.emplace(key, height);
         return height;
     };
-    std::unordered_map<uint64_t, TerrainLodActualColumn const*> actual;
-    actual.reserve(actual_columns.size());
-    for (TerrainLodActualColumn const& column : actual_columns) {
-        bool covered = column.x < PERIOD / 16U && column.y < PERIOD / 16U;
-        for (uint32_t y = 0U; y < 16U && covered; y += 8U) {
-            for (uint32_t x = 0U; x < 16U; x += 8U) {
+    auto const covered_column = [&cell_at](uint32_t const x, uint32_t const y) {
+        bool covered = x < PERIOD / 16U && y < PERIOD / 16U;
+        for (uint32_t dy = 0U; dy < 16U && covered; dy += 8U) {
+            for (uint32_t dx = 0U; dx < 16U; dx += 8U) {
                 covered = covered &&
-                    cell_at(column.x * 16U + x, column.y * 16U + y).region.level == shared::TerrainLodLevel::L2;
+                    cell_at(x * 16U + dx, y * 16U + dy).region.level == shared::TerrainLodLevel::L2;
             }
         }
+        return covered;
+    };
+    std::vector<TerrainLodActualColumn> selected_columns;
+    selected_columns.reserve(columns.size());
+    for (auto const& input : columns) {
+        if (cancellation.stop_requested()) {
+            throw std::runtime_error("terrain LOD chunk meshing cancelled");
+        }
+        if (covered_column(input->x, input->y)) {
+            selected_columns.push_back(meshColumn(*input, cancellation));
+        }
+    }
+    if (!columns.empty()) {
+        actual_columns = selected_columns;
+    }
+    std::unordered_map<uint64_t, TerrainLodActualColumn const*> actual;
+    // Keep the original bucket count and insertion order: both determine final draw-group order.
+    actual.reserve(columns.empty() ? actual_columns.size() : columns.size());
+    for (TerrainLodActualColumn const& column : actual_columns) {
+        bool const covered = covered_column(column.x, column.y);
         if (covered) {
             actual.emplace((static_cast<uint64_t>(column.x) << 32U) | column.y, &column);
         }

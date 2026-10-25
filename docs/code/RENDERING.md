@@ -32,7 +32,7 @@ Z-up uses zero-to-one depth. `InstalledShaderAssets` reads installed `shaders/`;
 Conservative hierarchy preserves visibility/order. L0 remains fallback as cells refine 4×4
 through L1/L2, stitched along shared edges. A 32-block band adjusts intersecting
 cells and neighbor edges toward actual edges. Incomplete captures retain fallback.
-Async planning reuses canonical groups through unedited churn; edits invalidate
+Coverage precedes meshing. Async planning reuses unchanged groups; edits invalidate
 identity; source matching avoids allocation. Ordinary bottoms use textured 16×16
 Bedrock; edits retain exact fallback. Uploads preserve the old scene until candidate
 completion; stale candidates preserve columns.

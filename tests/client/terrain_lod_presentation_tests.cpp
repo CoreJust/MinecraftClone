@@ -20,6 +20,8 @@
 #include <optional>
 #include <set>
 #include <span>
+#include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <utility>
 #include <vector>
@@ -858,6 +860,63 @@ TEST(TerrainLodPresentationTest, AuthoritySourcesStayCurrentAcrossCanonicalDense
     EXPECT_TRUE(client::terrainLodSourcesCurrent(scene, world));
     ASSERT_TRUE(world.evict({4, 5, 25}));
     EXPECT_TRUE(client::terrainLodSourcesCurrent(scene, world));
+}
+
+TEST(TerrainLodPresentationTest, PreMeshingCoverageMatchesEagerReferenceGeometryOrderAndAllSourceRecords)
+{
+    auto const world = presentationWorld(256U);
+    for (uint32_t const center : { 0U, 32'768U, 65'520U }) {
+        std::vector<std::shared_ptr<client::TerrainLodColumnInput const>> columns;
+        std::vector<client::TerrainLodActualColumn> eager;
+        uint32_t const near = center / 16U;
+        uint32_t const far = (near + 1'024U) % 4'096U;
+        for (uint32_t const x : { near, far, near }) {
+            client::TerrainLodColumnInput input{ .x = x, .y = near };
+            shared::Chunk const chunk = shared::Chunk::makeStoneFixture(
+                { static_cast<int32_t>(x), static_cast<int32_t>(near), 0 });
+            input.chunks.push_back({ chunk, {} });
+            input.sources.push_back({ chunk.coordinate(), chunk.contentIdentity(), columns.size() });
+            for (auto& edge : input.edge_heights) {
+                edge.fill(16U);
+            }
+            client::TerrainLodActualColumn actual{ .x = x, .y = near, .meshes = {}, .faces = {},
+                .edge_heights = input.edge_heights };
+            shared::ChunkMesher mesher;
+            actual.meshes.push_back(mesher.update(chunk, {}));
+            eager.push_back(std::move(actual));
+            columns.push_back(std::make_shared<client::TerrainLodColumnInput const>(std::move(input)));
+        }
+        auto const reference = client::buildTerrainLodScene(*world, center, center, eager);
+        auto const actual = client::buildTerrainLodSceneFromColumns(*world, center, center, columns);
+        EXPECT_EQ(actual->faces, reference->faces);
+        EXPECT_EQ(actual->leaves, reference->leaves);
+        EXPECT_EQ(actual->actual_column_count, reference->actual_column_count);
+        ASSERT_EQ(actual->groups.size(), reference->groups.size());
+        for (size_t i = 0U; i < actual->groups.size(); ++i) {
+            auto const& a = actual->groups[i];
+            auto const& b = reference->groups[i];
+            EXPECT_EQ(a.range.first_instance, b.range.first_instance);
+            EXPECT_EQ(a.range.instance_count, b.range.instance_count);
+            EXPECT_EQ(a.origin_x, b.origin_x);
+            EXPECT_EQ(a.origin_y, b.origin_y);
+            EXPECT_EQ(a.extent, b.extent);
+            EXPECT_EQ(a.minimum_z, b.minimum_z);
+            EXPECT_EQ(a.maximum_z, b.maximum_z);
+        }
+        ASSERT_EQ(actual->chunk_sources.size(), columns.size());
+        for (size_t i = 0U; i < columns.size(); ++i) {
+            EXPECT_EQ(actual->chunk_sources[i], columns[i]->sources.front());
+        }
+    }
+}
+
+TEST(TerrainLodPresentationTest, PreMeshingSelectionHonorsRequestedCancellation)
+{
+    auto const world = presentationWorld(256U);
+    std::stop_source cancellation;
+    cancellation.request_stop();
+    EXPECT_THROW(static_cast<void>(client::buildTerrainLodSceneFromColumns(
+        *world, 0U, 0U, {}, cancellation.get_token())), std::runtime_error);
 }
 
 } // namespace

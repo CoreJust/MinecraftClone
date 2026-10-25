@@ -19963,5 +19963,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0567",
+    "title": "Select needed terrain columns before meshing",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Apply the exact existing coverage selection before expensive column meshing, preserving scene geometry, ordering, canonical source/version provenance, edited-column inclusion and cancellation. Compare old/new output and source-bound native CPU/allocation peaks on the same representative inputs. Do not weaken render distance or treat this as a proven Windows allocation fix before current-source runtime evidence. Windows FPS/memory qualification remains MC-AI-0553/0483.",
+    "evidence": "Controlled native Release comparison on identical 5,853 retained captured-profile inputs selected the same 785 covered columns. Ordered face/group/leaf/full authority-source provenance hash b408f8595eb33700 matches old/new in all four runs: 630,201 faces, 73,756 groups/leaves, 6,665 authority sources. Tracked peak allocation fell from 159,222,928 to 76,188,816 bytes (52.15%); warm CPU median fell from 0.246377 to 0.219566 seconds (1.122x). The complete 30-test TerrainLodPresentation suite, configured Release mc_main compile/link, ai_docs checks, and fast development gate passed. One Luna/high exact-task review approved the implementation; base/metadata renewal is recorded with the final receipt. Evidence: /Users/core-just/.codex/task-evidence/mc0567-selection-20261025/. These are controlled Mac CPU/allocation measurements; Windows memory/FPS qualification remains open in MC-AI-0553/0483.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Reduce unnecessary scene-construction CPU and peak memory while preserving the exact scene and authoritative edit sources.",
+    "context": "Windows 0565 scene jobs mesh5044/5853 retained columns before coverage selection; allocation failures occur in async scene construction. BVH allocation probe finds3.77MB persistent with no reset growth.",
+    "complexity": "high",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Apply the unchanged existing coverage predicate before expensive retained-column meshing. Keep original actual-map bucket count/insertion order, exact geometry and group order, all canonical source/version provenance, edited-column inclusion, and cancellation. Local implementation and controlled comparison are complete; no Windows allocation recovery or FPS claim is made.",
+    "plan": [],
+    "product_changes": [
+      "Avoid meshing retained terrain columns outside the existing exact scene coverage."
+    ],
+    "code_changes": [
+      "src/client/TerrainLodPresentation.cpp",
+      "tests/client/terrain_lod_presentation_tests.cpp",
+      "docs/code/RENDERING.md"
+    ],
+    "baseline_commit": "09222b1e13ab0871518f3718013a1db73db6ec82",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
