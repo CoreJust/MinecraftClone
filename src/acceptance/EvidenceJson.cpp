@@ -1070,6 +1070,7 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
             + ",\n"
         "    \"terrain_identity\": " + terrainIdentityJson(benchmark.terrain_identity) + ",\n"
         "    \"session_join_epoch\": " + std::to_string(benchmark.session_join_epoch) + ",\n"
+        "    \"live_ui_enabled\": " + (benchmark.live_ui_enabled ? "true" : "false") + ",\n"
         "    \"diagnostic_overrides_present\": "
             + (benchmark.diagnostic_overrides_present ? "true" : "false") + ",\n"
         "    \"cold_duration_ms\": " + std::to_string(benchmark.cold_duration_ms) + ",\n"

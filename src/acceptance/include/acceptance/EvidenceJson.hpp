@@ -686,6 +686,7 @@ struct GameBenchmarkServerStreamSample final {
 
 struct GameBenchmarkEvidence final {
     std::string workload;
+    bool live_ui_enabled = false;
     std::string qualification_proof;
     std::string movement_trajectory_contract;
     std::optional<shared::corelang::BackendReceipt> terrain_backend_receipt = std::nullopt;

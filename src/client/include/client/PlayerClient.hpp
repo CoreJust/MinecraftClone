@@ -130,7 +130,15 @@ struct PlayerClientBenchmarkOptions final {
     bool capture_frame_completion = false;
     std::function<std::optional<CameraAngles>(std::chrono::steady_clock::time_point)> camera_angles_override;
     bool enable_diagnostic_frame_capture = false;
+    bool enable_live_ui = false;
 };
+
+[[nodiscard]] inline bool playerClientPlayingUiEnabled(
+    std::optional<PlayerClientBenchmarkOptions> const& benchmark
+) noexcept
+{
+    return !benchmark || benchmark->enable_live_ui;
+}
 
 enum class PlayerClientDiagnosticFrameCaptureState : uint8_t {
     NotRequested,

@@ -2546,7 +2546,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .require_immediate_present_mode = options.require_immediate_present_mode,
         .freeze_camera = options.workload == GameBenchmarkWorkload::DiagnosticStationary
             || full_radius_workload,
-        .show_debug_hud = frame_capture_requested || full_radius_workload || s1_terrain_workload,
+        .show_debug_hud = options.enable_live_ui || frame_capture_requested || full_radius_workload || s1_terrain_workload,
         .enable_mesh_stage_diagnostics = options.diagnostic_full_radius_capture,
         .enable_presentation_history = capture_presentation_history,
         .capture_frame_completion = true,
@@ -2569,6 +2569,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             }
             : std::function<std::optional<client::CameraAngles>(Clock::time_point)>{},
         .enable_diagnostic_frame_capture = frame_capture_requested,
+        .enable_live_ui = options.enable_live_ui,
     };
     auto const player_storage = [&] {
         if (glfwInit() != GLFW_TRUE) {
@@ -2590,6 +2591,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     // Direct construction avoids a full-size aggregate temporary on this stack.
     std::unique_ptr<GameBenchmarkEvidence> benchmark_storage{ new GameBenchmarkEvidence{
         .workload = std::string{ gameBenchmarkWorkloadName(options.workload) },
+        .live_ui_enabled = options.enable_live_ui,
         .qualification_proof = options.qualification_proof,
         .movement_trajectory_contract = options.workload == GameBenchmarkWorkload::OrdinaryTurningMovement
             ? "mc.x30-authoritative-trajectory.v1" : "",

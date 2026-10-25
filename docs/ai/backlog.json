@@ -20600,5 +20600,52 @@
     "docs_review": "Updated RENDERING.md for aggregate timing and worker-built index publication; refresh the generated source inventory.",
     "environment_review": "Existing pinned Release dependencies were reused with VCPKG_MANIFEST_INSTALL=OFF; no new dependency installation was run.",
     "backlog_review": "This diagnostic/worker-index prerequisite is complete. The full-user-interface fresh-frame target and all-platform qualification remain open under MC-AI-0483."
+  },
+  {
+    "id": "MC-AI-0573",
+    "title": "Measure ordinary gameplay with the full live interface",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0571"
+    ],
+    "acceptance": "Add an explicit --benchmark-live-ui option, default off. When enabled, the ordinary benchmark path renders the normal live HUD and map while retaining physical platform-input isolation. Serialize live_ui_enabled in evidence and keep capture-only behavior and default ordinary runs unchanged. Verify CLI and PlayerClient gating plus a source-bound live-UI movement capture; report the performance gate independently.",
+    "evidence": "The composed mc_main build passed; the 99-test owned suite and 3 CLI cases passed, plus 2 focused UI-gating tests. The source-bound Windows ordinary V9 live-UI capture recorded live_ui_enabled=true across 4,349 rows, 60 inputs and 60 authoritative updates. It failed the required 99% under-2-ms fresh-frame interval budget. Receipts: /Users/core-just/.codex/task-evidence/mc-s2-20261025/task-0573-live-ui/verification.json and /Users/core-just/.codex/task-evidence/mc-s2-20261025/windows-final-ui-perf/runtime-receipt.json. This closes the opt-in and evidence contract only; MC-AI-0483 performance qualification remains open.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "The ordinary performance route must measure the user-facing Playing UI, not silently hide the live HUD and map.",
+    "context": "PlayerClient already has benchmark-scoped UI gating and a separate capture-only path. The new option is explicit and preserves normal defaults and platform input isolation; it exposes full UI under the real movement route.",
+    "complexity": "medium",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added the benchmark CLI opt-in, passed it to PlayerClient UI gating, and serialized live_ui_enabled. The one full UI Windows movement capture exercised the enabled route but failed the freshness performance threshold.",
+    "plan": [],
+    "product_changes": [
+      "The ordinary benchmark can opt into the same live HUD and map shown during gameplay."
+    ],
+    "code_changes": [
+      "src/acceptance/EvidenceJson.cpp",
+      "src/acceptance/GameBenchmark.cpp",
+      "src/acceptance/include/acceptance/EvidenceJson.hpp",
+      "src/acceptance/include/acceptance/GameBenchmark.hpp",
+      "src/client/PlayerClient.cpp",
+      "src/client/include/client/PlayerClient.hpp",
+      "src/main.cpp",
+      "tests/acceptance/evidence_json_tests.cpp",
+      "tests/acceptance/runtime_cli_tests.cmake",
+      "tests/client/player_client_capture_plan_tests.cpp"
+    ],
+    "baseline_commit": "82657dbe25d726cb39bcd9413c101d77186212d2",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Full-feature movement measurement needs an explicit UI state and output provenance; the flag now makes that state testable without changing default gameplay or capture-only behavior.",
+    "docs_review": "CLI help describes the opt-in; source inventory is refreshed.",
+    "environment_review": "Windows live-UI run retained complete JSON/stdout/stderr evidence; configured existing build dependencies were reused.",
+    "backlog_review": "The live-UI measurement prerequisite is complete; the actual FPS target and remaining platform runtime gates stay open under MC-AI-0483."
   }
 ]

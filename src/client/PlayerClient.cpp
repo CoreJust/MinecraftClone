@@ -1581,7 +1581,7 @@ PlayerClient::PlayerClient(
     m_renderer.setDebugHudEnabled(true);
     m_debug_hud_enabled = true;
     if (m_benchmark) {
-        m_debug_hud_enabled = m_benchmark->show_debug_hud;
+        m_debug_hud_enabled = m_benchmark->show_debug_hud || m_benchmark->enable_live_ui;
         m_renderer.setDebugHudEnabled(m_debug_hud_enabled);
     }
     if (m_capture.has_value()) {
@@ -4779,7 +4779,7 @@ void PlayerClient::resetWorldMapSource()
 void PlayerClient::updatePlayingMapPresentation()
 {
     m_s2_map_vector_triangles.clear();
-    bool const map_ui_enabled = (!m_benchmark || m_benchmark->enable_diagnostic_frame_capture)
+    bool const map_ui_enabled = (playerClientPlayingUiEnabled(m_benchmark) || m_benchmark->enable_diagnostic_frame_capture)
         && !m_capture.has_value();
     auto const world = map_ui_enabled ? terrainLodWorld() : nullptr;
     auto const root_lod = world ? terrainLodRoot() : nullptr;
@@ -5043,7 +5043,7 @@ void PlayerClient::updateLoadingPresentation(WorldLoadingStatus const& status)
             m_renderer.clearMapImage();
             static_cast<void>(m_renderer.setMapDraws({}));
             m_renderer.clearGuiText();
-            m_debug_hud_enabled = !m_benchmark || m_benchmark->show_debug_hud;
+            m_debug_hud_enabled = playerClientPlayingUiEnabled(m_benchmark) || m_benchmark->show_debug_hud;
             m_renderer.setDebugHudEnabled(m_debug_hud_enabled);
             m_generation_map_animator.reset();
             m_loading_map_snapshot.reset();
@@ -5551,11 +5551,11 @@ void PlayerClient::render() {
         updateLoadingPresentation(loading_status);
     }
     if (loading_status.state == WorldLoadingState::Playing
-        && !m_benchmark.has_value()
+        && playerClientPlayingUiEnabled(m_benchmark)
         && !m_capture.has_value()) {
         m_renderer.clearGuiText();
     }
-    if (!m_benchmark.has_value() && !m_capture.has_value() && !m_s2_world_map_open
+    if (playerClientPlayingUiEnabled(m_benchmark) && !m_capture.has_value() && !m_s2_world_map_open
         && !m_screenshot_capture_pending && !m_screenshot_capture_requested) {
         static constexpr float SCREENSHOT_HUD_MARGIN = 24.0F;
         static constexpr float SCREENSHOT_HUD_SCALE = 0.72F;

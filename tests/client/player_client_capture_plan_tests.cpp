@@ -2593,3 +2593,14 @@ TEST(PlayerClientCapturePlanTest, DepartedTicketsAreRemovedAndResetDrainsUnranke
     queue.clear();
     EXPECT_TRUE(queue.empty());
 }
+
+TEST(PlayerClientCapturePlanTest, LiveUiBenchmarkOptInKeepsOrdinaryAndCaptureDefaults)
+{
+    EXPECT_TRUE(client::playerClientPlayingUiEnabled(std::nullopt));
+    std::optional<client::PlayerClientBenchmarkOptions> benchmark{std::in_place};
+    EXPECT_FALSE(client::playerClientPlayingUiEnabled(benchmark));
+    benchmark->enable_diagnostic_frame_capture = true;
+    EXPECT_FALSE(client::playerClientPlayingUiEnabled(benchmark));
+    benchmark->enable_live_ui = true;
+    EXPECT_TRUE(client::playerClientPlayingUiEnabled(benchmark));
+}

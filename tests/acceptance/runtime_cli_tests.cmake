@@ -494,3 +494,25 @@ execute_process(
 if(delay_result EQUAL 0 OR NOT "${delay_stdout}${delay_stderr}" MATCHES "delay must be between zero and 30 seconds")
     message(FATAL_ERROR "capture delay range was not enforced")
 endif()
+
+foreach(live_ui_case IN ITEMS accepted duplicate)
+    set(live_ui_args --benchmark-live-ui)
+    if(live_ui_case STREQUAL "duplicate")
+        list(APPEND live_ui_args --benchmark-live-ui)
+        set(live_ui_expected_error "invalid game benchmark option: --benchmark-live-ui")
+    else()
+        list(APPEND live_ui_args --terrain-model invalid)
+        set(live_ui_expected_error "terrain model must be r6 or v9")
+    endif()
+    execute_process(
+        COMMAND "${MC_MAIN}" --benchmark-game ${live_ui_args}
+            --evidence "${OUTPUT_DIRECTORY}/live-ui-invalid.json"
+        RESULT_VARIABLE live_ui_result
+        OUTPUT_VARIABLE live_ui_stdout
+        ERROR_VARIABLE live_ui_stderr
+        TIMEOUT 10
+    )
+    if(live_ui_result EQUAL 0 OR NOT "${live_ui_stdout}${live_ui_stderr}" MATCHES "${live_ui_expected_error}")
+        message(FATAL_ERROR "live UI benchmark argument validation failed for ${live_ui_case}")
+    endif()
+endforeach()

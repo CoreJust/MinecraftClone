@@ -1746,3 +1746,12 @@ TEST(EvidenceJson, PreservesOrdinaryDiagnosticCaptureIdentityAndFailure)
     EXPECT_NE(json.find("\"diagnostic_frame_capture_state\": \"failed\""), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_frame_capture_error\": \"output already exists\""), std::string::npos);
 }
+
+TEST(EvidenceJson, RecordsLiveUiBenchmarkOptIn)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
+    EXPECT_NE(acceptance::evidenceJson(evidence).find("\"live_ui_enabled\": false"), std::string::npos);
+    evidence.game_benchmark->live_ui_enabled = true;
+    EXPECT_NE(acceptance::evidenceJson(evidence).find("\"live_ui_enabled\": true"), std::string::npos);
+}

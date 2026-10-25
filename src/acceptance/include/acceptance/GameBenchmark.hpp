@@ -289,6 +289,7 @@ struct GameBenchmarkOptions final {
     std::chrono::seconds full_radius_warmup_timeout = GAME_BENCHMARK_FULL_RADIUS_DEFAULT_WARMUP_TIMEOUT;
     bool diagnostic_full_radius_capture = false;
     generation::TerrainModelTag terrain_model = generation::TerrainModelTag::R6;
+    bool enable_live_ui = false;
     std::filesystem::path frame_capture_image;
     std::string frame_capture_phase = "playing";
     std::chrono::milliseconds frame_capture_delay{0};

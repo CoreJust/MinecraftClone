@@ -106,6 +106,7 @@ struct RuntimeCommand final {
     bool diagnostic_full_radius_capture = false;
     bool diagnostic_presentation_stages = false;
     std::optional<uint32_t> diagnostic_indexed_stone_quads;
+    bool benchmark_live_ui = false;
     std::filesystem::path benchmark_frame_capture;
     std::string benchmark_frame_capture_phase;
     std::chrono::milliseconds benchmark_frame_capture_delay{0};
@@ -478,7 +479,7 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         }
         return command;
     }
-    if (argc >= 4 && argc <= 25 && std::string_view{ argv[1] } == "--benchmark-game"
+    if (argc >= 4 && argc <= 26 && std::string_view{ argv[1] } == "--benchmark-game"
         && std::string_view{ argv[argc - 2] } == "--evidence") {
         RuntimeCommand command{};
         command.mode = RuntimeMode::GameBenchmark;
@@ -494,7 +495,9 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         bool capture_delay_selected = false;
         for (int argument_index = 2; argument_index < argc - 2; ++argument_index) {
             std::string_view const argument{ argv[argument_index] };
-            if (argument == "--benchmark-frame-capture" && command.benchmark_frame_capture.empty()
+            if (argument == "--benchmark-live-ui" && !command.benchmark_live_ui) {
+                command.benchmark_live_ui = true;
+            } else if (argument == "--benchmark-frame-capture" && command.benchmark_frame_capture.empty()
                 && argument_index + 1 < argc - 2) {
                 command.benchmark_frame_capture = argv[++argument_index];
                 if (command.benchmark_frame_capture.empty() || command.benchmark_frame_capture == "-") {
@@ -652,7 +655,7 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         "'--benchmark-game [--present-immediate] "
         "[--corelang-backend interpreter|jit|aot] "
         "[--workload ordinary|ordinary-turning|speed-200|speed-200-full-radius|wrapped-border|permission-collision] "
-        "[--terrain-model r6|v9] "
+        "[--terrain-model r6|v9] [--benchmark-live-ui] "
         "[--gameplay-proof terrain-coverage|performance] "
         "[--render-distance CHUNKS] [--full-radius-warmup-seconds 1..1800] "
         "[--diagnostic-full-radius-capture] [--diagnostic-presentation-stages] "
@@ -864,6 +867,7 @@ int runGameBenchmarkCommand(RuntimeCommand const& command)
         .full_radius_warmup_timeout = command.full_radius_warmup_timeout,
         .diagnostic_full_radius_capture = command.diagnostic_full_radius_capture,
         .terrain_model = command.terrain_model,
+        .enable_live_ui = command.benchmark_live_ui,
         .frame_capture_image = command.benchmark_frame_capture,
         .frame_capture_phase = command.benchmark_frame_capture_phase.empty()
             ? "playing" : command.benchmark_frame_capture_phase,
