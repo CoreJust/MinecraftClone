@@ -20463,5 +20463,48 @@
     "docs_review": "GENERATION.md documents V9 source material rules while preserving R6 behavior; GAMEPLAY.md documents protocol-24 source metadata; RENDERING.md documents Sand atlas and discrete V9 field upload. ai_docs refresh/check passed.",
     "environment_review": "Candidate /private/tmp/mc-ai-0561-2df825 at exact base 2df825b2f284a1466bc35716ff9f1a068145a1f2; macOS arm64 debug build used existing CoreCpp/CoreProject2026/vcpkg prefixes with VCPKG_MANIFEST_INSTALL=OFF. No new dependencies or installs.",
     "backlog_review": "Only MC-AI-0561 is finalized in this private candidate; shared root backlog/index are untouched. Parent MC-AI-0483 native visual, Windows, platform, runtime, and performance qualification remain open."
+  },
+  {
+    "id": "MC-AI-0579",
+    "title": "Serialize concurrent native Platec source generation",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0560"
+    ],
+    "acceptance": "Serialize the native Platec source invocation at one wrapper boundary so concurrent client and server generation cannot race on process-static vendor scratch state. Preserve seed-derived source output bits, final step, directions and cancellation/no-partial-publication behavior. Test simultaneous raw calls for seeds 2, 10 and 42 against serial results; keep vendored Platec bytes unchanged. Document the lock boundary and leave broader platform/performance/playtest qualification under MC-AI-0483.",
+    "evidence": "Private candidate `/private/tmp/mc-ai-0579-c5` based on committed c5d7766ac950ba9834d6a3bd44a39d8b31040064. Standalone `mc_generation_tests` built with the existing arm64-osx vcpkg prefix and explicit `-DVCPKG_MANIFEST_INSTALL=OFF`; initial target completed 101/101 steps and final test-source rebuild completed 2/2. Before the wrapper mutex, `V9PlatecStageTests.ConcurrentRawGenerationsMatchSerialOutputs` reproduced the shared-scratch crash (exit 138); after the fix, `V9PlatecStageTests.*` passed 8/8 in 5.032 s, including exact raw-array/plate/direction parity for concurrent seeds 2, 10 and 42 against serial baselines, frozen source oracles, pre-cancel and mid-step cancellation. All production Platec calls under `src/` enter through `generateV9PlatecSource`; vendor static scratch bytes were left unchanged. `ai_docs.py refresh/check`, `ai_tasks.py check`, `git diff --check`, and the relevant `publish.py --checks-only` source/format checks passed. Publisher reports only the existing 2026-10-23 snapshot date vs 2026-10-25 and the expected dirty private candidate. No sanitizer run was performed; broader platform/game qualification remains MC-AI-0483.",
+    "blocker": "",
+    "owner": "Codex native model pipeline",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "The exact Windows V9 application faulted while client and server workers entered Platec generation concurrently.",
+    "context": "The symbolized stacks bind both faults to concurrent calls through generateV9PlatecSource. Platec segment flood-fill scratch buffers and river-flow visited state are mutable function statics in the frozen vendor source. Preserve the vendor snapshot and serialize only the raw Platec wrapper call; downstream climate, water and terrain work remains independently concurrent.",
+    "complexity": "medium",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Serialized raw V9 Platec generation at the sole production wrapper with a process mutex and rechecked stop requests after contention. Added synchronized concurrent-vs-serial bitwise tests for seeds 2, 10 and 42; preserved vendor bytes and downstream pipeline concurrency.",
+    "plan": [
+      "Inventory production Platec entry points and shared mutable static state.",
+      "Add a process mutex at the V9 raw Platec wrapper and recheck cancellation after waiting.",
+      "Compare concurrent seed 2/10/42 results bitwise with serial baselines and run focused native checks.",
+      "Update the generation guide and task evidence; preserve all parent qualification gates."
+    ],
+    "product_changes": [
+      "Concurrent client/server V9 world preparation no longer races on Platec process-static scratch; fixed-seed outputs remain exact."
+    ],
+    "code_changes": [
+      "Added wrapper-scoped Platec synchronization and concurrent raw-stage regression coverage; documented the boundary."
+    ],
+    "baseline_commit": "c5d7766ac950ba9834d6a3bd44a39d8b31040064",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "Standalone AppleClang generation build on the c5 candidate using existing arm64-osx prefixes; VCPKG_MANIFEST_INSTALL=OFF; no dependency install.",
+    "backlog_review": ""
   }
 ]

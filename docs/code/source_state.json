@@ -401,7 +401,7 @@
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "9bce46cd66492ef6a6021194b86409f66123af9c77af1e6caa19140e5b5bc1c3",
+      "guide_sha256": "e2c29e65d04a16edeb94ffe776f49813c204a381345028ab463dda30148e3eab",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -1010,7 +1010,7 @@
         "tests/generation/v9_terrain_tests.cpp",
         "tests/generation/v9_water_tests.cpp"
       ],
-      "sources_sha256": "14cff785e757c148bf273c8e53be496cf61feb9e002cbbe816fc0eab62d3bac2"
+      "sources_sha256": "c0247538e9882a33c9e905c74821186449475fa5fcdc03389e9820370a63d789"
     },
     {
       "guide": "docs/code/RENDERING.md",

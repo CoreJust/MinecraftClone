@@ -5,11 +5,14 @@
 
 #include <algorithm>
 #include <array>
+#include <barrier>
 #include <bit>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -376,6 +379,96 @@ TEST(V9PlatecStageTests, Seed42MatchesRawNativePlatecOracle)
 {
     static constexpr uint64_t USER_SEED = 42U;
     expectSourceOracle(USER_SEED);
+}
+
+TEST(V9PlatecStageTests, ConcurrentRawGenerationsMatchSerialOutputs)
+{
+    static constexpr std::array<uint64_t, 3U> USER_SEEDS{2U, 10U, 42U};
+    using StageResult = std::expected<
+        generation::detail::V9PlatecSourceResult,
+        generation::detail::V9PlatecFailure
+    >;
+
+    std::array<generation::detail::V9PlatecSourceResult, USER_SEEDS.size()> serial_results;
+    for (std::array<uint64_t, USER_SEEDS.size()>::size_type index = 0U;
+         index < USER_SEEDS.size();
+         ++index)
+    {
+        StageResult result = generation::detail::generateV9PlatecSource(USER_SEEDS[index]);
+        ASSERT_TRUE(result.has_value()) << "Serial generation failed for seed " << USER_SEEDS[index];
+        serial_results[index] = std::move(*result);
+    }
+
+    std::barrier start_gate{static_cast<ptrdiff_t>(USER_SEEDS.size() + 1U)};
+    std::array<std::future<StageResult>, USER_SEEDS.size()> concurrent_results;
+    for (std::array<uint64_t, USER_SEEDS.size()>::size_type index = 0U;
+         index < USER_SEEDS.size();
+         ++index)
+    {
+        concurrent_results[index] = std::async(
+            std::launch::async,
+            [&start_gate, user_seed = USER_SEEDS[index]]()
+            {
+                start_gate.arrive_and_wait();
+                return generation::detail::generateV9PlatecSource(user_seed);
+            }
+        );
+    }
+    start_gate.arrive_and_wait();
+
+    for (std::array<uint64_t, USER_SEEDS.size()>::size_type index = 0U;
+         index < USER_SEEDS.size();
+         ++index)
+    {
+        StageResult result = concurrent_results[index].get();
+        ASSERT_TRUE(result.has_value()) << "Concurrent generation failed for seed " << USER_SEEDS[index];
+        generation::detail::V9PlatecSourceResult const& actual = *result;
+        generation::detail::V9PlatecSourceResult const& expected = serial_results[index];
+        EXPECT_EQ(actual.parameters.regime, expected.parameters.regime) << "seed=" << USER_SEEDS[index];
+        EXPECT_EQ(actual.parameters.topology_selection_value, expected.parameters.topology_selection_value)
+            << "seed=" << USER_SEEDS[index];
+        EXPECT_EQ(actual.parameters.native_engine_seed32, expected.parameters.native_engine_seed32)
+            << "seed=" << USER_SEEDS[index];
+        EXPECT_EQ(
+            std::bit_cast<uint32_t>(actual.parameters.initial_ocean_fraction),
+            std::bit_cast<uint32_t>(expected.parameters.initial_ocean_fraction)
+        ) << "seed=" << USER_SEEDS[index];
+        EXPECT_EQ(actual.parameters.initial_plate_count, expected.parameters.initial_plate_count)
+            << "seed=" << USER_SEEDS[index];
+        EXPECT_EQ(actual.final_step, expected.final_step) << "seed=" << USER_SEEDS[index];
+        EXPECT_EQ(actual.plate_direction_snapshot.observed_after_native_step,
+            expected.plate_direction_snapshot.observed_after_native_step) << "seed=" << USER_SEEDS[index];
+        EXPECT_EQ(actual.plate_direction_snapshot.phase, expected.plate_direction_snapshot.phase)
+            << "seed=" << USER_SEEDS[index];
+        ASSERT_EQ(actual.height_raw.size(), expected.height_raw.size()) << "seed=" << USER_SEEDS[index];
+        EXPECT_EQ(
+            canonicalArrayDigest<float>("float32", actual.height_raw),
+            canonicalArrayDigest<float>("float32", expected.height_raw)
+        ) << "seed=" << USER_SEEDS[index] << " raw height bits differ";
+        EXPECT_EQ(
+            canonicalArrayDigest<uint32_t>("uint32", actual.current_plate_id),
+            canonicalArrayDigest<uint32_t>("uint32", expected.current_plate_id)
+        ) << "seed=" << USER_SEEDS[index] << " plate IDs differ";
+        ASSERT_EQ(
+            actual.plate_direction_snapshot.directions.size(),
+            expected.plate_direction_snapshot.directions.size()
+        ) << "seed=" << USER_SEEDS[index];
+        for (std::vector<generation::detail::V9PlateDirection>::size_type direction_index = 0U;
+             direction_index < actual.plate_direction_snapshot.directions.size();
+             ++direction_index)
+        {
+            generation::detail::V9PlateDirection const& actual_direction =
+                actual.plate_direction_snapshot.directions[direction_index];
+            generation::detail::V9PlateDirection const& expected_direction =
+                expected.plate_direction_snapshot.directions[direction_index];
+            EXPECT_EQ(actual_direction.plate_id, expected_direction.plate_id)
+                << "seed=" << USER_SEEDS[index];
+            EXPECT_EQ(std::bit_cast<uint32_t>(actual_direction.x), std::bit_cast<uint32_t>(expected_direction.x))
+                << "seed=" << USER_SEEDS[index];
+            EXPECT_EQ(std::bit_cast<uint32_t>(actual_direction.y), std::bit_cast<uint32_t>(expected_direction.y))
+                << "seed=" << USER_SEEDS[index];
+        }
+    }
 }
 
 TEST(V9PlatecStageTests, PreRequestedCancellationStopsBeforeNativeWork)

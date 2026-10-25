@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <expected>
+#include <mutex>
 #include <stdexcept>
 #include <string_view>
 #include <system_error>
@@ -32,6 +33,7 @@ static constexpr float PLATEC_FOLDING_RATIO = 0.02F;
 static constexpr uint32_t PLATEC_AGGREGATION_OVERLAP_ABSOLUTE = 1'000'000U;
 static constexpr float PLATEC_AGGREGATION_OVERLAP_RELATIVE = 0.33F;
 static constexpr uint32_t PLATEC_CYCLE_COUNT = 1U;
+std::mutex s_platec_source_mutex;
 
 void appendAscii(std::vector<uint8_t>& bytes, std::string_view text)
 {
@@ -155,6 +157,12 @@ std::expected<V9PlatecSourceResult, V9PlatecFailure> generateV9PlatecSource(
     V9PlatecProgressCallback progress_callback
 )
 {
+    if (stop_token.stop_requested())
+    {
+        return cancelled();
+    }
+
+    std::lock_guard platec_source_lock{s_platec_source_mutex};
     if (stop_token.stop_requested())
     {
         return cancelled();

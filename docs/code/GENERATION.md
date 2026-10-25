@@ -52,14 +52,16 @@ L0 spans the periodic world; L1/L2 refine 4×4 and L3 samples canonical columns.
 Triangle fans share constrained edges and seams. Complete captures replace one
 16-block L2 cell at 256 or four 8-block cells at 512; gaps retain fallback.
 
-V9 uses frozen native Platec, terrain, climate and water. Terrain keeps source
-metres; climate fields keep physical units. H0–H3 queries return metres; L0 is
-coarsest, L3 finest. Overview may use L0; canonical surface, collision and edits
-use L3. Game Z is `floor(384 + source_m / 10)`, blocks 0–1023; out-of-domain
-queries fail, with no per-seed normalization. Retain typed fields. Columns are
-solid then air, with no caves or overhangs. Memo saturation recomputes misses
-into caller-owned values. Full numeric bounds, L0–L3/seams, platform parity and
-performance remain MC-AI-0483 gates.
+V9 uses Platec, terrain, climate and water. Vendor static segment/river
+scratch requires wrapper-level serialization. Cancellation is rechecked after
+locking; downstream stages run unlocked. Terrain remains in source metres;
+climate remains physical. H0–H3 return metres. L0 is coarsest for overview; L3
+is finest for surface, collision and edits. Game Z is
+`floor(384 + source_m / 10)` (0–1023); out-of-domain queries fail, never
+normalize per seed. Keep typed fields and solid columns then air; no
+caves/overhangs. Memo saturation recomputes misses into caller-owned values.
+Numeric bounds, L0–L3/seams, platform parity and performance remain MC-AI-0483
+gates.
 
 Default no-argument LocalGame requests V9. CoreLang's v2 plan omits a model tag
 and reconstructs R6 from nine typed fields: seed, resolution, epochs, erosion
