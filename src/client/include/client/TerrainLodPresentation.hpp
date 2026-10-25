@@ -39,13 +39,7 @@ struct TerrainLodChunkSource final {
     bool operator==(TerrainLodChunkSource const&) const = default;
 };
 
-struct TerrainLodAuthoritySource final {
-    shared::ChunkCoordinate coordinate;
-    shared::TerrainIdentity identity;
-    uint64_t revision = 0U;
-    uint64_t content_hash = 0U;
-    bool operator==(TerrainLodAuthoritySource const&) const = default;
-};
+using TerrainLodAuthoritySource = shared::AuthoritativeTileVersion;
 
 struct TerrainLodEditSource final {
     shared::ChunkCoordinate coordinate;
@@ -61,6 +55,12 @@ struct TerrainLodColumnInput final {
     std::vector<shared::AuthoritativeTerrainColumn> authority_profiles;
     std::vector<TerrainLodAuthoritySource> authority_sources;
     std::array<std::array<uint16_t, 16>, 4> edge_heights{};
+};
+
+struct TerrainLodColumnCoordinate final {
+    uint32_t x = 0U;
+    uint32_t y = 0U;
+    bool operator==(TerrainLodColumnCoordinate const&) const = default;
 };
 
 struct TerrainLodActualColumn final {
@@ -92,6 +92,13 @@ struct TerrainLodScene final {
 std::optional<TerrainLodColumnInput> captureTerrainLodColumn(shared::SparseWorld const& world, uint32_t x, uint32_t y);
 [[nodiscard]]
 bool terrainLodColumnSourcesCurrent(TerrainLodColumnInput const& column, shared::SparseWorld const& world);
+[[nodiscard]]
+// The runtime supplies the one identity captured for this homogeneous batch.
+std::vector<TerrainLodColumnCoordinate> staleTerrainLodColumns(
+    std::span<std::shared_ptr<TerrainLodColumnInput const> const> columns,
+    shared::SparseWorld const& world,
+    shared::TerrainIdentity const& captured_batch_identity
+);
 [[nodiscard]]
 bool terrainLodSourcesCurrent(TerrainLodScene const& scene, shared::SparseWorld const& world);
 [[nodiscard]]

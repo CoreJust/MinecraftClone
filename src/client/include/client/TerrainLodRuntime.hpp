@@ -251,7 +251,7 @@ private:
     std::vector<std::shared_ptr<TerrainLodColumnInput const>> m_presented_columns;
     std::vector<std::shared_ptr<TerrainLodColumnInput const>> m_job_columns;
     std::vector<std::shared_ptr<TerrainLodColumnInput const>> m_pending_columns;
-    uint64_t m_edit_checked_revision = 0U;
+    uint64_t m_edit_checked_sparse_revision = 0U;
     uint64_t m_presented_join_epoch = 0U;
     uint64_t m_presented_coverage_epoch = 0U;
     std::chrono::steady_clock::time_point m_diagnostic_reported{};
@@ -275,6 +275,7 @@ private:
     std::shared_ptr<TerrainLodScene const> m_pending;
     std::stop_source m_cancellation;
     std::vector<std::shared_ptr<TerrainLodColumnInput const>> m_columns;
+    std::optional<shared::TerrainIdentity> m_columns_identity;
     uint32_t m_center_x = 0U;
     uint32_t m_center_y = 0U;
     uint64_t m_discovery_revision = 0U;

@@ -700,6 +700,7 @@ bool SparseWorld::setTerrainIdentity(TerrainIdentity identity)
     m_evictable_authoritative_surfaces.clear();
     m_sparse_edits.clear();
     m_retained_edit_capacity_units = 0U;
+    ++m_sparse_edit_revision;
     m_edited_chunk_requirements.clear();
     m_protected_authoritative_columns.clear();
     m_authoritative_dense_overrides.clear();
@@ -886,6 +887,7 @@ void SparseWorld::setWorldIdentity(uint64_t const revision, uint64_t const seed)
     m_evictable_authoritative_surfaces.clear();
     m_sparse_edits.clear();
     m_retained_edit_capacity_units = 0U;
+    ++m_sparse_edit_revision;
     m_edited_chunk_requirements.clear();
     m_protected_authoritative_columns.clear();
     m_authoritative_dense_overrides.clear();
@@ -961,6 +963,7 @@ bool SparseWorld::setBlock(WorldCoordinate const coordinate, Block const block)
         ++m_retained_edit_capacity_units;
     }
     edits.revision = next_revision;
+    ++m_sparse_edit_revision;
     if (had_known_baseline) {
         resident->second.authoritative_baseline_hash = chunk->contentIdentity().content_hash;
     }
@@ -1198,6 +1201,7 @@ bool SparseWorld::installEditSnapshot(
         }
     }
     invalidateSurfaceMetadata(coordinate);
+    ++m_sparse_edit_revision;
     return true;
 }
 
@@ -1273,6 +1277,7 @@ bool SparseWorld::applyEditDelta(
         tile->second.revision = ++m_authoritative_surface_revision;
     }
     invalidateSurfaceMetadata(key);
+    ++m_sparse_edit_revision;
     return true;
 }
 
@@ -1723,10 +1728,26 @@ std::optional<AuthoritativeTileIdentity> SparseWorld::authoritativeTileIdentity(
     if (found == m_authoritative_surfaces.end()) {
         return std::nullopt;
     }
+    auto const hashes = authoritativeTileContentHashes(coordinate, found->second, true);
     return AuthoritativeTileIdentity{
         found->second.identity,
         found->second.revision,
-        authoritativeTileContentHash(coordinate, found->second)
+        hashes.content_hash,
+        hashes.dense_content_hash,
+    };
+}
+
+std::optional<AuthoritativeTileVersionState>
+SparseWorld::currentAuthoritativeTileVersionState(ChunkCoordinate coordinate) const
+{
+    coordinate.z = 0;
+    auto const found = m_authoritative_surfaces.find(coordinate);
+    if (found == m_authoritative_surfaces.end() || hasIncompleteEditRequirements(coordinate)) {
+        return std::nullopt;
+    }
+    return AuthoritativeTileVersionState{
+        found->second.revision,
+        authoritativeTileContentHashes(coordinate, found->second, false).dense_content_hash,
     };
 }
 
@@ -1741,14 +1762,49 @@ bool SparseWorld::matchesAuthoritativeTileIdentity(
     auto const found = m_authoritative_surfaces.find(coordinate);
     return found != m_authoritative_surfaces.end() && found->second.identity == identity
         && found->second.revision == revision
-        && authoritativeTileContentHash(coordinate, found->second) == content_hash;
+        && authoritativeTileContentHashes(coordinate, found->second, true).content_hash == content_hash;
 }
 
-uint64_t SparseWorld::authoritativeTileContentHash(
-    ChunkCoordinate coordinate, AuthoritativeSurface const& tile
+bool SparseWorld::matchesAuthoritativeTileVersion(
+    ChunkCoordinate coordinate,
+    TerrainIdentity const& identity,
+    uint64_t const revision,
+    uint64_t const dense_content_hash
+) const
+{
+    coordinate.z = 0;
+    auto const found = m_authoritative_surfaces.find(coordinate);
+    return found != m_authoritative_surfaces.end() && found->second.identity == identity
+        && found->second.revision == revision
+        && authoritativeTileContentHashes(coordinate, found->second, false).dense_content_hash == dense_content_hash;
+}
+
+bool SparseWorld::matchesAuthoritativeTileVersions(
+    TerrainIdentity const& identity,
+    std::span<AuthoritativeTileVersion const> versions
+) const
+{
+    if (!m_terrain_identity || *m_terrain_identity != identity) {
+        return false;
+    }
+    for (AuthoritativeTileVersion const& version : versions) {
+        auto const current = currentAuthoritativeTileVersionState(version.coordinate);
+        if (!current || current->revision != version.revision
+            || current->dense_content_hash != version.dense_content_hash) {
+            return false;
+        }
+    }
+    return true;
+}
+
+SparseWorld::AuthoritativeTileHashes SparseWorld::authoritativeTileContentHashes(
+    ChunkCoordinate coordinate,
+    AuthoritativeSurface const& tile,
+    bool const include_sparse_edits
 ) const
 {
     uint64_t hash = 14'695'981'039'346'656'037ULL;
+    uint64_t dense_content_hash = 14'695'981'039'346'656'037ULL;
     uint64_t dense_mask = tile.dense_mask;
     for (uint32_t z = 0U; dense_mask != 0U; ++z, dense_mask >>= 1U) {
         if ((dense_mask & 1U) == 0U) {
@@ -1760,7 +1816,14 @@ uint64_t SparseWorld::authoritativeTileContentHash(
                 || chunk->second.authoritative_baseline_hash != chunk->second.chunk.contentIdentity().content_hash)) {
             hash = (hash ^ z) * 1'099'511'628'211ULL;
             hash = (hash ^ chunk->second.chunk.contentIdentity().content_hash) * 1'099'511'628'211ULL;
+            dense_content_hash = (dense_content_hash ^ z) * 1'099'511'628'211ULL;
+            dense_content_hash = (dense_content_hash ^ chunk->second.chunk.contentIdentity().content_hash)
+                * 1'099'511'628'211ULL;
         }
+    }
+
+    if (!include_sparse_edits) {
+        return {.content_hash = hash, .dense_content_hash = dense_content_hash};
     }
 
     std::vector<ChunkCoordinate> edit_coordinates;
@@ -1791,7 +1854,7 @@ uint64_t SparseWorld::authoritativeTileContentHash(
             hash = (hash ^ static_cast<uint64_t>(cell.has_override)) * 1'099'511'628'211ULL;
         }
     }
-    return hash;
+    return {.content_hash = hash, .dense_content_hash = dense_content_hash};
 }
 
 } // namespace shared

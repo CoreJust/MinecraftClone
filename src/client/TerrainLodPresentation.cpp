@@ -19,6 +19,7 @@
 #include <functional>
 #include <initializer_list>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
@@ -193,11 +194,21 @@ bool chunkSourceCurrent(TerrainLodChunkSource const& source, shared::SparseWorld
     return current && current->contentIdentity() == source.identity;
 }
 
-bool authoritySourceCurrent(TerrainLodAuthoritySource const& source, shared::SparseWorld const& world)
+struct CachedAuthoritativeTileVersion final {
+    uint64_t pass = 0U;
+    std::optional<shared::AuthoritativeTileVersionState> state;
+};
+
+std::unordered_map<uint64_t, CachedAuthoritativeTileVersion>& authoritativeTileVersionCache()
 {
-    return world.hasAuthoritativeSurface(source.coordinate)
-        && world.matchesAuthoritativeTileIdentity(
-            source.coordinate, source.identity, source.revision, source.content_hash);
+    static thread_local std::unordered_map<uint64_t, CachedAuthoritativeTileVersion> cache;
+    return cache;
+}
+
+uint64_t& authoritativeTileVersionCachePass()
+{
+    static thread_local uint64_t pass = 0U;
+    return pass;
 }
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
@@ -428,8 +439,13 @@ captureTerrainLodColumn(shared::SparseWorld const& world, uint32_t const x, uint
             if (!identity) {
                 return std::nullopt;
             }
-            result.authority_sources.push_back(
-                {coordinate, identity->identity, identity->revision, identity->content_hash});
+            result.authority_sources.push_back({
+                coordinate,
+                identity->identity,
+                identity->revision,
+                identity->content_hash,
+                identity->dense_content_hash,
+            });
             for (int32_t z = 0; z < 64; ++z) {
                 shared::ChunkCoordinate const chunk_coordinate{coordinate.x, coordinate.y, z};
                 result.edit_sources.push_back({chunk_coordinate, world.editChunkRevision(chunk_coordinate)});
@@ -566,12 +582,81 @@ bool terrainLodColumnSourcesCurrent(TerrainLodColumnInput const& column, shared:
             return false;
         }
     }
-    for (auto const& source : column.authority_sources) {
-        if (!authoritySourceCurrent(source, world)) {
+    if (!column.authority_sources.empty()) {
+        shared::TerrainIdentity const& identity = column.authority_sources.front().identity;
+        if (std::ranges::any_of(column.authority_sources, [&identity](auto const& source) {
+                return source.identity != identity;
+            }) || !world.matchesAuthoritativeTileVersions(identity, column.authority_sources)) {
             return false;
         }
     }
     return true;
+}
+
+std::vector<TerrainLodColumnCoordinate> staleTerrainLodColumns(
+    std::span<std::shared_ptr<TerrainLodColumnInput const> const> const columns,
+    shared::SparseWorld const& world,
+    shared::TerrainIdentity const& captured_batch_identity
+)
+{
+    // Reuse tile state only within this synchronous validation pass. A new pass
+    // refreshes every tile from SparseWorld, including direct resident edits.
+    std::vector<TerrainLodColumnCoordinate> stale;
+    auto& cache = authoritativeTileVersionCache();
+    auto& pass = authoritativeTileVersionCachePass();
+    if (pass == std::numeric_limits<uint64_t>::max() || cache.size() > 32'768U) {
+        cache.clear();
+        pass = 1U;
+    } else {
+        ++pass;
+    }
+
+    bool const has_authority_sources = std::ranges::any_of(columns, [](auto const& column) {
+        return !column->authority_sources.empty();
+    });
+    // SparseWorld validates every published tile against its active identity and clears all tiles when it changes.
+    bool const authority_identity_current = !has_authority_sources
+        || world.matchesAuthoritativeTileVersions(
+            captured_batch_identity, std::span<shared::AuthoritativeTileVersion const>{});
+    for (auto const& column : columns) {
+        bool current = true;
+        for (TerrainLodChunkSource const& source : column->sources) {
+            if (!chunkSourceCurrent(source, world)) {
+                current = false;
+                break;
+            }
+        }
+        if (current && !column->authority_sources.empty()) {
+            current = authority_identity_current;
+            for (TerrainLodAuthoritySource const& source : column->authority_sources) {
+                if (!current) {
+                    break;
+                }
+                if (source.identity != captured_batch_identity) {
+                    current = false;
+                    break;
+                }
+                uint64_t const key = (static_cast<uint64_t>(static_cast<uint32_t>(source.coordinate.x)) << 32U)
+                    | static_cast<uint32_t>(source.coordinate.y);
+                auto [entry, inserted] = cache.try_emplace(key);
+                static_cast<void>(inserted);
+                if (entry->second.pass != pass) {
+                    entry->second.pass = pass;
+                    entry->second.state = world.currentAuthoritativeTileVersionState(source.coordinate);
+                }
+                current = entry->second.state
+                    && entry->second.state->revision == source.revision
+                    && entry->second.state->dense_content_hash == source.dense_content_hash;
+            }
+        }
+        if (!current) {
+            stale.push_back({column->x, column->y});
+        }
+    }
+    std::ranges::sort(stale, [](TerrainLodColumnCoordinate const left, TerrainLodColumnCoordinate const right) {
+        return left.x != right.x ? left.x < right.x : left.y < right.y;
+    });
+    return stale;
 }
 
 bool terrainLodSourcesCurrent(TerrainLodScene const& scene, shared::SparseWorld const& world)
@@ -581,8 +666,10 @@ bool terrainLodSourcesCurrent(TerrainLodScene const& scene, shared::SparseWorld 
             return false;
         }
     }
-    for (auto const& source : scene.authority_sources) {
-        if (!authoritySourceCurrent(source, world)) {
+    if (!scene.authority_sources.empty()) {
+        if (std::ranges::any_of(scene.authority_sources, [&scene](auto const& source) {
+                return source.identity != scene.identity;
+            }) || !world.matchesAuthoritativeTileVersions(scene.identity, scene.authority_sources)) {
             return false;
         }
     }
@@ -622,6 +709,9 @@ std::shared_ptr<TerrainLodScene const> buildTerrainLodColumnPatch(
     auto scene = std::make_shared<TerrainLodScene>();
     scene->identity = identity;
     for (auto const& input : columns) {
+        if (!input->authority_sources.empty() && input->authority_sources.front().identity != identity) {
+            throw std::invalid_argument("terrain LOD patch column identity is stale");
+        }
         auto column = meshColumn(*input, cancellation);
         uint32_t const first = static_cast<uint32_t>(scene->faces.size());
         scene->faces.insert(scene->faces.end(), column.faces.begin(), column.faces.end());
@@ -657,6 +747,10 @@ std::shared_ptr<TerrainLodScene const> buildTerrainLodSceneFromColumns(
     std::vector<TerrainLodActualColumn> actual;
     actual.reserve(columns.size());
     for (auto const& input : columns) {
+        if (!input->authority_sources.empty()
+            && input->authority_sources.front().identity != world.identity()) {
+            throw std::invalid_argument("terrain LOD scene column identity is stale");
+        }
         actual.push_back(meshColumn(*input, cancellation));
     }
     auto scene =

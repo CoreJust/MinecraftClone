@@ -1420,6 +1420,65 @@ TEST(SparseWorldTest, SameValueWritesDoNotAdvanceEditRevisions)
     EXPECT_EQ(world.authoritativeSurfaceRevision(), surface_revision);
 }
 
+TEST(SparseWorldTest, SparseEditRevisionTracksManagedEditsAndIdentityClears)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate EDITED_CHUNK{4, 5, 24};
+    static constexpr shared::WorldCoordinate EDITED_BLOCK{64, 80, 385};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    shared::SparseWorld world(
+        {.seed = 42U, .max_resident_chunks = 2U, .revision = 1U},
+        shared::SparseWorldGenerationMode::MaterializedOnly
+    );
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(makeCanonicalSurface(TILE, identity)));
+    uint64_t const initial_revision = world.sparseEditRevision();
+
+    ASSERT_TRUE(world.setBlock(EDITED_BLOCK, shared::Block::Snow));
+    uint64_t const after_set = world.sparseEditRevision();
+    EXPECT_GT(after_set, initial_revision);
+    EXPECT_FALSE(world.setBlock(EDITED_BLOCK, shared::Block::Snow));
+    EXPECT_EQ(world.sparseEditRevision(), after_set);
+    ASSERT_TRUE(world.applyEditDelta(EDITED_BLOCK, shared::Block::Ice, 1U, 2U, 2U));
+    uint64_t const after_delta = world.sparseEditRevision();
+    EXPECT_GT(after_delta, after_set);
+
+    auto snapshot = world.editSnapshot(EDITED_CHUNK);
+    ASSERT_TRUE(snapshot.has_value());
+    ASSERT_EQ(snapshot->edits.size(), 1U);
+    auto effective_chunk = world.effectiveChunkSnapshot(EDITED_CHUNK);
+    ASSERT_TRUE(effective_chunk.has_value());
+    snapshot->revision = 3U;
+    snapshot->edits[0].material = shared::Block::Grass;
+    snapshot->edits[0].cell_version = 3U;
+    ASSERT_TRUE(effective_chunk->setBlock({0U, 0U, 1U}, shared::Block::Grass));
+    ASSERT_TRUE(world.installEditSnapshot(*snapshot, *effective_chunk));
+    uint64_t const after_snapshot = world.sparseEditRevision();
+    EXPECT_GT(after_snapshot, after_delta);
+
+    uint64_t const before_direct_mutation = world.sparseEditRevision();
+    shared::Chunk* const mutable_chunk = world.ensureChunk(EDITED_CHUNK);
+    ASSERT_NE(mutable_chunk, nullptr);
+    auto const previous = mutable_chunk->blockAt({1U, 0U, 1U});
+    ASSERT_TRUE(previous.has_value());
+    shared::Block const replacement = *previous == shared::Block::Stone
+        ? shared::Block::Air
+        : shared::Block::Stone;
+    ASSERT_TRUE(mutable_chunk->setBlock({1U, 0U, 1U}, replacement));
+    EXPECT_EQ(world.sparseEditRevision(), before_direct_mutation);
+
+    std::array<shared::EditedChunkRevision, 1> requirements{{
+        {.coordinate = EDITED_CHUNK, .revision = 4U},
+    }};
+    ASSERT_TRUE(world.setEditedChunkRequirements(TILE, requirements));
+    EXPECT_EQ(world.sparseEditRevision(), before_direct_mutation);
+    ASSERT_TRUE(world.setEditedChunkRequirements(TILE, {}));
+    EXPECT_EQ(world.sparseEditRevision(), before_direct_mutation);
+
+    world.setWorldIdentity(2U, 42U);
+    EXPECT_GT(world.sparseEditRevision(), before_direct_mutation);
+}
+
 TEST(SparseWorldTest, EditOverlayCapacityRejectsNewCellsAndAllowsRetainedCellWrites)
 {
     static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
@@ -1854,4 +1913,175 @@ TEST(SparseWorldTest, EditedChunkManifestFencesProfileAuthorityUntilSnapshotArri
     EXPECT_TRUE(world.hasAuthoritativeSurface(TILE));
     EXPECT_EQ(world.queryBlock(EDITED_BLOCK).block, shared::Block::Snow);
     EXPECT_TRUE(world.authoritativeColumn(64, 80).has_value());
+}
+
+TEST(SparseWorldTest, AuthoritativeTileVersionTracksDenseMutationAndIgnoresCanonicalCacheChurn)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate DENSE_CHUNK{4, 5, 24};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = makeCanonicalSurface(TILE, identity);
+    shared::SparseWorld world({.seed = 42U, .max_resident_chunks = 2U, .revision = 1U},
+        shared::SparseWorldGenerationMode::MaterializedOnly);
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+    auto const captured = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(captured.has_value());
+    uint64_t const global_revision = world.authoritativeSurfaceRevision();
+    auto const matches_capture = [&] {
+        return world.matchesAuthoritativeTileVersion(
+            {TILE.x, TILE.y, 24}, captured->identity, captured->revision, captured->dense_content_hash);
+    };
+    EXPECT_TRUE(matches_capture());
+    auto different_identity = captured->identity;
+    ++different_identity.seed;
+    EXPECT_FALSE(world.matchesAuthoritativeTileVersion(
+        TILE, different_identity, captured->revision, captured->dense_content_hash));
+    EXPECT_FALSE(world.matchesAuthoritativeTileVersion(
+        TILE, captured->identity, captured->revision + 1U, captured->dense_content_hash));
+    EXPECT_FALSE(world.matchesAuthoritativeTileVersion(
+        TILE, captured->identity, captured->revision, captured->dense_content_hash ^ 1U));
+
+    ASSERT_NE(world.ensureChunk(DENSE_CHUNK), nullptr);
+    auto const materialized = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(materialized.has_value());
+    EXPECT_EQ(materialized->revision, captured->revision);
+    EXPECT_EQ(materialized->dense_content_hash, captured->dense_content_hash);
+    EXPECT_EQ(world.authoritativeSurfaceRevision(), global_revision);
+    EXPECT_TRUE(matches_capture());
+    ASSERT_TRUE(world.evict(DENSE_CHUNK));
+    EXPECT_TRUE(matches_capture());
+
+    auto* const dense_chunk = world.ensureChunk(DENSE_CHUNK);
+    ASSERT_NE(dense_chunk, nullptr);
+    auto const dense_previous = dense_chunk->blockAt({0U, 0U, 1U});
+    ASSERT_TRUE(dense_previous.has_value());
+    shared::Block const dense_replacement = *dense_previous == shared::Block::Snow
+        ? shared::Block::Air
+        : shared::Block::Snow;
+    ASSERT_TRUE(dense_chunk->setBlock({0U, 0U, 1U}, dense_replacement));
+    EXPECT_EQ(world.authoritativeSurfaceRevision(), global_revision);
+    EXPECT_FALSE(matches_capture());
+    auto const changed = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(changed.has_value());
+    EXPECT_EQ(changed->revision, captured->revision);
+    EXPECT_NE(changed->dense_content_hash, captured->dense_content_hash);
+    EXPECT_TRUE(world.matchesAuthoritativeTileVersion(
+        TILE, changed->identity, changed->revision, changed->dense_content_hash));
+
+    ASSERT_TRUE(world.removeAuthoritativeSurface(TILE));
+    EXPECT_FALSE(matches_capture());
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+    auto const republished = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(republished.has_value());
+    EXPECT_NE(republished->revision, captured->revision);
+    EXPECT_FALSE(matches_capture());
+    EXPECT_TRUE(world.matchesAuthoritativeTileVersion(
+        TILE, republished->identity, republished->revision, republished->dense_content_hash));
+
+    auto const previous_block = world.queryBlock({65, 80, 385}).block;
+    ASSERT_TRUE(previous_block.has_value());
+    shared::Block const edited_block = *previous_block == shared::Block::Snow
+        ? shared::Block::Air
+        : shared::Block::Snow;
+    ASSERT_TRUE(world.setBlock({65, 80, 385}, edited_block));
+    EXPECT_FALSE(world.matchesAuthoritativeTileVersion(
+        TILE, republished->identity, republished->revision, republished->dense_content_hash));
+}
+
+TEST(SparseWorldTest, AuthoritativeTileVersionBatchPreservesAvailabilityAndDenseMutationChecks)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate DENSE_CHUNK{4, 5, 24};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = makeCanonicalSurface(TILE, identity);
+    shared::SparseWorld world({.seed = 42U, .max_resident_chunks = 2U, .revision = 1U},
+        shared::SparseWorldGenerationMode::MaterializedOnly);
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+    auto const captured = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(captured.has_value());
+    std::array<shared::AuthoritativeTileVersion, 1> versions{{
+        {.coordinate = TILE, .revision = captured->revision, .dense_content_hash = captured->dense_content_hash},
+    }};
+
+    EXPECT_TRUE(world.matchesAuthoritativeTileVersions(identity, versions));
+    auto different_identity = identity;
+    ++different_identity.seed;
+    EXPECT_FALSE(world.matchesAuthoritativeTileVersions(different_identity, versions));
+    auto different_revision = versions;
+    ++different_revision[0].revision;
+    EXPECT_FALSE(world.matchesAuthoritativeTileVersions(identity, different_revision));
+
+    uint64_t const surface_revision = world.authoritativeSurfaceRevision();
+    std::array<shared::EditedChunkRevision, 1> requirements{{
+        {.coordinate = DENSE_CHUNK, .revision = 1U},
+    }};
+    ASSERT_TRUE(world.setEditedChunkRequirements(TILE, requirements));
+    EXPECT_EQ(world.authoritativeSurfaceRevision(), surface_revision);
+    EXPECT_FALSE(world.matchesAuthoritativeTileVersions(identity, versions));
+    ASSERT_TRUE(world.setEditedChunkRequirements(TILE, {}));
+    EXPECT_TRUE(world.matchesAuthoritativeTileVersions(identity, versions));
+
+    ASSERT_NE(world.ensureChunk(DENSE_CHUNK), nullptr);
+    ASSERT_TRUE(world.evict(DENSE_CHUNK));
+    EXPECT_TRUE(world.matchesAuthoritativeTileVersions(identity, versions));
+    shared::Chunk* const dense_chunk = world.ensureChunk(DENSE_CHUNK);
+    ASSERT_NE(dense_chunk, nullptr);
+    auto const previous = dense_chunk->blockAt({0U, 0U, 1U});
+    ASSERT_TRUE(previous.has_value());
+    shared::Block const replacement = *previous == shared::Block::Snow
+        ? shared::Block::Air
+        : shared::Block::Snow;
+    ASSERT_TRUE(dense_chunk->setBlock({0U, 0U, 1U}, replacement));
+    EXPECT_FALSE(world.matchesAuthoritativeTileVersions(identity, versions));
+
+    auto const changed = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(changed.has_value());
+    versions[0] = {
+        .coordinate = TILE,
+        .revision = changed->revision,
+        .dense_content_hash = changed->dense_content_hash,
+    };
+    EXPECT_TRUE(world.matchesAuthoritativeTileVersions(identity, versions));
+    ASSERT_TRUE(world.removeAuthoritativeSurface(TILE));
+    EXPECT_FALSE(world.matchesAuthoritativeTileVersions(identity, versions));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+    EXPECT_FALSE(world.matchesAuthoritativeTileVersions(identity, versions));
+}
+
+TEST(SparseWorldTest, AuthoritativeTileVersionBatchPreservesSparseEditsAcrossEviction)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate EDITED_CHUNK{4, 5, 24};
+    static constexpr shared::WorldCoordinate EDITED_BLOCK{65, 80, 385};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = makeCanonicalSurface(TILE, identity);
+    shared::SparseWorld world({.seed = 42U, .max_resident_chunks = 2U, .revision = 1U},
+        shared::SparseWorldGenerationMode::MaterializedOnly);
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+
+    auto const captured = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(captured.has_value());
+    std::array<shared::AuthoritativeTileVersion, 1> versions{{
+        {.coordinate = TILE, .revision = captured->revision, .dense_content_hash = captured->dense_content_hash},
+    }};
+    ASSERT_TRUE(world.matchesAuthoritativeTileVersions(identity, versions));
+
+    auto const previous = world.queryBlock(EDITED_BLOCK).block;
+    ASSERT_TRUE(previous.has_value());
+    shared::Block const replacement = *previous == shared::Block::Snow
+        ? shared::Block::Air
+        : shared::Block::Snow;
+    ASSERT_TRUE(world.setBlock(EDITED_BLOCK, replacement));
+    EXPECT_FALSE(world.matchesAuthoritativeTileVersions(identity, versions));
+
+    auto const edited = world.authoritativeTileIdentity(TILE);
+    ASSERT_TRUE(edited.has_value());
+    versions[0].revision = edited->revision;
+    versions[0].dense_content_hash = edited->dense_content_hash;
+    ASSERT_TRUE(world.matchesAuthoritativeTileVersions(identity, versions));
+    ASSERT_TRUE(world.evict(EDITED_CHUNK));
+    EXPECT_TRUE(world.matchesAuthoritativeTileVersions(identity, versions));
 }

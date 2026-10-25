@@ -817,7 +817,10 @@ TEST(TerrainLodPresentationTest, AuthoritySourcesStayCurrentAcrossCanonicalDense
     ASSERT_TRUE(original_identity.has_value());
     auto const& original = original_identity.value();
     client::TerrainLodScene scene;
-    scene.authority_sources.push_back({surface.coordinate, original.identity, original.revision, original.content_hash});
+    scene.identity = identity;
+    scene.authority_sources.push_back({
+        surface.coordinate, original.identity, original.revision, original.content_hash, original.dense_content_hash,
+    });
     ASSERT_TRUE(client::terrainLodSourcesCurrent(scene, world));
     ASSERT_NE(world.ensureChunk({4, 5, 24}), nullptr);
     auto const admitted_identity = world.authoritativeTileIdentity(surface.coordinate);
@@ -827,7 +830,10 @@ TEST(TerrainLodPresentationTest, AuthoritySourcesStayCurrentAcrossCanonicalDense
     EXPECT_EQ(admitted.revision, original.revision);
     EXPECT_TRUE(client::terrainLodSourcesCurrent(scene, world));
     client::TerrainLodScene resident_scene;
-    resident_scene.authority_sources.push_back({surface.coordinate, admitted.identity, admitted.revision, admitted.content_hash});
+    resident_scene.identity = identity;
+    resident_scene.authority_sources.push_back({
+        surface.coordinate, admitted.identity, admitted.revision, admitted.content_hash, admitted.dense_content_hash,
+    });
     ASSERT_TRUE(world.evict({4, 5, 24}));
     EXPECT_TRUE(client::terrainLodSourcesCurrent(resident_scene, world));
     auto const retained_identity = world.authoritativeTileIdentity(surface.coordinate);
@@ -841,7 +847,9 @@ TEST(TerrainLodPresentationTest, AuthoritySourcesStayCurrentAcrossCanonicalDense
     EXPECT_NE(edited_identity->content_hash, original.content_hash);
     EXPECT_FALSE(client::terrainLodSourcesCurrent(scene, world));
     auto const& edited = edited_identity.value();
-    scene.authority_sources[0] = {surface.coordinate, edited.identity, edited.revision, edited.content_hash};
+    scene.authority_sources[0] = {
+        surface.coordinate, edited.identity, edited.revision, edited.content_hash, edited.dense_content_hash,
+    };
     ASSERT_TRUE(client::terrainLodSourcesCurrent(scene, world));
     ASSERT_NE(world.ensureChunk({4, 5, 25}), nullptr);
     auto const final_identity = world.authoritativeTileIdentity(surface.coordinate);
@@ -1075,4 +1083,184 @@ TEST(TerrainLodPresentationTest, OrdinaryProfileBottomUsesOneExactTexturedRectan
         EXPECT_EQ(bottom.v_extent, 16U);
         EXPECT_EQ(bottom.material_id, static_cast<uint32_t>(shared::Block::Bedrock));
     }
+}
+
+TEST(TerrainLodPresentationTest, AuthoritySourceFastPathRetainsDenseAndAvailabilityFences)
+{
+    auto const terrain = presentationWorld(256U);
+    auto const identity = terrain->identity();
+    auto const surface = terrain->sampleSurface({.x = 4, .y = 5, .z = 0});
+    shared::SparseWorld world({.seed = identity.seed, .max_resident_chunks = 2U, .revision = identity.revision},
+        shared::SparseWorldGenerationMode::MaterializedOnly);
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+    auto const captured = world.authoritativeTileIdentity(surface.coordinate);
+    ASSERT_TRUE(captured.has_value());
+    uint64_t const revision = world.authoritativeSurfaceRevision();
+    client::TerrainLodScene scene;
+    scene.identity = identity;
+    scene.authority_sources.push_back({
+        surface.coordinate, captured->identity, captured->revision, captured->content_hash,
+        captured->dense_content_hash,
+    });
+    EXPECT_TRUE(client::terrainLodSourcesCurrent(scene, world));
+
+    auto* const dense_chunk = world.ensureChunk({4, 5, 24});
+    ASSERT_NE(dense_chunk, nullptr);
+    auto const previous = dense_chunk->blockAt({0U, 0U, 0U});
+    ASSERT_TRUE(previous.has_value());
+    shared::Block const replacement = *previous == shared::Block::Air ? shared::Block::Snow : shared::Block::Air;
+    ASSERT_TRUE(dense_chunk->setBlock({0U, 0U, 0U}, replacement));
+    EXPECT_EQ(world.authoritativeSurfaceRevision(), revision);
+    EXPECT_FALSE(client::terrainLodSourcesCurrent(scene, world));
+
+    auto const changed = world.authoritativeTileIdentity(surface.coordinate);
+    ASSERT_TRUE(changed.has_value());
+    scene.authority_sources[0] = {
+        surface.coordinate, changed->identity, changed->revision, changed->content_hash, changed->dense_content_hash,
+    };
+    EXPECT_TRUE(client::terrainLodSourcesCurrent(scene, world));
+
+    std::array<shared::EditedChunkRevision, 1U> missing_requirements{{{{4, 5, 24}, 1U}}};
+    ASSERT_TRUE(world.setEditedChunkRequirements(surface.coordinate, missing_requirements));
+    EXPECT_EQ(world.authoritativeSurfaceRevision(), revision);
+    EXPECT_FALSE(client::terrainLodSourcesCurrent(scene, world));
+
+    std::array<shared::EditedChunkRevision, 0U> no_requirements{};
+    ASSERT_TRUE(world.setEditedChunkRequirements(surface.coordinate, no_requirements));
+    EXPECT_TRUE(client::terrainLodSourcesCurrent(scene, world));
+}
+
+TEST(TerrainLodPresentationTest, SourceChecksRejectMixedAuthorityIdentities)
+{
+    auto const terrain = presentationWorld(256U);
+    auto const replacement_terrain = presentationWorld(512U);
+    shared::SparseWorld world{{}, shared::SparseWorldGenerationMode::MaterializedOnly};
+    ASSERT_TRUE(world.setTerrainIdentity(terrain->identity()));
+    for (int32_t x = 0; x <= 2; ++x) {
+        for (int32_t y = 0; y <= 2; ++y) {
+            ASSERT_TRUE(world.publishAuthoritativeSurface(terrain->sampleSurface({.x = x, .y = y, .z = 0})));
+        }
+    }
+    auto captured = client::captureTerrainLodColumn(world, 1U, 1U);
+    ASSERT_TRUE(captured.has_value());
+    ASSERT_EQ(captured->authority_sources.size(), 5U);
+    ASSERT_TRUE(client::terrainLodColumnSourcesCurrent(*captured, world));
+    auto const input = std::make_shared<client::TerrainLodColumnInput const>(*captured);
+    std::array const columns{input};
+    auto scene = client::buildTerrainLodSceneFromColumns(*terrain, 16U, 16U, columns);
+    ASSERT_EQ(scene->authority_sources.size(), 5U);
+    ASSERT_TRUE(client::terrainLodSourcesCurrent(*scene, world));
+
+    captured->authority_sources.back().identity = replacement_terrain->identity();
+    EXPECT_FALSE(client::terrainLodColumnSourcesCurrent(*captured, world));
+    auto const mixed_input = std::make_shared<client::TerrainLodColumnInput const>(std::move(*captured));
+    std::array const mixed_columns{mixed_input};
+    EXPECT_EQ(client::staleTerrainLodColumns(mixed_columns, world, terrain->identity()),
+        (std::vector<client::TerrainLodColumnCoordinate>{{1U, 1U}}));
+    client::TerrainLodScene mixed_scene = *scene;
+    mixed_scene.authority_sources.back().identity = replacement_terrain->identity();
+    EXPECT_FALSE(client::terrainLodSourcesCurrent(mixed_scene, world));
+}
+
+TEST(TerrainLodPresentationTest, BatchedValidationRefreshesSharedTileStateAndAvailability)
+{
+    auto const terrain = presentationWorld(256U);
+    shared::SparseWorld world{{}, shared::SparseWorldGenerationMode::MaterializedOnly};
+    ASSERT_TRUE(world.setTerrainIdentity(terrain->identity()));
+    for (int32_t x = 0; x <= 3; ++x) {
+        for (int32_t y = 0; y <= 2; ++y) {
+            ASSERT_TRUE(world.publishAuthoritativeSurface(terrain->sampleSurface({.x = x, .y = y, .z = 0})));
+        }
+    }
+
+    auto first = client::captureTerrainLodColumn(world, 1U, 1U);
+    auto second = client::captureTerrainLodColumn(world, 2U, 1U);
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    std::array<std::shared_ptr<client::TerrainLodColumnInput const>, 2U> columns{
+        std::make_shared<client::TerrainLodColumnInput const>(std::move(*first)),
+        std::make_shared<client::TerrainLodColumnInput const>(std::move(*second)),
+    };
+    EXPECT_TRUE(client::staleTerrainLodColumns(columns, world, terrain->identity()).empty());
+
+    auto* const dense_chunk = world.ensureChunk({2, 1, 63});
+    ASSERT_NE(dense_chunk, nullptr);
+    auto const previous = dense_chunk->blockAt({0U, 0U, 0U});
+    ASSERT_TRUE(previous.has_value());
+    shared::Block const replacement = *previous == shared::Block::Air ? shared::Block::Snow : shared::Block::Air;
+    ASSERT_TRUE(dense_chunk->setBlock({0U, 0U, 0U}, replacement));
+    std::vector<client::TerrainLodColumnCoordinate> const stale_after_dense_edit{{1U, 1U}, {2U, 1U}};
+    EXPECT_EQ(client::staleTerrainLodColumns(columns, world, terrain->identity()), stale_after_dense_edit);
+
+    first = client::captureTerrainLodColumn(world, 1U, 1U);
+    second = client::captureTerrainLodColumn(world, 2U, 1U);
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    columns = {
+        std::make_shared<client::TerrainLodColumnInput const>(std::move(*first)),
+        std::make_shared<client::TerrainLodColumnInput const>(std::move(*second)),
+    };
+    EXPECT_TRUE(client::staleTerrainLodColumns(columns, world, terrain->identity()).empty());
+
+    ASSERT_TRUE(world.setBlock({32, 16, 1000}, shared::Block::Snow));
+    auto const stale_after_sparse_edit = client::staleTerrainLodColumns(columns, world, terrain->identity());
+    EXPECT_NE(std::ranges::find(stale_after_sparse_edit, client::TerrainLodColumnCoordinate{2U, 1U}),
+        stale_after_sparse_edit.end());
+    uint64_t const authority_revision = world.authoritativeSurfaceRevision();
+    first = client::captureTerrainLodColumn(world, 1U, 1U);
+    second = client::captureTerrainLodColumn(world, 2U, 1U);
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    columns = {
+        std::make_shared<client::TerrainLodColumnInput const>(std::move(*first)),
+        std::make_shared<client::TerrainLodColumnInput const>(std::move(*second)),
+    };
+    EXPECT_TRUE(client::staleTerrainLodColumns(columns, world, terrain->identity()).empty());
+
+    std::array<shared::EditedChunkRevision, 1U> missing_requirement{{{{2, 1, 63}, 1U}}};
+    ASSERT_TRUE(world.setEditedChunkRequirements({2, 1, 0}, missing_requirement));
+    EXPECT_EQ(world.authoritativeSurfaceRevision(), authority_revision);
+    EXPECT_EQ(client::staleTerrainLodColumns(columns, world, terrain->identity()), stale_after_dense_edit);
+    std::array<shared::EditedChunkRevision, 0U> no_requirements{};
+    ASSERT_TRUE(world.setEditedChunkRequirements({2, 1, 0}, no_requirements));
+    EXPECT_TRUE(client::staleTerrainLodColumns(columns, world, terrain->identity()).empty());
+
+    auto const replacement_terrain = presentationWorld(512U);
+    ASSERT_EQ(replacement_terrain->identity().seed, terrain->identity().seed);
+    ASSERT_EQ(replacement_terrain->identity().revision, terrain->identity().revision);
+    ASSERT_NE(replacement_terrain->identity(), terrain->identity());
+    ASSERT_TRUE(world.setTerrainIdentity(replacement_terrain->identity()));
+    for (int32_t x = 0; x <= 3; ++x) {
+        for (int32_t y = 0; y <= 2; ++y) {
+            ASSERT_TRUE(world.publishAuthoritativeSurface(
+                replacement_terrain->sampleSurface({.x = x, .y = y, .z = 0})));
+        }
+    }
+    EXPECT_EQ(client::staleTerrainLodColumns(columns, world, terrain->identity()),
+        (std::vector<client::TerrainLodColumnCoordinate>{{1U, 1U}, {2U, 1U}}));
+}
+
+TEST(TerrainLodPresentationTest, BatchedChunkOnlyValidationDoesNotRequireTerrainIdentity)
+{
+    auto const terrain = presentationWorld(256U);
+    static constexpr shared::ChunkCoordinate COORDINATE{4, 5, 0};
+    shared::SparseWorld world({.seed = 42U, .max_resident_chunks = 2U, .revision = 1U},
+        shared::SparseWorldGenerationMode::MaterializedOnly);
+    ASSERT_TRUE(world.publishMaterializedChunk(shared::Chunk{COORDINATE}, 1U, 42U));
+    shared::Chunk const* const resident = world.residentChunk(COORDINATE);
+    ASSERT_NE(resident, nullptr);
+
+    client::TerrainLodColumnInput column;
+    column.x = 4U;
+    column.y = 5U;
+    column.sources.push_back({COORDINATE, resident->contentIdentity(), world.editChunkRevision(COORDINATE)});
+    std::array const columns{std::make_shared<client::TerrainLodColumnInput const>(std::move(column))};
+    EXPECT_TRUE(client::staleTerrainLodColumns(columns, world, terrain->identity()).empty());
+
+    shared::Chunk* const mutable_chunk = world.ensureChunk(COORDINATE);
+    ASSERT_NE(mutable_chunk, nullptr);
+    ASSERT_TRUE(mutable_chunk->setBlock({0U, 0U, 0U}, shared::Block::Snow));
+    EXPECT_EQ(client::staleTerrainLodColumns(columns, world, terrain->identity()),
+        (std::vector<client::TerrainLodColumnCoordinate>{{4U, 5U}}));
 }
