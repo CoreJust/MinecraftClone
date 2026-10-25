@@ -1499,6 +1499,67 @@ TEST(EvidenceJson, PreservesPlayerRenderStageTimingsPerFrame)
         std::string::npos);
 }
 
+TEST(EvidenceJson, PreservesTerrainLodUpdateStageTimingsAndWorkCounts)
+{
+    static constexpr uint64_t REPORT_DURATION_NS = 1'001U;
+    static constexpr uint64_t RESIDENT_DIFF_DURATION_NS = 4'004U;
+    static constexpr uint64_t PENDING_VALIDATION_DURATION_NS = 5'005U;
+    static constexpr uint64_t SCENE_HANDOFF_DURATION_NS = 6'006U;
+    static constexpr uint64_t RENDERER_PLAN_DURATION_NS = 7'007U;
+    static constexpr uint64_t RENDERER_BUFFER_UPDATE_DURATION_NS = 8'008U;
+    static constexpr uint64_t RENDERER_PUBLISH_DURATION_NS = 9'009U;
+    static constexpr uint64_t RENDERER_UPLOADED_FACE_COUNT = 10'010U;
+    static constexpr uint64_t RESIDENT_CHUNK_COUNT = 707U;
+    static constexpr uint64_t RENDERER_UPSERT_DURATION_NS = 5'006U;
+    static constexpr uint64_t VALIDATED_COLUMN_COUNT = 808U;
+    static constexpr uint64_t CAPTURE_ATTEMPT_COUNT = 9U;
+
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark.emplace();
+    auto& diagnostics = evidence.game_benchmark->raw_frames.emplace_back().diagnostic_terrain_lod_update;
+    diagnostics.enabled = true;
+    diagnostics.report_duration_ns = REPORT_DURATION_NS;
+    diagnostics.pending_validation_duration_ns = PENDING_VALIDATION_DURATION_NS;
+    diagnostics.renderer_upsert_duration_ns = RENDERER_UPSERT_DURATION_NS;
+    diagnostics.renderer_plan_duration_ns = RENDERER_PLAN_DURATION_NS;
+    diagnostics.renderer_buffer_update_duration_ns = RENDERER_BUFFER_UPDATE_DURATION_NS;
+    diagnostics.renderer_publish_duration_ns = RENDERER_PUBLISH_DURATION_NS;
+    diagnostics.renderer_uploaded_face_count = RENDERER_UPLOADED_FACE_COUNT;
+    diagnostics.prepared_draw_index_publish_count = 11U;
+    diagnostics.render_thread_draw_index_build_count = 12U;
+    diagnostics.scene_handoff_duration_ns = SCENE_HANDOFF_DURATION_NS;
+    diagnostics.validated_column_count = VALIDATED_COLUMN_COUNT;
+    diagnostics.source_validation_count = 10U;
+    diagnostics.edit_lane_call_count = 3U;
+    diagnostics.pending_validation_count = 4U;
+    diagnostics.dispatch_count = 2U;
+    diagnostics.discovery_capture_attempt_count = CAPTURE_ATTEMPT_COUNT;
+    diagnostics.source_index.resident_diff_duration_ns = RESIDENT_DIFF_DURATION_NS;
+    diagnostics.source_index.resident_chunk_count = RESIDENT_CHUNK_COUNT;
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"diagnostic_terrain_lod_update\": { \"enabled\": true"), std::string::npos);
+    EXPECT_NE(json.find("\"report_duration_ns\": 1001"), std::string::npos);
+    EXPECT_NE(json.find("\"resident_diff_duration_ns\": 4004"), std::string::npos);
+    EXPECT_NE(json.find("\"pending_validation_duration_ns\": 5005"), std::string::npos);
+    EXPECT_NE(json.find("\"renderer_upsert_duration_ns\": 5006"), std::string::npos);
+    EXPECT_NE(json.find("\"renderer_plan_duration_ns\": 7007"), std::string::npos);
+    EXPECT_NE(json.find("\"renderer_buffer_update_duration_ns\": 8008"), std::string::npos);
+    EXPECT_NE(json.find("\"renderer_publish_duration_ns\": 9009"), std::string::npos);
+    EXPECT_NE(json.find("\"renderer_uploaded_face_count\": 10010"), std::string::npos);
+    EXPECT_NE(json.find("\"prepared_draw_index_publish_count\": 11"), std::string::npos);
+    EXPECT_NE(json.find("\"render_thread_draw_index_build_count\": 12"), std::string::npos);
+    EXPECT_NE(json.find("\"scene_handoff_duration_ns\": 6006"), std::string::npos);
+    EXPECT_NE(json.find("\"resident_chunk_count\": 707"), std::string::npos);
+    EXPECT_NE(json.find("\"validated_column_count\": 808"), std::string::npos);
+    EXPECT_NE(json.find("\"source_validation_count\": 10"), std::string::npos);
+    EXPECT_NE(json.find("\"edit_lane_call_count\": 3"), std::string::npos);
+    EXPECT_NE(json.find("\"pending_validation_count\": 4"), std::string::npos);
+    EXPECT_NE(json.find("\"dispatch_count\": 2"), std::string::npos);
+    EXPECT_NE(json.find("\"discovery_capture_attempt_count\": 9"), std::string::npos);
+}
+
 TEST(EvidenceJson, PreservesTimedTerrainRadialBands)
 {
     acceptance::RuntimeEvidence evidence{};

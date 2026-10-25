@@ -18,6 +18,8 @@
 
 namespace client {
 
+class TerrainLodDrawIndex;
+
 struct TerrainLodDrawGroup final {
     StoneIndirectDraws::Range range;
     uint32_t origin_x = 0U;
@@ -149,6 +151,7 @@ struct TerrainLodScene final {
     uint32_t actual_column_count = 0U;
     std::vector<TerrainLodChunkSource> chunk_sources;
     std::vector<TerrainLodAuthoritySource> authority_sources;
+    std::shared_ptr<TerrainLodDrawIndex const> draw_index;
 };
 
 [[nodiscard]]

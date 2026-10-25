@@ -39,6 +39,63 @@ struct TerrainLodWorkTicket final {
     std::vector<TerrainLodColumnKey> columns;
 };
 
+struct TerrainLodSourceIndexDiagnostics final {
+    std::chrono::nanoseconds change_read_duration{0};
+    std::chrono::nanoseconds resident_snapshot_duration{0};
+    std::chrono::nanoseconds resident_diff_duration{0};
+    std::chrono::nanoseconds dependency_selection_duration{0};
+    uint64_t selection_count = 0U;
+    uint64_t authoritative_change_count = 0U;
+    uint64_t resident_snapshot_count = 0U;
+    uint64_t resident_chunk_count = 0U;
+    uint64_t resident_diff_change_count = 0U;
+    uint64_t affected_column_count = 0U;
+    uint64_t selected_column_count = 0U;
+    uint64_t discovery_candidate_count = 0U;
+    uint64_t full_resync_count = 0U;
+};
+
+struct TerrainLodUpdateDiagnostics final {
+    bool enabled = false;
+    std::chrono::nanoseconds report_duration{0};
+    std::chrono::nanoseconds world_reset_duration{0};
+    std::chrono::nanoseconds interest_prune_duration{0};
+    std::chrono::nanoseconds worker_handoff_duration{0};
+    std::chrono::nanoseconds edit_lane_duration{0};
+    std::chrono::nanoseconds pending_validation_duration{0};
+    std::chrono::nanoseconds renderer_upsert_duration{0};
+    std::chrono::nanoseconds renderer_plan_duration{0};
+    std::chrono::nanoseconds renderer_buffer_update_duration{0};
+    std::chrono::nanoseconds renderer_publish_duration{0};
+    uint64_t renderer_uploaded_face_count = 0U;
+    uint64_t prepared_draw_index_publish_count = 0U;
+    uint64_t render_thread_draw_index_build_count = 0U;
+    std::chrono::nanoseconds scene_handoff_duration{0};
+    std::chrono::nanoseconds source_refresh_duration{0};
+    std::chrono::nanoseconds source_validation_duration{0};
+    std::chrono::nanoseconds discovery_capture_duration{0};
+    std::chrono::nanoseconds dispatch_preparation_duration{0};
+    TerrainLodSourceIndexDiagnostics source_index;
+    uint64_t source_refresh_count = 0U;
+    uint64_t source_validation_count = 0U;
+    uint64_t validated_column_count = 0U;
+    uint64_t stale_column_count = 0U;
+    uint64_t completed_job_count = 0U;
+    uint64_t edit_lane_call_count = 0U;
+    uint64_t pending_validation_count = 0U;
+    uint64_t pending_actual_column_count = 0U;
+    uint64_t pending_chunk_source_count = 0U;
+    uint64_t pending_authority_source_count = 0U;
+    uint64_t source_rejection_count = 0U;
+    uint64_t plan_rejection_count = 0U;
+    uint64_t scene_handoff_attempt_count = 0U;
+    uint64_t scene_handoff_complete_count = 0U;
+    uint64_t discovery_capture_attempt_count = 0U;
+    uint64_t discovery_capture_success_count = 0U;
+    uint64_t dispatch_count = 0U;
+    uint64_t dispatch_column_count = 0U;
+};
+
 enum class TerrainLodPublicationFailure : uint8_t {
     None,
     Generation,
@@ -235,7 +292,12 @@ public:
     void clear();
     void upsert(std::shared_ptr<TerrainLodCapturedColumn const> column);
     void remove(TerrainLodColumnKey key);
-    void select(shared::SparseWorld const& world, bool scan_residents, Selection& output);
+    void select(
+        shared::SparseWorld const& world,
+        bool scan_residents,
+        Selection& output,
+        TerrainLodSourceIndexDiagnostics* diagnostics = nullptr
+    );
 
 private:
     struct Entry final {
@@ -262,10 +324,15 @@ public:
         VulkanRenderer& renderer,
         std::chrono::steady_clock::time_point deadline,
         std::optional<shared::TerrainSessionIdentity> session = std::nullopt,
-        std::optional<uint64_t> coverage_epoch = std::nullopt
+        std::optional<uint64_t> coverage_epoch = std::nullopt,
+        bool collect_diagnostics = false
     );
     void reset(VulkanRenderer* renderer = nullptr);
     [[nodiscard]] bool active() const noexcept { return m_active; }
+    [[nodiscard]] TerrainLodUpdateDiagnostics const& lastUpdateDiagnostics() const noexcept
+    {
+        return m_last_update_diagnostics;
+    }
 
 private:
     void reportDiagnostics();
@@ -275,7 +342,8 @@ private:
         VulkanRenderer& renderer,
         std::chrono::steady_clock::time_point deadline,
         uint64_t join_epoch,
-        uint64_t coverage_epoch);
+        uint64_t coverage_epoch,
+        TerrainLodUpdateDiagnostics* diagnostics);
     std::future<std::shared_ptr<TerrainLodScene const>> m_patch_job;
     std::shared_ptr<TerrainLodScene const> m_patch;
     std::vector<std::shared_ptr<TerrainLodColumnInput const>> m_patch_columns;
@@ -307,6 +375,7 @@ private:
     std::stop_source m_cancellation;
     std::vector<std::shared_ptr<TerrainLodCapturedColumn const>> m_columns;
     TerrainLodAuthorityBatch m_columns_authority_batch;
+    TerrainLodUpdateDiagnostics m_last_update_diagnostics;
     uint32_t m_center_x = 0U;
     uint32_t m_center_y = 0U;
     TerrainLodSourceIndex m_source_index;

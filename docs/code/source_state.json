@@ -37,7 +37,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "feaa94d03c8f329fdb638817f8d20999656bfe7fa849c63377efa75a3d1f8f73"
+      "sources_sha256": "d233fd763a114da6d464f9c7530dc57d3dd0b4723c8d5379f42574f6e6ac67e3"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -397,7 +397,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "cf36e09dca2505d75bd33ddd9ec17f992dd19aaf7ebe321c76a4c6ed66bacd9b"
+      "sources_sha256": "905ead6a8ab73da969f9ae6fcd30b5ea487cb6a7dad8f4e56881053e68f290f2"
     },
     {
       "guide": "docs/code/GENERATION.md",
@@ -1014,7 +1014,7 @@
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "9ffabaa478efe7b3c59d262188274f8cd9d2df634d862e1b6c801005efca9505",
+      "guide_sha256": "c8cb1a99cd8af0ffc19b98ff08ae55c28a9ae1e5f65b97a29659da91aa49c6fa",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -1138,7 +1138,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "9d752197e070f8e17d3c626e8e22863de66be1f1e8da047abba0675e8a69270d"
+      "sources_sha256": "c530a372366fda755a5ebc3a234280eccb81fa8cce212ef5c1b6725cbb10186c"
     }
   ],
   "version": 1

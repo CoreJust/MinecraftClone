@@ -1,6 +1,8 @@
 #include <client/TerrainLodPresentation.hpp>
 #include <client/TerrainLodSelection.hpp>
 #include <client/render/StoneIndirectDraws.hpp>
+#include <client/render/TerrainLodDrawIndex.hpp>
+#include <client/render/VulkanFrustum.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/ChunkMesher.hpp>
 #include <shared/world/SparseWorld.hpp>
@@ -100,8 +102,21 @@ TEST(TerrainLodPresentationTest, CompletePeriodicWorldKeepsCoverageWhileRefining
     EXPECT_GT(l0_count, 0U);
     EXPECT_GT(l2_count, 0U);
     EXPECT_EQ(scene->actual_column_count, 0U);
+    ASSERT_NE(scene->draw_index, nullptr);
     for (client::TerrainLodDrawGroup const& group : scene->groups) {
         EXPECT_LE(static_cast<uint64_t>(group.range.first_instance) + group.range.instance_count, scene->faces.size());
+    }
+
+    client::TerrainLodDrawIndex rebuilt_index;
+    rebuilt_index.reset(scene->groups);
+    for (glm::dvec3 const camera : {glm::dvec3{-32'768.0, -32'768.0, 1'024.0},
+             glm::dvec3{0.0, 0.0, 1'024.0}, glm::dvec3{65'536.0, 65'536.0, 1'024.0}}) {
+        client::VulkanFrustum const frustum{glm::mat4{1.0F}};
+        std::vector<uint32_t> prepared_visible;
+        std::vector<uint32_t> rebuilt_visible;
+        static_cast<void>(scene->draw_index->collect(frustum, camera, prepared_visible));
+        static_cast<void>(rebuilt_index.collect(frustum, camera, rebuilt_visible));
+        EXPECT_EQ(prepared_visible, rebuilt_visible);
     }
 }
 

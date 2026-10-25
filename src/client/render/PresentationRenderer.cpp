@@ -3224,7 +3224,8 @@ struct VulkanRenderer::Impl final {
 
     [[nodiscard]] bool upsertTerrainLodScene(
         std::shared_ptr<TerrainLodScene const> scene,
-        std::chrono::steady_clock::time_point const deadline
+        std::chrono::steady_clock::time_point const deadline,
+        TerrainLodRendererDiagnostics* const diagnostics
     )
     {
         if (!scene || scene->faces.empty()) {
@@ -3237,15 +3238,22 @@ struct VulkanRenderer::Impl final {
             discardPendingTerrainLodScene();
             return true;
         }
-        if (scene != m_pending_terrain_lod_scene && !beginPendingTerrainLodScene(std::move(scene))) {
-            return false;
+        if (scene != m_pending_terrain_lod_scene) {
+            DiagnosticDurationScope plan_timer;
+            plan_timer.start(diagnostics != nullptr ? &diagnostics->plan_duration : nullptr);
+            bool const began = beginPendingTerrainLodScene(std::move(scene));
+            plan_timer.finish();
+            if (!began) {
+                return false;
+            }
         }
-        return uploadPendingTerrainLodScene(deadline);
+        return uploadPendingTerrainLodScene(deadline, diagnostics);
     }
 
     [[nodiscard]] bool replaceTerrainLodGroups(
         std::shared_ptr<TerrainLodScene const> patch,
-        std::chrono::steady_clock::time_point const deadline
+        std::chrono::steady_clock::time_point const deadline,
+        TerrainLodRendererDiagnostics* const diagnostics
     )
     {
         if (!patch || !m_terrain_lod_scene || patch->identity != m_terrain_lod_scene->identity
@@ -3267,13 +3275,20 @@ struct VulkanRenderer::Impl final {
             m_pending_terrain_lod_reusable = std::move(plan.reusable);
             m_pending_terrain_lod_uploaded = std::move(plan.uploaded);
         }
-        return uploadPendingTerrainLodScene(deadline);
+        return uploadPendingTerrainLodScene(deadline, diagnostics);
     }
 
-    [[nodiscard]] bool uploadPendingTerrainLodScene(std::chrono::steady_clock::time_point const deadline)
+    [[nodiscard]] bool uploadPendingTerrainLodScene(
+        std::chrono::steady_clock::time_point const deadline,
+        TerrainLodRendererDiagnostics* const diagnostics = nullptr
+    )
     {
         static constexpr uint32_t UPLOAD_FACE_BUDGET = 32'768U;
         uint32_t remaining_budget = UPLOAD_FACE_BUDGET;
+        DiagnosticDurationScope buffer_update_timer;
+        buffer_update_timer.start(
+            diagnostics != nullptr ? &diagnostics->buffer_update_duration : nullptr
+        );
         for (uint32_t index = 0U; index < m_pending_terrain_lod_ranges.size(); ++index) {
             auto const& group = m_pending_terrain_lod_scene->groups[index];
             if (m_pending_terrain_lod_uploaded[index] == group.range.instance_count) {
@@ -3303,13 +3318,22 @@ struct VulkanRenderer::Impl final {
             );
             m_pending_terrain_lod_uploaded[index] += count;
             m_terrain_lod_uploaded_face_count += count;
+            if (diagnostics != nullptr) {
+                diagnostics->uploaded_face_count += count;
+            }
             remaining_budget -= count;
             ++m_chunk_mesh_upload_count;
         }
-        if (!detail::terrainLodUploadsComplete(*m_pending_terrain_lod_scene, m_pending_terrain_lod_uploaded)) {
+        bool const uploads_complete =
+            detail::terrainLodUploadsComplete(*m_pending_terrain_lod_scene, m_pending_terrain_lod_uploaded);
+        buffer_update_timer.finish();
+        if (!uploads_complete) {
             return false;
         }
-        publishPendingTerrainLodScene();
+        DiagnosticDurationScope publish_timer;
+        publish_timer.start(diagnostics != nullptr ? &diagnostics->publish_duration : nullptr);
+        publishPendingTerrainLodScene(diagnostics);
+        publish_timer.finish();
         return true;
     }
 
@@ -3361,7 +3385,7 @@ struct VulkanRenderer::Impl final {
         return slot.descriptors->set();
     }
 
-    void publishPendingTerrainLodScene()
+    void publishPendingTerrainLodScene(TerrainLodRendererDiagnostics* const diagnostics)
     {
         m_terrain_lod_upload_planner.invalidate();
         std::vector<bool> retained(m_terrain_lod_ranges.size());
@@ -3380,7 +3404,19 @@ struct VulkanRenderer::Impl final {
         m_active_terrain_field = std::move(m_pending_terrain_field);
         m_terrain_lod_scene = std::move(m_pending_terrain_lod_scene);
         m_terrain_lod_ranges = std::move(m_pending_terrain_lod_ranges);
-        m_terrain_lod_draw_index.reset(m_terrain_lod_scene->groups);
+        if (m_terrain_lod_scene->draw_index) {
+            m_terrain_lod_draw_index = m_terrain_lod_scene->draw_index;
+            if (diagnostics != nullptr) {
+                ++diagnostics->prepared_draw_index_publish_count;
+            }
+        } else {
+            auto draw_index = std::make_shared<TerrainLodDrawIndex>();
+            draw_index->reset(m_terrain_lod_scene->groups);
+            m_terrain_lod_draw_index = std::move(draw_index);
+            if (diagnostics != nullptr) {
+                ++diagnostics->render_thread_draw_index_build_count;
+            }
+        }
         m_pending_terrain_lod_ranges.clear();
         m_pending_terrain_lod_reusable.clear();
         m_pending_terrain_lod_uploaded.clear();
@@ -3416,6 +3452,7 @@ struct VulkanRenderer::Impl final {
         }
         m_terrain_lod_ranges.clear();
         m_terrain_lod_scene.reset();
+        m_terrain_lod_draw_index.reset();
         m_active_terrain_field.reset();
         m_chunk_scene_enabled = !m_stone_faces.empty() || !m_height_tile_slots.empty();
         ++m_occlusion_mesh_generation;
@@ -4446,7 +4483,7 @@ private:
                         glm::vec3(0.0F), glm::vec3(m_camera.forward()), glm::vec3(m_camera.up())
                     ) };
                     glm::dvec3 const camera_position = m_camera.pose().position;
-                    static_cast<void>(m_terrain_lod_draw_index.collect(
+                    static_cast<void>(m_terrain_lod_draw_index->collect(
                         frustum, camera_position, m_visible_terrain_lod_groups
                     ));
                     for (uint32_t const group_index : m_visible_terrain_lod_groups) {
@@ -5770,7 +5807,7 @@ private:
     StoneDrawRange m_legacy_draw_range;
     std::shared_ptr<TerrainLodScene const> m_terrain_lod_scene;
     std::vector<StoneDrawRange> m_terrain_lod_ranges;
-    TerrainLodDrawIndex m_terrain_lod_draw_index;
+    std::shared_ptr<TerrainLodDrawIndex const> m_terrain_lod_draw_index;
     std::vector<uint32_t> m_visible_terrain_lod_groups;
     detail::TerrainLodUploadPlanner m_terrain_lod_upload_planner;
     std::shared_ptr<TerrainLodScene const> m_pending_terrain_lod_scene;
@@ -6844,18 +6881,20 @@ void VulkanRenderer::setChunkMeshes(std::span<shared::ChunkMesh const> const mes
 
 bool VulkanRenderer::upsertTerrainLodScene(
     std::shared_ptr<TerrainLodScene const> scene,
-    std::chrono::steady_clock::time_point const deadline
+    std::chrono::steady_clock::time_point const deadline,
+    TerrainLodRendererDiagnostics* const diagnostics
 )
 {
-    return m_impl->upsertTerrainLodScene(std::move(scene), deadline);
+    return m_impl->upsertTerrainLodScene(std::move(scene), deadline, diagnostics);
 }
 
 bool VulkanRenderer::replaceTerrainLodGroups(
     std::shared_ptr<TerrainLodScene const> patch,
-    std::chrono::steady_clock::time_point const deadline
+    std::chrono::steady_clock::time_point const deadline,
+    TerrainLodRendererDiagnostics* const diagnostics
 )
 {
-    return m_impl->replaceTerrainLodGroups(std::move(patch), deadline);
+    return m_impl->replaceTerrainLodGroups(std::move(patch), deadline, diagnostics);
 }
 
 void VulkanRenderer::clearTerrainLodScene()

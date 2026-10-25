@@ -399,6 +399,68 @@ std::string terrainRadialBandsJson(std::array<GameBenchmarkFrameSample::TerrainR
     return result;
 }
 
+std::string terrainLodUpdateDiagnosticsJson(GameBenchmarkFrameSample::TerrainLodUpdate const& diagnostics)
+{
+    auto const& source_index = diagnostics.source_index;
+    return std::string{"{ \"enabled\": "} + (diagnostics.enabled ? "true" : "false")
+        + ", \"report_duration_ns\": " + std::to_string(diagnostics.report_duration_ns)
+        + ", \"world_reset_duration_ns\": " + std::to_string(diagnostics.world_reset_duration_ns)
+        + ", \"interest_prune_duration_ns\": " + std::to_string(diagnostics.interest_prune_duration_ns)
+        + ", \"worker_handoff_duration_ns\": " + std::to_string(diagnostics.worker_handoff_duration_ns)
+        + ", \"edit_lane_duration_ns\": " + std::to_string(diagnostics.edit_lane_duration_ns)
+        + ", \"pending_validation_duration_ns\": " + std::to_string(diagnostics.pending_validation_duration_ns)
+        + ", \"renderer_upsert_duration_ns\": " + std::to_string(diagnostics.renderer_upsert_duration_ns)
+        + ", \"renderer_plan_duration_ns\": " + std::to_string(diagnostics.renderer_plan_duration_ns)
+        + ", \"renderer_buffer_update_duration_ns\": "
+            + std::to_string(diagnostics.renderer_buffer_update_duration_ns)
+        + ", \"renderer_publish_duration_ns\": " + std::to_string(diagnostics.renderer_publish_duration_ns)
+        + ", \"renderer_uploaded_face_count\": " + std::to_string(diagnostics.renderer_uploaded_face_count)
+        + ", \"prepared_draw_index_publish_count\": " + std::to_string(diagnostics.prepared_draw_index_publish_count)
+        + ", \"render_thread_draw_index_build_count\": "
+            + std::to_string(diagnostics.render_thread_draw_index_build_count)
+        + ", \"scene_handoff_duration_ns\": " + std::to_string(diagnostics.scene_handoff_duration_ns)
+        + ", \"source_refresh_duration_ns\": " + std::to_string(diagnostics.source_refresh_duration_ns)
+        + ", \"source_validation_duration_ns\": " + std::to_string(diagnostics.source_validation_duration_ns)
+        + ", \"discovery_capture_duration_ns\": " + std::to_string(diagnostics.discovery_capture_duration_ns)
+        + ", \"dispatch_preparation_duration_ns\": " + std::to_string(diagnostics.dispatch_preparation_duration_ns)
+        + ", \"source_refresh_count\": " + std::to_string(diagnostics.source_refresh_count)
+        + ", \"source_validation_count\": " + std::to_string(diagnostics.source_validation_count)
+        + ", \"validated_column_count\": " + std::to_string(diagnostics.validated_column_count)
+        + ", \"stale_column_count\": " + std::to_string(diagnostics.stale_column_count)
+        + ", \"completed_job_count\": " + std::to_string(diagnostics.completed_job_count)
+        + ", \"edit_lane_call_count\": " + std::to_string(diagnostics.edit_lane_call_count)
+        + ", \"pending_validation_count\": " + std::to_string(diagnostics.pending_validation_count)
+        + ", \"pending_actual_column_count\": " + std::to_string(diagnostics.pending_actual_column_count)
+        + ", \"pending_chunk_source_count\": " + std::to_string(diagnostics.pending_chunk_source_count)
+        + ", \"pending_authority_source_count\": " + std::to_string(diagnostics.pending_authority_source_count)
+        + ", \"source_rejection_count\": " + std::to_string(diagnostics.source_rejection_count)
+        + ", \"plan_rejection_count\": " + std::to_string(diagnostics.plan_rejection_count)
+        + ", \"scene_handoff_attempt_count\": " + std::to_string(diagnostics.scene_handoff_attempt_count)
+        + ", \"scene_handoff_complete_count\": " + std::to_string(diagnostics.scene_handoff_complete_count)
+        + ", \"discovery_capture_attempt_count\": "
+            + std::to_string(diagnostics.discovery_capture_attempt_count)
+        + ", \"discovery_capture_success_count\": "
+            + std::to_string(diagnostics.discovery_capture_success_count)
+        + ", \"dispatch_count\": " + std::to_string(diagnostics.dispatch_count)
+        + ", \"dispatch_column_count\": " + std::to_string(diagnostics.dispatch_column_count)
+        + ", \"source_index\": { \"change_read_duration_ns\": "
+        + std::to_string(source_index.change_read_duration_ns)
+        + ", \"resident_snapshot_duration_ns\": "
+        + std::to_string(source_index.resident_snapshot_duration_ns)
+        + ", \"resident_diff_duration_ns\": " + std::to_string(source_index.resident_diff_duration_ns)
+        + ", \"dependency_selection_duration_ns\": "
+        + std::to_string(source_index.dependency_selection_duration_ns)
+        + ", \"selection_count\": " + std::to_string(source_index.selection_count)
+        + ", \"authoritative_change_count\": " + std::to_string(source_index.authoritative_change_count)
+        + ", \"resident_snapshot_count\": " + std::to_string(source_index.resident_snapshot_count)
+        + ", \"resident_chunk_count\": " + std::to_string(source_index.resident_chunk_count)
+        + ", \"resident_diff_change_count\": " + std::to_string(source_index.resident_diff_change_count)
+        + ", \"affected_column_count\": " + std::to_string(source_index.affected_column_count)
+        + ", \"selected_column_count\": " + std::to_string(source_index.selected_column_count)
+        + ", \"discovery_candidate_count\": " + std::to_string(source_index.discovery_candidate_count)
+        + ", \"full_resync_count\": " + std::to_string(source_index.full_resync_count) + " } }";
+}
+
 std::string meshEpisodesJson(GameBenchmarkFrameSample::MeshEpisodes const& episodes)
 {
     auto const array_json = [](auto const& values) {
@@ -1356,6 +1418,8 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
                 + std::to_string(sample.diagnostic_client_after_resize_terrain_lod_duration_ns)
             + ", \"diagnostic_client_after_resize_post_lod_duration_ns\": "
                 + std::to_string(sample.diagnostic_client_after_resize_post_lod_duration_ns)
+            + ", \"diagnostic_terrain_lod_update\": "
+                + terrainLodUpdateDiagnosticsJson(sample.diagnostic_terrain_lod_update)
             + ", \"diagnostic_renderer_call_duration_ns\": "
                 + std::to_string(sample.diagnostic_renderer_call_duration_ns)
             + ", \"diagnostic_client_render_after_renderer_duration_ns\": "

@@ -2,6 +2,7 @@
 
 #include <client/TerrainLodSelection.hpp>
 #include <client/render/StoneIndirectDraws.hpp>
+#include <client/render/TerrainLodDrawIndex.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/ChunkMesher.hpp>
 #include <shared/world/SparseWorld.hpp>
@@ -780,6 +781,13 @@ TerrainLodActualColumn meshColumn(TerrainLodColumnInput const& column, std::stop
     }
     return output;
 }
+
+void prepareTerrainLodDrawIndex(TerrainLodScene& scene)
+{
+    auto draw_index = std::make_shared<TerrainLodDrawIndex>();
+    draw_index->reset(scene.groups);
+    scene.draw_index = std::move(draw_index);
+}
 } // namespace
 
 std::shared_ptr<TerrainLodScene const> buildTerrainLodColumnPatch(
@@ -1293,6 +1301,7 @@ std::shared_ptr<TerrainLodScene const> buildTerrainLodScene(
         scene->leaves.push_back({.level = shared::TerrainLodLevel::L3, .x = column.x, .y = column.y});
     }
     scene->actual_column_count = static_cast<uint32_t>(actual.size());
+    prepareTerrainLodDrawIndex(*scene);
     return scene;
 }
 

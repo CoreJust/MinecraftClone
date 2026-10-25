@@ -139,6 +139,7 @@ struct TerrainLodUploadPlan final {
         replacement_groups.emplace(Key{group.origin_x, group.origin_y, group.extent}, index);
     }
     auto merged = std::make_shared<TerrainLodScene>(active);
+    merged->draw_index.reset();
     // Geometry and its captured dependency identities publish together. Shared
     // boundary sources can repeat; the patch supersedes every old occurrence.
     auto merge_sources = []<typename Source>(

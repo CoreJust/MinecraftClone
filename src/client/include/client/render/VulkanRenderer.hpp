@@ -44,6 +44,16 @@ namespace client {
 
 struct TerrainLodScene;
 
+// Optional per-call timings for benchmark attribution; a null sink avoids clock reads.
+struct TerrainLodRendererDiagnostics final {
+    std::chrono::nanoseconds plan_duration{0};
+    std::chrono::nanoseconds buffer_update_duration{0};
+    std::chrono::nanoseconds publish_duration{0};
+    uint64_t uploaded_face_count = 0U;
+    uint64_t prepared_draw_index_publish_count = 0U;
+    uint64_t render_thread_draw_index_build_count = 0U;
+};
+
 struct PlayerRenderData final {
     float x = 0.0F;
     float y = 0.0F;
@@ -283,16 +293,19 @@ public:
     void setCamera(CameraPose pose, CameraProjection projection) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
     void setChunkMeshes(std::span<shared::ChunkMesh const> meshes);
+    // Benchmark timings are optional; a null diagnostics sink performs no clock reads.
     [[nodiscard]]
     bool upsertTerrainLodScene(
         std::shared_ptr<TerrainLodScene const> scene,
-        std::chrono::steady_clock::time_point deadline
+        std::chrono::steady_clock::time_point deadline,
+        TerrainLodRendererDiagnostics* diagnostics = nullptr
     );
     // Replace existing exact groups atomically; empty group ranges remove their geometry.
     [[nodiscard]]
     bool replaceTerrainLodGroups(
         std::shared_ptr<TerrainLodScene const> patch,
-        std::chrono::steady_clock::time_point deadline
+        std::chrono::steady_clock::time_point deadline,
+        TerrainLodRendererDiagnostics* diagnostics = nullptr
     );
     void clearTerrainLodScene();
     [[nodiscard]]

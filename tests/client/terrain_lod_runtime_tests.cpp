@@ -91,6 +91,27 @@ TEST(TerrainLodRuntimeTest, IncrementalUnrelatedAuthorityEventsSelectNoCapturedP
     EXPECT_TRUE(fixture.selection.columns.empty());
 }
 
+TEST(TerrainLodRuntimeTest, SourceIndexDiagnosticsCountResidentAndSelectionWork)
+{
+    static constexpr uint64_t EXPECTED_SELECTION_COUNT = 1U;
+    static constexpr uint64_t EXPECTED_RESIDENT_SNAPSHOT_COUNT = 1U;
+    static constexpr uint64_t EXPECTED_SELECTED_COLUMN_COUNT = 1U;
+    static constexpr uint64_t EXPECTED_FULL_RESYNC_COUNT = 1U;
+
+    IncrementalSources fixture;
+    fixture.cross(0U, 0U);
+    fixture.capture(0U, 0U);
+    TerrainLodSourceIndexDiagnostics diagnostics;
+
+    fixture.index.select(fixture.world, true, fixture.selection, &diagnostics);
+
+    EXPECT_EQ(diagnostics.selection_count, EXPECTED_SELECTION_COUNT);
+    EXPECT_EQ(diagnostics.resident_snapshot_count, EXPECTED_RESIDENT_SNAPSHOT_COUNT);
+    EXPECT_EQ(diagnostics.selected_column_count, EXPECTED_SELECTED_COLUMN_COUNT);
+    EXPECT_EQ(diagnostics.full_resync_count, EXPECTED_FULL_RESYNC_COUNT);
+    ASSERT_EQ(fixture.selection.columns.size(), EXPECTED_SELECTED_COLUMN_COUNT);
+}
+
 TEST(TerrainLodRuntimeTest, IncrementalCrossDependenciesMatchFullValidationForRemovalAndReadiness)
 {
     IncrementalSources fixture;

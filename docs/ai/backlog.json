@@ -20546,5 +20546,59 @@
     "docs_review": "Read RELEASE_REPORTS.md behavior contract; ai_docs.py refresh/check passes after updating the one generated source-state hash for the edited report verifier.",
     "environment_review": "Thin-rebased onto 2d40c33bf6c3db51814ea509d45fb4be459100bb in the private candidate; implementation and test blobs are unchanged from the approved tree. Existing bundled-Python 29/29 report-suite result remains exact for those unchanged blobs. No shared-root mutation or dependency installation.",
     "backlog_review": "MC-AI-0579 metadata from the new base is preserved, MC-AI-0580 is added as its own finalized child of active MC-AI-0483, and generated Markdown validates. Shared release report state and PDFs are unchanged."
+  },
+  {
+    "id": "MC-AI-0572",
+    "title": "Attribute and prepare terrain LOD scene publication",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0565"
+    ],
+    "acceptance": "Add benchmark-enabled aggregate timing and count fields for terrain LOD source selection, edit publication, worker handoff, pending validation, renderer planning/buffer update/publication, draw-index preparation and scene handoff. Prepare the immutable draw index in the existing asynchronous scene job and publish it without a render-thread rebuild when available. Preserve the current source/session/coverage/edit freshness checks, draw ordering and fallback behavior; collect no per-column clocks and add no capture population cap. Verify the focused contracts and retain the actual moving-run result without claiming the parent FPS target.",
+    "evidence": "The configured Release build passed 187/187 build steps; the composed focused suite passed 51 tests, with a separate live-UI opt-in test passing 1/1. The source-bound Windows worker-index movement capture retained 3,433 JSON rows and recorded 7 prepared-index publications with 0 render-thread index builds. Its worst LOD sample was 63.6268 ms, including 62.3769 ms in renderer buffer update for 1,619 uploaded faces; the required 99% under-2-ms fresh-frame budget failed. Receipts: /Users/core-just/.codex/task-evidence/mc-s2-20261025/task-0572-final-renderer/renderer-timing-local-verification.json; /Users/core-just/.codex/task-evidence/mc-s2-20261025/windows-worker-index/runtime-receipt.json and runtime-summary.json. This task closes instrumentation and worker-index preparation only; MC-AI-0483 Windows FPS acceptance remains open.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Source-bound movement captures show long terrain publication tails that need attribution and an existing worker-built immutable draw index to avoid rebuilding that index on the render thread.",
+    "context": "MC-AI-0565 added the outer client/LOD timing boundary. The first detailed V9 movement trace showed publication tails; the renderer draw-index builder was a remaining synchronous publication cost. Use the existing async scene-building future and keep canonical source validation and pending-scene publication gates unchanged.",
+    "complexity": "medium",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added aggregate Runtime and renderer publication timing/counts and prepared immutable draw indices in the existing asynchronous scene future. The actual movement capture confirms the prepared-index path is used and exposes the remaining upload tail; no FPS gain or qualification is claimed.",
+    "plan": [],
+    "product_changes": [
+      "Terrain scene publication exposes bounded diagnostic timing and avoids a render-thread draw-index rebuild when the existing worker has prepared the immutable index."
+    ],
+    "code_changes": [
+      "docs/code/RENDERING.md",
+      "src/acceptance/EvidenceJson.cpp",
+      "src/acceptance/GameBenchmark.cpp",
+      "src/acceptance/include/acceptance/EvidenceJson.hpp",
+      "src/client/PlayerClient.cpp",
+      "src/client/TerrainLodPresentation.cpp",
+      "src/client/TerrainLodRuntime.cpp",
+      "src/client/include/client/PlayerClient.hpp",
+      "src/client/include/client/TerrainLodPresentation.hpp",
+      "src/client/include/client/TerrainLodRuntime.hpp",
+      "src/client/include/client/render/TerrainLodUploadPlan.hpp",
+      "src/client/include/client/render/VulkanRenderer.hpp",
+      "src/client/render/PresentationRenderer.cpp",
+      "tests/acceptance/evidence_json_tests.cpp",
+      "tests/client/terrain_lod_presentation_tests.cpp",
+      "tests/client/terrain_lod_runtime_tests.cpp",
+      "tests/client/terrain_lod_upload_plan_tests.cpp"
+    ],
+    "baseline_commit": "c67dff3c0d6532123b660745481bc3a1bbe7eaa4",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Worker preparation moved exact immutable draw-index construction into the existing future; the observed upload tail is a separate renderer cost and remains measured without weakening the FPS gate.",
+    "docs_review": "Updated RENDERING.md for aggregate timing and worker-built index publication; refresh the generated source inventory.",
+    "environment_review": "Existing pinned Release dependencies were reused with VCPKG_MANIFEST_INSTALL=OFF; no new dependency installation was run.",
+    "backlog_review": "This diagnostic/worker-index prerequisite is complete. The full-user-interface fresh-frame target and all-platform qualification remain open under MC-AI-0483."
   }
 ]

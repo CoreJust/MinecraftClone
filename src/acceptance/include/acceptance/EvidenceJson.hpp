@@ -196,6 +196,60 @@ struct RendererCaptureEvidence final {
 };
 
 struct GameBenchmarkFrameSample final {
+    struct TerrainLodUpdate final {
+        struct SourceIndex final {
+            uint64_t change_read_duration_ns = 0U;
+            uint64_t resident_snapshot_duration_ns = 0U;
+            uint64_t resident_diff_duration_ns = 0U;
+            uint64_t dependency_selection_duration_ns = 0U;
+            uint64_t selection_count = 0U;
+            uint64_t authoritative_change_count = 0U;
+            uint64_t resident_snapshot_count = 0U;
+            uint64_t resident_chunk_count = 0U;
+            uint64_t resident_diff_change_count = 0U;
+            uint64_t affected_column_count = 0U;
+            uint64_t selected_column_count = 0U;
+            uint64_t discovery_candidate_count = 0U;
+            uint64_t full_resync_count = 0U;
+        } source_index;
+        bool enabled = false;
+        uint64_t report_duration_ns = 0U;
+        uint64_t world_reset_duration_ns = 0U;
+        uint64_t interest_prune_duration_ns = 0U;
+        uint64_t worker_handoff_duration_ns = 0U;
+        uint64_t edit_lane_duration_ns = 0U;
+        uint64_t pending_validation_duration_ns = 0U;
+        uint64_t renderer_upsert_duration_ns = 0U;
+        uint64_t renderer_plan_duration_ns = 0U;
+        uint64_t renderer_buffer_update_duration_ns = 0U;
+        uint64_t renderer_publish_duration_ns = 0U;
+        uint64_t renderer_uploaded_face_count = 0U;
+        uint64_t prepared_draw_index_publish_count = 0U;
+        uint64_t render_thread_draw_index_build_count = 0U;
+        uint64_t scene_handoff_duration_ns = 0U;
+        uint64_t source_refresh_duration_ns = 0U;
+        uint64_t source_validation_duration_ns = 0U;
+        uint64_t discovery_capture_duration_ns = 0U;
+        uint64_t dispatch_preparation_duration_ns = 0U;
+        uint64_t source_refresh_count = 0U;
+        uint64_t source_validation_count = 0U;
+        uint64_t validated_column_count = 0U;
+        uint64_t stale_column_count = 0U;
+        uint64_t completed_job_count = 0U;
+        uint64_t edit_lane_call_count = 0U;
+        uint64_t pending_validation_count = 0U;
+        uint64_t pending_actual_column_count = 0U;
+        uint64_t pending_chunk_source_count = 0U;
+        uint64_t pending_authority_source_count = 0U;
+        uint64_t source_rejection_count = 0U;
+        uint64_t plan_rejection_count = 0U;
+        uint64_t scene_handoff_attempt_count = 0U;
+        uint64_t scene_handoff_complete_count = 0U;
+        uint64_t discovery_capture_attempt_count = 0U;
+        uint64_t discovery_capture_success_count = 0U;
+        uint64_t dispatch_count = 0U;
+        uint64_t dispatch_column_count = 0U;
+    };
     uint64_t loop_ordinal = 0U;
     bool warm = false;
     bool uncapped = false;
@@ -392,6 +446,7 @@ struct GameBenchmarkFrameSample final {
     uint64_t diagnostic_terrain_occlusion_removed_quad_count = 0U;
     uint32_t diagnostic_terrain_occlusion_removed_range_count = 0U;
     uint32_t diagnostic_terrain_occlusion_removed_command_count = 0U;
+    TerrainLodUpdate diagnostic_terrain_lod_update;
 };
 
 struct GameBenchmarkTerrainReadinessEvidence final {

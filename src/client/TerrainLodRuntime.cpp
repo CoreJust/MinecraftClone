@@ -26,6 +26,33 @@
 namespace client {
 namespace {
 
+class ScopedDiagnosticsTimer final {
+public:
+    explicit ScopedDiagnosticsTimer(std::chrono::nanoseconds* const duration)
+        : m_duration(duration)
+    {
+        if (m_duration != nullptr) {
+            m_started = std::chrono::steady_clock::now();
+        }
+    }
+
+    ~ScopedDiagnosticsTimer() { finish(); }
+
+    void finish()
+    {
+        if (m_duration != nullptr) {
+            *m_duration += std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - m_started
+            );
+            m_duration = nullptr;
+        }
+    }
+
+private:
+    std::chrono::nanoseconds* m_duration;
+    std::chrono::steady_clock::time_point m_started{};
+};
+
 bool capturedTerrainLodColumnCurrent(
     std::shared_ptr<TerrainLodCapturedColumn const> const& column,
     shared::SparseWorld const& world,
@@ -95,16 +122,32 @@ void TerrainLodSourceIndex::upsert(std::shared_ptr<TerrainLodCapturedColumn cons
 void TerrainLodSourceIndex::select(
     shared::SparseWorld const& world,
     bool const scan_residents,
-    Selection& output)
+    Selection& output,
+    TerrainLodSourceIndexDiagnostics* const diagnostics)
 {
     output.columns.clear();
     output.discovery.clear();
+    ScopedDiagnosticsTimer change_read_timer{
+        diagnostics != nullptr ? &diagnostics->change_read_duration : nullptr};
     world.readAuthoritativeColumnChanges(m_cursor, m_changes);
+    change_read_timer.finish();
     m_cursor = m_changes.cursor;
     output.full_resync = !m_initialized || m_changes.full_resync;
     m_initialized = true;
+    if (diagnostics != nullptr) {
+        ++diagnostics->selection_count;
+        diagnostics->authoritative_change_count += m_changes.coordinates.size();
+        diagnostics->full_resync_count += output.full_resync ? 1U : 0U;
+    }
     if (scan_residents || !m_changes.coordinates.empty() || output.full_resync) {
+        ScopedDiagnosticsTimer resident_snapshot_timer{
+            diagnostics != nullptr ? &diagnostics->resident_snapshot_duration : nullptr};
         world.residentChunkContents(m_residents);
+        resident_snapshot_timer.finish();
+        if (diagnostics != nullptr) {
+            ++diagnostics->resident_snapshot_count;
+            diagnostics->resident_chunk_count += m_residents.size();
+        }
         auto const less = [](auto const& a, auto const& b) {
             auto const& x = a.coordinate;
             auto const& y = b.coordinate;
@@ -112,6 +155,9 @@ void TerrainLodSourceIndex::select(
         };
         size_t before = 0U;
         size_t after = 0U;
+        size_t const change_count_before_diff = m_changes.coordinates.size();
+        ScopedDiagnosticsTimer resident_diff_timer{
+            diagnostics != nullptr ? &diagnostics->resident_diff_duration : nullptr};
         while (before < m_previous_residents.size() || after < m_residents.size()) {
             if (after == m_residents.size()
                 || (before < m_previous_residents.size() && less(m_previous_residents[before], m_residents[after]))) {
@@ -127,7 +173,14 @@ void TerrainLodSourceIndex::select(
             }
         }
         m_previous_residents.swap(m_residents);
+        resident_diff_timer.finish();
+        if (diagnostics != nullptr) {
+            diagnostics->resident_diff_change_count +=
+                m_changes.coordinates.size() - change_count_before_diff;
+        }
     }
+    ScopedDiagnosticsTimer dependency_selection_timer{
+        diagnostics != nullptr ? &diagnostics->dependency_selection_duration : nullptr};
     std::unordered_set<uint64_t> affected;
     std::unordered_set<uint64_t> discovery;
     for (auto const coordinate : m_changes.coordinates) {
@@ -167,6 +220,12 @@ void TerrainLodSourceIndex::select(
     std::ranges::sort(output.discovery, [](auto const a, auto const b) {
         return a.y != b.y ? a.y < b.y : a.x < b.x;
     });
+    dependency_selection_timer.finish();
+    if (diagnostics != nullptr) {
+        diagnostics->affected_column_count += affected.size();
+        diagnostics->selected_column_count += output.columns.size();
+        diagnostics->discovery_candidate_count += discovery.size();
+    }
 }
 
 TerrainLodRuntime::~TerrainLodRuntime()
@@ -182,7 +241,8 @@ void TerrainLodRuntime::updateEditedColumns(
     VulkanRenderer& renderer,
     std::chrono::steady_clock::time_point const deadline,
     uint64_t const join_epoch,
-    uint64_t const coverage_epoch)
+    uint64_t const coverage_epoch,
+    TerrainLodUpdateDiagnostics* const diagnostics)
 {
     if (m_patch_job.valid()) {
         if (m_patch_job.wait_for(std::chrono::seconds{0}) != std::future_status::ready) {
@@ -199,8 +259,23 @@ void TerrainLodRuntime::updateEditedColumns(
         bool const current = m_active && m_world && m_patch->identity == m_world->identity()
             && m_patch->session_join_epoch == join_epoch && m_patch->coverage_epoch == coverage_epoch
             && terrainLodSourcesCurrent(*m_patch, actual);
-        if (current && !renderer.replaceTerrainLodGroups(m_patch, deadline)) {
-            return;
+        if (current) {
+            TerrainLodRendererDiagnostics renderer_diagnostics{};
+            bool const replaced = diagnostics != nullptr
+                ? renderer.replaceTerrainLodGroups(m_patch, deadline, &renderer_diagnostics)
+                : renderer.replaceTerrainLodGroups(m_patch, deadline);
+            if (diagnostics != nullptr) {
+                diagnostics->renderer_buffer_update_duration += renderer_diagnostics.buffer_update_duration;
+                diagnostics->renderer_publish_duration += renderer_diagnostics.publish_duration;
+                diagnostics->renderer_uploaded_face_count += renderer_diagnostics.uploaded_face_count;
+                diagnostics->prepared_draw_index_publish_count +=
+                    renderer_diagnostics.prepared_draw_index_publish_count;
+                diagnostics->render_thread_draw_index_build_count +=
+                    renderer_diagnostics.render_thread_draw_index_build_count;
+            }
+            if (!replaced) {
+                return;
+            }
         }
         if (current) {
             for (auto const& column : m_patch_columns) {
@@ -266,10 +341,27 @@ void TerrainLodRuntime::refreshColumnSources(
     bool const scan_residents,
     bool const rediscover)
 {
-    m_source_index.select(actual, scan_residents, m_source_selection);
+    auto* const diagnostics = m_last_update_diagnostics.enabled ? &m_last_update_diagnostics : nullptr;
+    ScopedDiagnosticsTimer refresh_timer{
+        diagnostics != nullptr ? &diagnostics->source_refresh_duration : nullptr};
+    if (diagnostics != nullptr) {
+        ++diagnostics->source_refresh_count;
+    }
+    m_source_index.select(actual, scan_residents, m_source_selection,
+        diagnostics != nullptr ? &diagnostics->source_index : nullptr);
     std::vector<TerrainLodColumnCoordinate> stale;
     if (!m_source_selection.columns.empty()) {
+        ScopedDiagnosticsTimer validation_timer{
+            diagnostics != nullptr ? &diagnostics->source_validation_duration : nullptr};
+        if (diagnostics != nullptr) {
+            ++diagnostics->source_validation_count;
+            diagnostics->validated_column_count += m_source_selection.columns.size();
+        }
         stale = staleCapturedTerrainLodColumns(m_source_selection.columns, actual, m_columns_authority_batch);
+        validation_timer.finish();
+        if (diagnostics != nullptr) {
+            diagnostics->stale_column_count += stale.size();
+        }
     }
     auto const coordinate_less = [](TerrainLodColumnCoordinate const left, TerrainLodColumnCoordinate const right) {
         return left.x != right.x ? left.x < right.x : left.y < right.y;
@@ -377,10 +469,24 @@ void TerrainLodRuntime::update(
     VulkanRenderer& renderer,
     std::chrono::steady_clock::time_point const deadline,
     std::optional<shared::TerrainSessionIdentity> session,
-    std::optional<uint64_t> const coverage_epoch
+    std::optional<uint64_t> const coverage_epoch,
+    bool const collect_diagnostics
 )
 {
-    reportDiagnostics();
+    if (collect_diagnostics) {
+        m_last_update_diagnostics = {};
+        m_last_update_diagnostics.enabled = true;
+    } else {
+        m_last_update_diagnostics.enabled = false;
+    }
+    auto* const diagnostics = collect_diagnostics ? &m_last_update_diagnostics : nullptr;
+    {
+        ScopedDiagnosticsTimer report_timer{
+            diagnostics != nullptr ? &diagnostics->report_duration : nullptr};
+        reportDiagnostics();
+    }
+    ScopedDiagnosticsTimer world_reset_timer{
+        diagnostics != nullptr ? &diagnostics->world_reset_duration : nullptr};
     if (actual != m_actual_world) {
         reset(&renderer);
         m_actual_world = actual;
@@ -416,6 +522,9 @@ void TerrainLodRuntime::update(
             m_active = false;
         }
     }
+    world_reset_timer.finish();
+    ScopedDiagnosticsTimer interest_prune_timer{
+        diagnostics != nullptr ? &diagnostics->interest_prune_duration : nullptr};
     if (player) {
         uint32_t const x = shared::WorldBounds::wrapHorizontal(static_cast<int64_t>(shared::playerPositionX(*player)));
         uint32_t const y = shared::WorldBounds::wrapHorizontal(static_cast<int64_t>(shared::playerPositionY(*player)));
@@ -435,11 +544,17 @@ void TerrainLodRuntime::update(
             m_dirty = true;
         }
     }
+    interest_prune_timer.finish();
+    ScopedDiagnosticsTimer worker_handoff_timer{
+        diagnostics != nullptr ? &diagnostics->worker_handoff_duration : nullptr};
     if (m_job.valid() && m_job.wait_for(std::chrono::seconds{0}) == std::future_status::ready) {
         try {
             auto candidate = m_job.get();
             ++m_completed;
             ++m_diagnostic_events;
+            if (diagnostics != nullptr) {
+                ++diagnostics->completed_job_count;
+            }
             m_last_job_duration = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - m_job_started
             );
@@ -455,10 +570,17 @@ void TerrainLodRuntime::update(
             }
         }
     }
+    worker_handoff_timer.finish();
     uint64_t const join_epoch = session && source && session->terrain == source->identity() ? session->join_epoch : 0U;
+    ScopedDiagnosticsTimer edit_lane_timer{
+        diagnostics != nullptr ? &diagnostics->edit_lane_duration : nullptr};
     if (actual && player) {
-        updateEditedColumns(*actual, renderer, deadline, join_epoch, coverage_epoch.value_or(0U));
+        if (diagnostics != nullptr) {
+            ++diagnostics->edit_lane_call_count;
+        }
+        updateEditedColumns(*actual, renderer, deadline, join_epoch, coverage_epoch.value_or(0U), diagnostics);
     }
+    edit_lane_timer.finish();
     if (m_pending && player) {
         std::vector<TerrainLodColumnKey> rendered;
         for (auto const leaf : m_pending->leaves) {
@@ -466,10 +588,21 @@ void TerrainLodRuntime::update(
                 rendered.push_back({leaf.x, leaf.y});
             }
         }
+        ScopedDiagnosticsTimer pending_validation_timer{
+            diagnostics != nullptr ? &diagnostics->pending_validation_duration : nullptr};
         bool const sources_current = actual && terrainLodSourcesCurrent(*m_pending, *actual)
             && m_pending->session_join_epoch == join_epoch
             && m_pending->coverage_epoch == coverage_epoch.value_or(0U);
         auto const issue = m_plan.publicationIssue(m_pending_ticket, rendered);
+        if (diagnostics != nullptr) {
+            ++diagnostics->pending_validation_count;
+            diagnostics->pending_actual_column_count += m_pending->actual_column_count;
+            diagnostics->pending_chunk_source_count += m_pending->chunk_sources.size();
+            diagnostics->pending_authority_source_count += m_pending->authority_sources.size();
+            diagnostics->source_rejection_count += sources_current ? 0U : 1U;
+            diagnostics->plan_rejection_count += issue.failure == TerrainLodPublicationFailure::None ? 0U : 1U;
+        }
+        pending_validation_timer.finish();
         if (!sources_current || issue.failure != TerrainLodPublicationFailure::None) {
             m_source_rejected += sources_current ? 0U : 1U;
             m_plan_rejected += issue.failure == TerrainLodPublicationFailure::None ? 0U : 1U;
@@ -481,33 +614,63 @@ void TerrainLodRuntime::update(
             m_pending.reset();
             m_discovery_initialized = false;
             m_dirty = true;
-        } else if (!m_patch_job.valid() && !m_patch && renderer.upsertTerrainLodScene(m_pending, deadline)) {
-            if (!m_active || (!m_actual_reported && m_pending->actual_column_count != 0U)) {
-                CORE_INFO(
-                    "Terrain LOD scene active: model={} leaves={} faces={} "
-                    "actual_columns={}",
-                    m_pending->identity.terrain_version
-                        == generation::terrainVersion(generation::TerrainModelTag::V9)
-                        ? shared::TERRAIN_LOD_MODEL_V9 : shared::TERRAIN_LOD_MODEL,
-                    m_pending->leaves.size(),
-                    m_pending->faces.size(),
-                    m_pending->actual_column_count
-                );
+        } else if (!m_patch_job.valid() && !m_patch) {
+            ScopedDiagnosticsTimer renderer_upsert_timer{
+                diagnostics != nullptr ? &diagnostics->renderer_upsert_duration : nullptr};
+            if (diagnostics != nullptr) {
+                ++diagnostics->scene_handoff_attempt_count;
             }
-            m_actual_reported = m_actual_reported || m_pending->actual_column_count != 0U;
-            ++m_published;
-            ++m_diagnostic_events;
-            m_plan.presented(rendered);
-            m_presented_columns.clear();
-            for (auto const& column : m_pending_columns) {
-                if (std::ranges::find(rendered, TerrainLodColumnKey{column->x, column->y}) != rendered.end()) {
-                    m_presented_columns.push_back(column);
+            TerrainLodRendererDiagnostics renderer_diagnostics{};
+            bool const upserted = renderer.upsertTerrainLodScene(
+                m_pending,
+                deadline,
+                diagnostics != nullptr ? &renderer_diagnostics : nullptr
+            );
+            if (diagnostics != nullptr) {
+                diagnostics->renderer_plan_duration += renderer_diagnostics.plan_duration;
+                diagnostics->renderer_buffer_update_duration += renderer_diagnostics.buffer_update_duration;
+                diagnostics->renderer_publish_duration += renderer_diagnostics.publish_duration;
+                diagnostics->renderer_uploaded_face_count += renderer_diagnostics.uploaded_face_count;
+                diagnostics->prepared_draw_index_publish_count +=
+                    renderer_diagnostics.prepared_draw_index_publish_count;
+                diagnostics->render_thread_draw_index_build_count +=
+                    renderer_diagnostics.render_thread_draw_index_build_count;
+            }
+            renderer_upsert_timer.finish();
+            if (upserted) {
+                ScopedDiagnosticsTimer scene_handoff_timer{
+                    diagnostics != nullptr ? &diagnostics->scene_handoff_duration : nullptr};
+                if (!m_active || (!m_actual_reported && m_pending->actual_column_count != 0U)) {
+                    CORE_INFO(
+                        "Terrain LOD scene active: model={} leaves={} faces={} "
+                        "actual_columns={}",
+                        m_pending->identity.terrain_version
+                            == generation::terrainVersion(generation::TerrainModelTag::V9)
+                            ? shared::TERRAIN_LOD_MODEL_V9 : shared::TERRAIN_LOD_MODEL,
+                        m_pending->leaves.size(),
+                        m_pending->faces.size(),
+                        m_pending->actual_column_count
+                    );
                 }
+                m_actual_reported = m_actual_reported || m_pending->actual_column_count != 0U;
+                ++m_published;
+                ++m_diagnostic_events;
+                m_plan.presented(rendered);
+                m_presented_columns.clear();
+                for (auto const& column : m_pending_columns) {
+                    if (std::ranges::find(rendered, TerrainLodColumnKey{column->x, column->y}) != rendered.end()) {
+                        m_presented_columns.push_back(column);
+                    }
+                }
+                m_presented_join_epoch = m_pending->session_join_epoch;
+                m_presented_coverage_epoch = m_pending->coverage_epoch;
+                m_pending.reset();
+                m_active = true;
+                if (diagnostics != nullptr) {
+                    ++diagnostics->scene_handoff_complete_count;
+                }
+                scene_handoff_timer.finish();
             }
-            m_presented_join_epoch = m_pending->session_join_epoch;
-            m_presented_coverage_epoch = m_pending->coverage_epoch;
-            m_pending.reset();
-            m_active = true;
         }
     }
     if (!player) {
@@ -521,6 +684,8 @@ void TerrainLodRuntime::update(
         m_discovery_initialized = true;
     }
     uint32_t captures = 0U;
+    ScopedDiagnosticsTimer discovery_capture_timer{
+        diagnostics != nullptr ? &diagnostics->discovery_capture_duration : nullptr};
     while (actual && captures < 8U && std::chrono::steady_clock::now() < deadline) {
         auto const next = m_plan.nextDiscovery();
         if (!next) {
@@ -528,6 +693,9 @@ void TerrainLodRuntime::update(
         }
         TerrainLodColumnKey const key = *next;
         ++captures;
+        if (diagnostics != nullptr) {
+            ++diagnostics->discovery_capture_attempt_count;
+        }
         uint32_t const x = key.x;
         uint32_t const y = key.y;
         auto captured = captureTerrainLodColumnForBatch(*actual, x, y, m_columns_authority_batch);
@@ -537,6 +705,9 @@ void TerrainLodRuntime::update(
             });
         if (captured) {
             ++m_captured;
+            if (diagnostics != nullptr) {
+                ++diagnostics->discovery_capture_success_count;
+            }
             m_plan.remember(key);
             if (existing == m_columns.end()) {
                 m_source_index.upsert(captured);
@@ -557,9 +728,12 @@ void TerrainLodRuntime::update(
             }
         }
     }
+    discovery_capture_timer.finish();
     if (!source) {
         return;
     }
+    ScopedDiagnosticsTimer dispatch_preparation_timer{
+        diagnostics != nullptr ? &diagnostics->dispatch_preparation_duration : nullptr};
     if (m_job.valid() || m_pending || !m_dirty) {
         return;
     }
@@ -572,6 +746,9 @@ void TerrainLodRuntime::update(
             columns.emplace_back(captured_column, &captured_column->input());
         }
     }
+    if (diagnostics != nullptr) {
+        diagnostics->dispatch_column_count += columns.size();
+    }
     m_job_columns = columns;
     m_cancellation = std::stop_source{};
     auto const cancellation = m_cancellation.get_token();
@@ -582,6 +759,9 @@ void TerrainLodRuntime::update(
     m_dirty = false;
     ++m_dispatched;
     ++m_diagnostic_events;
+    if (diagnostics != nullptr) {
+        ++diagnostics->dispatch_count;
+    }
     m_job_started = std::chrono::steady_clock::now();
     // NOLINTNEXTLINE(bugprone-exception-escape)
     m_job = std::async(std::launch::async,

@@ -117,7 +117,8 @@ Approval requires validation, the active versioned reference and independent
 depth/scene checks. Review references at native size. S5 checks scene, replacement, validation and remote altitude.
 
 `--benchmark-render` excludes server/network/gameplay; `--benchmark-game` counts
-completed player-client present requests. Neither measures scanout. Evidence records GPU, extent, HUD, frame percentiles, CPU phases and submissions.
+completed player-client present requests, not scanout. Frame evidence adds nested LOD
+timings/counts; spans overlap; diagnostics sample them.
 Stationary diagnostics freeze input. Optional terrain timestamps may be unsupported
 on MoltenVK; Release disables validation. See [gameplay qualification](../ai/GAMEPLAY_QUALIFICATION.md).
 

@@ -658,6 +658,66 @@ GameBenchmarkFrameSample::VisualLod gameBenchmarkVisualLodSample(
     return sample;
 }
 
+GameBenchmarkFrameSample::TerrainLodUpdate gameBenchmarkTerrainLodUpdateSample(
+    client::TerrainLodUpdateDiagnostics const& diagnostics)
+{
+    auto const& source_index = diagnostics.source_index;
+    return {
+        .source_index = {
+            .change_read_duration_ns = positiveNanoseconds(source_index.change_read_duration),
+            .resident_snapshot_duration_ns = positiveNanoseconds(source_index.resident_snapshot_duration),
+            .resident_diff_duration_ns = positiveNanoseconds(source_index.resident_diff_duration),
+            .dependency_selection_duration_ns = positiveNanoseconds(source_index.dependency_selection_duration),
+            .selection_count = source_index.selection_count,
+            .authoritative_change_count = source_index.authoritative_change_count,
+            .resident_snapshot_count = source_index.resident_snapshot_count,
+            .resident_chunk_count = source_index.resident_chunk_count,
+            .resident_diff_change_count = source_index.resident_diff_change_count,
+            .affected_column_count = source_index.affected_column_count,
+            .selected_column_count = source_index.selected_column_count,
+            .discovery_candidate_count = source_index.discovery_candidate_count,
+            .full_resync_count = source_index.full_resync_count,
+        },
+        .enabled = diagnostics.enabled,
+        .report_duration_ns = positiveNanoseconds(diagnostics.report_duration),
+        .world_reset_duration_ns = positiveNanoseconds(diagnostics.world_reset_duration),
+        .interest_prune_duration_ns = positiveNanoseconds(diagnostics.interest_prune_duration),
+        .worker_handoff_duration_ns = positiveNanoseconds(diagnostics.worker_handoff_duration),
+        .edit_lane_duration_ns = positiveNanoseconds(diagnostics.edit_lane_duration),
+        .pending_validation_duration_ns = positiveNanoseconds(diagnostics.pending_validation_duration),
+        .renderer_upsert_duration_ns = positiveNanoseconds(diagnostics.renderer_upsert_duration),
+        .renderer_plan_duration_ns = positiveNanoseconds(diagnostics.renderer_plan_duration),
+        .renderer_buffer_update_duration_ns = positiveNanoseconds(diagnostics.renderer_buffer_update_duration),
+        .renderer_publish_duration_ns = positiveNanoseconds(diagnostics.renderer_publish_duration),
+        .renderer_uploaded_face_count = diagnostics.renderer_uploaded_face_count,
+        .prepared_draw_index_publish_count = diagnostics.prepared_draw_index_publish_count,
+        .render_thread_draw_index_build_count = diagnostics.render_thread_draw_index_build_count,
+        .scene_handoff_duration_ns = positiveNanoseconds(diagnostics.scene_handoff_duration),
+        .source_refresh_duration_ns = positiveNanoseconds(diagnostics.source_refresh_duration),
+        .source_validation_duration_ns = positiveNanoseconds(diagnostics.source_validation_duration),
+        .discovery_capture_duration_ns = positiveNanoseconds(diagnostics.discovery_capture_duration),
+        .dispatch_preparation_duration_ns = positiveNanoseconds(diagnostics.dispatch_preparation_duration),
+        .source_refresh_count = diagnostics.source_refresh_count,
+        .source_validation_count = diagnostics.source_validation_count,
+        .validated_column_count = diagnostics.validated_column_count,
+        .stale_column_count = diagnostics.stale_column_count,
+        .completed_job_count = diagnostics.completed_job_count,
+        .edit_lane_call_count = diagnostics.edit_lane_call_count,
+        .pending_validation_count = diagnostics.pending_validation_count,
+        .pending_actual_column_count = diagnostics.pending_actual_column_count,
+        .pending_chunk_source_count = diagnostics.pending_chunk_source_count,
+        .pending_authority_source_count = diagnostics.pending_authority_source_count,
+        .source_rejection_count = diagnostics.source_rejection_count,
+        .plan_rejection_count = diagnostics.plan_rejection_count,
+        .scene_handoff_attempt_count = diagnostics.scene_handoff_attempt_count,
+        .scene_handoff_complete_count = diagnostics.scene_handoff_complete_count,
+        .discovery_capture_attempt_count = diagnostics.discovery_capture_attempt_count,
+        .discovery_capture_success_count = diagnostics.discovery_capture_success_count,
+        .dispatch_count = diagnostics.dispatch_count,
+        .dispatch_column_count = diagnostics.dispatch_column_count,
+    };
+}
+
 bool isX30MovementInput(shared::Direction const& direction) noexcept
 {
     return direction.accelerated && direction.speedup == 30U
@@ -3970,6 +4030,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                         runtime.diagnostic_terrain_occlusion_removed_range_count,
                     .diagnostic_terrain_occlusion_removed_command_count =
                         runtime.diagnostic_terrain_occlusion_removed_command_count,
+                    .diagnostic_terrain_lod_update = gameBenchmarkTerrainLodUpdateSample(
+                        client_render.terrain_lod_update
+                    ),
                 };
             });
             if (record_raw_frame) {

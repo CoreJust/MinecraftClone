@@ -177,6 +177,7 @@ struct PlayerClientRenderDiagnostics final {
     std::chrono::nanoseconds after_resize_map_block_duration{ 0 };
     std::chrono::nanoseconds after_resize_terrain_lod_duration{ 0 };
     std::chrono::nanoseconds after_resize_post_lod_duration{ 0 };
+    TerrainLodUpdateDiagnostics terrain_lod_update;
     std::chrono::nanoseconds renderer_call_duration{ 0 };
     std::chrono::nanoseconds after_renderer_duration{ 0 };
 };
@@ -759,7 +760,7 @@ private:
     bool m_last_presentation_succeeded = false;
     core::platform::glfw::GlfwWindow m_window;
     InstalledShaderAssets m_shader_assets;
-    void updateTerrainLod(std::chrono::steady_clock::time_point deadline);
+    void updateTerrainLod(std::chrono::steady_clock::time_point deadline, bool collect_diagnostics);
     VulkanRenderer m_renderer;
     TerrainLodRuntime m_terrain_lod;
     std::vector<PlayerRenderData> m_render_data;

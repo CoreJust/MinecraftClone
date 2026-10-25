@@ -1,5 +1,6 @@
 #include <client/TerrainLodPresentation.hpp>
 #include <client/render/StoneIndirectDraws.hpp>
+#include <client/render/TerrainLodDrawIndex.hpp>
 #include <client/render/TerrainLodUploadPlan.hpp>
 
 #include <gtest/gtest.h>
@@ -141,6 +142,9 @@ TEST(TerrainLodUploadPlanTest, ExactReplacementPublishesCurrentDependencyProvena
     client::TerrainLodScene active;
     active.faces.resize(1U);
     active.groups = {{.range = {0U, 1U}, .extent = 16U}};
+    auto active_draw_index = std::make_shared<client::TerrainLodDrawIndex>();
+    active_draw_index->reset(active.groups);
+    active.draw_index = std::move(active_draw_index);
     client::TerrainLodChunkSource const old_chunk{{0, 0, 0}, {10U, 20U}, 0U};
     client::TerrainLodChunkSource const updated_chunk{{0, 0, 0}, {11U, 21U}, 1U};
     client::TerrainLodChunkSource const introduced_chunk{{2, 0, 9}, {12U, 22U}, 3U};
@@ -165,6 +169,7 @@ TEST(TerrainLodUploadPlanTest, ExactReplacementPublishesCurrentDependencyProvena
     std::array const ranges{client::StoneIndirectDraws::Range{100U, 1U}};
     auto const plan = client::detail::terrainLodReplacementPlan(active, ranges, patch);
     ASSERT_NE(plan.scene, nullptr);
+    EXPECT_EQ(plan.scene->draw_index, nullptr);
     EXPECT_EQ(plan.scene->chunk_sources,
         (std::vector<client::TerrainLodChunkSource>{updated_chunk, introduced_chunk, unrelated_chunk}));
     EXPECT_EQ(plan.scene->authority_sources,

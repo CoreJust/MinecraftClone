@@ -5513,12 +5513,17 @@ void PlayerClient::servicePlatformEvents() {
     }
 }
 
-void PlayerClient::updateTerrainLod(std::chrono::steady_clock::time_point const deadline)
+void PlayerClient::updateTerrainLod(
+    std::chrono::steady_clock::time_point const deadline,
+    bool const collect_diagnostics)
 {
     m_terrain_lod.update(
         terrainLodWorld(), authoritativeWorld(), predictedLocalPlayer(), m_renderer, deadline,
-        activeTerrainSession(), activeCoverageEpoch()
+        activeTerrainSession(), activeCoverageEpoch(), collect_diagnostics
     );
+    if (collect_diagnostics) {
+        m_render_diagnostics.terrain_lod_update = m_terrain_lod.lastUpdateDiagnostics();
+    }
 }
 
 void PlayerClient::render() {
@@ -5980,7 +5985,7 @@ void PlayerClient::render() {
             std::chrono::duration_cast<std::chrono::nanoseconds>(map_block_completed_at - map_block_started_at);
     }
     std::chrono::steady_clock::time_point const terrain_lod_started_at = map_block_completed_at;
-    updateTerrainLod(presentation_deadline);
+    updateTerrainLod(presentation_deadline, capture_render_diagnostics);
     std::chrono::steady_clock::time_point const terrain_lod_completed_at =
         capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     if (capture_render_diagnostics) {
