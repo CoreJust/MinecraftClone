@@ -1347,18 +1347,31 @@ TEST(PlayerClientFocusTest, WorldMapScrollCallbackZoomsOnlyWhileTheMapOwnsInput)
     ASSERT_NE(callback, nullptr);
     glfwSetScrollCallback(window, callback);
     client::PlayerClientFocusTestAccess::setWorldMapOpen(player_client, true);
+    auto const scroll = [&](double const delta) {
+        callback(window, 0.0, delta);
+        client::PlayerClientFocusTestAccess::servicePlatformEvents(player_client);
+    };
     double const before = client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom;
-    callback(window, 0.0, 1.0);
-    client::PlayerClientFocusTestAccess::servicePlatformEvents(player_client);
+    scroll(1.0);
     double const enlarged = client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom;
     EXPECT_GT(enlarged, before);
-    callback(window, 0.0, -1.0);
-    client::PlayerClientFocusTestAccess::servicePlatformEvents(player_client);
+    scroll(-1.0);
     EXPECT_LT(client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom, enlarged);
+    int framebuffer_width = 0;
+    int framebuffer_height = 0;
+    glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
+    float const minimum_zoom = client::minimumS2WorldMapZoom(
+        static_cast<uint32_t>(framebuffer_width), static_cast<uint32_t>(framebuffer_height));
+    for (uint32_t index = 0U; index < 20U; ++index) {
+        scroll(-1.0);
+    }
+    EXPECT_NEAR(client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom, minimum_zoom, 1.0e-6);
+    scroll(1.0);
+    double const at_wider_zoom = client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom;
+    EXPECT_GT(at_wider_zoom, minimum_zoom);
     client::PlayerClientFocusTestAccess::setWorldMapOpen(player_client, false);
-    callback(window, 0.0, 1.0);
-    client::PlayerClientFocusTestAccess::servicePlatformEvents(player_client);
-    EXPECT_EQ(client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom, before);
+    scroll(1.0);
+    EXPECT_EQ(client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom, at_wider_zoom);
 }
 
 TEST(PlayerClientFocusTest, HoldingEitherAltReleasesTheCursorAndBlocksGameplay)
@@ -2166,7 +2179,10 @@ TEST(PlayerClientFocusTest, ActualStartupCapturesLoadingReadyGameAndWorldMapAtTw
                 server_failed.store(true);
             }
         }};
-        enum class View { Generation, Ready, Game, AdaptiveGame, WorldMap, MaximizedGame, Complete };
+        enum class View {
+            Generation, Ready, Game, AdaptiveGame, WorldMapBeforeVectors, WorldMapWithVectors,
+            WorldMapFit, MaximizedGame, Complete,
+        };
         View wanted = View::Generation;
         std::optional<View> pending;
         bool start_sent = false;
@@ -2239,7 +2255,8 @@ TEST(PlayerClientFocusTest, ActualStartupCapturesLoadingReadyGameAndWorldMapAtTw
                 return (view == View::Generation && generating) || (view == View::Ready && ready)
                     || ((view == View::Game || view == View::AdaptiveGame) && game
                         && glfwGetWindowAttrib(window, GLFW_MAXIMIZED) == GLFW_FALSE)
-                    || (view == View::WorldMap && map)
+                    || ((view == View::WorldMapBeforeVectors || view == View::WorldMapWithVectors
+                            || view == View::WorldMapFit) && map)
                     || (view == View::MaximizedGame && maximized_game);
             };
             if (auto frame = client::PlayerClientFocusTestAccess::takeFrameCapture(player_client); frame) {
@@ -2265,10 +2282,35 @@ TEST(PlayerClientFocusTest, ActualStartupCapturesLoadingReadyGameAndWorldMapAtTw
                             << "\"synthetic_test_input\":true}\n";
                         client::PlayerClientFocusTestAccess::openWorldMap(player_client);
                         events << "{\"input\":\"setWorldMapOpen\",\"synthetic_test_input\":true}\n";
-                        wanted = View::WorldMap;
+                        wanted = View::WorldMapBeforeVectors;
                         break;
-                    case View::WorldMap:
-                        save("world-map", *frame);
+                    case View::WorldMapBeforeVectors: {
+                        save("world-map-before-vectors", *frame);
+                        std::array const vector_layers{
+                            GLFW_KEY_P, GLFW_KEY_C, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_W,
+                        };
+                        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(
+                            player_client, vector_layers));
+                        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(
+                            player_client, {}));
+                        events << "{\"input\":\"enable_plates_wind_currents\","
+                            << "\"synthetic_test_input\":true}\n";
+                        wanted = View::WorldMapWithVectors;
+                        break;
+                    }
+                    case View::WorldMapWithVectors: {
+                        save("world-map-arrows", *frame);
+                        std::array const overview_key{GLFW_KEY_0};
+                        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(
+                            player_client, overview_key));
+                        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(
+                            player_client, {}));
+                        events << "{\"input\":\"world_map_overview\",\"synthetic_test_input\":true}\n";
+                        wanted = View::WorldMapFit;
+                        break;
+                    }
+                    case View::WorldMapFit:
+                        save("world-map-fit", *frame);
                         finish_world_map_capture();
                         break;
                     case View::MaximizedGame:

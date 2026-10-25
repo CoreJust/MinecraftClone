@@ -398,7 +398,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "d4fc26910cd5df00fae8a7193d7c22de029a49495dd01d2138f2b7b429f58dae"
+      "sources_sha256": "42e8766539330c27e479df6fd2c00bc24e504dab53df544a19fe8a3a4cc94a65"
     },
     {
       "guide": "docs/code/GENERATION.md",
@@ -1015,7 +1015,7 @@
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "b43654e33b1941e74cb292c4f31c1f61102b109c21267f2d91382c7409b6f9b5",
+      "guide_sha256": "16dd60311249cbe3d0ea958fed30bf75cab2b6f5f46c7cf4057bb8129cf7d00c",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -1139,7 +1139,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "21b52102cb3c922f84b2e5fc19531490770b4e68ab827d979672f331251e8724"
+      "sources_sha256": "ba6bf73d9d789abfc9f0202483a7ca62858a04bcd6adc5a49db976fc7de2cbe4"
     }
   ],
   "version": 1

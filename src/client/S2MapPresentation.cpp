@@ -349,14 +349,20 @@ void setPixel(S2MapImage& image, int32_t const x, int32_t const y, Color const c
 std::vector<AxisSegment> splitAxis(float start, float extent)
 {
     std::vector<AxisSegment> result;
+    float remaining = extent;
+    float destination_start = 0.0F;
     start = static_cast<float>(wrapUnit(start));
-    float const first_extent = std::min(extent, 1.0F - start);
-    result.push_back({.source_start = start, .source_extent = first_extent,
-        .destination_fraction = 0.0F, .destination_extent = first_extent / extent});
-    float const remainder = extent - first_extent;
-    if (remainder > 1.0e-6F) {
-        result.push_back({.source_start = 0.0F, .source_extent = remainder,
-            .destination_fraction = first_extent / extent, .destination_extent = remainder / extent});
+    while (remaining > 1.0e-6F && result.size() < S2_WORLD_MAP_MAXIMUM_DRAWS) {
+        float const segment_extent = std::min(remaining, 1.0F - start);
+        result.push_back({
+            .source_start = start,
+            .source_extent = segment_extent,
+            .destination_fraction = destination_start / extent,
+            .destination_extent = segment_extent / extent,
+        });
+        remaining -= segment_extent;
+        destination_start += segment_extent;
+        start = 0.0F;
     }
     return result;
 }
@@ -677,8 +683,11 @@ bool appendScreenArrow(
     float const direction_x,
     float const direction_y,
     float const length,
+    float const shaft_width,
     Color const color,
     bool const double_head,
+    bool const animate_flow,
+    float const flow_phase,
     ScreenRect const& viewport,
     std::span<ScreenRect const> const excluded_rectangles
 )
@@ -705,6 +714,9 @@ bool appendScreenArrow(
 
     ScreenPoint const direction{direction_x / magnitude, direction_y / magnitude};
     ScreenPoint const perpendicular{-direction[1U], direction[0U]};
+    float const head_length = length * 0.34F;
+    float const head_half_width = length * 0.20F;
+    float const double_head_offset = head_length * 0.85F;
     ScreenPoint const start = offsetPoint(center, direction, -length * 0.5F);
     ScreenPoint const end = offsetPoint(center, direction, length * 0.5F);
     std::array<ScreenPoint, 8U> bounds_points{};
@@ -713,13 +725,13 @@ bool appendScreenArrow(
     bounds_points[bounds_point_count++] = end;
     size_t const head_count = double_head ? 2U : 1U;
     for (size_t head = 0U; head < head_count; ++head) {
-        float const offset = head == 0U ? 0.0F : 4.0F;
+        float const offset = head == 0U ? 0.0F : double_head_offset;
         ScreenPoint const tip = offsetPoint(end, direction, -offset);
         bounds_points[bounds_point_count++] = tip;
         bounds_points[bounds_point_count++] = offsetPoint(
-            offsetPoint(tip, direction, -4.0F), perpendicular, -3.0F);
+            offsetPoint(tip, direction, -head_length), perpendicular, -head_half_width);
         bounds_points[bounds_point_count++] = offsetPoint(
-            offsetPoint(tip, direction, -4.0F), perpendicular, 3.0F);
+            offsetPoint(tip, direction, -head_length), perpendicular, head_half_width);
     }
     float left = bounds_points[0U][0U];
     float right = left;
@@ -731,8 +743,8 @@ bool appendScreenArrow(
         top = std::min(top, bounds_points[index][1U]);
         bottom = std::max(bottom, bounds_points[index][1U]);
     }
-    constexpr float EDGE_MARGIN = 2.25F;
-    ScreenRect const bounds{left - EDGE_MARGIN, top - EDGE_MARGIN, right + EDGE_MARGIN, bottom + EDGE_MARGIN};
+    float const edge_margin = shaft_width * 0.5F + 1.25F;
+    ScreenRect const bounds{left - edge_margin, top - edge_margin, right + edge_margin, bottom + edge_margin};
     if (!contains(viewport, bounds)
         || std::any_of(excluded_rectangles.begin(), excluded_rectangles.end(), [&](ScreenRect const& rect) {
             return intersects(bounds, rect);
@@ -741,21 +753,34 @@ bool appendScreenArrow(
     }
 
     size_t const stroke_count = 3U + (double_head ? 2U : 0U);
-    size_t const required_vertices = stroke_count * 2U * 18U;
+    size_t const flow_marker_vertices = animate_flow ? 6U : 0U;
+    size_t const required_vertices = stroke_count * 2U * 18U + flow_marker_vertices;
     if (output.size() + required_vertices > MAX_GUI_TRIANGLE_VERTICES) {
         return false;
     }
     auto stroke = [&](ScreenPoint const from, ScreenPoint const to) {
-        static_cast<void>(emitStroke(output, from, to, 3.5F, outline));
-        static_cast<void>(emitStroke(output, from, to, 1.5F, foreground));
+        static_cast<void>(emitStroke(output, from, to, shaft_width + 2.0F, outline));
+        static_cast<void>(emitStroke(output, from, to, shaft_width, foreground));
     };
     stroke(start, end);
     for (size_t head = 0U; head < head_count; ++head) {
-        float const offset = head == 0U ? 0.0F : 4.0F;
+        float const offset = head == 0U ? 0.0F : double_head_offset;
         ScreenPoint const tip = offsetPoint(end, direction, -offset);
-        ScreenPoint const wing_base = offsetPoint(tip, direction, -4.0F);
-        stroke(tip, offsetPoint(wing_base, perpendicular, -3.0F));
-        stroke(tip, offsetPoint(wing_base, perpendicular, 3.0F));
+        ScreenPoint const wing_base = offsetPoint(tip, direction, -head_length);
+        stroke(tip, offsetPoint(wing_base, perpendicular, -head_half_width));
+        stroke(tip, offsetPoint(wing_base, perpendicular, head_half_width));
+    }
+    if (animate_flow) {
+        float const phase = static_cast<float>(wrapUnit(flow_phase));
+        ScreenPoint const pulse = offsetPoint(start, direction, length * 0.76F * phase);
+        float const along = length * 0.045F;
+        float const across = shaft_width * 0.9F;
+        emitSolidQuad(output,
+            offsetPoint(pulse, direction, -along),
+            offsetPoint(pulse, perpendicular, across),
+            offsetPoint(pulse, direction, along),
+            offsetPoint(pulse, perpendicular, -across),
+            pixelColor({255.0F, 239.0F, 190.0F}));
     }
     return true;
 }
@@ -1024,7 +1049,8 @@ void appendWorldMapVectors(
     uint32_t const height,
     float const dpi_scale,
     TextRenderer& text,
-    std::vector<GuiVectorVertex>& output
+    std::vector<GuiVectorVertex>& output,
+    float const flow_phase
 )
 {
     bool const v9 = atlas.configuration.model_tag == generation::TerrainModelTag::V9;
@@ -1071,18 +1097,42 @@ void appendWorldMapVectors(
     float const logical_width = static_cast<float>(width) / dpi_scale;
     float const logical_height = static_cast<float>(height) / dpi_scale;
     bool const compact = logical_height < 500.0F || logical_width < 1'080.0F;
+    float const minimum_zoom = minimumS2WorldMapZoom(width, height);
+    float const zoom = std::clamp(
+        static_cast<float>(std::isfinite(state.zoom) ? state.zoom : 1.0), minimum_zoom, 6.0F);
     float const tile_size = state.overview
         ? std::min(logical_width, logical_height)
-        : std::max(logical_width, logical_height) * static_cast<float>(std::clamp(state.zoom, 1.0, 6.0));
+        : std::max(logical_width, logical_height) * zoom;
     uint32_t step = std::max(3U, static_cast<uint32_t>(std::lround(
         static_cast<float>(resolution) * (compact ? 41.0F : 53.0F) / tile_size)));
-    size_t const vertices_per_sample = (show_wind ? 108U : 0U) + (show_currents ? 180U : 0U);
     size_t const plate_vertex_reserve = show_plates
         ? std::min(image.plate_motions.size() * 108U, size_t{8'192U})
         : 0U;
-    while (vertices_per_sample != 0U) {
-        size_t const sample_axis = (resolution + step - 1U) / step;
-        size_t const estimated_vertices = sample_axis * sample_axis * vertices_per_sample;
+    auto visible_sample_count = [&](uint32_t const candidate_step, float const offset) {
+        size_t total = 0U;
+        for (uint32_t draw_index = 0U; draw_index < map_layout.world_draw_count; ++draw_index) {
+            MapImageDraw const& draw = map_layout.world_draws[draw_index];
+            if (!validMapImageDraw(draw) || draw.image != 0U) {
+                continue;
+            }
+            GridSampleRange const x_range = mapGridSampleRange(
+                draw.source[0U], draw.source[2U], resolution, candidate_step, offset);
+            GridSampleRange const y_range = mapGridSampleRange(
+                draw.source[1U], draw.source[3U], resolution, candidate_step, offset);
+            size_t const x_count = x_range.end > x_range.first
+                ? (x_range.end - x_range.first + candidate_step - 1U) / candidate_step
+                : 0U;
+            size_t const y_count = y_range.end > y_range.first
+                ? (y_range.end - y_range.first + candidate_step - 1U) / candidate_step
+                : 0U;
+            total += x_count * y_count;
+        }
+        return total;
+    };
+    while (show_wind || show_currents) {
+        size_t const wind_vertices = show_wind ? visible_sample_count(step, 0.25F) * 114U : 0U;
+        size_t const current_vertices = show_currents ? visible_sample_count(step, 0.70F) * 186U : 0U;
+        size_t const estimated_vertices = wind_vertices + current_vertices;
         if (estimated_vertices + plate_vertex_reserve <= MAX_GUI_TRIANGLE_VERTICES || step >= resolution) {
             break;
         }
@@ -1096,9 +1146,11 @@ void appendWorldMapVectors(
                 size_t const index = static_cast<size_t>(y) * resolution + x;
                 float const u = v9 ? image.v9_wind_u_m_s[index] : atlas.wind_u[index];
                 float const v = v9 ? image.v9_wind_v_m_s[index] : atlas.wind_v[index];
+                float const sample_offset = static_cast<float>((x * 37U + y * 19U) % 101U) / 101.0F;
+                float const phase = static_cast<float>(wrapUnit(flow_phase + sample_offset));
                 static_cast<void>(appendScreenArrow(output, screen,
-                    u, v, (compact ? 13.0F : 18.0F) * dpi_scale,
-                    WIND_COLOR, false, viewport, excluded_rectangles));
+                    u, v, (compact ? 18.0F : 24.0F) * dpi_scale, (compact ? 2.4F : 2.8F) * dpi_scale,
+                    WIND_COLOR, false, true, phase, viewport, excluded_rectangles));
             });
     }
     if (show_currents) {
@@ -1112,9 +1164,11 @@ void appendWorldMapVectors(
                 }
                 float const u = v9 ? image.v9_ocean_u_m_s[index] : atlas.current_u[index];
                 float const v = v9 ? image.v9_ocean_v_m_s[index] : atlas.current_v[index];
+                float const sample_offset = static_cast<float>((x * 23U + y * 41U + 29U) % 101U) / 101.0F;
+                float const phase = static_cast<float>(wrapUnit(flow_phase + sample_offset));
                 static_cast<void>(appendScreenArrow(output, screen,
-                    u, v, (compact ? 13.0F : 18.0F) * dpi_scale,
-                    CURRENT_COLOR, true, viewport, excluded_rectangles));
+                    u, v, (compact ? 18.0F : 24.0F) * dpi_scale, (compact ? 2.4F : 2.8F) * dpi_scale,
+                    CURRENT_COLOR, true, true, phase, viewport, excluded_rectangles));
             });
     }
 
@@ -1128,9 +1182,10 @@ void appendWorldMapVectors(
             continue;
         }
         ScreenPoint const center{screen[0U], screen[1U] - 10.0F * dpi_scale};
-        float const length = (compact ? 17.0F : 24.0F) * dpi_scale;
+        float const length = (compact ? 24.0F : 32.0F) * dpi_scale;
         static_cast<void>(appendScreenArrow(output, center, plate.vector_x, plate.vector_y, length,
-            PLATE_COLOR, false, viewport, excluded_rectangles));
+            (compact ? 2.8F : 3.2F) * dpi_scale, PLATE_COLOR, false, false, 0.0F,
+            viewport, excluded_rectangles));
 
         std::string const label = "P" + std::to_string(plate.id);
         ScreenRect const label_bounds{
@@ -1888,6 +1943,14 @@ void appendS2MinimapPointerTriangles(
         vector_triangles, {marker.x, marker.y}, marker.heading_degrees, reach, bounds));
 }
 
+float minimumS2WorldMapZoom(uint32_t const width, uint32_t const height) noexcept
+{
+    if (width == 0U || height == 0U) {
+        return 1.0F;
+    }
+    return static_cast<float>(std::min(width, height)) / static_cast<float>(std::max(width, height));
+}
+
 S2MapLayout layoutS2Map(
     S2WorldMapState const& state,
     uint32_t const width,
@@ -1902,19 +1965,11 @@ S2MapLayout layoutS2Map(
         return result;
     }
     if (map_open) {
-        if (state.overview) {
-            float const side = static_cast<float>(std::min(width, height));
-            result.world_draws[0] = {
-                .image = 0U,
-                .source = {0.0F, 0.0F, 1.0F, 1.0F},
-                .destination = {(static_cast<float>(width) - side) * 0.5F,
-                    (static_cast<float>(height) - side) * 0.5F, side, side},
-            };
-            result.world_draw_count = 1U;
-            return result;
-        }
-        float const side = static_cast<float>(std::max(width, height))
-            * static_cast<float>(std::clamp(state.zoom, 1.0, 6.0));
+        float const minimum_zoom = minimumS2WorldMapZoom(width, height);
+        float const zoom = state.overview
+            ? minimum_zoom
+            : std::clamp(static_cast<float>(std::isfinite(state.zoom) ? state.zoom : 1.0), minimum_zoom, 6.0F);
+        float const side = static_cast<float>(std::max(width, height)) * zoom;
         float const source_width = static_cast<float>(width) / side;
         float const source_height = static_cast<float>(height) / side;
         auto const x_segments = splitAxis(
@@ -1971,7 +2026,8 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
     uint32_t const height,
     float const requested_dpi_scale,
     TextRenderer& output,
-    std::vector<GuiVectorVertex>& vector_triangles
+    std::vector<GuiVectorVertex>& vector_triangles,
+    float const flow_phase
 )
 {
     output.clear();
@@ -2048,9 +2104,12 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
             static_cast<float>(height) / dpi_scale * 0.5F);
     }
 
+    float const minimum_zoom = minimumS2WorldMapZoom(width, height);
+    float const zoom = std::clamp(
+        static_cast<float>(std::isfinite(state.zoom) ? state.zoom : 1.0), minimum_zoom, 6.0F);
     std::string view = state.overview
         ? "Whole world"
-        : fixedText(static_cast<float>(std::clamp(state.zoom, 1.0, 6.0)), 2) + "x / Player view";
+        : fixedText(zoom, 2) + "x / Player view";
     std::string header = "MAP N^ / " + view;
     if (heat_count > 0U) {
         header += " / Opaque field";
@@ -2340,7 +2399,7 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
     }
     if (image && atlas && sample_source_matches) {
         appendWorldMapVectors(state, *image, *atlas, map_layout, layout,
-            width, height, dpi_scale, output, vector_triangles);
+            width, height, dpi_scale, output, vector_triangles, flow_phase);
     }
     return layout;
 }
@@ -2479,9 +2538,12 @@ bool applyS2WorldMapAction(
     S2WorldMapAction const action,
     double const player_x,
     double const player_y,
-    bool const fast_pan
+    bool const fast_pan,
+    uint32_t const viewport_width,
+    uint32_t const viewport_height
 ) noexcept
 {
+    float const minimum_zoom = minimumS2WorldMapZoom(viewport_width, viewport_height);
     switch (action) {
     case S2WorldMapAction::TogglePlates:
     case S2WorldMapAction::ToggleHeights:
@@ -2499,7 +2561,8 @@ bool applyS2WorldMapAction(
     case S2WorldMapAction::PanRight:
     case S2WorldMapAction::PanUp:
     case S2WorldMapAction::PanDown: {
-        double const step = (fast_pan ? 0.018 : 0.006) / std::clamp(state.zoom, 1.0, 6.0) * WORLD_SIZE;
+        double const step = (fast_pan ? 0.018 : 0.006)
+            / std::clamp(state.zoom, static_cast<double>(minimum_zoom), 6.0) * WORLD_SIZE;
         if (action == S2WorldMapAction::PanLeft) state.center_x -= step;
         if (action == S2WorldMapAction::PanRight) state.center_x += step;
         if (action == S2WorldMapAction::PanUp) state.center_y -= step;
@@ -2510,16 +2573,16 @@ bool applyS2WorldMapAction(
         return true;
     }
     case S2WorldMapAction::ZoomIn:
-        state.zoom = std::min(6.0, std::max(1.0, state.zoom) + 0.25);
+        state.zoom = std::min(6.0, std::max(static_cast<double>(minimum_zoom), state.zoom) + 0.25);
         state.overview = false;
         return true;
     case S2WorldMapAction::ZoomOut:
-        state.zoom = std::max(1.0, std::min(6.0, state.zoom) - 0.25);
+        state.zoom = std::max(static_cast<double>(minimum_zoom), std::min(6.0, state.zoom) - 0.25);
         state.overview = false;
         return true;
     case S2WorldMapAction::Overview:
         state.overview = true;
-        state.zoom = 1.0;
+        state.zoom = minimum_zoom;
         state.center_x = WORLD_SIZE * 0.5;
         state.center_y = WORLD_SIZE * 0.5;
         return true;

@@ -65,17 +65,20 @@ path; do not conceal that work behind the prototype.
    actions: “Selected block: Grass”, “B Change block”, effective/selected speed
    and collision bypass. Reflow crowded groups; do not silently shrink entire
    rows. No field disappears merely to reduce clutter.
-   The local map uses the game's material palette and strong outlined N/E/S/W
-   plus heading. The [map note](earlydev_0_1_1_s2_maps.md) owns L1/L2 coverage.
+   Local map: game materials; outlined N/E/S/W; +Y up, 0° north/+90° east;
+   raster/markers/pointer align. The map note owns L1/L2 coverage.
 
-4. **World map.** A full-viewport map with compact text legends, plain title, position/heading,
-   cardinal glyphs and text hints. Proposed controls: `M`/`Esc` closes, arrows
-   pan, `+/-` zoom, `R` resets, `0` shows the whole world and `L` expands
-   legends; the map note owns separate layer keys and heatmaps. Ignore modified browser shortcuts and repeated toggle presses.
-   Exclusive map input cannot move/edit/change
-   mode while multiplayer continues. Android uses map gestures/back navigation;
-   entry and pointer ownership follow the native architecture; device proof remains open.
-
+4. **World map.** A full-viewport map with compact legends, plain title, position/heading,
+   cardinal glyphs and text hints. `M`/`Esc` closes; arrows pan; `+/-` zoom; `R` resets;
+   `0` fits one complete world period at isotropic
+   `min(width,height)/max(width,height)` zoom. Pan, drag, wheel and zoom
+   share that floor; wrapped raster splits cap at 32 draws. Plate/wind/current use
+   screen-space vector overlays; flow phase updates bounded glyph geometry, not source
+   raster. `L` expands legends; the map note owns layer keys and heatmaps. Ignore
+   modified browser shortcuts and repeated toggle presses. Exclusive map input cannot
+   move/edit/change mode while multiplayer continues. Android uses map gestures/back
+   navigation; entry and pointer ownership follow native architecture; device proof
+   remains open.
 ## Telemetry and visual ownership
 
 Build one immutable UI snapshot outside rendering. Keep completed-frame FPS

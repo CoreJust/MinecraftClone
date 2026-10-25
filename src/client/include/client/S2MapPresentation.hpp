@@ -36,6 +36,7 @@ enum class S2WorldMapLayer : uint8_t {
 };
 
 inline constexpr uint32_t S2_WORLD_MAP_LAYER_COUNT = 8U;
+inline constexpr uint32_t S2_WORLD_MAP_MAXIMUM_DRAWS = 32U;
 inline constexpr uint32_t S2_WORLD_MAP_IMAGE_SIDE = 512U;
 inline constexpr uint32_t S2_MINIMAP_IMAGE_SIDE = 256U;
 inline constexpr uint32_t S2_MINIMAP_WORLD_EXTENT = 16'384U;
@@ -116,7 +117,7 @@ enum class S2WorldMapAction : uint8_t {
 };
 
 struct S2MapLayout final {
-    std::array<MapImageDraw, 4U> world_draws{};
+    std::array<MapImageDraw, S2_WORLD_MAP_MAXIMUM_DRAWS> world_draws{};
     uint32_t world_draw_count = 0U;
     MapImageDraw minimap_draw{};
     std::array<float, 4U> minimap_bounds{};
@@ -213,7 +214,8 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
     uint32_t height,
     float dpi_scale,
     TextRenderer& output,
-    std::vector<GuiVectorVertex>& vector_triangles
+    std::vector<GuiVectorVertex>& vector_triangles,
+    float flow_phase = 0.0F
 );
 
 void appendS2MinimapPointerTriangles(
@@ -233,12 +235,17 @@ std::optional<S2MapImage> composeS2WorldMapView(
 );
 
 [[nodiscard]]
+float minimumS2WorldMapZoom(uint32_t width, uint32_t height) noexcept;
+
+[[nodiscard]]
 bool applyS2WorldMapAction(
     S2WorldMapState& state,
     S2WorldMapAction action,
     double player_x,
     double player_y,
-    bool fast_pan = false
+    bool fast_pan,
+    uint32_t viewport_width,
+    uint32_t viewport_height
 ) noexcept;
 
 } // namespace client

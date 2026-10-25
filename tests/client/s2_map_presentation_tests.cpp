@@ -15,11 +15,13 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <span>
 #include <stop_token>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -438,11 +440,28 @@ TEST(S2MapPresentationTest, WindAndCurrentArrowsAreScreenOverlaysNotRasterPixels
     std::vector<client::GuiVectorVertex> triangles;
     auto const overlay = client::buildS2WorldMapOverlay(
         raster_state, &*vector_layers, world.get(), 32'768.0, 32'768.0,
-        1'280U, 676U, 1.0F, labels, triangles);
+        1'280U, 676U, 1.0F, labels, triangles, 0.0F);
 
     ASSERT_FALSE(triangles.empty());
     ASSERT_EQ(triangles.size() % 3U, 0U);
     EXPECT_LE(triangles.size(), client::MAXIMUM_GUI_VECTOR_VERTICES - 1U);
+    std::vector<client::GuiVectorVertex> later_frame;
+    static_cast<void>(client::buildS2WorldMapOverlay(
+        raster_state, &*vector_layers, world.get(), 32'768.0, 32'768.0,
+        1'280U, 676U, 1.0F, labels, later_frame, 0.5F));
+    ASSERT_EQ(later_frame.size(), triangles.size());
+    std::array<uint8_t, 4U> const pulse_color{255U, 239U, 190U, 255U};
+    size_t pulse_vertices = 0U;
+    for (size_t index = 0U; index < triangles.size(); ++index) {
+        if (triangles[index].rgba == pulse_color) {
+            ++pulse_vertices;
+            EXPECT_NE(triangles[index].position, later_frame[index].position);
+        } else {
+            EXPECT_EQ(triangles[index].position, later_frame[index].position);
+        }
+    }
+    EXPECT_GT(pulse_vertices, 0U);
+    EXPECT_EQ(vector_layers->rgba, base->rgba);
     EXPECT_TRUE(std::any_of(triangles.begin(), triangles.end(), [](auto const& vertex) {
         return vertex.rgba == (std::array<uint8_t, 4U>{99U, 219U, 212U, 255U});
     }));
@@ -485,6 +504,22 @@ TEST(S2MapPresentationTest, PlateMotionAndNamesUseTheScreenOverlayBatch)
     EXPECT_TRUE(std::any_of(labels.labels().begin(), labels.labels().end(), [](client::TextLabel const& label) {
         return label.value == "P1";
     }));
+    std::array<float, 4U> arrow_bounds{
+        std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(),
+        -std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity(),
+    };
+    std::array<uint8_t, 4U> const plate_color{213U, 164U, 237U, 255U};
+    for (client::GuiVectorVertex const& vertex : triangles) {
+        if (vertex.rgba != plate_color) {
+            continue;
+        }
+        arrow_bounds[0U] = std::min(arrow_bounds[0U], vertex.position[0U]);
+        arrow_bounds[1U] = std::min(arrow_bounds[1U], vertex.position[1U]);
+        arrow_bounds[2U] = std::max(arrow_bounds[2U], vertex.position[0U]);
+        arrow_bounds[3U] = std::max(arrow_bounds[3U], vertex.position[1U]);
+    }
+    ASSERT_TRUE(std::isfinite(arrow_bounds[0U]));
+    EXPECT_GT(std::max(arrow_bounds[2U] - arrow_bounds[0U], arrow_bounds[3U] - arrow_bounds[1U]), 29.5F);
 }
 
 TEST(S2MapPresentationTest, MinimapLocalLodStitchesAcrossBothWorldWrapSeams)
@@ -509,7 +544,7 @@ TEST(S2MapPresentationTest, MinimapLocalLodStitchesAcrossBothWorldWrapSeams)
     EXPECT_TRUE(client::rasterizeS2Minimap(*lod).has_value());
 }
 
-TEST(S2MapPresentationTest, MapLayoutWrapsTheCloseViewAndFitsOneUnrepeatedOverview)
+TEST(S2MapPresentationTest, MapLayoutWrapsCloseAndWholeWorldViewsAcrossTheFullViewport)
 {
     client::S2WorldMapState state{
         .center_x = 65'530.0,
@@ -521,10 +556,24 @@ TEST(S2MapPresentationTest, MapLayoutWrapsTheCloseViewAndFitsOneUnrepeatedOvervi
     EXPECT_LE(close.world_draw_count, close.world_draws.size());
 
     state.overview = true;
+    state.center_x = 32'768.0;
+    state.center_y = 32'768.0;
     client::S2MapLayout const overview = client::layoutS2Map(state, 1'200U, 800U, true, true);
-    EXPECT_EQ(overview.world_draw_count, 1U);
+    EXPECT_GT(overview.world_draw_count, 1U);
+    EXPECT_LE(overview.world_draw_count, overview.world_draws.size());
     EXPECT_FALSE(overview.show_minimap);
-    EXPECT_NEAR(overview.world_draws[0].destination[2], overview.world_draws[0].destination[3], 0.001F);
+    float destination_area = 0.0F;
+    float source_area = 0.0F;
+    for (uint32_t index = 0U; index < overview.world_draw_count; ++index) {
+        auto const& draw = overview.world_draws[index];
+        ASSERT_TRUE(client::validMapImageDraw(draw));
+        destination_area += draw.destination[2U] * draw.destination[3U];
+        source_area += draw.source[2U] * draw.source[3U];
+        EXPECT_NEAR(draw.destination[2U] / draw.source[2U], 800.0F, 0.001F);
+        EXPECT_NEAR(draw.destination[3U] / draw.source[3U], 800.0F, 0.001F);
+    }
+    EXPECT_NEAR(destination_area, 1'200.0F * 800.0F, 1.0F);
+    EXPECT_NEAR(source_area, 1.5F, 0.001F);
 
     client::S2MapLayout const minimap = client::layoutS2Map({}, 1'280U, 676U, false, true);
     ASSERT_TRUE(minimap.show_minimap);
@@ -537,25 +586,96 @@ TEST(S2MapPresentationTest, MapLayoutWrapsTheCloseViewAndFitsOneUnrepeatedOvervi
         (std::array<float, 4U>{2'108.0F, 88.0F, 384.0F, 384.0F}));
 }
 
-TEST(S2MapPresentationTest, FullPeriodHorizontalViewPreservesWrappedPanOffset)
+TEST(S2MapPresentationTest, ZoomOutFloorFitsOneWorldPeriodAndPreservesWrappedPan)
 {
+    EXPECT_FLOAT_EQ(client::minimumS2WorldMapZoom(1'200U, 800U), 2.0F / 3.0F);
+    EXPECT_FLOAT_EQ(client::minimumS2WorldMapZoom(800U, 1'200U), 2.0F / 3.0F);
+    EXPECT_FLOAT_EQ(client::minimumS2WorldMapZoom(900U, 900U), 1.0F);
+    EXPECT_FLOAT_EQ(client::minimumS2WorldMapZoom(0U, 900U), 1.0F);
+
     client::S2WorldMapState state{
-        .center_x = static_cast<double>(generation::WORLD_SIZE_BLOCKS) * 0.25,
-        .center_y = static_cast<double>(generation::WORLD_SIZE_BLOCKS) * 0.5,
+        .center_x = 100.0,
+        .center_y = static_cast<double>(generation::WORLD_SIZE_BLOCKS) * 0.75,
         .zoom = 1.0,
     };
+    for (uint32_t index = 0U; index < 12U; ++index) {
+        EXPECT_TRUE(client::applyS2WorldMapAction(
+            state, client::S2WorldMapAction::ZoomOut, 2'000.0, 4'000.0, false, 1'200U, 800U));
+    }
+    EXPECT_DOUBLE_EQ(state.zoom, client::minimumS2WorldMapZoom(1'200U, 800U));
 
     client::S2MapLayout const layout = client::layoutS2Map(state, 1'200U, 800U, true, false);
+    ASSERT_GT(layout.world_draw_count, 0U);
+    ASSERT_LE(layout.world_draw_count, layout.world_draws.size());
+    float destination_area = 0.0F;
+    float source_area = 0.0F;
+    for (uint32_t index = 0U; index < layout.world_draw_count; ++index) {
+        auto const& draw = layout.world_draws[index];
+        ASSERT_TRUE(client::validMapImageDraw(draw));
+        destination_area += draw.destination[2U] * draw.destination[3U];
+        source_area += draw.source[2U] * draw.source[3U];
+        EXPECT_NEAR(draw.destination[2U] / draw.source[2U], 800.0F, 0.001F);
+        EXPECT_NEAR(draw.destination[3U] / draw.source[3U], 800.0F, 0.001F);
+    }
+    EXPECT_NEAR(destination_area, 1'200.0F * 800.0F, 1.0F);
+    EXPECT_NEAR(source_area, 1.5F, 0.001F);
 
-    ASSERT_EQ(layout.world_draw_count, 2U);
-    EXPECT_FLOAT_EQ(layout.world_draws[0].source[0], 0.75F);
-    EXPECT_FLOAT_EQ(layout.world_draws[0].source[2], 0.25F);
-    EXPECT_FLOAT_EQ(layout.world_draws[0].destination[0], 0.0F);
-    EXPECT_FLOAT_EQ(layout.world_draws[0].destination[2], 300.0F);
-    EXPECT_FLOAT_EQ(layout.world_draws[1].source[0], 0.0F);
-    EXPECT_FLOAT_EQ(layout.world_draws[1].source[2], 0.75F);
-    EXPECT_FLOAT_EQ(layout.world_draws[1].destination[0], 300.0F);
-    EXPECT_FLOAT_EQ(layout.world_draws[1].destination[2], 900.0F);
+    double const previous_center = state.center_x;
+    EXPECT_TRUE(client::applyS2WorldMapAction(
+        state, client::S2WorldMapAction::PanLeft, 2'000.0, 4'000.0, true, 1'200U, 800U));
+    EXPECT_NE(state.center_x, previous_center);
+    EXPECT_GT(state.center_x, static_cast<double>(generation::WORLD_SIZE_BLOCKS) * 0.95);
+    EXPECT_GE(state.center_x, 0.0);
+    EXPECT_LT(state.center_x, generation::WORLD_SIZE_BLOCKS);
+
+    for (auto const [width, height] : {std::pair{844U, 346U}, std::pair{346U, 844U}}) {
+        client::S2WorldMapState aspect_state;
+        for (uint32_t index = 0U; index < 12U; ++index) {
+            static_cast<void>(client::applyS2WorldMapAction(
+                aspect_state, client::S2WorldMapAction::ZoomOut, 0.0, 0.0, false, width, height));
+        }
+        EXPECT_DOUBLE_EQ(aspect_state.zoom, client::minimumS2WorldMapZoom(width, height));
+        auto const aspect_layout = client::layoutS2Map(aspect_state, width, height, true, false);
+        ASSERT_GT(aspect_layout.world_draw_count, 0U);
+        ASSERT_LE(aspect_layout.world_draw_count, aspect_layout.world_draws.size());
+        float visible_area = 0.0F;
+        float source_area = 0.0F;
+        for (uint32_t index = 0U; index < aspect_layout.world_draw_count; ++index) {
+            auto const& draw = aspect_layout.world_draws[index];
+            ASSERT_TRUE(client::validMapImageDraw(draw));
+            visible_area += draw.destination[2U] * draw.destination[3U];
+            source_area += draw.source[2U] * draw.source[3U];
+            EXPECT_NEAR(draw.destination[2U] / draw.source[2U], static_cast<float>(std::min(width, height)), 0.001F);
+            EXPECT_NEAR(draw.destination[3U] / draw.source[3U], static_cast<float>(std::min(width, height)), 0.001F);
+        }
+        EXPECT_NEAR(visible_area, static_cast<float>(width) * height, 1.0F);
+        EXPECT_NEAR(source_area, static_cast<float>(std::max(width, height)) / std::min(width, height), 0.001F);
+    }
+
+    client::S2WorldMapState ultrawide_state{
+        .center_x = static_cast<double>(generation::WORLD_SIZE_BLOCKS) * 0.5,
+        .center_y = static_cast<double>(generation::WORLD_SIZE_BLOCKS) * 0.25,
+    };
+    for (uint32_t index = 0U; index < 12U; ++index) {
+        static_cast<void>(client::applyS2WorldMapAction(
+            ultrawide_state, client::S2WorldMapAction::ZoomOut, 0.0, 0.0, false, 10'000U, 1'000U));
+    }
+    auto const ultrawide_layout = client::layoutS2Map(ultrawide_state, 10'000U, 1'000U, true, false);
+    EXPECT_EQ(ultrawide_layout.world_draw_count, 22U);
+    ASSERT_GT(ultrawide_layout.world_draw_count, 16U);
+    ASSERT_LE(ultrawide_layout.world_draw_count, ultrawide_layout.world_draws.size());
+    float ultrawide_destination_area = 0.0F;
+    float ultrawide_source_area = 0.0F;
+    for (uint32_t index = 0U; index < ultrawide_layout.world_draw_count; ++index) {
+        auto const& draw = ultrawide_layout.world_draws[index];
+        ASSERT_TRUE(client::validMapImageDraw(draw));
+        ultrawide_destination_area += draw.destination[2U] * draw.destination[3U];
+        ultrawide_source_area += draw.source[2U] * draw.source[3U];
+        EXPECT_NEAR(draw.destination[2U] / draw.source[2U], 1'000.0F, 0.001F);
+        EXPECT_NEAR(draw.destination[3U] / draw.source[3U], 1'000.0F, 0.001F);
+    }
+    EXPECT_NEAR(ultrawide_destination_area, 10'000'000.0F, 1.0F);
+    EXPECT_NEAR(ultrawide_source_area, 10.0F, 0.001F);
 }
 
 TEST(S2MapPresentationTest, WorldMapViewComposesWrappedRasterAndOpaqueCanvas)
@@ -613,21 +733,21 @@ TEST(S2MapPresentationTest, LayerAndNavigationActionsAreIndependentAndBounded)
 {
     client::S2WorldMapState state;
     EXPECT_TRUE(client::applyS2WorldMapAction(
-        state, client::S2WorldMapAction::ToggleWind, 2'000.0, 4'000.0));
+        state, client::S2WorldMapAction::ToggleWind, 2'000.0, 4'000.0, false, 1'200U, 800U));
     EXPECT_TRUE(state.layers[static_cast<size_t>(client::S2WorldMapLayer::Wind)]);
     EXPECT_FALSE(state.layers[static_cast<size_t>(client::S2WorldMapLayer::Currents)]);
 
     EXPECT_TRUE(client::applyS2WorldMapAction(
-        state, client::S2WorldMapAction::PanLeft, 2'000.0, 4'000.0, true));
+        state, client::S2WorldMapAction::PanLeft, 2'000.0, 4'000.0, true, 1'200U, 800U));
     EXPECT_GE(state.center_x, 0.0);
     EXPECT_LT(state.center_x, generation::WORLD_SIZE_BLOCKS);
     EXPECT_TRUE(client::applyS2WorldMapAction(
-        state, client::S2WorldMapAction::Overview, 2'000.0, 4'000.0));
+        state, client::S2WorldMapAction::Overview, 2'000.0, 4'000.0, false, 1'200U, 800U));
     EXPECT_TRUE(state.overview);
     EXPECT_TRUE(client::applyS2WorldMapAction(
-        state, client::S2WorldMapAction::ZoomIn, 2'000.0, 4'000.0));
+        state, client::S2WorldMapAction::ZoomIn, 2'000.0, 4'000.0, false, 1'200U, 800U));
     EXPECT_FALSE(state.overview);
-    EXPECT_GT(state.zoom, 1.0);
+    EXPECT_GT(state.zoom, client::minimumS2WorldMapZoom(1'200U, 800U));
 }
 TEST(S2MapPresentationTest, CancelledMinimapRequestReturnsNoResultToWorker)
 {

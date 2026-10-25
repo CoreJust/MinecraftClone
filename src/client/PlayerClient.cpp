@@ -4205,8 +4205,13 @@ bool PlayerClient::updatePlatformInputSnapshot(
             return new_input_edge;
         }
 
-        auto const apply_action = [this, player_x, player_y](S2WorldMapAction const action, bool const fast = false) {
-            if (applyS2WorldMapAction(m_s2_world_map_state, action, player_x, player_y, fast)
+        uint32_t viewport_width = 0U;
+        uint32_t viewport_height = 0U;
+        m_window.framebufferSize(viewport_width, viewport_height);
+        auto const apply_action = [this, player_x, player_y, viewport_width, viewport_height](
+            S2WorldMapAction const action, bool const fast = false) {
+            if (applyS2WorldMapAction(
+                    m_s2_world_map_state, action, player_x, player_y, fast, viewport_width, viewport_height)
                 && static_cast<uint8_t>(action) < static_cast<uint8_t>(S2WorldMapAction::PanLeft)) {
                 m_s2_world_map_dirty = true;
             }
@@ -4243,7 +4248,9 @@ bool PlayerClient::updatePlatformInputSnapshot(
             apply_action(S2WorldMapAction::PanRight, fast);
         }
         if (std::isfinite(scroll_delta) && scroll_delta != 0.0) {
-            m_s2_world_map_state.zoom = std::clamp(m_s2_world_map_state.zoom + 0.25 * scroll_delta, 1.0, 6.0);
+            float const minimum_zoom = minimumS2WorldMapZoom(viewport_width, viewport_height);
+            m_s2_world_map_state.zoom = std::clamp(
+                m_s2_world_map_state.zoom + 0.25 * scroll_delta, static_cast<double>(minimum_zoom), 6.0);
             m_s2_world_map_state.overview = false;
         }
         bool const dragging = is_mouse_pressed(GLFW_MOUSE_BUTTON_LEFT)
@@ -4251,10 +4258,9 @@ bool PlayerClient::updatePlatformInputSnapshot(
             && std::isfinite(cursor_x) && std::isfinite(cursor_y);
         if (dragging) {
             if (m_s2_world_map_drag_cursor) {
-                uint32_t width = 0U;
-                uint32_t height = 0U;
-                m_window.framebufferSize(width, height);
-                double const pixels = static_cast<double>(std::max(width, height)) * m_s2_world_map_state.zoom;
+                float const minimum_zoom = minimumS2WorldMapZoom(viewport_width, viewport_height);
+                double const pixels = static_cast<double>(std::max(viewport_width, viewport_height))
+                    * std::clamp(m_s2_world_map_state.zoom, static_cast<double>(minimum_zoom), 6.0);
                 if (pixels > 0.0) {
                     double const period = static_cast<double>(generation::WORLD_SIZE_BLOCKS);
                     auto const wrap = [period](double value) {
@@ -4899,10 +4905,12 @@ void PlayerClient::updatePlayingMapPresentation()
     uint32_t draw_count = 0U;
     TextRenderer world_map_text;
     if (m_s2_world_map_open) {
+        float const flow_phase = static_cast<float>(std::fmod(
+            std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() * 0.35, 1.0));
         S2MapOverlayLayout const overlay = buildS2WorldMapOverlay(
             m_s2_world_map_state, m_s2_world_map_image ? &*m_s2_world_map_image : nullptr,
             world.get(), player_x, player_y, framebuffer_width, framebuffer_height,
-            dpi_scale, world_map_text, m_s2_map_vector_triangles
+            dpi_scale, world_map_text, m_s2_map_vector_triangles, flow_phase
         );
         auto const view = composeS2WorldMapView(
             m_s2_world_map_image ? &*m_s2_world_map_image : nullptr,
