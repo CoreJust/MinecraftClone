@@ -173,6 +173,10 @@ struct PlayerClientRenderDiagnostics final {
     std::chrono::nanoseconds before_resize_duration{ 0 };
     std::chrono::nanoseconds resize_duration{ 0 };
     std::chrono::nanoseconds after_resize_duration{ 0 };
+    std::chrono::nanoseconds after_resize_data_hud_duration{ 0 };
+    std::chrono::nanoseconds after_resize_map_block_duration{ 0 };
+    std::chrono::nanoseconds after_resize_terrain_lod_duration{ 0 };
+    std::chrono::nanoseconds after_resize_post_lod_duration{ 0 };
     std::chrono::nanoseconds renderer_call_duration{ 0 };
     std::chrono::nanoseconds after_renderer_duration{ 0 };
 };

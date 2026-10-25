@@ -3873,6 +3873,18 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     .diagnostic_client_render_after_resize_duration_ns = positiveNanoseconds(
                         client_render.after_resize_duration
                     ),
+                    .diagnostic_client_after_resize_data_hud_duration_ns = positiveNanoseconds(
+                        client_render.after_resize_data_hud_duration
+                    ),
+                    .diagnostic_client_after_resize_map_block_duration_ns = positiveNanoseconds(
+                        client_render.after_resize_map_block_duration
+                    ),
+                    .diagnostic_client_after_resize_terrain_lod_duration_ns = positiveNanoseconds(
+                        client_render.after_resize_terrain_lod_duration
+                    ),
+                    .diagnostic_client_after_resize_post_lod_duration_ns = positiveNanoseconds(
+                        client_render.after_resize_post_lod_duration
+                    ),
                     .diagnostic_renderer_call_duration_ns = positiveNanoseconds(client_render.renderer_call_duration),
                     .diagnostic_client_render_after_renderer_duration_ns = positiveNanoseconds(
                         client_render.after_renderer_duration

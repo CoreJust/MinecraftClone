@@ -1341,6 +1341,14 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
                 + std::to_string(sample.diagnostic_renderer_resize_duration_ns)
             + ", \"diagnostic_client_render_after_resize_duration_ns\": "
                 + std::to_string(sample.diagnostic_client_render_after_resize_duration_ns)
+            + ", \"diagnostic_client_after_resize_data_hud_duration_ns\": "
+                + std::to_string(sample.diagnostic_client_after_resize_data_hud_duration_ns)
+            + ", \"diagnostic_client_after_resize_map_block_duration_ns\": "
+                + std::to_string(sample.diagnostic_client_after_resize_map_block_duration_ns)
+            + ", \"diagnostic_client_after_resize_terrain_lod_duration_ns\": "
+                + std::to_string(sample.diagnostic_client_after_resize_terrain_lod_duration_ns)
+            + ", \"diagnostic_client_after_resize_post_lod_duration_ns\": "
+                + std::to_string(sample.diagnostic_client_after_resize_post_lod_duration_ns)
             + ", \"diagnostic_renderer_call_duration_ns\": "
                 + std::to_string(sample.diagnostic_renderer_call_duration_ns)
             + ", \"diagnostic_client_render_after_renderer_duration_ns\": "

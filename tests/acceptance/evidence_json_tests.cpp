@@ -1434,7 +1434,11 @@ TEST(EvidenceJson, PreservesPlayerRenderStageTimingsPerFrame)
     frame.diagnostic_client_camera_resolution_duration_ns = 1'000'006U;
     frame.diagnostic_client_render_before_resize_duration_ns = 1'000'001U;
     frame.diagnostic_renderer_resize_duration_ns = 2'000'002U;
-    frame.diagnostic_client_render_after_resize_duration_ns = 3'000'003U;
+    frame.diagnostic_client_render_after_resize_duration_ns = 10'000'010U;
+    frame.diagnostic_client_after_resize_data_hud_duration_ns = 1'000'001U;
+    frame.diagnostic_client_after_resize_map_block_duration_ns = 2'000'002U;
+    frame.diagnostic_client_after_resize_terrain_lod_duration_ns = 3'000'003U;
+    frame.diagnostic_client_after_resize_post_lod_duration_ns = 4'000'004U;
     frame.diagnostic_renderer_call_duration_ns = 4'000'004U;
     frame.diagnostic_client_render_after_renderer_duration_ns = 5'000'005U;
 
@@ -1480,10 +1484,18 @@ TEST(EvidenceJson, PreservesPlayerRenderStageTimingsPerFrame)
     EXPECT_NE(json.find("\"diagnostic_client_render_before_resize_duration_ns\": 1000001"),
         std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_renderer_resize_duration_ns\": 2000002"), std::string::npos);
-    EXPECT_NE(json.find("\"diagnostic_client_render_after_resize_duration_ns\": 3000003"),
+    EXPECT_NE(json.find("\"diagnostic_client_render_after_resize_duration_ns\": 10000010"),
         std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_renderer_call_duration_ns\": 4000004"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_client_render_after_renderer_duration_ns\": 5000005"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_client_after_resize_data_hud_duration_ns\": 1000001"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_client_after_resize_map_block_duration_ns\": 2000002"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_client_after_resize_terrain_lod_duration_ns\": 3000003"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_client_after_resize_post_lod_duration_ns\": 4000004"),
         std::string::npos);
 }
 

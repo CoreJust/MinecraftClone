@@ -372,6 +372,10 @@ struct GameBenchmarkFrameSample final {
     uint64_t diagnostic_client_render_before_resize_duration_ns = 0U;
     uint64_t diagnostic_renderer_resize_duration_ns = 0U;
     uint64_t diagnostic_client_render_after_resize_duration_ns = 0U;
+    uint64_t diagnostic_client_after_resize_data_hud_duration_ns = 0U;
+    uint64_t diagnostic_client_after_resize_map_block_duration_ns = 0U;
+    uint64_t diagnostic_client_after_resize_terrain_lod_duration_ns = 0U;
+    uint64_t diagnostic_client_after_resize_post_lod_duration_ns = 0U;
     uint64_t diagnostic_renderer_call_duration_ns = 0U;
     uint64_t diagnostic_client_render_after_renderer_duration_ns = 0U;
     bool diagnostic_gpu_timestamps_enabled = false;

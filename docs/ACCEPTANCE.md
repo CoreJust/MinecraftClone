@@ -16,7 +16,7 @@ regular-file JSON, including its final newline. Windows emits binary. Reject
 missing, duplicate, truncated or invalid frames; retain process exit status.
 External compression leaves the workload and measurement window unchanged.
 
-Scenario mode drives a bounded local server and authoritative assertions. Renderer modes require Vulkan/windows; watchdogs bound execution and preserve failures.
+Scenario mode drives a bounded local server with authoritative assertions. Renderer modes require Vulkan/windows; watchdogs preserve failures.
 
 Evidence records framebuffer size, device/driver, present mode, validation/HUD,
 durations, frame count and CPU percentiles. Historical
@@ -29,10 +29,13 @@ wrapped-border and permission/collision churn; compare separate receipts. Rates
 require authoritative state changes. MC-AI-0247 `AdverseNetwork` tests cover
 impairment, but this loopback benchmark does not measure frame timing under it.
 
-The JSON retains raw loop and tick durations, present outcomes, traffic, resident
-tiles, visible faces and client payload bytes. GPU duration is the latest renderer
-sample and may lag; request rate is not GPU FPS. Physical scanout, resident mesh
-bytes and power mode are unavailable. Raw samples and percentiles remain available.
+JSON retains raw loop/tick durations, presents, traffic, resident tiles, visible faces
+and payload bytes. GPU duration may lag; scanout, resident mesh bytes and power mode
+are unavailable.
+
+The `diagnostic_client_after_resize_*_duration_ns` fields split client CPU time into
+sequential data/HUD, map/block, terrain LOD and post-LOD stages. Renderer-call timing
+is separate. Field percentiles are not additive.
 
 Both gameplay proofs use render distance 256. `terrain-coverage` remains x200
 recovery; `performance` uses `turning-x30-movement-v2`: a 30-second stationary

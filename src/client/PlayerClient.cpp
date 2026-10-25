@@ -5962,11 +5962,32 @@ void PlayerClient::render() {
         m_renderer.toggleDebugHud();
         m_debug_hud_enabled = !m_debug_hud_enabled;
     }
+    std::chrono::steady_clock::time_point const data_hud_completed_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.after_resize_data_hud_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(data_hud_completed_at - resize_completed_at);
+    }
+    std::chrono::steady_clock::time_point const map_block_started_at = data_hud_completed_at;
     if (loading_status.state == WorldLoadingState::Playing) {
         updatePlayingMapPresentation();
     }
     updateBlockInteractionPresentation(now);
+    std::chrono::steady_clock::time_point const map_block_completed_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.after_resize_map_block_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(map_block_completed_at - map_block_started_at);
+    }
+    std::chrono::steady_clock::time_point const terrain_lod_started_at = map_block_completed_at;
     updateTerrainLod(presentation_deadline);
+    std::chrono::steady_clock::time_point const terrain_lod_completed_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.after_resize_terrain_lod_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(terrain_lod_completed_at - terrain_lod_started_at);
+    }
+    std::chrono::steady_clock::time_point const post_lod_started_at = terrain_lod_completed_at;
     bool const ready_prompt_visible = loading_status.state == WorldLoadingState::ReadyForStart
         && terrainStartSceneReady(m_terrain_session.has_value(), m_renderer.runtimeInfo());
     if (loading_status.state == WorldLoadingState::ReadyForStart) {
@@ -6004,6 +6025,8 @@ void PlayerClient::render() {
     if (capture_render_diagnostics) {
         m_render_diagnostics.after_resize_duration =
             std::chrono::duration_cast<std::chrono::nanoseconds>(renderer_started_at - resize_completed_at);
+        m_render_diagnostics.after_resize_post_lod_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(renderer_started_at - post_lod_started_at);
     }
     uint64_t const submitted_before = capture_render_diagnostics
         ? m_renderer.runtimeInfo().submitted_frame_count : 0U;

@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "08b31d04add4ba9c0725b0ad9d0349bb60395d62e51e27c8931a1198fdc4a1bc",
+      "guide_sha256": "ba68bc2bad8737429ce9fdf3c13b60ae2c88a930612d02a069bb1f4fb0668e06",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -37,7 +37,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "83dce1ea7adefbd06d8b25a55daa67faedbccaff92dd6045cea74faa08fd2d8e"
+      "sources_sha256": "bf8dbf99a83da9cb2537480766f185bca4f88b8df9cd45ca6a5f36a93c2fac2b"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -397,7 +397,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "47e9ff849c50e752a6cbb9477cd3bbb3a39c2fd1c0e75600239ac9bdf2648245"
+      "sources_sha256": "de2ea0d2d5fb39b8b67a58cb0ad38519904954797629e4ae9636790425bc99eb"
     },
     {
       "guide": "docs/code/GENERATION.md",
