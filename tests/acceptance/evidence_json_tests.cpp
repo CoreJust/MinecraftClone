@@ -15,13 +15,92 @@
 #include <cstdint>
 #include <expected>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
+#include <streambuf>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 namespace {
+
+class LimitedWriteStreamBuffer final : public std::streambuf {
+public:
+    explicit LimitedWriteStreamBuffer(std::streamsize const allowed_bytes)
+        : m_remaining_bytes(allowed_bytes)
+    { }
+
+    [[nodiscard]]
+    std::string const& written() const noexcept { return m_written; }
+
+protected:
+    std::streamsize xsputn(char const* source, std::streamsize const count) override
+    {
+        std::streamsize const written_bytes = count < m_remaining_bytes ? count : m_remaining_bytes;
+        m_written.append(source, static_cast<std::string::size_type>(written_bytes));
+        m_remaining_bytes -= written_bytes;
+        return written_bytes;
+    }
+
+    int_type overflow(int_type const value) override
+    {
+        if (traits_type::eq_int_type(value, traits_type::eof())) {
+            return traits_type::not_eof(value);
+        }
+        if (m_remaining_bytes == 0) {
+            return traits_type::eof();
+        }
+        m_written += traits_type::to_char_type(value);
+        --m_remaining_bytes;
+        return value;
+    }
+
+private:
+    std::streamsize m_remaining_bytes;
+    std::string m_written;
+};
+
+TEST(EvidenceJson, WritesFrameWithExactJsonByteLength)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.mode = "benchmark-game";
+    evidence.failure = "stream test";
+    evidence.passed = false;
+    std::string const json = acceptance::evidenceJson(evidence);
+    std::ostringstream output;
+
+    auto const result = acceptance::writeEvidenceJsonFrame(output, evidence);
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(
+        output.str(),
+        "\nMC_RUNTIME_EVIDENCE_V1 " + std::to_string(json.size()) + "\n" + json
+    );
+}
+
+TEST(EvidenceJson, RejectsPartialFrameWrite)
+{
+    static constexpr std::streamsize PARTIAL_PAYLOAD_BYTES = 3;
+    acceptance::RuntimeEvidence evidence{};
+    evidence.mode = "benchmark-game";
+    std::string const json = acceptance::evidenceJson(evidence);
+    std::string const header = "\nMC_RUNTIME_EVIDENCE_V1 " + std::to_string(json.size()) + "\n";
+    LimitedWriteStreamBuffer output_buffer{
+        static_cast<std::streamsize>(header.size()) + PARTIAL_PAYLOAD_BYTES
+    };
+    std::ostream output{ &output_buffer };
+
+    auto const result = acceptance::writeEvidenceJsonFrame(output, evidence);
+
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(output_buffer.written().substr(0, header.size()), header);
+    EXPECT_EQ(
+        output_buffer.written().size(),
+        header.size() + static_cast<std::string::size_type>(PARTIAL_PAYLOAD_BYTES)
+    );
+    EXPECT_LT(output_buffer.written().size(), header.size() + json.size());
+}
 
 TEST(EvidenceJson, IdentifiesGameplayQualificationAndRawLoopOrder)
 {

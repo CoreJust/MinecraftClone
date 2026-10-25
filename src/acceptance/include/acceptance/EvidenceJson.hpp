@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <ostream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -706,6 +707,13 @@ std::string stoneFaceGrowthDiagnosticsJson(client::StoneFaceGrowthDiagnostics co
 
 [[nodiscard]]
 std::string evidenceJson(RuntimeEvidence const& evidence);
+
+// Writes one length-framed JSON payload for stdout streams that also carry progress logs.
+[[nodiscard]]
+std::expected<void, std::string> writeEvidenceJsonFrame(
+    std::ostream& output,
+    RuntimeEvidence const& evidence
+);
 
 [[nodiscard]]
 std::expected<void, std::string> writeEvidenceJson(

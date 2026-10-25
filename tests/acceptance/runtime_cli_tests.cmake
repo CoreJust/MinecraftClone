@@ -215,6 +215,57 @@ foreach(required_text
     endif()
 endforeach()
 
+execute_process(
+    COMMAND "${MC_MAIN}" --scenario "${valid_scenario}" --evidence -
+    RESULT_VARIABLE streamed_result
+    OUTPUT_VARIABLE streamed_stdout
+    ERROR_VARIABLE streamed_stderr
+    TIMEOUT 10
+)
+if(NOT streamed_result EQUAL 0)
+    message(FATAL_ERROR "stdout evidence command failed: ${streamed_stderr}")
+endif()
+string(FIND "${streamed_stdout}" "\nMC_RUNTIME_EVIDENCE_V1 " frame_start)
+if(frame_start EQUAL -1)
+    message(FATAL_ERROR "stdout evidence frame marker is missing")
+endif()
+math(EXPR frame_header_start "${frame_start} + 1")
+string(SUBSTRING "${streamed_stdout}" ${frame_header_start} -1 frame_tail)
+string(REGEX MATCH "^MC_RUNTIME_EVIDENCE_V1 ([0-9]+)\n" frame_header "${frame_tail}")
+if(frame_header STREQUAL "")
+    message(FATAL_ERROR "stdout evidence frame length is malformed")
+endif()
+set(frame_byte_count "${CMAKE_MATCH_1}")
+string(LENGTH "${frame_header}" frame_header_length)
+math(EXPR frame_payload_start "${frame_header_length}")
+string(SUBSTRING "${frame_tail}" ${frame_payload_start} ${frame_byte_count} frame_json)
+string(LENGTH "${frame_json}" frame_payload_length)
+if(NOT frame_payload_length EQUAL frame_byte_count)
+    message(FATAL_ERROR "stdout evidence frame is truncated")
+endif()
+math(EXPR frame_suffix_start "${frame_payload_start} + ${frame_byte_count}")
+string(SUBSTRING "${frame_tail}" ${frame_suffix_start} -1 frame_suffix)
+string(FIND "${frame_suffix}" "\nMC_RUNTIME_EVIDENCE_V1 " duplicate_frame_start)
+if(NOT duplicate_frame_start EQUAL -1)
+    message(FATAL_ERROR "stdout evidence contains more than one frame")
+endif()
+string(JSON streamed_schema ERROR_VARIABLE streamed_json_error GET "${frame_json}" schema_version)
+if(NOT streamed_json_error STREQUAL "NOTFOUND"
+    OR NOT streamed_schema STREQUAL "mc.runtime-evidence.v1")
+    message(FATAL_ERROR "stdout evidence frame does not contain valid runtime JSON: ${streamed_json_error}")
+endif()
+foreach(required_text
+    "\"passed\": true"
+    "\"ticks\": 10"
+    "\"clients_accepted\": 1"
+    "\"expectations_passed\": 1"
+)
+    string(FIND "${frame_json}" "${required_text}" match_index)
+    if(match_index EQUAL -1)
+        message(FATAL_ERROR "stdout evidence frame is missing ${required_text}")
+    endif()
+endforeach()
+
 set(invalid_core_semicolon "${OUTPUT_DIRECTORY}/invalid-semicolon.core")
 set(invalid_core_semicolon_evidence "${OUTPUT_DIRECTORY}/invalid-semicolon.json")
 file(WRITE "${invalid_core_semicolon}" [=[@version(0.1.5);

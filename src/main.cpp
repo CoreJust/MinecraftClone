@@ -21,6 +21,12 @@
 #include <acceptance/RendererBenchmark.hpp>
 #include <acceptance/ReplayInput.hpp>
 #include <acceptance/ScenarioRunner.hpp>
+
+#if defined(_WIN32)
+#include <fcntl.h>
+#include <io.h>
+#endif
+
 #include <spdlog/common.h>
 
 #include <array>
@@ -863,6 +869,28 @@ void reportUncaughtException(char const* category, char const* details = nullptr
 int main(int argc, char** argv) {
     int exit_code = 0;
     try {
+        bool const is_runtime_command = argc > 1
+            && (std::string_view{ argv[1] } == "--scenario"
+                || std::string_view{ argv[1] } == "--benchmark-render"
+                || std::string_view{ argv[1] } == "--benchmark-game"
+                || std::string_view{ argv[1] } == "--capture-render");
+        bool evidence_stdout_requested = false;
+        for (int argument_index = 1; is_runtime_command && argument_index + 1 < argc; ++argument_index) {
+            if (std::string_view{ argv[argument_index] } == "--evidence"
+                && std::string_view{ argv[argument_index + 1] } == "-") {
+                evidence_stdout_requested = true;
+                break;
+            }
+        }
+#if defined(_WIN32)
+        if (evidence_stdout_requested && ::_setmode(::_fileno(stdout), _O_BINARY) == -1) {
+            std::fputs("cannot select binary stdout mode for evidence streaming\n", stderr);
+            return 1;
+        }
+#else
+        static_cast<void>(evidence_stdout_requested);
+#endif
+
 #if defined(__APPLE__)
         // Keep driver submit/present encoding off the game thread unless explicitly overridden.
         if (::setenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS", "0", 0) != 0) {
@@ -875,11 +903,6 @@ int main(int argc, char** argv) {
         core::setCrashHandler();
         core::Net::ensureInit();
 
-        bool const is_runtime_command = argc > 1
-            && (std::string_view{ argv[1] } == "--scenario"
-                || std::string_view{ argv[1] } == "--benchmark-render"
-                || std::string_view{ argv[1] } == "--benchmark-game"
-                || std::string_view{ argv[1] } == "--capture-render");
         if (is_runtime_command) {
             auto const command = parseRuntimeCommand(argc, argv);
             if (!command.has_value()) {

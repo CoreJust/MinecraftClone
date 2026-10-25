@@ -3,12 +3,18 @@
 The executable provides bounded evidence modes:
 
 ```sh
-mc_main --scenario <file> --evidence <json>
-mc_main --benchmark-render [--present-immediate] [--hud] --evidence <json>
-mc_main --benchmark-game [--present-immediate] [--workload ordinary|ordinary-turning|speed-200|speed-200-full-radius|wrapped-border|permission-collision] [--diagnostic-full-radius-capture] [--diagnostic-presentation-stages] [--diagnostic-indexed-stone-quads 0|1|2] --evidence <json>
+mc_main --scenario <file> --evidence <json-or-dash>
+mc_main --benchmark-render [--present-immediate] [--hud] --evidence <json-or-dash>
+mc_main --benchmark-game [--present-immediate] [--workload ordinary|ordinary-turning|speed-200|speed-200-full-radius|wrapped-border|permission-collision] [--diagnostic-full-radius-capture] [--diagnostic-presentation-stages] [--diagnostic-indexed-stone-quads 0|1|2] --evidence <json-or-dash>
 mc_main --player-client-2d --address <IP:PORT> --replay stationary|ordinary-turning --seconds 1..120 --evidence <new-directory>
-mc_main --capture-render --image <ppm> --evidence <json>
+mc_main --capture-render --image <ppm> --evidence <json-or-dash>
 ```
+
+Pass `--evidence -` for one frame after progress logs:
+`\nMC_RUNTIME_EVIDENCE_V1 <byte-count>\n` plus exactly that many bytes of the
+regular-file JSON, including its final newline. Windows emits binary. Reject
+missing, duplicate, truncated or invalid frames; retain process exit status.
+External compression leaves the workload and measurement window unchanged.
 
 Scenario mode drives a bounded local server and authoritative assertions. Renderer modes require Vulkan/windows; watchdogs bound execution and preserve failures.
 

@@ -19835,5 +19835,46 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0562",
+    "title": "Stream lossless diagnostic benchmark evidence",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Provide explicit `--evidence -` for runtime evidence: after progress logs, emit one `\\nMC_RUNTIME_EVIDENCE_V1 <byte-count>\\n` header followed by exactly that many bytes of the same JSON produced to a regular file. Select binary stdout before Windows logging. Preserve file mode, error/nonzero status, all frame rows and the qualification window; change no performance predicate. Verify writer success/partial failure, CLI file/frame behavior, and a source-bound ordinary native parse plus exact gzip round-trip. This task closes the local producer prerequisite; Windows runtime, downstream reader rejection tests, and performance qualification remain parent scope.",
+    "evidence": "Release arm64 build completed (clean 252/252 steps, then 16/16 after the final include-order correction); `mc_tests --gtest_filter=EvidenceJson.*` passed 35/35 and `runtime_cli_tests.cmake` exited 0. The native ordinary route exited 0 in 12.04 s: one frame declared and contained 3,611,253 valid JSON bytes in 3,618,012 stdout bytes, with no trailing bytes. Exact gzip round-trip reduced the captured stream to 173,200 bytes. Frontmost app identity remained `ru.yandex.desktop.yandex-browser`. The benchmark evidence has `measurement_window_complete=false`; no FPS/performance qualification is claimed. Build, test, raw capture, gzip, focus, and iteration receipts are under `/Users/core-just/.codex/task-evidence/mc-s2-20261024/task-0562-streaming/`; artifact hashes are in `validation-summary.json`.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Collect source-bound moving CPU/GPU metrics within the shared Windows account storage budget by allowing external lossless streaming compression.",
+    "context": "User asks for proper performance metrics and an optimized Windows playtest. A/B binaries are built but a high-FPS full raw JSON may exceed available account headroom. This changes diagnostic export only, not gameplay or performance predicates.",
+    "complexity": "medium",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added length-framed stdout evidence export while preserving regular-file JSON output. The binary Windows stdout mode is set before logger initialization; writer errors propagate through the existing nonzero CLI path. The local producer prerequisite passed focused and native stream verification. Windows runtime behavior, downstream capture-reader rejection behavior, the requested performance targets, and qualification remain open.",
+    "plan": [],
+    "product_changes": [
+      "Add an explicit, lossless stdout export path for complete runtime benchmark evidence."
+    ],
+    "code_changes": [
+      "src/acceptance/EvidenceJson.cpp",
+      "src/acceptance/include/acceptance/EvidenceJson.hpp",
+      "src/main.cpp",
+      "tests/acceptance/evidence_json_tests.cpp",
+      "tests/acceptance/runtime_cli_tests.cmake",
+      "docs/ACCEPTANCE.md"
+    ],
+    "baseline_commit": "78eb16454c1e7b0d0fe8ab5992f2c6274688c25d",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

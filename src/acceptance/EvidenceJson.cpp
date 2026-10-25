@@ -12,9 +12,12 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <exception>
 #include <fstream>
+#include <iostream>
 #include <limits>
+#include <ostream>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -22,6 +25,30 @@
 namespace acceptance {
 
 namespace {
+
+class ScopedStdoutLock final {
+public:
+    ScopedStdoutLock() noexcept
+    {
+#if defined(_WIN32)
+        ::_lock_file(stdout);
+#else
+        ::flockfile(stdout);
+#endif
+    }
+
+    ~ScopedStdoutLock()
+    {
+#if defined(_WIN32)
+        ::_unlock_file(stdout);
+#else
+        ::funlockfile(stdout);
+#endif
+    }
+
+    ScopedStdoutLock(ScopedStdoutLock const&) = delete;
+    ScopedStdoutLock& operator=(ScopedStdoutLock const&) = delete;
+};
 
 std::string jsonString(std::string_view const value)
 {
@@ -1448,11 +1475,44 @@ std::string evidenceJson(RuntimeEvidence const& evidence)
         "}\n";
 }
 
+std::expected<void, std::string> writeEvidenceJsonFrame(
+    std::ostream& output,
+    RuntimeEvidence const& evidence
+)
+{
+    std::string const json = evidenceJson(evidence);
+    using StreamSize = std::streamsize;
+    using StringSize = std::string::size_type;
+    if (json.size() > static_cast<StringSize>(std::numeric_limits<StreamSize>::max())) {
+        return std::unexpected("evidence output exceeds the stream byte-count limit");
+    }
+
+    std::string const header = "\nMC_RUNTIME_EVIDENCE_V1 " + std::to_string(json.size()) + "\n";
+    output.write(header.data(), static_cast<StreamSize>(header.size()));
+    output.write(json.data(), static_cast<StreamSize>(json.size()));
+    output.flush();
+    if (!output) {
+        return std::unexpected("cannot write framed evidence output");
+    }
+    return { };
+}
+
 std::expected<void, std::string> writeEvidenceJson(
     std::filesystem::path const& path,
     RuntimeEvidence const& evidence
 )
 {
+    if (path == std::filesystem::path{ "-" }) {
+        std::cout.flush();
+        if (std::fflush(stdout) != 0 || std::ferror(stdout) != 0) {
+            return std::unexpected("cannot flush progress before the evidence frame");
+        }
+
+        // Keep the frame contiguous with respect to the stdout logger, including watchdog writes.
+        ScopedStdoutLock const lock;
+        return writeEvidenceJsonFrame(std::cout, evidence);
+    }
+
     std::ofstream output{ path, std::ios::binary | std::ios::trunc };
     if (!output) {
         return std::unexpected("cannot open evidence output: " + path.string());
