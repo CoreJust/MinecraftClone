@@ -117,6 +117,56 @@ bool SparseWorld::ResidentEvictionCandidateLess::operator()(
     return left.coordinate.z < right.coordinate.z;
 }
 
+void SparseWorld::recordAuthoritativeColumnChange(ChunkCoordinate coordinate) noexcept
+{
+    coordinate.z = 0;
+    ++m_authoritative_change_cursor;
+    m_authoritative_changes[(m_authoritative_change_cursor - 1U) % AUTHORITATIVE_CHANGE_CAPACITY] = coordinate;
+}
+
+void SparseWorld::resetAuthoritativeColumnChanges() noexcept
+{
+    ++m_authoritative_change_cursor;
+    m_authoritative_change_reset = m_authoritative_change_cursor;
+}
+
+void SparseWorld::readAuthoritativeColumnChanges(
+    uint64_t const after,
+    AuthoritativeColumnChanges& output
+) const
+{
+    output.cursor = m_authoritative_change_cursor;
+    output.coordinates.clear();
+    output.full_resync = after > m_authoritative_change_cursor
+        || after < m_authoritative_change_reset
+        || m_authoritative_change_cursor - after > AUTHORITATIVE_CHANGE_CAPACITY;
+    if (output.full_resync) {
+        return;
+    }
+    for (uint64_t cursor = after; cursor < m_authoritative_change_cursor; ++cursor) {
+        output.coordinates.push_back(m_authoritative_changes[cursor % AUTHORITATIVE_CHANGE_CAPACITY]);
+    }
+    std::ranges::sort(output.coordinates, [](auto const left, auto const right) {
+        return left.x < right.x || (left.x == right.x && left.y < right.y);
+    });
+    auto const unique = std::ranges::unique(output.coordinates);
+    output.coordinates.erase(unique.begin(), unique.end());
+}
+
+void SparseWorld::residentChunkContents(std::vector<ResidentChunkContent>& output) const
+{
+    output.clear();
+    output.reserve(m_resident.size());
+    for (auto const& [coordinate, resident] : m_resident) {
+        output.push_back({coordinate, resident.chunk.contentIdentity()});
+    }
+    std::ranges::sort(output, [](auto const& left, auto const& right) {
+        auto const a = left.coordinate;
+        auto const b = right.coordinate;
+        return a.x < b.x || (a.x == b.x && (a.y < b.y || (a.y == b.y && a.z < b.z)));
+    });
+}
+
 void SparseWorld::pinAuthoritativeSurface(ChunkCoordinate const coordinate) noexcept
 {
     auto const tile = m_authoritative_surfaces.find({coordinate.x, coordinate.y, 0});
@@ -195,6 +245,7 @@ bool SparseWorld::evictIfFull(std::optional<ChunkCoordinate>* const evicted_coor
             }
         }
         if (preview_victim != m_previews.end()) {
+            recordAuthoritativeColumnChange(preview_victim->first);
             m_previews.erase(preview_victim);
             continue;
         }
@@ -218,6 +269,7 @@ bool SparseWorld::evictIfFull(std::optional<ChunkCoordinate>* const evicted_coor
                 tile->second.dense_mask &= ~(uint64_t{1} << static_cast<uint32_t>(coordinate.z));
             }
             m_resident.erase(coordinate);
+            recordAuthoritativeColumnChange(coordinate);
             continue;
         }
         return false;
@@ -377,6 +429,7 @@ Chunk* SparseWorld::ensureChunk(
         m_resident.erase(iterator);
         throw;
     }
+    recordAuthoritativeColumnChange(coordinate);
     return &iterator->second.chunk;
 }
 
@@ -497,6 +550,7 @@ bool SparseWorld::publishPreview(
         .revision = revision,
         .seed = seed,
     });
+    recordAuthoritativeColumnChange(preview_coordinate);
     return true;
 }
 
@@ -565,6 +619,7 @@ bool SparseWorld::publishMaterializedChunk(
             tile->second.revision = ++m_authoritative_surface_revision;
         }
     }
+    recordAuthoritativeColumnChange(coordinate);
     return true;
 }
 
@@ -705,6 +760,7 @@ bool SparseWorld::setTerrainIdentity(TerrainIdentity identity)
     m_protected_authoritative_columns.clear();
     m_authoritative_dense_overrides.clear();
     ++m_authoritative_surface_revision;
+    resetAuthoritativeColumnChanges();
     m_terrain_identity = std::move(identity);
     m_surface_metadata.clear();
     m_surface_metadata_clock = 0U;
@@ -892,6 +948,7 @@ void SparseWorld::setWorldIdentity(uint64_t const revision, uint64_t const seed)
     m_protected_authoritative_columns.clear();
     m_authoritative_dense_overrides.clear();
     ++m_authoritative_surface_revision;
+    resetAuthoritativeColumnChanges();
     m_resident.clear();
     m_previews.clear();
     m_protected_chunks.clear();
@@ -973,6 +1030,7 @@ bool SparseWorld::setBlock(WorldCoordinate const coordinate, Block const block)
         pinAuthoritativeSurface(key);
         tile->second.revision = ++m_authoritative_surface_revision;
     }
+    recordAuthoritativeColumnChange(key);
     invalidateSurfaceMetadata(key);
     return true;
 }
@@ -1200,6 +1258,7 @@ bool SparseWorld::installEditSnapshot(
             tile->second.revision = ++m_authoritative_surface_revision;
         }
     }
+    recordAuthoritativeColumnChange(coordinate);
     invalidateSurfaceMetadata(coordinate);
     ++m_sparse_edit_revision;
     return true;
@@ -1276,6 +1335,7 @@ bool SparseWorld::applyEditDelta(
         pinAuthoritativeSurface(key);
         tile->second.revision = ++m_authoritative_surface_revision;
     }
+    recordAuthoritativeColumnChange(key);
     invalidateSurfaceMetadata(key);
     ++m_sparse_edit_revision;
     return true;
@@ -1301,6 +1361,13 @@ bool SparseWorld::setEditedChunkRequirements(
         }
         values[static_cast<size_t>(requirement.coordinate.z)] = requirement.revision;
     }
+    auto const previous = m_edited_chunk_requirements.find(coordinate);
+    if ((previous == m_edited_chunk_requirements.end() && requirements.empty())
+        || (previous != m_edited_chunk_requirements.end() && previous->second == values)) {
+        invalidateSurfaceMetadata(coordinate);
+        return true;
+    }
+    recordAuthoritativeColumnChange(coordinate);
     if (requirements.empty()) {
         m_edited_chunk_requirements.erase(coordinate);
     } else {
@@ -1414,12 +1481,16 @@ bool SparseWorld::evict(ChunkCoordinate const coordinate) noexcept
             .coordinate = coordinate,
         });
         m_resident.erase(resident);
+        recordAuthoritativeColumnChange(coordinate);
         if (auto tile = m_authoritative_surfaces.find({coordinate.x, coordinate.y, 0});
             tile != m_authoritative_surfaces.end()) {
             tile->second.dense_mask &= ~(uint64_t{1} << static_cast<uint32_t>(coordinate.z));
         }
     }
     bool const removed_preview = m_previews.erase({.x = coordinate.x, .y = coordinate.y, .z = 0}) != 0U;
+    if (removed_preview && !removed_resident) {
+        recordAuthoritativeColumnChange(coordinate);
+    }
     return removed_preview || removed_resident;
 }
 
@@ -1501,6 +1572,7 @@ bool SparseWorld::publishAuthoritativeSurface(AuthoritativeTerrainTile const& ti
             return false;
         }
         auto const victim = m_evictable_authoritative_surfaces.begin();
+        recordAuthoritativeColumnChange(victim->second);
         m_authoritative_surfaces.erase(victim->second);
         m_evictable_authoritative_surfaces.erase(victim);
     }
@@ -1509,6 +1581,7 @@ bool SparseWorld::publishAuthoritativeSurface(AuthoritativeTerrainTile const& ti
         .identity = tile.identity, .block_sea_level = tile.block_sea_level, .max_height = tile.max_height,
         .columns = tile.columns, .revision = m_authoritative_surface_revision,
     });
+    recordAuthoritativeColumnChange(tile.coordinate);
     auto& published = m_authoritative_surfaces.at(tile.coordinate);
     if (!m_protected_authoritative_columns.contains(tile.coordinate)) {
         m_evictable_authoritative_surfaces.emplace(published.revision, tile.coordinate);
@@ -1584,6 +1657,7 @@ bool SparseWorld::removeAuthoritativeSurface(ChunkCoordinate coordinate) noexcep
     }
     m_evictable_authoritative_surfaces.erase(tile->second.revision);
     m_authoritative_surfaces.erase(tile);
+    recordAuthoritativeColumnChange(coordinate);
     ++m_authoritative_surface_revision;
     return true;
 }

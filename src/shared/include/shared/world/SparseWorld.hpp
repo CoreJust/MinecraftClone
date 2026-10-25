@@ -197,9 +197,27 @@ struct AuthoritativeTerrainColumn final {
     [[nodiscard]] Block materialAt(uint16_t z) const noexcept;
 };
 
+struct AuthoritativeColumnChanges final {
+    uint64_t cursor = 0U;
+    bool full_resync = false;
+    std::vector<ChunkCoordinate> coordinates;
+};
+
+struct ResidentChunkContent final {
+    ChunkCoordinate coordinate;
+    ChunkContentIdentity content;
+};
+
 class SparseWorld final {
 public:
     explicit SparseWorld(SparseWorldOptions options = {});
+
+    // Returns sorted, deduplicated column coordinates since the consumer's cursor.
+    // Reset, expired history, or a future cursor requires full_resync. output.cursor
+    // is the next consumer cursor, independent of authoritativeSurfaceRevision().
+    void readAuthoritativeColumnChanges(uint64_t after, AuthoritativeColumnChanges& output) const;
+    // Copies cached content identities in coordinate order without borrowing Chunk pointers.
+    void residentChunkContents(std::vector<ResidentChunkContent>& output) const;
     SparseWorld(SparseWorldOptions options, SparseWorldGenerationMode generation_mode);
     SparseWorld(SparseWorldOptions options, std::shared_ptr<TerrainWorld const> terrain_world);
 
@@ -450,6 +468,8 @@ private:
     [[nodiscard]] bool hasIncompleteEditRequirements(ChunkCoordinate coordinate) const noexcept;
     [[nodiscard]] bool editChunkRequirementSatisfied(ChunkCoordinate coordinate) const noexcept;
     [[nodiscard]] bool canAdmitResidentChunk() const noexcept;
+    void recordAuthoritativeColumnChange(ChunkCoordinate coordinate) noexcept;
+    void resetAuthoritativeColumnChanges() noexcept;
     void pinAuthoritativeSurface(ChunkCoordinate coordinate) noexcept;
     void advanceAccessClock() noexcept;
     void touch(ChunkCoordinate coordinate, ResidentChunk& resident) noexcept;
@@ -486,6 +506,10 @@ private:
     uint64_t m_authoritative_surface_revision = 0U;
     uint64_t m_access_clock = 0U;
     mutable uint64_t m_surface_metadata_clock = 0U;
+    static constexpr size_t AUTHORITATIVE_CHANGE_CAPACITY = 4096U;
+    std::array<ChunkCoordinate, AUTHORITATIVE_CHANGE_CAPACITY> m_authoritative_changes{};
+    uint64_t m_authoritative_change_cursor = 0U;
+    uint64_t m_authoritative_change_reset = 0U;
 };
 
 } // namespace shared

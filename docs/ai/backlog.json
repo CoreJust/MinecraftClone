@@ -20119,8 +20119,8 @@
     "route": "luna",
     "milestone": "ED-011-S2",
     "depends_on": [],
-    "acceptance": "Use the simplest exact reuse of immutable source/column identity and version data to remove repeated long identity comparisons or full unchanged work. Preserve mixed-source rejection, source/session replacement, per-tile and sparse-edit changes, direct dense mutation checks and deterministic ordering. Verify observable stale/edit behavior plus matched source-bound CPU measurements; no approximate hashes or unchecked stale cache. Windows 300–500+ qualification remains MC-AI-0553/0483.",
-    "evidence": "Focused current-candidate TerrainLodPresentationTest suite: 28/28 passed. Exact-input benchmark receipt and source/harness/binary hashes: /Users/core-just/.codex/task-evidence/mc-s2-20261024/task-0568-identity-validation/exact-input-validation-bench/receipt.json. Current-state output count 0 and post-edit stale output count 4 matched exactly between strict and captured APIs. Paired medians were 2.058 ms versus 0.412 ms current and 3.149 ms versus 0.470 ms after edit. Windows 300–500+ FPS and full gameplay qualification remain open under MC-AI-0553/0483.",
+    "acceptance": "Use the simplest exact reuse of immutable source/column identity and version data to remove repeated long identity comparisons or full unchanged work. Preserve mixed-source rejection, source/session replacement, per-tile and sparse-edit changes, direct dense mutation checks and deterministic ordering. Verify observable stale/edit behavior plus matched source-bound CPU measurements; no approximate hashes or unchecked stale cache. Windows 300\u2013500+ qualification remains MC-AI-0553/0483.",
+    "evidence": "Focused current-candidate TerrainLodPresentationTest suite: 28/28 passed. Exact-input benchmark receipt and source/harness/binary hashes: /Users/core-just/.codex/task-evidence/mc-s2-20261024/task-0568-identity-validation/exact-input-validation-bench/receipt.json. Current-state output count 0 and post-edit stale output count 4 matched exactly between strict and captured APIs. Paired medians were 2.058 ms versus 0.412 ms current and 3.149 ms versus 0.470 ms after edit. Windows 300\u2013500+ FPS and full gameplay qualification remain open under MC-AI-0553/0483.",
     "blocker": "",
     "owner": "codex",
     "level": "basic",
@@ -20184,5 +20184,47 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0570",
+    "title": "Validate terrain columns incrementally after source changes",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Introduce bounded allocation-free source-change recording with per-consumer cursors and correct full-resync on reset/history loss. Incremental runtime selection must retain existing exact identity/tile/dense validators and match full-reference stale/discovery outputs for every mutation class, neighbor readiness, wrap, two consumers, overflow/reset and borrowed direct-dense mutations on all formervalidationtriggers. Preserve editpatch/publication/session/coverage guards and all renderdistance. Measure exact-input nativework/CPU and source-boundWindowsmovement; keep fullFPSqualificationopen unless thresholds pass. This task closes the local implementation prerequisite; the post-commit source-bound Windows movement and final FPS qualification are retained in MC-AI-0553/0483.",
+    "evidence": "Configured Release mc_main and mc_tests build completed using existing pinned dependencies with VCPKG_MANIFEST_INSTALL=OFF. All105 focused tests pass:57 SparseWorld,28 TerrainLodPresentation and20 TerrainLodRuntime, covering mutation classes, wrapped cross dependencies, neighbor readiness, history loss/reset, independent consumers and borrowed resident changes at former validation boundaries. Fixed-input native comparison on256 real sealed captures and32 unrelated streamed updates performs8192 full-reference column checks versus0 incremental checks; five-run median total 0.602040 ms versus 0.014499 ms. This is a local validator/enumeration microbenchmark, not game FPS. Exact API contracts, source hashes, full logs and review receipt are under /Users/core-just/.codex/task-evidence/mc0570-incremental-20261025/. Root committed0568 dependency is788ac1772a248e1d2725e86172112a92af5d0495. Source-bound Windows movement/FPS qualification remains open in MC-AI-0553/0483.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Remove the measured full retained-column validation/enumeration on each streamed tile toward the owner300\u2013500FPS target.",
+    "context": "Windows0565 terrainLOD warmmedian5.0944ms; native stacks identifyfullstalevalidation+available-column scan. All6889R41columnsareactuallyneeded, so preservecoverage and optimizechange-drivenwork. Source-design receipt fromvisibility_hierarchy identifies8revisionmutations pluseditrequirementsavailability and implicit eviction; Chunk.contentIdentity is cachedO1.",
+    "complexity": "high",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added a fixed4096-entry allocation-free authoritative-column change journal and copied cached resident identities without changing public authority revisions. Runtime reverse dependencies select immutable captures for existing exact validators; changed cross-neighbors drive discovery, and history loss/reset resynchronizes fully. All edit/publication/session/coverage guards and full actual coverage remain. Local prerequisite complete; Windows movement and FPS qualification remains parent scope.",
+    "plan": [],
+    "product_changes": [
+      "Avoid scanning all captured terrain profiles and all available authority columns for unrelated streamed tile changes."
+    ],
+    "code_changes": [
+      "src/shared/include/shared/world/SparseWorld.hpp",
+      "src/shared/world/SparseWorld.cpp",
+      "src/client/include/client/TerrainLodRuntime.hpp",
+      "src/client/TerrainLodRuntime.cpp",
+      "tests/core/sparse_world_tests.cpp",
+      "tests/client/terrain_lod_runtime_tests.cpp",
+      "docs/code/RENDERING.md"
+    ],
+    "baseline_commit": "ddd42df2b46f168db498dd22ba71afbb8de469c5",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Retired coverage-reduction hypothesis0567 is not used: all6889 current-interest columns remain needed. This change targets the source-backed full validation/enumeration hot path while preserving exact validators. No moving-FPS gain inferred from local CPU ratio.",
+    "docs_review": "Read runtime and SparseWorld source contracts; documented cursor/history and copied identity API in header and change-driven exact validation in rendering guide; refreshed/check source registry.",
+    "environment_review": "Private candidate, explicit CMake VCPKG_MANIFEST_INSTALL=OFF, reused pinned dependency prefixes, no package installation or root production edits.",
+    "backlog_review": "Closes only local incremental invalidation implementation. Parent0483 and0553 retain source-bound Windows movement and stable300\u2013500+FPS gates."
   }
 ]

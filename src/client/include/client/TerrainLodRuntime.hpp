@@ -17,6 +17,7 @@
 #include <optional>
 #include <span>
 #include <stop_token>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -222,6 +223,35 @@ private:
     std::unordered_set<uint64_t> m_queued;
 };
 
+// Selects immutable captures for the existing exact validator; it does not cache validation results.
+class TerrainLodSourceIndex final {
+public:
+    struct Selection final {
+        std::vector<std::shared_ptr<TerrainLodCapturedColumn const>> columns;
+        std::vector<TerrainLodColumnKey> discovery;
+        bool full_resync = false;
+    };
+
+    void clear();
+    void upsert(std::shared_ptr<TerrainLodCapturedColumn const> column);
+    void remove(TerrainLodColumnKey key);
+    void select(shared::SparseWorld const& world, bool scan_residents, Selection& output);
+
+private:
+    struct Entry final {
+        std::shared_ptr<TerrainLodCapturedColumn const> column;
+        std::vector<uint64_t> dependencies;
+    };
+    static uint64_t key(uint32_t x, uint32_t y) noexcept;
+    std::unordered_map<uint64_t, Entry> m_columns;
+    std::unordered_map<uint64_t, std::unordered_set<uint64_t>> m_dependents;
+    shared::AuthoritativeColumnChanges m_changes;
+    std::vector<shared::ResidentChunkContent> m_residents;
+    std::vector<shared::ResidentChunkContent> m_previous_residents;
+    uint64_t m_cursor = 0U;
+    bool m_initialized = false;
+};
+
 class TerrainLodRuntime final {
 public:
     ~TerrainLodRuntime();
@@ -239,6 +269,7 @@ public:
 
 private:
     void reportDiagnostics();
+    void refreshColumnSources(shared::SparseWorld const& actual, bool scan_residents, bool rediscover);
     void updateEditedColumns(
         shared::SparseWorld const& actual,
         VulkanRenderer& renderer,
@@ -278,6 +309,8 @@ private:
     TerrainLodAuthorityBatch m_columns_authority_batch;
     uint32_t m_center_x = 0U;
     uint32_t m_center_y = 0U;
+    TerrainLodSourceIndex m_source_index;
+    TerrainLodSourceIndex::Selection m_source_selection;
     uint64_t m_discovery_revision = 0U;
     bool m_discovery_initialized = false;
     TerrainLodRuntimePlan m_plan;

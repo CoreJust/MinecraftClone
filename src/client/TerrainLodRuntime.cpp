@@ -37,6 +37,138 @@ bool capturedTerrainLodColumnCurrent(
 
 } // namespace
 
+uint64_t TerrainLodSourceIndex::key(uint32_t const x, uint32_t const y) noexcept
+{
+    return (static_cast<uint64_t>(x) << 32U) | y;
+}
+
+void TerrainLodSourceIndex::clear()
+{
+    m_columns.clear();
+    m_dependents.clear();
+    m_changes.coordinates.clear();
+    m_residents.clear();
+    m_previous_residents.clear();
+    m_cursor = 0U;
+    m_initialized = false;
+}
+
+void TerrainLodSourceIndex::remove(TerrainLodColumnKey const coordinate)
+{
+    uint64_t const column_key = key(coordinate.x, coordinate.y);
+    auto const entry = m_columns.find(column_key);
+    if (entry == m_columns.end()) {
+        return;
+    }
+    for (uint64_t const dependency : entry->second.dependencies) {
+        auto dependents = m_dependents.find(dependency);
+        dependents->second.erase(column_key);
+        if (dependents->second.empty()) {
+            m_dependents.erase(dependents);
+        }
+    }
+    m_columns.erase(entry);
+}
+
+void TerrainLodSourceIndex::upsert(std::shared_ptr<TerrainLodCapturedColumn const> column)
+{
+    auto const& input = column->input();
+    remove({input.x, input.y});
+    Entry entry{ .column = std::move(column), .dependencies = {key(input.x, input.y)} };
+    for (auto const& source : input.authority_sources) {
+        entry.dependencies.push_back(key(static_cast<uint32_t>(source.coordinate.x),
+            static_cast<uint32_t>(source.coordinate.y)));
+    }
+    for (auto const& source : input.sources) {
+        entry.dependencies.push_back(key(static_cast<uint32_t>(source.coordinate.x),
+            static_cast<uint32_t>(source.coordinate.y)));
+    }
+    std::ranges::sort(entry.dependencies);
+    entry.dependencies.erase(std::unique(entry.dependencies.begin(), entry.dependencies.end()), entry.dependencies.end());
+    uint64_t const column_key = key(input.x, input.y);
+    for (uint64_t const dependency : entry.dependencies) {
+        m_dependents[dependency].insert(column_key);
+    }
+    m_columns.emplace(column_key, std::move(entry));
+}
+
+void TerrainLodSourceIndex::select(
+    shared::SparseWorld const& world,
+    bool const scan_residents,
+    Selection& output)
+{
+    output.columns.clear();
+    output.discovery.clear();
+    world.readAuthoritativeColumnChanges(m_cursor, m_changes);
+    m_cursor = m_changes.cursor;
+    output.full_resync = !m_initialized || m_changes.full_resync;
+    m_initialized = true;
+    if (scan_residents || !m_changes.coordinates.empty() || output.full_resync) {
+        world.residentChunkContents(m_residents);
+        auto const less = [](auto const& a, auto const& b) {
+            auto const& x = a.coordinate;
+            auto const& y = b.coordinate;
+            return x.x != y.x ? x.x < y.x : x.y != y.y ? x.y < y.y : x.z < y.z;
+        };
+        size_t before = 0U;
+        size_t after = 0U;
+        while (before < m_previous_residents.size() || after < m_residents.size()) {
+            if (after == m_residents.size()
+                || (before < m_previous_residents.size() && less(m_previous_residents[before], m_residents[after]))) {
+                m_changes.coordinates.push_back(m_previous_residents[before++].coordinate);
+            } else if (before == m_previous_residents.size() || less(m_residents[after], m_previous_residents[before])) {
+                m_changes.coordinates.push_back(m_residents[after++].coordinate);
+            } else {
+                if (m_previous_residents[before].content != m_residents[after].content) {
+                    m_changes.coordinates.push_back(m_residents[after].coordinate);
+                }
+                ++before;
+                ++after;
+            }
+        }
+        m_previous_residents.swap(m_residents);
+    }
+    std::unordered_set<uint64_t> affected;
+    std::unordered_set<uint64_t> discovery;
+    for (auto const coordinate : m_changes.coordinates) {
+        uint32_t const x = static_cast<uint32_t>(coordinate.x);
+        uint32_t const y = static_cast<uint32_t>(coordinate.y);
+        auto const dependents = m_dependents.find(key(x, y));
+        if (dependents != m_dependents.end()) {
+            affected.insert(dependents->second.begin(), dependents->second.end());
+        }
+        for (auto const offset : {std::array{0, 0}, std::array{-1, 0}, std::array{1, 0},
+                std::array{0, -1}, std::array{0, 1}}) {
+            uint32_t const cx = static_cast<uint32_t>((static_cast<int32_t>(x) + offset[0] + 4'096) % 4'096);
+            uint32_t const cy = static_cast<uint32_t>((static_cast<int32_t>(y) + offset[1] + 4'096) % 4'096);
+            discovery.insert(key(cx, cy));
+        }
+    }
+    if (output.full_resync) {
+        for (auto const& [column_key, entry] : m_columns) {
+            static_cast<void>(column_key);
+            output.columns.push_back(entry.column);
+        }
+    } else {
+        for (uint64_t const column_key : affected) {
+            output.columns.push_back(m_columns.at(column_key).column);
+        }
+    }
+    std::ranges::sort(output.columns, [](auto const& a, auto const& b) {
+        return key(a->input().x, a->input().y) < key(b->input().x, b->input().y);
+    });
+    for (uint64_t const coordinate : discovery) {
+        uint32_t const x = static_cast<uint32_t>(coordinate >> 32U);
+        uint32_t const y = static_cast<uint32_t>(coordinate);
+        if (world.hasAuthoritativeSurface({static_cast<int32_t>(x), static_cast<int32_t>(y), 0})) {
+            output.discovery.push_back({x, y});
+        }
+    }
+    std::ranges::sort(output.discovery, [](auto const a, auto const b) {
+        return a.y != b.y ? a.y < b.y : a.x < b.x;
+    });
+}
+
 TerrainLodRuntime::~TerrainLodRuntime()
 {
     m_cancellation.request_stop();
@@ -129,6 +261,49 @@ void TerrainLodRuntime::updateEditedColumns(
         });
 }
 
+void TerrainLodRuntime::refreshColumnSources(
+    shared::SparseWorld const& actual,
+    bool const scan_residents,
+    bool const rediscover)
+{
+    m_source_index.select(actual, scan_residents, m_source_selection);
+    std::vector<TerrainLodColumnCoordinate> stale;
+    if (!m_source_selection.columns.empty()) {
+        stale = staleCapturedTerrainLodColumns(m_source_selection.columns, actual, m_columns_authority_batch);
+    }
+    auto const coordinate_less = [](TerrainLodColumnCoordinate const left, TerrainLodColumnCoordinate const right) {
+        return left.x != right.x ? left.x < right.x : left.y < right.y;
+    };
+    std::ranges::sort(stale, coordinate_less);
+    for (TerrainLodColumnCoordinate const coordinate : stale) {
+        m_plan.forget({coordinate.x, coordinate.y});
+        m_source_index.remove({coordinate.x, coordinate.y});
+    }
+    if (!stale.empty()) {
+        std::erase_if(m_columns, [&stale, &coordinate_less](auto const& column) {
+            TerrainLodColumnInput const& input = column->input();
+            return std::ranges::binary_search(stale, TerrainLodColumnCoordinate{input.x, input.y}, coordinate_less);
+        });
+        m_dirty = true;
+        if (std::ranges::none_of(m_columns, [](auto const& column) {
+                return !column->input().authority_sources.empty();
+            })) {
+            m_columns_authority_batch.reset();
+        }
+    }
+    if (rediscover || m_source_selection.full_resync) {
+        auto const available = actual.availableAuthoritativeColumns();
+        std::vector<TerrainLodColumnKey> keys;
+        keys.reserve(available.size());
+        for (auto const coordinate : available) {
+            keys.push_back({static_cast<uint32_t>(coordinate.x), static_cast<uint32_t>(coordinate.y)});
+        }
+        m_plan.discover(keys);
+    } else {
+        m_plan.discover(m_source_selection.discovery);
+    }
+}
+
 void TerrainLodRuntime::reportDiagnostics()
 {
     auto const now = std::chrono::steady_clock::now();
@@ -175,6 +350,9 @@ void TerrainLodRuntime::reset(VulkanRenderer* const renderer)
     m_world.reset();
     m_pending.reset();
     m_columns.clear();
+    m_source_index.clear();
+    m_source_selection.columns.clear();
+    m_source_selection.discovery.clear();
     m_columns_authority_batch.reset();
     m_presented_columns.clear();
     m_edit_checked_sparse_revision = 0U;
@@ -214,12 +392,18 @@ void TerrainLodRuntime::update(
         m_patch.reset();
         if (m_world) {
             m_columns.clear();
+            m_source_index.clear();
+            m_source_selection.columns.clear();
+            m_source_selection.discovery.clear();
             m_columns_authority_batch.reset();
             m_plan.reset();
             m_discovery_initialized = false;
         } else if (source && m_columns_authority_batch.hasIdentity()
             && !m_columns_authority_batch.matches(source->identity())) {
             m_columns.clear();
+            m_source_index.clear();
+            m_source_selection.columns.clear();
+            m_source_selection.discovery.clear();
             m_columns_authority_batch.reset();
             m_plan.reset();
             m_discovery_initialized = false;
@@ -238,7 +422,11 @@ void TerrainLodRuntime::update(
         m_plan.updateInterest(x, y);
         std::erase_if(m_columns, [this](auto const& column) {
             TerrainLodColumnInput const& input = column->input();
-            return !m_plan.relevant({input.x, input.y});
+            bool const remove = !m_plan.relevant({input.x, input.y});
+            if (remove) {
+                m_source_index.remove({input.x, input.y});
+            }
+            return remove;
         });
         if (x / 64U != m_center_x / 64U || y / 64U != m_center_y / 64U) {
             m_center_x = x / 64U * 64U;
@@ -323,37 +511,10 @@ void TerrainLodRuntime::update(
     if (!player) {
         return;
     }
-    if (actual && (!m_discovery_initialized || actual->authoritativeSurfaceRevision() != m_discovery_revision)) {
-        std::vector<TerrainLodColumnCoordinate> stale;
-        if (!m_columns.empty()) {
-            stale = staleCapturedTerrainLodColumns(m_columns, *actual, m_columns_authority_batch);
-        }
-        auto const coordinate_less = [](TerrainLodColumnCoordinate const left, TerrainLodColumnCoordinate const right) {
-            return left.x != right.x ? left.x < right.x : left.y < right.y;
-        };
-        std::ranges::sort(stale, coordinate_less);
-        for (TerrainLodColumnCoordinate const coordinate : stale) {
-            m_plan.forget({coordinate.x, coordinate.y});
-        }
-        std::erase_if(m_columns, [&stale, &coordinate_less](auto const& column) {
-            TerrainLodColumnInput const& input = column->input();
-            return std::ranges::binary_search(stale, TerrainLodColumnCoordinate{input.x, input.y}, coordinate_less);
-        });
-        if (!stale.empty()) {
-            m_dirty = true;
-        }
-        if (std::ranges::none_of(m_columns, [](auto const& column) {
-                return !column->input().authority_sources.empty();
-            })) {
-            m_columns_authority_batch.reset();
-        }
-        auto const available = actual->availableAuthoritativeColumns();
-        std::vector<TerrainLodColumnKey> keys;
-        keys.reserve(available.size());
-        for (auto const coordinate : available) {
-            keys.push_back({static_cast<uint32_t>(coordinate.x), static_cast<uint32_t>(coordinate.y)});
-        }
-        m_plan.discover(keys);
+    if (actual) {
+        bool const previous_trigger = !m_discovery_initialized
+            || actual->authoritativeSurfaceRevision() != m_discovery_revision;
+        refreshColumnSources(*actual, previous_trigger, !m_discovery_initialized);
         m_discovery_revision = actual->authoritativeSurfaceRevision();
         m_discovery_initialized = true;
     }
@@ -376,15 +537,18 @@ void TerrainLodRuntime::update(
             ++m_captured;
             m_plan.remember(key);
             if (existing == m_columns.end()) {
+                m_source_index.upsert(captured);
                 m_columns.push_back(std::move(captured));
                 m_dirty = true;
             } else if (!capturedTerrainLodColumnCurrent(*existing, *actual, m_columns_authority_batch)) {
+                m_source_index.upsert(captured);
                 *existing = std::move(captured);
                 m_dirty = true;
             }
         } else if (existing != m_columns.end()) {
             bool const current = capturedTerrainLodColumnCurrent(*existing, *actual, m_columns_authority_batch);
             if (!current) {
+                m_source_index.remove(key);
                 m_columns.erase(existing);
                 m_plan.forget(key);
                 m_dirty = true;
@@ -400,20 +564,10 @@ void TerrainLodRuntime::update(
     std::vector<std::shared_ptr<TerrainLodColumnInput const>> columns;
     columns.reserve(m_columns.size());
     if (actual) {
-        std::vector<TerrainLodColumnCoordinate> const stale = staleCapturedTerrainLodColumns(
-            m_columns, *actual, m_columns_authority_batch
-        );
-        for (TerrainLodColumnCoordinate const coordinate : stale) {
-            m_plan.forget({coordinate.x, coordinate.y});
-        }
-        auto const coordinate_less = [](TerrainLodColumnCoordinate const left, TerrainLodColumnCoordinate const right) {
-            return left.x != right.x ? left.x < right.x : left.y < right.y;
-        };
+        // Dispatch was also an exact-validation boundary before incremental selection.
+        refreshColumnSources(*actual, true, false);
         for (auto const& captured_column : m_columns) {
-            TerrainLodColumnInput const& column = captured_column->input();
-            if (!std::ranges::binary_search(stale, TerrainLodColumnCoordinate{column.x, column.y}, coordinate_less)) {
-                columns.emplace_back(captured_column, &column);
-            }
+            columns.emplace_back(captured_column, &captured_column->input());
         }
     }
     m_job_columns = columns;

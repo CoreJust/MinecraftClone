@@ -2085,3 +2085,171 @@ TEST(SparseWorldTest, AuthoritativeTileVersionBatchPreservesSparseEditsAcrossEvi
     ASSERT_TRUE(world.evict(EDITED_CHUNK));
     EXPECT_TRUE(world.matchesAuthoritativeTileVersions(identity, versions));
 }
+
+TEST(SparseWorldTest, ColumnJournalSupportsIndependentConsumersAndResidentEviction)
+{
+    shared::SparseWorld world({.max_resident_chunks = 1U});
+    shared::AuthoritativeColumnChanges first;
+    shared::AuthoritativeColumnChanges second;
+    world.readAuthoritativeColumnChanges(0U, first);
+    ASSERT_FALSE(first.full_resync);
+    ASSERT_NE(world.ensureChunk({3, 2, 1}), nullptr);
+    world.readAuthoritativeColumnChanges(0U, first);
+    EXPECT_EQ(first.coordinates, (std::vector<shared::ChunkCoordinate>{{3, 2, 0}}));
+    uint64_t const first_cursor = first.cursor;
+    ASSERT_NE(world.ensureChunk({1, 2, 2}), nullptr);
+    world.readAuthoritativeColumnChanges(first_cursor, first);
+    world.readAuthoritativeColumnChanges(0U, second);
+    EXPECT_EQ(first.coordinates, (std::vector<shared::ChunkCoordinate>{{1, 2, 0}, {3, 2, 0}}));
+    EXPECT_EQ(second.coordinates, first.coordinates);
+    ASSERT_TRUE(world.evict({1, 2, 2}));
+    world.readAuthoritativeColumnChanges(first.cursor, first);
+    EXPECT_EQ(first.coordinates, (std::vector<shared::ChunkCoordinate>{{1, 2, 0}}));
+    world.readAuthoritativeColumnChanges(first.cursor, first);
+    EXPECT_TRUE(first.coordinates.empty());
+}
+
+TEST(SparseWorldTest, ColumnJournalResynchronizesAfterResetLostHistoryAndInvalidCursor)
+{
+    shared::SparseWorld world({.max_resident_chunks = 1U});
+    shared::AuthoritativeColumnChanges changes;
+    for (uint32_t index = 0U; index < 2050U; ++index) {
+        ASSERT_TRUE(world.publishMaterializedChunk(shared::Chunk{{1, 2, 1}}, 1U, 42U));
+        ASSERT_TRUE(world.evict({1, 2, 1}));
+    }
+    world.readAuthoritativeColumnChanges(0U, changes);
+    EXPECT_TRUE(changes.full_resync);
+    uint64_t const before_reset = changes.cursor;
+    world.setWorldIdentity(2U, 42U);
+    world.readAuthoritativeColumnChanges(before_reset, changes);
+    EXPECT_TRUE(changes.full_resync);
+    world.readAuthoritativeColumnChanges(changes.cursor, changes);
+    EXPECT_FALSE(changes.full_resync);
+    EXPECT_TRUE(changes.coordinates.empty());
+    world.readAuthoritativeColumnChanges(changes.cursor + 1U, changes);
+    EXPECT_TRUE(changes.full_resync);
+}
+
+TEST(SparseWorldTest, ColumnJournalTracksAuthorityPublicationVictimsRemovalAndRequirementChanges)
+{
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    shared::SparseWorld world({.max_authoritative_columns = 1U});
+    shared::AuthoritativeColumnChanges changes;
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    world.readAuthoritativeColumnChanges(0U, changes);
+    ASSERT_TRUE(changes.full_resync);
+    uint64_t cursor = changes.cursor;
+    ASSERT_TRUE(world.publishAuthoritativeSurface(makeCanonicalSurface({4, 5, 0}, identity)));
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{{4, 5, 0}}));
+    cursor = changes.cursor;
+    ASSERT_TRUE(world.publishAuthoritativeSurface(makeCanonicalSurface({2, 5, 0}, identity)));
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{{2, 5, 0}, {4, 5, 0}}));
+    cursor = changes.cursor;
+    ASSERT_TRUE(world.removeAuthoritativeSurface({2, 5, 0}));
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{{2, 5, 0}}));
+    std::array<shared::EditedChunkRevision, 1U> requirements{{{{2, 5, 24}, 2U}}};
+    cursor = changes.cursor;
+    uint64_t const revision = world.authoritativeSurfaceRevision();
+    ASSERT_TRUE(world.setEditedChunkRequirements({2, 5, 0}, requirements));
+    EXPECT_EQ(world.authoritativeSurfaceRevision(), revision);
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{{2, 5, 0}}));
+    cursor = changes.cursor;
+    ASSERT_TRUE(world.publishSurfaceMetadata(makeCanonicalSurface({2, 5, 0}, identity)));
+    ASSERT_EQ(world.surfaceMetadataTileCount(), 1U);
+    ASSERT_TRUE(world.setEditedChunkRequirements({2, 5, 0}, requirements));
+    EXPECT_EQ(world.surfaceMetadataTileCount(), 0U);
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.cursor, cursor);
+    ASSERT_TRUE(world.setEditedChunkRequirements({2, 5, 0}, {}));
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{{2, 5, 0}}));
+}
+
+TEST(SparseWorldTest, ResidentContentSnapshotCopiesSortedIdentitiesAndDetectsBorrowedMutation)
+{
+    shared::SparseWorld world;
+    ASSERT_NE(world.ensureChunk({3, 2, 1}), nullptr);
+    auto* const borrowed = world.ensureChunk({1, 2, 2});
+    ASSERT_NE(borrowed, nullptr);
+    std::vector<shared::ResidentChunkContent> contents;
+    world.residentChunkContents(contents);
+    ASSERT_EQ(contents.size(), 2U);
+    EXPECT_EQ(contents[0].coordinate, (shared::ChunkCoordinate{1, 2, 2}));
+    EXPECT_EQ(contents[1].coordinate, (shared::ChunkCoordinate{3, 2, 1}));
+    auto const original = contents[0].content;
+    auto const old_block = borrowed->blockAt({0U, 0U, 1U});
+    ASSERT_TRUE(borrowed->setBlock({0U, 0U, 1U}, old_block == shared::Block::Air
+        ? shared::Block::Stone : shared::Block::Air));
+    EXPECT_EQ(contents[0].content, original);
+    world.residentChunkContents(contents);
+    EXPECT_NE(contents[0].content, original);
+    EXPECT_EQ(contents[0].content, borrowed->contentIdentity());
+    ASSERT_TRUE(world.evict({1, 2, 2}));
+    world.residentChunkContents(contents);
+    ASSERT_EQ(contents.size(), 1U);
+    EXPECT_EQ(contents[0].coordinate, (shared::ChunkCoordinate{3, 2, 1}));
+}
+
+TEST(SparseWorldTest, ColumnJournalTracksManagedEditsSnapshotsDeltasAndDensePublication)
+{
+    static constexpr shared::ChunkCoordinate TILE{4, 5, 0};
+    static constexpr shared::ChunkCoordinate CHUNK{4, 5, 24};
+    static constexpr shared::WorldCoordinate BLOCK{64, 80, 384};
+    auto const identity = testsupport::makeTerrainIdentity(42U, 1U);
+    auto const surface = makeCanonicalSurface(TILE, identity);
+    shared::SparseWorld world;
+    ASSERT_TRUE(world.setTerrainIdentity(identity));
+    ASSERT_TRUE(world.publishAuthoritativeSurface(surface));
+    shared::AuthoritativeColumnChanges changes;
+    world.readAuthoritativeColumnChanges(0U, changes);
+    uint64_t cursor = changes.cursor;
+    auto effective = makeCanonicalChunk(surface, CHUNK);
+    ASSERT_TRUE(effective.setBlock({0U, 0U, 0U}, shared::Block::Snow));
+    ASSERT_TRUE(world.publishMaterializedChunk(effective, 1U, 42U));
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{TILE}));
+    cursor = changes.cursor;
+    ASSERT_TRUE(world.setBlock(BLOCK, shared::Block::Air));
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{TILE}));
+    cursor = changes.cursor;
+    shared::SparseEditSnapshot snapshot{
+        .coordinate = CHUNK, .revision = 2U,
+        .edits = {{{0U, 0U, 0U}, shared::Block::Snow, 2U}},
+    };
+    ASSERT_TRUE(world.installEditSnapshot(snapshot, effective));
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{TILE}));
+    cursor = changes.cursor;
+    ASSERT_TRUE(world.applyEditDelta(BLOCK, shared::Block::Air, 2U, 3U, 3U));
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{TILE}));
+}
+
+TEST(SparseWorldTest, ColumnJournalTracksPreviewAvailabilityWithoutReplacementChurn)
+{
+    shared::SparseWorld world({.max_resident_chunks = 1U});
+    shared::HeightTile preview{.coordinate = {1, 2}};
+    shared::AuthoritativeColumnChanges changes;
+    ASSERT_TRUE(world.publishPreview({1, 2, 0}, preview, 1U, 42U));
+    world.readAuthoritativeColumnChanges(0U, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{{1, 2, 0}}));
+    uint64_t cursor = changes.cursor;
+    ASSERT_TRUE(world.publishPreview({1, 2, 0}, preview, 1U, 42U));
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.cursor, cursor);
+    ASSERT_NE(world.ensureChunk({3, 4, 1}), nullptr);
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{{1, 2, 0}, {3, 4, 0}}));
+    ASSERT_TRUE(world.evict({3, 4, 1}));
+    ASSERT_TRUE(world.publishPreview({1, 2, 0}, preview, 1U, 42U));
+    world.readAuthoritativeColumnChanges(changes.cursor, changes);
+    cursor = changes.cursor;
+    ASSERT_TRUE(world.evict({1, 2, 0}));
+    world.readAuthoritativeColumnChanges(cursor, changes);
+    EXPECT_EQ(changes.coordinates, (std::vector<shared::ChunkCoordinate>{{1, 2, 0}}));
+}
