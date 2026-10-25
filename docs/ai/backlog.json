@@ -19712,5 +19712,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0555",
+    "title": "Isolate physical input and focus in scripted gameplay profiling",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "The scripted gameplay benchmark opens without requesting foreground focus and applies the existing platform-input isolation to physical keyboard, mouse and wheel, while preserving close/cancellation and scripted start/input callbacks. Verify native input/window behavior with the existing isolation test and one bounded Mac production route plus passive foreground sampling, without injecting physical input. Bind the future Windows capture to the exact source/build identity and prepared profiler contract. Do not claim a Windows trace or performance pass; Windows build/capture/runtime acceptance remains with MC-AI-0553/0483.",
+    "evidence": "Final `GameBenchmark.cpp` SHA-256: 753d113ded78919eda2eb9bdedbeb67063c283804ce56575bb614d1255da9415. Release build completed 117/117 steps on the c0 candidate and 7/7 incremental steps after rebasing onto 71f9c467dda7e347375ac714c0c61a6890890a6a. The final-source `PlayerClientFocusTest.BenchmarkInputIsolationIgnoresInjectedMapMovementClickAndWheel` passed 1/1; the production `--benchmark-game --workload ordinary` route passed with controlled start complete, synthetic start override invoked, 60 inputs and 60 authoritative updates. All 116 passive NSWorkspace samples across both phases stayed on ChatGPT (`com.openai.codex`, PID 75141). The exact source/build identity is recorded in `/Users/core-just/.codex/task-evidence/mc-s2-20261024/task-0555-benchmark-isolation/review/source-identity-prep.json`; the prepared Windows contract is `/Users/core-just/.codex/task-evidence/mc-s2-20261024/windows-profiler-inventory-20261025/GAME-PROFILE-CONTRACT.md`. The sandboxed test attempt interrupted before result is preserved in `sandbox-native-test-attempt.txt`; the escalated final-source rerun passed. No Windows build/trace or performance result is claimed; those remain open with MC-AI-0553/0483.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Collect uncontaminated Windows profiling without taking the owner keyboard focus.",
+    "context": "Use the existing `--benchmark-game` deterministic route and installed PresentMon/Nsight. Ordinary game input behavior remains unchanged. This task completes the local focus/input-isolation prerequisite and binds the exact source/build identity to the prepared Windows profiling contract. Windows build, trace capture and runtime acceptance remain with MC-AI-0553/0483.",
+    "complexity": "medium",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added a benchmark-scoped GLFW unfocused-window hint with scope-exit reset and enabled the existing platform-input isolation hook. Verified the native isolation case and ordinary scripted route on Mac while the current app remained foreground; bound the exact candidate source/build identity to the prepared Windows profile contract. Windows build, trace capture and runtime performance qualification remain open with MC-AI-0553/0483.",
+    "plan": [
+      "Open the deterministic scripted benchmark without taking owner focus; isolate physical platform input while preserving scripted callbacks and close/cancellation.",
+      "Verify native input/window behavior and one bounded Mac production route with passive foreground sampling.",
+      "Bind the exact source/build identity to the prepared Windows profile contract without claiming Windows execution or performance results."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "The `--benchmark-game` route requests an unfocused window only while constructing `PlayerClient`, then restores the default GLFW hint.",
+      "The route enables the existing platform-input isolation hook."
+    ],
+    "baseline_commit": "c0cba59eb4e256b5c0fb30d5ead926fc61e57159",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

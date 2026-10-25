@@ -32,6 +32,9 @@
 #include <acceptance/RendererBenchmark.hpp>
 #include <acceptance/ReplayInput.hpp>
 
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
 #endif
@@ -2454,37 +2457,47 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     std::unordered_set<uint32_t> s1_post_window_input_sequences;
     s1_post_window_input_sequences.reserve(32U);
     bool s1_movement_window_drained = false;
-    auto const player_storage = std::make_unique<client::PlayerClient>(
-        shared::WorldMode::Flight,
-        std::nullopt,
-        client::PlayerClientBenchmarkOptions{
-            .require_immediate_present_mode = options.require_immediate_present_mode,
-            .freeze_camera = options.workload == GameBenchmarkWorkload::DiagnosticStationary
-                || full_radius_workload,
-            .show_debug_hud = full_radius_workload || s1_terrain_workload,
-            .enable_mesh_stage_diagnostics = options.diagnostic_full_radius_capture,
-            .enable_presentation_history = capture_presentation_history,
-            .capture_frame_completion = true,
-            .camera_angles_override = options.workload == GameBenchmarkWorkload::OrdinaryTurningMovement
-                ? std::function<std::optional<client::CameraAngles>(Clock::time_point)>{
-                    [&movement_route_started_at](Clock::time_point const sampled_at)
-                        -> std::optional<client::CameraAngles> {
-                        if (!movement_route_started_at) {
-                            return std::nullopt;
-                        }
-                        std::chrono::nanoseconds const elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                            sampled_at - *movement_route_started_at
-                        );
-                        GameBenchmarkMovementRouteSample const route = gameBenchmarkRepeatingMovementRouteAt(elapsed);
-                        return client::CameraAngles{
-                            .yaw_degrees = route.yaw_degrees,
-                            .pitch_degrees = route.pitch_degrees,
-                        };
-                    },
-                }
-                : std::function<std::optional<client::CameraAngles>(Clock::time_point)>{},
+    client::PlayerClientBenchmarkOptions player_options{
+        .require_immediate_present_mode = options.require_immediate_present_mode,
+        .freeze_camera = options.workload == GameBenchmarkWorkload::DiagnosticStationary
+            || full_radius_workload,
+        .show_debug_hud = full_radius_workload || s1_terrain_workload,
+        .enable_mesh_stage_diagnostics = options.diagnostic_full_radius_capture,
+        .enable_presentation_history = capture_presentation_history,
+        .capture_frame_completion = true,
+        .camera_angles_override = options.workload == GameBenchmarkWorkload::OrdinaryTurningMovement
+            ? std::function<std::optional<client::CameraAngles>(Clock::time_point)>{
+                [&movement_route_started_at](Clock::time_point const sampled_at)
+                    -> std::optional<client::CameraAngles> {
+                    if (!movement_route_started_at) {
+                        return std::nullopt;
+                    }
+                    std::chrono::nanoseconds const elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        sampled_at - *movement_route_started_at
+                    );
+                    GameBenchmarkMovementRouteSample const route = gameBenchmarkRepeatingMovementRouteAt(elapsed);
+                    return client::CameraAngles{
+                        .yaw_degrees = route.yaw_degrees,
+                        .pitch_degrees = route.pitch_degrees,
+                    };
+                },
+            }
+            : std::function<std::optional<client::CameraAngles>(Clock::time_point)>{},
+    };
+    auto const player_storage = [&] {
+        if (glfwInit() != GLFW_TRUE) {
+            throw std::runtime_error("Cannot initialize the benchmark window");
         }
-    );
+        struct RestoreFocusHint final {
+            ~RestoreFocusHint() { glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE); }
+        } restore_focus_hint;
+        glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
+        return std::make_unique<client::PlayerClient>(
+            shared::WorldMode::Flight,
+            std::nullopt,
+            std::move(player_options)
+        );
+    }();
     client::PlayerClient& player = *player_storage;
     std::cout << "[benchmark-game] player renderer ready; connecting\n" << std::flush;
 
@@ -2962,6 +2975,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     };
     auto loop_scratch = std::make_unique<LoopScratch>();
     client::GameClientBenchmarkHooks const client_hooks{
+        .isolate_platform_input = true,
         .deadline = started_at + effective_deadline,
         .should_stop = [&] {
             if (s1_terrain_workload && !s1_movement_window.startedAt()) {
