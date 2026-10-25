@@ -20506,5 +20506,45 @@
     "docs_review": "",
     "environment_review": "Standalone AppleClang generation build on the c5 candidate using existing arm64-osx prefixes; VCPKG_MANIFEST_INSTALL=OFF; no dependency install.",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0580",
+    "title": "Fix v2 report overview readback formatting",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Optional overview readback uses the report progress format when locating the first rendered feature status; v2 with Implementing as the earliest stage and optional overview passes PDF render/readback; a v1 control passes; missing status and missing required section remain rejected; focused tests, source policy, backlog and docs checks pass; exact-task Luna/high review is recorded; no report history/state/PDF is modified.",
+    "evidence": "Test-first regression reproduced the v2/v1 optional-overview readback failure before the patch. Bundled Python report suite: 29/29 passed, including v2/v1 real PDF render/readback, malformed draft stage/required-field rejection, and PDF readback rejection when a required section or feature status is absent. Scoped ai_check.py --fast passes docs, backlog, current-plan, release-report integrity, diff checks, and targeted Python checks (PDF-dependent cases skip under system Python without reportlab/pypdf; bundled runtime executes all). Exact-task Luna/high review accepted the implementation; its verifier-coverage caveat was closed with the added missing-section/status readback test.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "v2 managed reports with an optional overview fail PDF readback because verification formats the first status with the legacy three-status formatter.",
+    "context": "In script/ai_release_reports.py verify_pdf, the overview-order check omits the draft progress_format when formatting the earliest feature status. The report renderer and ordinary status checks already support development-stages-v2. This is a readback-only compatibility defect; preserve all required section and feature-status checks.",
+    "complexity": "low",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Pass validated progress_format into verify_pdf optional-overview earliest-status ordering lookup; add v2 Implementing-first render/readback regression, v1 compatibility control, and malformed required-stage/section rejection coverage.",
+    "plan": [
+      "Pass the validated progress_format into the earliest-status lookup in the optional-overview readback check.",
+      "Add focused v2 Implementing-first render/readback regression and a v1 compatibility control; retain missing-status and missing-section failure checks.",
+      "Run focused report tests and source-policy/backlog/docs validation, then obtain the bounded exact-task review."
+    ],
+    "product_changes": [
+      "Optional v2 overview reports read back successfully while report integrity checks remain active."
+    ],
+    "code_changes": [
+      "Correctly format the earliest status line using its report progress format and add focused regression coverage."
+    ],
+    "baseline_commit": "2d40c33bf6c3db51814ea509d45fb4be459100bb",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Read RELEASE_REPORTS.md behavior contract; ai_docs.py refresh/check passes after updating the one generated source-state hash for the edited report verifier.",
+    "environment_review": "Thin-rebased onto 2d40c33bf6c3db51814ea509d45fb4be459100bb in the private candidate; implementation and test blobs are unchanged from the approved tree. Existing bundled-Python 29/29 report-suite result remains exact for those unchanged blobs. No shared-root mutation or dependency installation.",
+    "backlog_review": "MC-AI-0579 metadata from the new base is preserved, MC-AI-0580 is added as its own finalized child of active MC-AI-0483, and generated Markdown validates. Shared release report state and PDFs are unchanged."
   }
 ]

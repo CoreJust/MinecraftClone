@@ -1162,8 +1162,11 @@ def verify_pdf(path: Path, payload: dict[str, Any]) -> None:
         overview_positions = [text.find(" ".join(line.split())) for line in report.get("overview", [])]
         if any(position < 0 for position in overview_positions):
             raise ReportError("rendered PDF is missing release overview text")
+        progress_format = report.get("progress_format")
         if overview_positions and display_states and max(overview_positions) >= text.find(
-            _feature_status_line(feature_names[display_states[0][1]["id"]], display_states[0][1])
+            _feature_status_line(
+                feature_names[display_states[0][1]["id"]], display_states[0][1], progress_format
+            )
         ):
             raise ReportError("rendered PDF overview must appear before feature statuses")
         if "product_results" in report:

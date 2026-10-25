@@ -476,6 +476,95 @@ class AiReleaseReportsTest(unittest.TestCase):
         self.assertLess(text.index("2. State of release"), text.index(first_overview))
         self.assertLess(text.index(last_overview), text.index("Terrain streaming [terrain]"))
 
+    @unittest.skipUnless(
+        all(importlib.util.find_spec(name) for name in ("reportlab", "pypdf")),
+        "bundled PDF libraries are required",
+    )
+    def test_overview_readback_supports_v2_implementing_first_and_v1(self) -> None:
+        from pypdf import PdfReader
+
+        revision = {
+            "revision": 1,
+            "effective_period_index": 0,
+            "features": FEATURES,
+            "addition_authority": None,
+        }
+        state = {"release_id": "S7", "prefix": PREFIX}
+        committed_detail = "Commit abcdef0123456789abcdef0123456789abcdef01; Windows acceptance remains open."
+
+        for progress_format in ("development-stages-v2", "development-stages-v1"):
+            with self.subTest(progress_format=progress_format):
+                report = draft_for(0)
+                report["progress_format"] = progress_format
+                report["overview"] = ["The report overview remains ahead of feature stages."]
+                report["feature_state"] = [
+                    {"id": "terrain", "status": "Implementing", "detail": "The terrain change is underway."},
+                    {"id": "render", "status": "Committed", "detail": committed_detail},
+                ]
+                ai_release_reports.validate_draft(report, FEATURES, "3h")
+                payload = ai_release_reports._payload(state, report, revision, "3h")
+                output_path = Path(self.temporary_directory.name) / f"overview-{progress_format}.pdf"
+                ai_release_reports.render_pdf(payload, output_path)
+                ai_release_reports.verify_pdf(output_path, payload)
+
+                text = " ".join(page.extract_text() or "" for page in PdfReader(str(output_path)).pages)
+                first_status = ai_release_reports._feature_status_line(
+                    FEATURES[0]["name"], report["feature_state"][0], progress_format
+                )
+                self.assertLess(text.index(report["overview"][0]), text.index(first_status))
+
+    def test_report_validation_rejects_missing_feature_stage_and_required_section(self) -> None:
+        missing_stage = draft_for(0)
+        missing_stage["feature_state"] = missing_stage["feature_state"][:1]
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "feature state must include every manifest feature"):
+            ai_release_reports.validate_draft(missing_stage, FEATURES, "3h")
+
+        missing_section = draft_for(0)
+        del missing_section["summary"]
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "draft fields do not match the required report format"):
+            ai_release_reports.validate_draft(missing_section, FEATURES, "3h")
+
+    @unittest.skipUnless(
+        all(importlib.util.find_spec(name) for name in ("reportlab", "pypdf")),
+        "bundled PDF libraries are required",
+    )
+    def test_pdf_readback_rejects_missing_required_section_or_feature_status(self) -> None:
+        from pypdf import PdfReader
+
+        report = draft_for(0)
+        report["progress_format"] = "development-stages-v2"
+        report["feature_state"] = [
+            {"id": "terrain", "status": "Implementing", "detail": "Terrain edits are underway."},
+            {"id": "render", "status": "Planned", "detail": ""},
+        ]
+        payload = ai_release_reports._payload(
+            {"release_id": "S7", "prefix": PREFIX},
+            report,
+            {"revision": 1, "features": FEATURES, "effective_period_index": 0, "addition_authority": None},
+            "3h",
+        )
+        output_path = Path(self.temporary_directory.name) / "missing-readback-text.pdf"
+        ai_release_reports.render_pdf(payload, output_path)
+        reader = PdfReader(str(output_path))
+        page_text = [page.extract_text() or "" for page in reader.pages]
+
+        for missing_text, message in (
+            ("Summary", "rendered PDF is missing report sections"),
+            (
+                ai_release_reports._feature_status_line("Terrain streaming", report["feature_state"][0], "development-stages-v2"),
+                "rendered PDF has an incorrect feature status",
+            ),
+        ):
+            with self.subTest(missing_text=missing_text):
+                pages = [
+                    mock.Mock(extract_text=mock.Mock(return_value=text.replace(missing_text, "")))
+                    for text in page_text
+                ]
+                patched_reader = mock.Mock(pages=pages, metadata=reader.metadata)
+                with mock.patch("pypdf.PdfReader", return_value=patched_reader):
+                    with self.assertRaisesRegex(ai_release_reports.ReportError, message):
+                        ai_release_reports.verify_pdf(output_path, payload)
+
     def test_rendered_status_and_time_share_labels_match_report_contract(self) -> None:
         self.assertEqual(ai_release_reports._feature_status_line("Terrain streaming", {"status": "Done"}), "Terrain streaming - Done")
         self.assertEqual(
