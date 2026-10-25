@@ -247,7 +247,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "36105544d9463a9f340464ea5870509aadadfe6cfc9dc8fb81508a098ca95d21",
+      "guide_sha256": "b638dd705f3907687af54baa0590608e682e59e48442e700a016cc2b048ff2d3",
       "id": "gameplay",
       "sources": [
         "src/client/BlockActionPresentation.cpp",
@@ -398,11 +398,11 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "8f005956dc76182b2a63c09cb7ad6465c4da1a90ff92b1077f1a12388e2f1141"
+      "sources_sha256": "13436056b9b1221beb1ed1b2ab1ea8d2ac24749827a4c4191e1a99b0841def37"
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "d95242c39b1eecfd5f2bd0ac5e560060ce40814b105e33e08734eefa1c08cf5e",
+      "guide_sha256": "c177ced754fb1025b9f0f808ec9f3bf79580c57e13fcc1f57a78d49726de3c04",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -1011,11 +1011,11 @@
         "tests/generation/v9_terrain_tests.cpp",
         "tests/generation/v9_water_tests.cpp"
       ],
-      "sources_sha256": "c0247538e9882a33c9e905c74821186449475fa5fcdc03389e9820370a63d789"
+      "sources_sha256": "cfab582fbabc6305fa6bdf82e7f2b04c141d3a41ac54f3ab81bd14dbaddc395c"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "9f61be8de1a76213fe80565ba684a04f3505642705fab9a76de814fa25f520c2",
+      "guide_sha256": "0dcd2058ece3e59871232e7c82da5a78e2abc9000f7cf8d69867bfdea037c1b5",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -1139,7 +1139,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "4b4c09dc0433b8213c150ec2981672ec98b441df62086ae12b164432d89033ad"
+      "sources_sha256": "68431b02ffed0ca920f2d29eeb22b80849d8ed824852503c4a35384bcabc2c4a"
     }
   ],
   "version": 1

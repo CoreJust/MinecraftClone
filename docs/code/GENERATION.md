@@ -1,15 +1,12 @@
 # Native Terrain-v2 generation
 
-`mc_generation` owns deterministic CPU atlas kernels and configuration;
-`mc_world_sampling` adds canonical regions, columns and chunks. Both are free of
-window, renderer, network and CoreLang startup dependencies. `mc_world_map`
-exports gameplay's atlas/sampler. RGB diagnostics use fused multiply-add for
-stable rounding.
+`mc_generation` owns deterministic atlas kernels/config; `mc_world_sampling` adds
+canonical regions, columns and chunks. Both are portable. `mc_world_map` exports
+the gameplay sampler; RGB diagnostics use fused multiply-add.
 
-With a callback, the R6 atlas publishes immutable snapshots after tectonic,
-coast, drainage, climate and erosion. Without one, snapshot work is skipped;
-final fields match. Cancellation and failure stay explicit, configuration is
-validated before allocation, and readiness requires a completed atlas.
+R6 snapshots tectonic/coast/drainage/climate/erosion; skipped callbacks preserve
+final fields. Validate before allocation; cancellation/failure explicit. V9 adds
+paired source wind/current vectors (m/s), expanding eight-phase climate `32²→256²`.
 
 Canonical regional elaboration inherits parent samples. `TerrainWorld` provides
 typed columns and builds actual chunks; [GAMEPLAY.md](GAMEPLAY.md) covers

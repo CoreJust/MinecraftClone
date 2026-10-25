@@ -100,6 +100,11 @@ struct V9GenerationSnapshotFields final
 {
     std::vector<float> source_elevation_m;
     std::vector<float> temperature_celsius;
+    // Actual eight-phase native climate means, sampled on the progress snapshot grid.
+    std::vector<float> wind_u;
+    std::vector<float> wind_v;
+    std::vector<float> current_u;
+    std::vector<float> current_v;
     std::vector<float> precipitation_mm_year;
     std::vector<float> water_level_m;
     std::vector<uint8_t> ocean_mask;

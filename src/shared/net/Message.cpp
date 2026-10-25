@@ -155,6 +155,10 @@ uint64_t generationSnapshotEncodedSize(generation::GenerationSnapshot const& sna
         size += 8U;
         add_field_size(fields.source_elevation_m.size() * sizeof(float));
         add_field_size(fields.temperature_celsius.size() * sizeof(float));
+        add_field_size(fields.wind_u.size() * sizeof(float));
+        add_field_size(fields.wind_v.size() * sizeof(float));
+        add_field_size(fields.current_u.size() * sizeof(float));
+        add_field_size(fields.current_v.size() * sizeof(float));
         add_field_size(fields.precipitation_mm_year.size() * sizeof(float));
         add_field_size(fields.water_level_m.size() * sizeof(float));
         add_field_size(fields.ocean_mask.size());
@@ -222,6 +226,10 @@ void appendGenerationSnapshot(std::vector<uint8_t>& bytes, generation::Generatio
         appendUint32(bytes, fields.plate_directions_observed_after_native_step);
         appendFloatVector(bytes, fields.source_elevation_m);
         appendFloatVector(bytes, fields.temperature_celsius);
+        appendFloatVector(bytes, fields.wind_u);
+        appendFloatVector(bytes, fields.wind_v);
+        appendFloatVector(bytes, fields.current_u);
+        appendFloatVector(bytes, fields.current_v);
         appendFloatVector(bytes, fields.precipitation_mm_year);
         appendFloatVector(bytes, fields.water_level_m);
         appendByteVector(bytes, fields.ocean_mask);
@@ -1216,6 +1224,10 @@ std::optional<generation::GenerationSnapshot> readGenerationSnapshot(MessageRead
         auto const observed_after_native_step = reader.readUint32();
         auto const source_elevation_m = readFloatVector(reader, sample_count);
         auto const temperature_celsius = readFloatVector(reader, sample_count);
+        auto const wind_u = readFloatVector(reader, sample_count);
+        auto const wind_v = readFloatVector(reader, sample_count);
+        auto const current_u = readFloatVector(reader, sample_count);
+        auto const current_v = readFloatVector(reader, sample_count);
         auto const precipitation_mm_year = readFloatVector(reader, sample_count);
         auto const water_level_m = readFloatVector(reader, sample_count);
         auto const v9_ocean_mask = readByteVector(reader, sample_count);
@@ -1225,7 +1237,8 @@ std::optional<generation::GenerationSnapshot> readGenerationSnapshot(MessageRead
         auto const plate_ids = readUint32Vector(reader, sample_count);
         auto const direction_count = reader.readUint32();
         if (!observed_after_native_step || !source_elevation_m || !temperature_celsius
-            || !precipitation_mm_year || !water_level_m || !v9_ocean_mask || !v9_lake_mask
+            || !wind_u || !wind_v || !current_u || !current_v || !precipitation_mm_year
+            || !water_level_m || !v9_ocean_mask || !v9_lake_mask
             || !v9_river_mask || !ice_surface_kind || !plate_ids || !direction_count
             || *direction_count == 0U || *direction_count > 1024U
             || static_cast<uint64_t>(*direction_count) * 12U > reader.remaining()) {
@@ -1234,6 +1247,10 @@ std::optional<generation::GenerationSnapshot> readGenerationSnapshot(MessageRead
         generation::V9GenerationSnapshotFields fields{
             .source_elevation_m = *source_elevation_m,
             .temperature_celsius = *temperature_celsius,
+            .wind_u = *wind_u,
+            .wind_v = *wind_v,
+            .current_u = *current_u,
+            .current_v = *current_v,
             .precipitation_mm_year = *precipitation_mm_year,
             .water_level_m = *water_level_m,
             .ocean_mask = *v9_ocean_mask,

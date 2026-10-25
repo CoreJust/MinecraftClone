@@ -672,6 +672,11 @@ struct AnimationCell final
     float plate_u = 0.0F;
     float plate_v = 0.0F;
     float strain = 0.0F;
+    float formation_height = 0.0F;
+    float formation_x = 0.0F;
+    float formation_y = 0.0F;
+    float rotation_x = 0.0F;
+    float rotation_y = 0.0F;
     float ice_temperature = 0.0F;
     float wetness = 0.0F;
     uint8_t water_mask = 0U;
@@ -732,11 +737,75 @@ struct PreparedAnimationMap final
 
 struct PlateAverage final
 {
+    double cosine_x = 0.0;
+    double sine_x = 0.0;
+    double cosine_y = 0.0;
+    double sine_y = 0.0;
     double u = 0.0;
     double v = 0.0;
     uint32_t count = 0U;
     uint32_t index = 0U;
 };
+
+void smoothNativeFormation(PreparedAnimationMap& data)
+{
+    static constexpr std::array MEMBERS{
+        &AnimationCell::plate_u, &AnimationCell::plate_v,
+        &AnimationCell::rotation_x, &AnimationCell::rotation_y, &AnimationCell::strain,
+    };
+    static constexpr int32_t RADIUS = 12;
+    static constexpr float WINDOW = static_cast<float>(RADIUS * 2 + 1);
+    uint32_t const side = data.resolution;
+    auto const wrap = [side](int32_t value) {
+        int32_t const size = static_cast<int32_t>(side);
+        return static_cast<uint32_t>((value % size + size) % size);
+    };
+    std::vector<std::array<float, MEMBERS.size()>> horizontal(data.cells.size());
+    // One continuous toroidal flow replaces plate-domain cutouts; canonical detail is untouched.
+    for (uint32_t pass = 0U; pass < 3U; ++pass)
+    {
+        for (uint32_t y = 0U; y < side; ++y)
+        {
+            std::array<float, MEMBERS.size()> sums{};
+            for (int32_t offset = -RADIUS; offset <= RADIUS; ++offset)
+            {
+                auto const& cell = data.cells[static_cast<size_t>(y) * side + wrap(offset)];
+                for (size_t field = 0U; field < MEMBERS.size(); ++field) sums[field] += cell.*MEMBERS[field];
+            }
+            for (uint32_t x = 0U; x < side; ++x)
+            {
+                auto& output = horizontal[static_cast<size_t>(y) * side + x];
+                auto const& add = data.cells[static_cast<size_t>(y) * side + wrap(static_cast<int32_t>(x) + RADIUS + 1)];
+                auto const& remove = data.cells[static_cast<size_t>(y) * side + wrap(static_cast<int32_t>(x) - RADIUS)];
+                for (size_t field = 0U; field < MEMBERS.size(); ++field)
+                {
+                    output[field] = sums[field] / WINDOW;
+                    sums[field] += add.*MEMBERS[field] - remove.*MEMBERS[field];
+                }
+            }
+        }
+        for (uint32_t x = 0U; x < side; ++x)
+        {
+            std::array<float, MEMBERS.size()> sums{};
+            for (int32_t offset = -RADIUS; offset <= RADIUS; ++offset)
+            {
+                auto const& input = horizontal[static_cast<size_t>(wrap(offset)) * side + x];
+                for (size_t field = 0U; field < MEMBERS.size(); ++field) sums[field] += input[field];
+            }
+            for (uint32_t y = 0U; y < side; ++y)
+            {
+                auto& cell = data.cells[static_cast<size_t>(y) * side + x];
+                auto const& add = horizontal[static_cast<size_t>(wrap(static_cast<int32_t>(y) + RADIUS + 1)) * side + x];
+                auto const& remove = horizontal[static_cast<size_t>(wrap(static_cast<int32_t>(y) - RADIUS)) * side + x];
+                for (size_t field = 0U; field < MEMBERS.size(); ++field)
+                {
+                    cell.*MEMBERS[field] = sums[field] / WINDOW;
+                    sums[field] += add[field] - remove[field];
+                }
+            }
+        }
+    }
+}
 
 [[nodiscard]]
 uint32_t animationCellIndex(uint32_t const x, uint32_t const y) noexcept
@@ -847,8 +916,9 @@ std::vector<AnimationPath> makeAnimationPaths(
                     break;
                 }
                 path.points.push_back({ x, y });
-                float const next_x = x + u / magnitude * 0.8F;
-                float const next_y = y + v / magnitude * 0.8F;
+                float const step_size = data.native_palette ? 1.6F : 0.8F;
+                float const next_x = x + u / magnitude * step_size;
+                float const next_y = y + v / magnitude * step_size;
                 if (next_x < 0.0F || next_y < 0.0F || next_x >= static_cast<float>(data.resolution)
                     || next_y >= static_cast<float>(data.resolution))
                 {
@@ -1027,12 +1097,22 @@ std::optional<PreparedAnimationMap> prepareAnimationMap(AnimationSourceFields co
                 }
                 plate.u += source.plate_vx[source_index];
                 plate.v += source.plate_vy[source_index];
+                if (data.native_palette)
+                {
+                    double const phase_x = static_cast<double>(x) * 6.283'185'3 / data.resolution;
+                    double const phase_y = static_cast<double>(y) * 6.283'185'3 / data.resolution;
+                    plate.cosine_x += std::cos(phase_x);
+                    plate.sine_x += std::sin(phase_x);
+                    plate.cosine_y += std::cos(phase_y);
+                    plate.sine_y += std::sin(phase_y);
+                }
                 ++plate.count;
                 data.cells[cell_index].plate_index = static_cast<int16_t>(plate.index);
             }
         }
         plate_count = static_cast<uint32_t>(plates.size());
         std::vector<std::array<float, 2U>> plate_motion(plate_count);
+        std::vector<std::array<float, 2U>> plate_centers(plate_count);
         float maximum_speed = 0.0F;
         for (auto& [plate_id, plate] : plates)
         {
@@ -1044,6 +1124,10 @@ std::optional<PreparedAnimationMap> prepareAnimationMap(AnimationSourceFields co
                 static_cast<float>(plate.u),
                 static_cast<float>(plate.v),
             };
+            plate_centers[plate.index] = {
+                static_cast<float>(std::atan2(plate.sine_x, plate.cosine_x) * data.resolution / 6.283'185'3),
+                static_cast<float>(std::atan2(plate.sine_y, plate.cosine_y) * data.resolution / 6.283'185'3),
+            };
         }
         if (plate_count <= 64U && maximum_speed > 1.0e-8F)
         {
@@ -1053,13 +1137,27 @@ std::optional<PreparedAnimationMap> prepareAnimationMap(AnimationSourceFields co
                 motion[0U] /= maximum_speed;
                 motion[1U] /= maximum_speed;
             }
-            for (AnimationCell& cell : data.cells)
+            for (uint32_t cell_index = 0U; cell_index < cell_count; ++cell_index)
             {
+                AnimationCell& cell = data.cells[cell_index];
                 if (cell.plate_index >= 0)
                 {
                     auto const& motion = plate_motion[static_cast<size_t>(cell.plate_index)];
                     cell.plate_u = motion[0U];
                     cell.plate_v = motion[1U];
+                    if (data.native_palette)
+                    {
+                        size_t const plate = static_cast<size_t>(cell.plate_index);
+                        float const angle = 0.28F * (motion[0U] - motion[1U] * 0.6F);
+                        auto const center = plate_centers[plate];
+                        float const radius = static_cast<float>(data.resolution) / 6.283'185'3F;
+                        float const dx = std::sin((static_cast<float>(cell_index % data.resolution) - center[0U]) / radius)
+                            * radius;
+                        float const dy = std::sin((static_cast<float>(cell_index / data.resolution) - center[1U]) / radius)
+                            * radius;
+                        cell.rotation_x = (std::cos(angle) - 1.0F) * dx - std::sin(angle) * dy;
+                        cell.rotation_y = std::sin(angle) * dx + (std::cos(angle) - 1.0F) * dy;
+                    }
                 }
             }
 
@@ -1135,6 +1233,25 @@ std::optional<PreparedAnimationMap> prepareAnimationMap(AnimationSourceFields co
             for (uint32_t index = 0U; index < cell_count; ++index)
             {
                 data.cells[index].strain = strain[index] / denominator;
+            }
+        }
+    }
+
+    if (data.native_palette)
+    {
+        smoothNativeFormation(data);
+        for (uint32_t y = 0U; y < data.resolution; ++y)
+        {
+            for (uint32_t x = 0U; x < data.resolution; ++x)
+            {
+                AnimationCell& cell = data.cells[animationCellIndex(x, y)];
+                float const wave_x = static_cast<float>(x) * 6.283'185'3F / static_cast<float>(data.resolution);
+                float const wave_y = static_cast<float>(y) * 6.283'185'3F / static_cast<float>(data.resolution);
+                cell.formation_height = data.elevation_range
+                    * (0.10F * std::sin(wave_x * 3.0F + cell.plate_u) * std::cos(wave_y * 2.0F + cell.plate_v)
+                        + 0.06F * cell.strain);
+                cell.formation_x = 10.0F * std::sin(wave_y + cell.plate_u);
+                cell.formation_y = 10.0F * std::sin(wave_x + cell.plate_v);
             }
         }
     }
@@ -1301,6 +1418,10 @@ std::optional<PreparedAnimationMap> prepareAnimationMap(
             .temperature = source.temperature_celsius,
             .precipitation = precipitation_m_year,
             .water_level = water_level_km,
+            .wind_u = source.wind_u,
+            .wind_v = source.wind_v,
+            .current_u = source.current_u,
+            .current_v = source.current_v,
             .plate_vx = plate_vx,
             .plate_vy = plate_vy,
             .plate_id = compact_plate_ids,
@@ -1366,24 +1487,18 @@ struct AnimationPhaseState final
 [[nodiscard]]
 AnimationPhaseState animationPhase(GenerationMapAnimationClock const& clock) noexcept
 {
-    int64_t const nonnegative_milliseconds = std::max<int64_t>(clock.visible_elapsed.count(), 0);
-    static constexpr int64_t PHASE_DURATION_MILLISECONDS = 5'000;
-    static constexpr int64_t ANIMATION_DURATION_MILLISECONDS = PHASE_DURATION_MILLISECONDS * 6;
-    if (nonnegative_milliseconds >= ANIMATION_DURATION_MILLISECONDS)
+    int64_t const elapsed = std::max<int64_t>(clock.visible_elapsed.count(), 0);
+    int64_t const duration = std::max<int64_t>(clock.formation_duration.count(), 1);
+    if (elapsed >= duration)
     {
-        return {
-            .phase = GenerationMapAnimationPhase::Arrival,
-            .phase_index = 5U,
-            .progress = 1.0F,
-        };
+        return {.phase = GenerationMapAnimationPhase::Arrival, .phase_index = 5U, .progress = 1.0F};
     }
-    uint32_t const phase_index = static_cast<uint32_t>(nonnegative_milliseconds / PHASE_DURATION_MILLISECONDS);
-    float const progress = static_cast<float>(nonnegative_milliseconds % PHASE_DURATION_MILLISECONDS)
-        / static_cast<float>(PHASE_DURATION_MILLISECONDS);
+    double const stage_position = static_cast<double>(elapsed) * 5.0 / static_cast<double>(duration);
+    uint32_t const phase_index = static_cast<uint32_t>(stage_position);
     return {
         .phase = static_cast<GenerationMapAnimationPhase>(phase_index),
         .phase_index = phase_index,
-        .progress = progress,
+        .progress = static_cast<float>(stage_position - phase_index),
     };
 }
 
@@ -1428,6 +1543,14 @@ float animationHeightScale(AnimationPhaseState const& phase, float const progres
 [[nodiscard]]
 float animationSeaLevel(PreparedAnimationMap const& data, AnimationPhaseState const& phase, float const progress) noexcept
 {
+    if (data.native_palette && phase.phase_index < 3U)
+    {
+        float const floor = std::min(data.elevation_limits[0], 0.0F);
+        float const cooling_ocean = smoothProgress(std::clamp((progress - 0.4F) / 0.6F, 0.0F, 1.0F));
+        float const fraction = phase.phase_index == 0U ? 1.0F - cooling_ocean * 0.75F
+            : (phase.phase_index == 1U ? 0.25F + progress * 0.10F : 0.35F * (1.0F - progress));
+        return data.sea_level + floor * fraction;
+    }
     if (phase.phase_index == 0U)
     {
         return data.sea_level - 0.3F + progress * 0.1F;
@@ -1566,6 +1689,20 @@ void animationPlot(
         GENERATION_MAP_ANIMATION_RENDER_RESOLUTION - 1U,
         static_cast<uint32_t>(std::lround(y * static_cast<float>(GENERATION_MAP_ANIMATION_SCALE)))
     );
+    if (data.native_palette)
+    {
+        // The accepted prototype used a 128-cell field; keep trails legible on native 256-cell maps.
+        uint32_t const left = source_x * GENERATION_MAP_ANIMATION_SCALE;
+        uint32_t const top = source_y * GENERATION_MAP_ANIMATION_SCALE;
+        for (uint32_t dy = 0U; dy < GENERATION_MAP_ANIMATION_SCALE; ++dy)
+        {
+            for (uint32_t dx = 0U; dx < GENERATION_MAP_ANIMATION_SCALE; ++dx)
+            {
+                blendPixel(image.rgba[(top + dy) * image.width + left + dx], color, alpha);
+            }
+        }
+        return;
+    }
     GenerationMapRgba8& pixel = image.rgba[
         render_y * GENERATION_MAP_ANIMATION_RENDER_RESOLUTION + render_x
     ];
@@ -1693,7 +1830,14 @@ GenerationMapImage renderAnimationFrame(
     std::vector<GenerationMapRgba8> motion_colors;
     std::vector<GenerationMapRgba8> motion_fallback_colors;
     std::vector<float> source_slopes;
-    if (samples_fractional_drift)
+    float const formation = data.native_palette
+        ? (phase.phase_index == 0U ? 1.0F - progress * 0.45F
+            : (phase.phase_index == 1U ? (1.0F - progress) * 0.55F : 0.0F)) : 0.0F;
+    auto const formed_height = [&](uint32_t const x, uint32_t const y) {
+        AnimationCell const& cell = data.cells[animationCellIndex(x, y)];
+        return cell.elevation * height_scale + cell.strain * uplift + formation * cell.formation_height;
+    };
+    if (samples_fractional_drift && !data.native_palette)
     {
         // Drift phases precede water, climate, and ice composition.
         uint32_t const cell_count = data.resolution * data.resolution;
@@ -1710,7 +1854,7 @@ GenerationMapImage renderAnimationFrame(
             {
                 uint32_t const index = animationCellIndex(x, y);
                 AnimationCell const& cell = data.cells[index];
-                float const height = cell.elevation * height_scale + cell.strain * uplift;
+                float const height = formed_height(x, y);
                 float const fallback_height = std::min(cell.elevation * height_scale, sea_level - 0.2F);
                 motion_colors[index] = elevationColor(height);
                 motion_fallback_colors[index] = elevationColor(fallback_height);
@@ -1729,7 +1873,31 @@ GenerationMapImage renderAnimationFrame(
         {
             uint32_t const source_index = animationCellIndex(x, y);
             AnimationCell const& cell = data.cells[source_index];
-            float const height = cell.elevation * height_scale + cell.strain * uplift;
+            if (data.native_palette)
+            {
+                auto const wrapped = [&data](float const coordinate) {
+                    int32_t const side = static_cast<int32_t>(data.resolution);
+                    return static_cast<uint32_t>((static_cast<int32_t>(std::lround(coordinate)) % side + side) % side);
+                };
+                uint32_t const sample_x = wrapped(static_cast<float>(x) + cell.plate_u * drift
+                    + formation * (cell.rotation_x - cell.formation_x));
+                uint32_t const sample_y = wrapped(static_cast<float>(y) + cell.plate_v * drift
+                    + formation * (cell.rotation_y - cell.formation_y));
+                uint32_t const sampled = animationCellIndex(sample_x, sample_y);
+                // Inverse sampling fills every destination cell while retaining nearest native detail.
+                for (uint32_t offset_y = 0U; offset_y < raster_scale; ++offset_y)
+                {
+                    for (uint32_t offset_x = 0U; offset_x < raster_scale; ++offset_x)
+                    {
+                        uint32_t const target = (y * raster_scale + offset_y) * raster_resolution
+                            + x * raster_scale + offset_x;
+                        raster_source_map[target] = static_cast<int32_t>(sampled);
+                        height_map[target] = formed_height(sample_x, sample_y);
+                    }
+                }
+                continue;
+            }
+            float const height = formed_height(x, y);
             int32_t const target_x = static_cast<int32_t>(std::lround(
                 (static_cast<float>(x) - cell.plate_u * drift) * static_cast<float>(raster_scale)
             ));
@@ -1803,7 +1971,7 @@ GenerationMapImage renderAnimationFrame(
         bool wet = false;
         GenerationMapRgba8 color{};
         float original_slope = 0.0F;
-        if (samples_fractional_drift)
+        if (samples_fractional_drift && !data.native_palette)
         {
             bool const is_fallback = raster_fallback_map[raster_index] != 0U;
             wet = is_fallback || (data.has_hydrology && source_cell.water_mask != 0U);
@@ -1895,15 +2063,30 @@ GenerationMapImage renderAnimationFrame(
                 ice_kind = native_cell.ice_kind;
             }
             bool const canonical_wet = data.has_hydrology && water_progress >= 1.0F
-                ? source_cell.water_mask != 0U : wet;
+                ? source_cell.water_mask != 0U : (elevation <= sea_level || wet);
+            float const visible_elevation = canonical_wet || water_progress >= 1.0F
+                ? elevation : std::max(0.0F, elevation - sea_level);
             auto const canonical = s2NativeTerrainColor(
-                elevation * 1'000.0F,
+                visible_elevation * 1'000.0F,
                 {data.elevation_limits[0] * 1'000.0F, data.elevation_limits[1] * 1'000.0F},
                 {height_map[east] * 1'000.0F, height_map[south] * 1'000.0F}, canonical_wet,
                 (source_cell.water_level - elevation) * 1'000.0F, ice_kind);
             for (uint32_t channel = 0U; channel < 3U; ++channel)
             {
                 color[channel] = static_cast<uint8_t>(std::clamp(std::lround(canonical[channel]), 0L, 255L));
+            }
+            if (phase.phase_index == 0U)
+            {
+                static constexpr std::array<MapColorStop, 3U> MOLTEN_COLORS{{
+                    {0.0F, {76U, 15U, 12U, 255U}},
+                    {0.48F, {192U, 47U, 13U, 255U}},
+                    {1.0F, {255U, 171U, 49U, 255U}},
+                }};
+                float const heat = std::clamp((elevation - data.elevation_limits[0]) / data.elevation_range, 0.0F, 1.0F);
+                float const cooling_rank = std::clamp(1.0F - heat + source_cell.strain * 0.12F, 0.0F, 1.0F);
+                float const crust = std::clamp((progress / 0.8F - cooling_rank) * 8.0F, 0.0F, 1.0F);
+                // Cooling changes each material color without filtering neighboring pixels.
+                color = blendColor(rampColor(heat, MOLTEN_COLORS), color, crust);
             }
             image.rgba[output_index] = color;
             image.rgba[output_index][3U] = 255U;
@@ -1923,9 +2106,17 @@ GenerationMapImage renderAnimationFrame(
         image.rgba[output_index] = color;
         image.rgba[output_index][3U] = 255U;
     }
-    if (phase.phase_index == 4U && (data.has_wind || data.has_currents || !data.rain_drops.empty()))
+    bool const weather_visible = phase.phase_index == 4U || (data.native_palette && phase.phase_index == 3U);
+    if (weather_visible && (data.has_wind || data.has_currents || !data.rain_drops.empty()))
     {
-        animateWeather(image, data, phaseProgressForRender(phase, reduced_motion));
+        float weather_progress = phaseProgressForRender(phase, reduced_motion);
+        if (data.native_palette)
+        {
+            // Real climate vectors remain visible through ice growth and the final weather phase.
+            weather_progress = phase.phase_index == 3U ? 0.2F + weather_progress * 0.3F
+                : 0.5F + weather_progress * 0.5F;
+        }
+        animateWeather(image, data, weather_progress);
     }
     return image;
 }
@@ -2146,6 +2337,10 @@ GenerationMapAnimationFrame GenerationMapAnimator::update(
     if (cache_ != nullptr && cache_->prepared)
     {
         PreparedAnimationMap const& data = *cache_->prepared;
+        if (data.native_palette && phase.phase_index == 0U)
+        {
+            frame.phase = GenerationMapAnimationPhase::Creation;
+        }
         std::array<bool, 3U> const available{
             data.has_hydrology,
             data.has_ice,
@@ -2161,7 +2356,7 @@ GenerationMapAnimationFrame GenerationMapAnimator::update(
             {
                 cache_->feature_available[index] = true;
                 cache_->late_phase_pending[index] = cache_->feature_missing_seen[index]
-                    && visible_elapsed >= std::chrono::seconds{5U * (index + 3U)};
+                    && visible_elapsed >= clock.formation_duration * (index + 3U) / 5U;
             }
         }
         // Late authoritative fields receive a short visible phase without restarting the normal timeline.
@@ -2202,12 +2397,13 @@ GenerationMapAnimationFrame GenerationMapAnimator::update(
     {
         return frame;
     }
-    static constexpr uint32_t VISUAL_TICKS_PER_PHASE = 120U;
-    uint32_t const tick = static_cast<uint32_t>(std::lround(phase.progress * VISUAL_TICKS_PER_PHASE));
+    uint32_t const visual_ticks = cache_->late_phase ? 24U : static_cast<uint32_t>(std::max<int64_t>(
+        1, clock.formation_duration.count() * 24 / 5'000));
+    uint32_t const tick = static_cast<uint32_t>(std::lround(phase.progress * visual_ticks));
     if (!cache_->rendered_image || cache_->rendered_phase_index != phase.phase_index || cache_->rendered_tick != tick)
     {
         AnimationPhaseState render_phase = phase;
-        render_phase.progress = static_cast<float>(tick) / VISUAL_TICKS_PER_PHASE;
+        render_phase.progress = static_cast<float>(tick) / static_cast<float>(visual_ticks);
         GenerationMapImage rendered = renderAnimationFrame(*cache_->prepared, render_phase, clock.reduced_motion);
         cache_->rendered_image = std::make_shared<GenerationMapImage const>(std::move(rendered));
         cache_->rendered_phase_index = phase.phase_index;

@@ -36,7 +36,7 @@ constexpr TextColor UI_ACCENT{ 1.0F, 224.0F / 255.0F, 128.0F / 255.0F, 1.0F };
 constexpr TextColor UI_QUIET{ 194.0F / 255.0F, 208.0F / 255.0F, 207.0F / 255.0F, 1.0F };
 
 constexpr std::array<std::string_view, 6U> ILLUSTRATIVE_PHASE_NAMES{
-    "Tectonics", "Relief", "Water", "Ice", "Climate", "Arrival",
+    "Formation", "Relief", "Water", "Ice", "Climate", "Arrival",
 };
 
 constexpr std::array<std::array<std::string_view, 2U>, 6U> ILLUSTRATIVE_PHASE_DESCRIPTIONS{{
@@ -60,7 +60,7 @@ constexpr std::array<std::string_view, 6U> ILLUSTRATIVE_PHASE_CAPTIONS{
 [[nodiscard]]
 uint32_t phaseIndex(GenerationMapAnimationPhase const phase) noexcept
 {
-    return static_cast<uint32_t>(phase);
+    return phase == GenerationMapAnimationPhase::Creation ? 0U : static_cast<uint32_t>(phase);
 }
 
 [[nodiscard]]
@@ -262,6 +262,8 @@ UiFrame buildUiFrame(
         if (prompt_frame_ready) {
             phase = "World ready";
             show_start_prompt = true;
+        } else if (animation.has_value()) {
+            phase = "World ready - watch its formation";
         } else {
             phase = "Preparing the terrain view";
         }
@@ -571,7 +573,9 @@ void buildUiLoadingPresentation(
         for (size_t index = 0U; index < ILLUSTRATIVE_PHASE_DESCRIPTIONS[phase_index].size(); ++index) {
             submitOutlined(
                 output,
-                ILLUSTRATIVE_PHASE_DESCRIPTIONS[phase_index][index],
+                *frame.illustrative_phase == GenerationMapAnimationPhase::Creation
+                    ? std::array<std::string_view, 2U>{"Molten rock cools.", "A crust begins to form."}[index]
+                    : ILLUSTRATIVE_PHASE_DESCRIPTIONS[phase_index][index],
                 UI_LIGHT,
                 layout.illustration_description[index],
                 layout.dpi_scale
@@ -597,7 +601,8 @@ void buildUiLoadingPresentation(
         if (frame.illustrative_phase.has_value() && !frame.show_start_prompt) {
             submitOutlined(
                 output,
-                ILLUSTRATIVE_PHASE_CAPTIONS[phase_index],
+                *frame.illustrative_phase == GenerationMapAnimationPhase::Creation
+                    ? "Cooling a young world" : ILLUSTRATIVE_PHASE_CAPTIONS[phase_index],
                 UI_QUIET,
                 layout.status,
                 layout.dpi_scale

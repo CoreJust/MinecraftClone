@@ -48,6 +48,8 @@ struct GenerationMapAnimationClock final
     bool reduced_motion = false;
     // Authoritative readiness does not advance the desktop illustrative timeline.
     bool ready = false;
+    // Existing prototype consumers use five five-second phases; desktop presentation requests ten seconds.
+    std::chrono::milliseconds formation_duration{25'000};
 };
 
 enum class GenerationMapAnimationPhase : uint8_t
@@ -58,6 +60,7 @@ enum class GenerationMapAnimationPhase : uint8_t
     Ice,
     Climate,
     Arrival,
+    Creation,
 };
 
 struct GenerationMapAnimationFrame final
@@ -69,7 +72,7 @@ struct GenerationMapAnimationFrame final
 
 struct GenerationMapAnimationCache;
 
-// Retains only the latest visual tick image, at the prototype's 120 ticks per five-second phase.
+// Retains only the latest visual tick image, at 24 ticks per visible second.
 // Repeated ticks reuse the immutable image; source or display-mask changes invalidate it.
 class GenerationMapAnimator final
 {

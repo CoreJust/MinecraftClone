@@ -14,18 +14,17 @@ Bypass requires flight ([POLICY.md](POLICY.md)). [`BlockInteraction.hpp`](../../
 
 ## Wire protocol
 
-[Message.hpp](../../src/shared/include/shared/net/Message.hpp) defines Protocol 24
-for authoritative actions/results, revisioned deltas, sparse edit snapshots and
-manifests. Sessions use nonce; deliveries validate epoch/token. Profiles certify
-columns; edits require manifested Z-chunk revisions. Dense credits/receipts stay separate. Bulk/control channels `1/0`; peer cap
-`49,152 B`; old-epoch debt stays charged. Startup canonical/dense class windows:
-`16,384 B`. Post-start canonical precedes dense refill and may borrow spare peer
-bytes, preserving edit/preview reserves, in-interest columns and authority fences.
-Coverage actual/visual: 640/320; caches: 48/80. Inputs: XYZ/heading/sequence;
-positions: subcells/palette/ACK. IDs 0–6 fixed; Sand 7; v23 peers reject v24
-frames. Height tiles carry V9 source elevation, biome and coast metadata. Rights
-masks allow IDs 1–7. Capabilities 0/1/3; invalid input/stale ACKs cannot mutate
-state.
+[Message.hpp](../../src/shared/include/shared/net/Message.hpp) sets
+`PROTOCOL_VERSION=25` for authoritative actions/results, revisioned deltas, sparse
+edits and manifests; v24 peers reject it. Nonce/session, epoch/token and
+profile/Z-chunk revisions fence delivery. Dense credits stay separate. Channels
+`bulk/control=1/0`; caps `49,152 B/peer`, `16,384 B/startup`; old-epoch debt is
+charged. Post-start canonical precedes dense refill and borrows spare bytes while
+preserving edit/preview reserves, interest and authority fences. Coverage
+`actual/visual=640/320`; caches `48/80`. Inputs `XYZ/heading/sequence`; positions
+`subcells/palette/ACK`. IDs `0–6`, Sand `7`. Native progress carries paired V9
+wind/current vectors; tiles carry elevation/biome/coast. Rights masks `1–7`;
+capabilities `0/1/3`; invalid input/stale ACKs cannot mutate.
 
 ## Server authority
 
@@ -65,10 +64,11 @@ Preview meshes publish from connected near-camera coverage after cardinal
 neighbors are ready. Interest changes rebuild them; canonical data remains
 available for remeshing.
 
-Preparing/Connecting show progress over a map; Ready shows the final map and
-prompt. Fresh input starts gameplay after its frame; gameplay waits for server
-ACK, and focus loss releases cursor capture. Pixels require matching metadata and
-authoritative coverage; otherwise they are Unknown.
+Preparing/Connecting show map progress. ReadyForStart signals completed
+preparation; the 10-second formation continues while the prompt waits for final
+scene/frame readiness. Fresh input starts play after its frame; server ACK and
+focus loss gate play/capture. Pixels need matching metadata and authority, else
+Unknown.
 
 ## Client and qualification
 

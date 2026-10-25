@@ -1214,7 +1214,7 @@ TEST(GenerationMapPresentationTest, V9PlatecPreviewRendersSourceReliefAndPlateDr
 
     ASSERT_NE(initial.image, nullptr);
     ASSERT_NE(drifting.image, nullptr);
-    EXPECT_EQ(initial.phase, client::GenerationMapAnimationPhase::Tectonics);
+    EXPECT_EQ(initial.phase, client::GenerationMapAnimationPhase::Creation);
     EXPECT_NE(initial.image->rgba, drifting.image->rgba);
     auto atlas = std::make_shared<generation::GlobalAtlas>();
     atlas->configuration.model_tag = generation::TerrainModelTag::V9;
@@ -1326,6 +1326,8 @@ TEST(GenerationMapPresentationTest, DelayedNativeWaterShowsProgressiveIceAndWeat
     auto filling = render(31'000);
     ASSERT_EQ(filling.phase, client::GenerationMapAnimationPhase::Water);
     EXPECT_NE(filling.image, final_image);
+    EXPECT_EQ(render(31'015).image, filling.image);
+    EXPECT_NE(render(31'050).image, filling.image);
     auto ice_start = render(32'000);
     ASSERT_EQ(ice_start.phase, client::GenerationMapAnimationPhase::Ice);
     auto const canonical_base = client::s2NativeTerrainColor(500.0F, {500.0F, 500.0F}, {500.0F, 500.0F}, false, 0.0F, 0U);
@@ -1334,7 +1336,10 @@ TEST(GenerationMapPresentationTest, DelayedNativeWaterShowsProgressiveIceAndWeat
     {
         expected_base[channel] = static_cast<uint8_t>(std::lround(canonical_base[channel]));
     }
-    EXPECT_TRUE(std::all_of(ice_start.image->rgba.begin(), ice_start.image->rgba.end(),
+    client::GenerationMapAnimator endpoint_animator;
+    auto const water_endpoint = endpoint_animator.update(water, nullptr, nullptr, nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{14'999}});
+    EXPECT_TRUE(std::all_of(water_endpoint.image->rgba.begin(), water_endpoint.image->rgba.end(),
         [&](Rgba8 const& pixel) { return pixel == expected_base; }));
     auto ice_early = render(32'250);
     auto ice_late = render(32'750);
@@ -1346,7 +1351,7 @@ TEST(GenerationMapPresentationTest, DelayedNativeWaterShowsProgressiveIceAndWeat
     EXPECT_GT(frozen_count(ice_late.image), frozen_count(ice_early.image));
     auto climate_start = render(33'000);
     EXPECT_EQ(climate_start.phase, client::GenerationMapAnimationPhase::Climate);
-    auto weather = render(33'500);
+    auto weather = render(33'300);
     EXPECT_EQ(weather.phase, client::GenerationMapAnimationPhase::Climate);
     EXPECT_NE(weather.image->rgba, climate_start.image->rgba);
     EXPECT_GE(frozen_count(weather.image), frozen_count(ice_late.image));
@@ -1376,6 +1381,220 @@ TEST(GenerationMapPresentationTest, MovingNearestSamplesKeepSourceColorsWithoutP
             return std::find(source_colors.begin(), source_colors.end(), pixel) != source_colors.end();
         }));
     }
+}
+
+std::shared_ptr<generation::GenerationSnapshot> makeEngagementSnapshot()
+{
+    auto snapshot = std::make_shared<generation::GenerationSnapshot>();
+    snapshot->stage = generation::GenerationStage::V9Water;
+    snapshot->resolution = 256U;
+    auto& fields = snapshot->v9.emplace();
+    for (uint32_t y = 0U; y < 256U; ++y)
+    {
+        for (uint32_t x = 0U; x < 256U; ++x)
+        {
+            float const height = 900.0F * std::sin(static_cast<float>(x) * 0.049F)
+                * std::cos(static_cast<float>(y) * 0.049F);
+            fields.source_elevation_m.push_back(height);
+            fields.plate_ids.push_back(x < 128U ? 1U : 2U);
+            fields.temperature_celsius.push_back(15.0F);
+            fields.precipitation_mm_year.push_back(500.0F);
+            fields.water_level_m.push_back(0.0F);
+            fields.ocean_mask.push_back(height < 0.0F ? 1U : 0U);
+        }
+    }
+    fields.plate_directions = {{1U, 1.0F, 0.0F}, {2U, -1.0F, 0.0F}};
+    fields.lake_mask.assign(256U * 256U, 0U);
+    fields.river_mask = fields.lake_mask;
+    fields.ice_surface_kind = fields.lake_mask;
+    fields.wind_u.assign(256U * 256U, 1.0F);
+    fields.wind_v.assign(256U * 256U, 0.0F);
+    fields.current_u.assign(256U * 256U, 0.4F);
+    fields.current_v.assign(256U * 256U, 0.2F);
+    return snapshot;
+}
+
+TEST(GenerationMapPresentationTest, TenSecondFormationChangesDryLandAndEndsOnExactActualMap)
+{
+    auto snapshot = makeEngagementSnapshot();
+    ASSERT_TRUE(generation::isValidGenerationSnapshot(*snapshot));
+    auto final_image = std::make_shared<client::GenerationMapImage const>();
+    client::GenerationMapAnimator animator;
+    auto render = [&](int64_t milliseconds) {
+        return animator.update(snapshot, nullptr, final_image, nullptr,
+            {.visible_elapsed = std::chrono::milliseconds{milliseconds}, .ready = true,
+             .formation_duration = std::chrono::seconds{10}});
+    };
+    auto initial = render(0);
+    EXPECT_EQ(render(10).image, initial.image);
+    EXPECT_NE(render(40).image, initial.image);
+    auto early = render(500);
+    auto crust = render(2'100);
+    auto relief = render(3'000);
+    auto flooded = render(5'900);
+    ASSERT_NE(early.image, nullptr);
+    ASSERT_NE(relief.image, nullptr);
+    ASSERT_NE(flooded.image, nullptr);
+    auto dry_count = [](auto const& image) {
+        return std::count_if(image->rgba.begin(), image->rgba.end(), [](Rgba8 const& pixel) {
+            return pixel[0U] > pixel[2U];
+        });
+    };
+    EXPECT_NE(dry_count(crust.image), dry_count(relief.image));
+    EXPECT_NE(dry_count(relief.image), dry_count(flooded.image));
+    EXPECT_NE(early.image->rgba, relief.image->rgba);
+    EXPECT_EQ(render(8'500).phase, client::GenerationMapAnimationPhase::Climate);
+    EXPECT_NE(render(9'999).image, final_image);
+    auto arrival = render(10'000);
+    EXPECT_EQ(arrival.phase, client::GenerationMapAnimationPhase::Arrival);
+    EXPECT_EQ(arrival.image, final_image);
+}
+
+TEST(GenerationMapPresentationTest, NativeWindAndCurrentFieldsEachProduceMovingTrails)
+{
+    auto snapshot = makeEngagementSnapshot();
+    auto without_wind = std::make_shared<generation::GenerationSnapshot>(*snapshot);
+    without_wind->v9->wind_u.clear();
+    without_wind->v9->wind_v.clear();
+    auto without_currents = std::make_shared<generation::GenerationSnapshot>(*snapshot);
+    without_currents->v9->current_u.clear();
+    without_currents->v9->current_v.clear();
+    auto render = [](auto const& source, int64_t milliseconds) {
+        client::GenerationMapAnimator animator;
+        return animator.update(source, nullptr, nullptr, nullptr,
+            {.visible_elapsed = std::chrono::milliseconds{milliseconds},
+             .formation_duration = std::chrono::seconds{10}}).image;
+    };
+    auto first = render(snapshot, 8'500);
+    auto second = render(snapshot, 9'000);
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_NE(first->rgba, second->rgba);
+    EXPECT_NE(first->rgba, render(without_wind, 8'500)->rgba);
+    EXPECT_NE(first->rgba, render(without_currents, 8'500)->rgba);
+    without_wind->v9->wind_u.assign(1U, 1.0F);
+    EXPECT_FALSE(generation::isValidGenerationSnapshot(*without_wind));
+}
+
+TEST(GenerationMapPresentationTest, NativeInverseDeformationKeepsUniformDryTerrainFilled)
+{
+    auto snapshot = makeEngagementSnapshot();
+    auto& fields = *snapshot->v9;
+    fields.source_elevation_m.assign(256U * 256U, 500.0F);
+    fields.ocean_mask.assign(256U * 256U, 0U);
+    fields.plate_ids.assign(256U * 256U, 1U);
+    fields.plate_directions = {{1U, 1.0F, 0.0F}};
+    client::GenerationMapAnimator animator;
+    for (int64_t milliseconds : {0, 500, 1'500, 2'500, 3'500})
+    {
+        auto const frame = animator.update(snapshot, nullptr, nullptr, nullptr,
+            {.visible_elapsed = std::chrono::milliseconds{milliseconds},
+             .formation_duration = std::chrono::seconds{10}});
+        ASSERT_NE(frame.image, nullptr);
+        EXPECT_TRUE(std::all_of(frame.image->rgba.begin(), frame.image->rgba.end(), [](Rgba8 const& pixel) {
+            return pixel[0U] > pixel[2U];
+        }));
+    }
+}
+
+TEST(GenerationMapPresentationTest, NativePlateFormationRotatesAnAsymmetricLandmarkBeforeRestoringItsOrientation)
+{
+    auto snapshot = makeEngagementSnapshot();
+    auto& fields = *snapshot->v9;
+    for (uint32_t y = 0U; y < 256U; ++y)
+    {
+        for (uint32_t x = 0U; x < 256U; ++x)
+        {
+            size_t const index = static_cast<size_t>(y) * 256U + x;
+            float const dx = static_cast<float>(x) - 128.0F;
+            float const dy = static_cast<float>(y) - 128.0F;
+            bool const land = dx * dx / (48.0F * 48.0F) + dy * dy / (12.0F * 12.0F) < 1.0F;
+            fields.source_elevation_m[index] = land ? 500.0F : -200.0F;
+            fields.ocean_mask[index] = land ? 0U : 1U;
+            fields.plate_ids[index] = x >= 64U && x < 192U && y >= 64U && y < 192U ? 1U : 2U;
+        }
+    }
+    auto orientation = [](client::GenerationMapImage const& image) {
+        double xx = 0.0;
+        double yy = 0.0;
+        double xy = 0.0;
+        double sum_x = 0.0;
+        double sum_y = 0.0;
+        double count = 0.0;
+        for (uint32_t y = 0U; y < image.height; ++y)
+        {
+            for (uint32_t x = 0U; x < image.width; ++x)
+            {
+                auto const pixel = image.rgba[static_cast<size_t>(y) * image.width + x];
+                if (pixel[0U] > pixel[2U])
+                {
+                    double const dx = static_cast<double>(x) - image.width / 2.0;
+                    double const dy = static_cast<double>(y) - image.height / 2.0;
+                    xx += dx * dx;
+                    yy += dy * dy;
+                    xy += dx * dy;
+                    sum_x += dx;
+                    sum_y += dy;
+                    count += 1.0;
+                }
+            }
+        }
+        xx -= sum_x * sum_x / count;
+        yy -= sum_y * sum_y / count;
+        xy -= sum_x * sum_y / count;
+        return std::atan2(2.0 * xy, xx - yy) * 0.5;
+    };
+    client::GenerationMapAnimator animator;
+    auto early = animator.update(snapshot, nullptr, nullptr, nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{1'900}, .formation_duration = std::chrono::seconds{10}});
+    auto restored = animator.update(snapshot, nullptr, nullptr, nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{6'000}, .formation_duration = std::chrono::seconds{10}});
+    ASSERT_NE(early.image, nullptr);
+    ASSERT_NE(restored.image, nullptr);
+    EXPECT_GT(std::abs(orientation(*early.image) - orientation(*restored.image)), 0.05);
+    EXPECT_LT(std::abs(orientation(*restored.image)), 0.02);
+}
+
+TEST(GenerationMapPresentationTest, MoltenOpeningCoolsIntoCompleteCrustAndOceans)
+{
+    auto snapshot = makeEngagementSnapshot();
+    client::GenerationMapAnimator animator;
+    auto molten = animator.update(snapshot, nullptr, nullptr, nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{0}, .formation_duration = std::chrono::seconds{10}});
+    auto ocean_pixels = [](auto const& image) {
+        return std::count_if(image->rgba.begin(), image->rgba.end(), [](Rgba8 const& pixel) {
+            return pixel[2U] > pixel[0U];
+        });
+    };
+    std::array<size_t, 3U> filling{};
+    size_t index = 0U;
+    for (int64_t milliseconds : {1'300, 1'500, 1'800})
+    {
+        auto frame = animator.update(snapshot, nullptr, nullptr, nullptr,
+            {.visible_elapsed = std::chrono::milliseconds{milliseconds}, .formation_duration = std::chrono::seconds{10}});
+        filling[index++] = static_cast<size_t>(ocean_pixels(frame.image));
+    }
+    EXPECT_GT(filling[0U], 0U);
+    EXPECT_LT(filling[0U], filling[1U]);
+    EXPECT_LT(filling[1U], filling[2U]);
+    auto cooled = animator.update(snapshot, nullptr, nullptr, nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{2'500}, .formation_duration = std::chrono::seconds{10}});
+    ASSERT_NE(molten.image, nullptr);
+    ASSERT_NE(cooled.image, nullptr);
+    EXPECT_EQ(molten.phase, client::GenerationMapAnimationPhase::Creation);
+    auto hot_pixels = [](auto const& image) {
+        return std::count_if(image->rgba.begin(), image->rgba.end(), [](Rgba8 const& pixel) {
+            return pixel[0U] > pixel[1U] * 1.4F && pixel[0U] > pixel[2U] * 2.0F;
+        });
+    };
+    EXPECT_GT(hot_pixels(molten.image), molten.image->rgba.size() * 9U / 10U);
+    EXPECT_LT(hot_pixels(cooled.image), cooled.image->rgba.size() / 10U);
+    EXPECT_TRUE(std::any_of(cooled.image->rgba.begin(), cooled.image->rgba.end(), [](Rgba8 const& pixel) {
+        return pixel[2U] > pixel[0U];
+    }));
+    EXPECT_TRUE(std::all_of(cooled.image->rgba.begin(), cooled.image->rgba.end(), [](Rgba8 const& pixel) {
+        return pixel[3U] == 255U;
+    }));
 }
 
 } // namespace

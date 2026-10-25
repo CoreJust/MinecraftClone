@@ -48,14 +48,14 @@ void appendUint64(std::vector<uint8_t>& bytes, uint64_t const value)
     }
 }
 
-std::vector<uint8_t> validV20ClientStartPacket()
+std::vector<uint8_t> validClientStartPacket()
 {
     generation::GenerationConfiguration const configuration{};
     std::string const identity = terrainConfigurationIdentity();
     std::vector<uint8_t> bytes{ shared::PROTOCOL_MAGIC, shared::PROTOCOL_VERSION, 14U };
     appendUint64(bytes, 1U);
     appendUint64(bytes, 1U);
-    appendUint32(bytes, generation::TERRAIN_VERSION);
+    appendUint32(bytes, generation::terrainVersion(configuration.model_tag));
     appendUint64(bytes, 1U);
     appendUint64(bytes, configuration.seed);
     appendUint16(bytes, static_cast<uint16_t>(identity.size()));
@@ -69,6 +69,7 @@ std::vector<uint8_t> validV20ClientStartPacket()
     bytes.push_back(static_cast<uint8_t>(configuration.currents));
     bytes.push_back(static_cast<uint8_t>(configuration.wind_sign));
     bytes.push_back(static_cast<uint8_t>(configuration.coastal_elaboration));
+    bytes.push_back(static_cast<uint8_t>(configuration.model_tag));
     return bytes;
 }
 
@@ -584,9 +585,9 @@ TEST(MessageTest, RoundTripsEveryMessageKind) {
     });
 }
 
-TEST(MessageTest, DecodesV20ClientStartAndRejectsV19AgainstItsJoinEpochAndTerrainIdentity)
+TEST(MessageTest, DecodesCurrentClientStartAndRejectsPreviousProtocolAgainstItsJoinEpochAndTerrainIdentity)
 {
-    std::vector<uint8_t> const packet = validV20ClientStartPacket();
+    std::vector<uint8_t> const packet = validClientStartPacket();
     auto const decoded = shared::decodeMessage(packet);
 
     ASSERT_TRUE(decoded.has_value());
@@ -599,7 +600,7 @@ TEST(MessageTest, DecodesV20ClientStartAndRejectsV19AgainstItsJoinEpochAndTerrai
 
     std::vector<uint8_t> const previous_version_packet = [&packet] {
         std::vector<uint8_t> previous_version = packet;
-        previous_version[1] = 19U;
+        previous_version[1] = 24U;
         return previous_version;
     }();
     EXPECT_FALSE(shared::decodeMessage(previous_version_packet).has_value());
@@ -1091,7 +1092,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' }),
         (std::vector<uint8_t>{
-            0x4D, 21, 0, '@', 0,
+            0x4D, 25, 0, '@', 0,
             1, 0, 0, 0,
             42, 0, 0, 0, 0, 0, 0, 0,
             16, 16, 16,
@@ -1101,15 +1102,15 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = true }),
-        (std::vector<uint8_t>{ 0x4D, 21, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 })
+        (std::vector<uint8_t>{ 0x4D, 25, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = false }),
-        (std::vector<uint8_t>{ 0x4D, 21, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0 })
+        (std::vector<uint8_t>{ 0x4D, 25, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ClientInputMessage{ .direction = { 129, 127, 1 }, .sequence = 0x7856'3412U }),
-        (std::vector<uint8_t>{ 0x4D, 21, 2, 129, 127, 1, 0, 5, 0, 0, 0, 127, 18, 52, 86, 120 })
+        (std::vector<uint8_t>{ 0x4D, 25, 2, 129, 127, 1, 0, 5, 0, 0, 0, 127, 18, 52, 86, 120 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerPlayerPositionMessage{
@@ -1118,7 +1119,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
             .acknowledged_input_sequence = 0x7856'3412U, .state_revision = 0x1234'5678U,
         }),
         (std::vector<uint8_t>{
-            0x4D, 21, 4, '#', 7, 0,
+            0x4D, 25, 4, '#', 7, 0,
             30, 0, 0, 0,
             2, 0, 0, 0,
             12, 0, 0, 0,
@@ -1129,7 +1130,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerRemovePlayerMessage{ .ch = '$' }),
-        (std::vector<uint8_t>{ 0x4D, 21, 5, '$' })
+        (std::vector<uint8_t>{ 0x4D, 25, 5, '$' })
     );
     auto const descriptor = heightTileDescriptorMessage();
     auto const descriptor_packet = shared::encodeMessage(descriptor);
@@ -1421,7 +1422,7 @@ TEST(MessageTest, MapsExactDiskCardinalitiesToEverySupportedRadius)
         shared::heightTileInterestCount(257U),
     };
 
-    EXPECT_EQ(shared::PROTOCOL_VERSION, 24U);
+    EXPECT_EQ(shared::PROTOCOL_VERSION, 25U);
     EXPECT_EQ(shared::HEIGHT_TILE_BATCH_CAPACITY, 64U);
     EXPECT_EQ(shared::HEIGHT_TILE_RESIDENCY_RECEIPT_KEY_CAPACITY, 128U);
     EXPECT_EQ(
@@ -1624,7 +1625,7 @@ TEST(MessageTest, SandBlockActionsAndEditReplicationRoundTripAtProtocol24)
         .aim_y = 32'767, .target_hint = {4, 5, 6}, .material = shared::Block::Sand,
     };
     auto const action_packet = shared::encodeMessage(action);
-    ASSERT_EQ(action_packet[1U], 24U);
+    ASSERT_EQ(action_packet[1U], 25U);
     auto decoded = shared::decodeMessage(action_packet);
     ASSERT_TRUE(decoded);
     EXPECT_EQ(std::get<shared::ClientBlockActionMessage>(*decoded).material, shared::Block::Sand);
@@ -1803,4 +1804,34 @@ TEST(MessageTest, AuthoritativeDeepOceanKeepsCanonicalEmptyGroundIntervalAboveSo
     batch.tiles.front().columns.front().ground_first_z = 1'025U;
     batch.tiles.front().columns.front().ground_end_z = 1'025U;
     EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(batch)));
+}
+
+TEST(MessageTest, NativeClimateVectorsReachTheClientAndRejectThePreviousWireLayout)
+{
+    auto preparation = worldPreparationMessage();
+    preparation.session.configuration.model_tag = generation::TerrainModelTag::V9;
+    preparation.session.terrain.terrain_version = generation::terrainVersion(generation::TerrainModelTag::V9);
+    preparation.session.terrain.configuration_identity =
+        generation::configurationIdentity(preparation.session.configuration);
+    preparation.stage = generation::GenerationStage::V9Climate;
+    auto snapshot = std::make_shared<generation::GenerationSnapshot>(*generationV9PlatecSnapshot());
+    snapshot->stage = preparation.stage;
+    snapshot->v9->temperature_celsius.assign(256U * 256U, 12.0F);
+    snapshot->v9->wind_u.assign(256U * 256U, 1.0F);
+    snapshot->v9->wind_v.assign(256U * 256U, -2.0F);
+    snapshot->v9->current_u.assign(256U * 256U, 0.5F);
+    snapshot->v9->current_v.assign(256U * 256U, -0.25F);
+    preparation.latest_snapshot = snapshot;
+    auto packet = shared::encodeMessage(shared::Message{preparation});
+    ASSERT_FALSE(packet.empty());
+    EXPECT_LE(packet.size(), shared::MAX_MESSAGE_SIZE_BYTES);
+    auto decoded = shared::decodeMessage(packet);
+    ASSERT_TRUE(decoded);
+    auto const& actual = std::get<shared::ServerWorldPreparationMessage>(*decoded);
+    ASSERT_NE(actual.latest_snapshot, nullptr);
+    EXPECT_EQ(actual.latest_snapshot->v9, snapshot->v9);
+    packet[1U] = 24U;
+    EXPECT_FALSE(shared::decodeMessage(packet));
+    snapshot->v9->wind_v.pop_back();
+    EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(shared::Message{preparation})));
 }

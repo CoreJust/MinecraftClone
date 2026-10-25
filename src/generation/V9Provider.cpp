@@ -230,6 +230,14 @@ std::vector<float> meanClimateGrid(V9ClimateField const& field)
     return native_mean;
 }
 
+void addV9SnapshotWeather(V9GenerationSnapshotFields& fields, V9ClimateResult const& climate)
+{
+    fields.wind_u = meanClimateGrid(climate.fields.at("u"));
+    fields.wind_v = meanClimateGrid(climate.fields.at("v"));
+    fields.current_u = meanClimateGrid(climate.fields.at("ocean_u"));
+    fields.current_v = meanClimateGrid(climate.fields.at("ocean_v"));
+}
+
 [[nodiscard]]
 std::shared_ptr<GenerationSnapshot const> makeV9ClimateSnapshot(
     V9PlatecSourceResult const& platec,
@@ -247,6 +255,7 @@ std::shared_ptr<GenerationSnapshot const> makeV9ClimateSnapshot(
         throw std::logic_error{"v9 climate progress snapshot has no source theta_C field"};
     }
     snapshot->v9->temperature_celsius = meanClimateGrid(temperature->second);
+    addV9SnapshotWeather(*snapshot->v9, climate);
     return snapshot;
 }
 
@@ -255,6 +264,7 @@ std::shared_ptr<GenerationSnapshot const> makeV9WaterSnapshot(
     V9PlatecSourceResult const& platec,
     V9TerrainResult const& terrain,
     V9WaterResult const& water,
+    V9ClimateResult const& climate,
     GenerationStage const stage
 )
 {
@@ -262,6 +272,7 @@ std::shared_ptr<GenerationSnapshot const> makeV9WaterSnapshot(
     snapshot->stage = stage;
     snapshot->resolution = NATIVE_RESOLUTION;
     snapshot->v9 = makeV9SnapshotFields(platec, terrain.final_bed_vertices_m);
+    addV9SnapshotWeather(*snapshot->v9, climate);
     snapshot->v9->temperature_celsius.resize(NATIVE_CELL_COUNT);
     snapshot->v9->precipitation_mm_year.resize(NATIVE_CELL_COUNT);
     for (size_t index = 0U; index < NATIVE_CELL_COUNT; ++index)
@@ -712,7 +723,7 @@ std::shared_ptr<GlobalAtlas const> prepareV9GlobalAtlas(
         GenerationStage::V9Water,
         10U,
         10U,
-        makeV9WaterSnapshot(*platec, terrain, *water, GenerationStage::V9Water)
+        makeV9WaterSnapshot(*platec, terrain, *water, *climate, GenerationStage::V9Water)
     );
 
     auto refinement = V9WaterRefinement::create(water->equilibrium, water->routing);

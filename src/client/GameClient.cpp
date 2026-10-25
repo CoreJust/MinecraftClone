@@ -802,6 +802,8 @@ void GameClient::onReceived(core::ReceiveEvent event) {
                 auto const& fields = *snapshot->v9;
                 snapshot_payload_bytes = static_cast<uint64_t>(fields.source_elevation_m.size()) * sizeof(float)
                     + static_cast<uint64_t>(fields.temperature_celsius.size()) * sizeof(float)
+                    + static_cast<uint64_t>(fields.wind_u.size() + fields.wind_v.size()
+                        + fields.current_u.size() + fields.current_v.size()) * sizeof(float)
                     + static_cast<uint64_t>(fields.precipitation_mm_year.size()) * sizeof(float)
                     + static_cast<uint64_t>(fields.water_level_m.size()) * sizeof(float)
                     + static_cast<uint64_t>(fields.ocean_mask.size()) * sizeof(uint8_t)

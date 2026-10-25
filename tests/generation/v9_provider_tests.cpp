@@ -83,6 +83,15 @@ TEST(V9ProviderTests, BuildsSeededAtlasAndFeedsWorldQueriesAndMapLayers)
     EXPECT_GT(snapshots[0U]->v9->plate_directions_observed_after_native_step, 0U);
     EXPECT_LT(snapshots[0U]->v9->plate_directions_observed_after_native_step, 2'400U);
     EXPECT_FALSE(snapshots[2U]->v9->temperature_celsius.empty());
+    for (size_t snapshot_index : {2U, 3U}) {
+        auto const& weather = *snapshots[snapshot_index]->v9;
+        EXPECT_EQ(weather.wind_u.size(), SOURCE_COUNT);
+        EXPECT_EQ(weather.wind_v.size(), SOURCE_COUNT);
+        EXPECT_EQ(weather.current_u.size(), SOURCE_COUNT);
+        EXPECT_EQ(weather.current_v.size(), SOURCE_COUNT);
+        EXPECT_TRUE(std::any_of(weather.wind_u.begin(), weather.wind_u.end(), [](float value) { return value != 0.0F; }));
+        EXPECT_TRUE(std::any_of(weather.current_u.begin(), weather.current_u.end(), [](float value) { return value != 0.0F; }));
+    }
     EXPECT_TRUE(snapshots[2U]->v9->precipitation_mm_year.empty());
     EXPECT_FALSE(snapshots[3U]->v9->precipitation_mm_year.empty());
     EXPECT_FALSE(snapshots[3U]->v9->water_level_m.empty());
@@ -96,6 +105,26 @@ TEST(V9ProviderTests, BuildsSeededAtlasAndFeedsWorldQueriesAndMapLayers)
         });
         return found == fields.end() ? nullptr : &*found;
     };
+    for (auto const& [name, member] : std::array{
+        std::pair{"u", &generation::V9GenerationSnapshotFields::wind_u},
+        std::pair{"v", &generation::V9GenerationSnapshotFields::wind_v},
+        std::pair{"ocean_u", &generation::V9GenerationSnapshotFields::current_u},
+        std::pair{"ocean_v", &generation::V9GenerationSnapshotFields::current_v}}) {
+        auto const* field = find_field(name);
+        ASSERT_NE(field, nullptr);
+        for (uint32_t native_index : {0U, 257U, 65'535U}) {
+            size_t const coarse_index = static_cast<size_t>((native_index / 256U) / 8U) * 32U
+                + (native_index % 256U) / 8U;
+            double mean = 0.0;
+            std::visit([&](auto values) {
+                for (size_t phase = 0U; phase < 8U; ++phase) {
+                    mean += static_cast<double>(values[phase * 32U * 32U + coarse_index]) / 8.0;
+                }
+            }, field->values);
+            EXPECT_FLOAT_EQ((snapshots[2U]->v9.value().*member)[native_index], static_cast<float>(mean));
+            EXPECT_FLOAT_EQ((snapshots[3U]->v9.value().*member)[native_index], static_cast<float>(mean));
+        }
+    }
     auto const* elevation = find_field("elevation");
     auto const* temperature = find_field("temperature_C");
     auto const* precipitation = find_field("precipitation_mm_year");

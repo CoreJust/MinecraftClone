@@ -827,9 +827,10 @@ private:
     GenerationMapDisplayIceMaskHandle m_loading_final_ice_mask;
     bool m_loading_final_map_attempted = false;
     std::optional<uint64_t> m_loading_map_join_epoch;
-    std::chrono::milliseconds m_generation_map_visible_elapsed{};
+    std::chrono::steady_clock::duration m_generation_map_visible_elapsed{};
     std::chrono::steady_clock::time_point m_generation_map_last_update{};
     bool m_generation_map_was_visible = false;
+    bool m_generation_map_presentation_complete = false;
     std::optional<uint64_t> m_client_memory_rss_bytes;
     std::chrono::steady_clock::time_point m_client_memory_rss_sampled_at{};
     bool m_acceleration_enabled = false;

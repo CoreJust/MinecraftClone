@@ -5131,9 +5131,7 @@ void PlayerClient::updateLoadingPresentation(WorldLoadingStatus const& status)
         && glfwGetWindowAttrib(m_window.nativeHandle(), GLFW_ICONIFIED) != GLFW_TRUE;
     if (map_view_visible && m_generation_map_was_visible
         && m_generation_map_last_update != std::chrono::steady_clock::time_point{}) {
-        m_generation_map_visible_elapsed += std::chrono::duration_cast<std::chrono::milliseconds>(
-            now - m_generation_map_last_update
-        );
+        m_generation_map_visible_elapsed += now - m_generation_map_last_update;
     }
     m_generation_map_was_visible = map_view_visible;
     m_generation_map_last_update = now;
@@ -5145,13 +5143,16 @@ void PlayerClient::updateLoadingPresentation(WorldLoadingStatus const& status)
         m_loading_final_map_image,
         m_loading_final_ice_mask,
         GenerationMapAnimationClock{
-            .visible_elapsed = m_generation_map_visible_elapsed,
+            .visible_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(m_generation_map_visible_elapsed),
             .reduced_motion = status.state == WorldLoadingState::Failed
                 || status.state == WorldLoadingState::Cancelled,
             .ready = start_ready,
+            .formation_duration = std::chrono::seconds{10},
         }
     );
 
+    m_generation_map_presentation_complete = animation.phase == GenerationMapAnimationPhase::Arrival;
+    bool const presentation_complete = m_generation_map_presentation_complete;
     bool const start_scene_ready = status.state == WorldLoadingState::ReadyForStart
         && terrainStartSceneReady(m_terrain_session.has_value(), m_renderer.runtimeInfo());
     if (status.state == WorldLoadingState::ReadyForStart && !start_scene_ready) {
@@ -5174,7 +5175,7 @@ void PlayerClient::updateLoadingPresentation(WorldLoadingStatus const& status)
         worldLoadingJoinEpoch(),
         status,
         connectionAttemptStarted(),
-        start_scene_ready,
+        start_scene_ready && presentation_complete,
         telemetry,
         animation.image ? std::optional{ animation } : std::nullopt,
         serverAddress(),
@@ -5994,11 +5995,12 @@ void PlayerClient::render() {
             std::chrono::duration_cast<std::chrono::nanoseconds>(terrain_lod_completed_at - terrain_lod_started_at);
     }
     std::chrono::steady_clock::time_point const post_lod_started_at = terrain_lod_completed_at;
-    bool const ready_prompt_visible = loading_status.state == WorldLoadingState::ReadyForStart
-        && terrainStartSceneReady(m_terrain_session.has_value(), m_renderer.runtimeInfo());
     if (loading_status.state == WorldLoadingState::ReadyForStart) {
         updateLoadingPresentation(loading_status);
     }
+    bool const ready_prompt_visible = loading_status.state == WorldLoadingState::ReadyForStart
+        && m_generation_map_presentation_complete
+        && terrainStartSceneReady(m_terrain_session.has_value(), m_renderer.runtimeInfo());
     CameraProjection terrain_projection = m_camera.projection();
     if (m_terrain_lod.active()) {
         terrain_projection.far_plane = 50'000.0;

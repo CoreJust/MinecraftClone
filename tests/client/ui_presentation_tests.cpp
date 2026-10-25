@@ -187,3 +187,38 @@ TEST(UiPresentationTest, ReadyArrivalKeepsPromptWithoutTheIllustrativeArrivalCap
         return label.value == "Locating the starting area";
     }));
 }
+
+TEST(UiPresentationTest, ReadyComputationIsTruthfulWhileFormationFinishes)
+{
+    client::WorldLoadingStatus const ready{.state = client::WorldLoadingState::ReadyForStart};
+    client::GenerationMapAnimationFrame const formation{.phase = client::GenerationMapAnimationPhase::Water};
+    auto const frame = client::buildUiFrame(2U, ready, false, false, {}, formation);
+    EXPECT_EQ(frame.screen, client::UiScreen::ReadyForStart);
+    EXPECT_EQ(frame.phase, "World ready - watch its formation");
+    EXPECT_FALSE(frame.show_start_prompt);
+    EXPECT_EQ(frame.illustrative_phase, client::GenerationMapAnimationPhase::Water);
+}
+
+TEST(UiPresentationTest, YoungWorldCaptionDoesNotReplaceMeasuredGenerationProgress)
+{
+    client::WorldLoadingStatus const loading{
+        .state = client::WorldLoadingState::PreparingAtlas,
+        .generation_stage = generation::GenerationStage::V9Climate,
+        .generation_completed = 3U,
+        .generation_total = 8U,
+    };
+    client::GenerationMapAnimationFrame const opening{.phase = client::GenerationMapAnimationPhase::Creation};
+    auto const frame = client::buildUiFrame(2U, loading, true, false, {}, opening);
+    auto const layout = client::layoutUiLoading(frame, 1'280U, 720U);
+    client::TextRenderer text;
+    client::buildUiLoadingPresentation(frame, layout, text);
+    EXPECT_EQ(frame.generation_progress.completed, 3U);
+    EXPECT_EQ(frame.generation_progress.total, 8U);
+    EXPECT_TRUE(std::any_of(text.labels().begin(), text.labels().end(), [](auto const& label) {
+        return label.value == "Molten rock cools.";
+    }));
+    EXPECT_TRUE(std::any_of(text.labels().begin(), text.labels().end(), [](auto const& label) {
+        return label.value == "Cooling a young world";
+    }));
+    EXPECT_FALSE(frame.show_start_prompt);
+}

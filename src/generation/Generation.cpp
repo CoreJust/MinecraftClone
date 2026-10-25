@@ -173,6 +173,12 @@ bool isValidGenerationSnapshot(GenerationSnapshot const& snapshot) noexcept
         || fields.plate_directions.empty() || fields.plate_directions.size() > 1024U
         || fields.plate_directions_observed_after_native_step > 2400U
         || !std::ranges::all_of(fields.source_elevation_m, [](float const value) { return std::isfinite(value); })
+        || !valid_float_field(fields.wind_u, false)
+        || !valid_float_field(fields.wind_v, false)
+        || !valid_float_field(fields.current_u, false)
+        || !valid_float_field(fields.current_v, false)
+        || fields.wind_u.empty() != fields.wind_v.empty()
+        || fields.current_u.empty() != fields.current_v.empty()
         || !valid_float_field(fields.temperature_celsius, has_climate)
         || !valid_float_field(fields.precipitation_mm_year, has_water)
         || !valid_float_field(fields.water_level_m, has_water)

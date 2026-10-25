@@ -21100,6 +21100,68 @@
     "backlog_review": "This closes the scoped local implementation/diagnostic milestone only. A separate speed-200 native readiness run remains failed at 0/6,561 actual columns; parent MC-AI-0483, full-volume/high-speed continuity, FPS, Windows, cross-platform and owner acceptance remain open."
   },
   {
+    "id": "MC-AI-0588",
+    "title": "Restore a coherent animated world-creation presentation",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0560",
+      "MC-AI-0582"
+    ],
+    "acceptance": "Show a source-backed, roughly 10-second visible creation sequence overlapping actual preparation: molten opening and cooling crust; evolving ocean/sea/lake extent over coherent terrain; continuous plate rotation/deformation that gives a visual semblance of continents joining/splitting, mountain uplift and islands emerging/submerging; and later V9 wind/current/rain/ice. Full simulation is not required. Keep a bounded latest-image 24 Hz presentation cache, pause visible time while hidden, preserve canonical terrain detail and finish at the exact native atlas. Keep real readiness and scene/frame/input fences truthful. This is a local implementation milestone; Windows actual-generation <=4 s, Windows owner visual acceptance, FPS/platform qualification, and aggregate S2 gates remain open.",
+    "evidence": "Exact owner requests and ordered requirements are copied under /Users/core-just/.codex/task-evidence/mc-s2-20261025/generation-engagement-next/prepared-on-f5ac/source/ with source hashes in request-source-manifest.json. Original request SHA-256 13d032162bc19ad74c268e03fb59258783adb8d6d1553acaa7df3f4d45daad2c; creation-arc correction SHA-256 7c2311a71323694710b24ad85383faaa486145b541f05182f231a2b48982bc37. The original 19-path implementation patch SHA-256 23b47064c7ad33cab34c68a8c049fcd5556479c74c6cc404818cbb8b32822621 is rebased on f5ac55c128b9bc6e9f95f490d9c686a4c42efaba. Prior focused Release generation/presentation/message suite passed 92/92 (1.577 s); main/tests link passed. A prior 241-frame native sequence contains real V9 fields and ended at exact canonical pixels. The late-tick delta adds 24 Hz catch-up and same-image/new-image assertions; that native sequence was not rerun after this delta. These build/test/render receipts predate the f5ac rebase; no Windows <=4 s measurement, Windows owner acceptance, FPS qualification or release acceptance is claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "The owner said the world-generation sequence is dull, lacks the prototype wind/current animations, and does not feel like a world being created; they requested about 10 seconds of engaging presentation while actual computation remains a separate <=4 second Windows target.",
+    "context": "The owner clarified that the visual should depict creation from early molten/cooling states through oceans and coherent continental evolution, not only show already-formed terrain in the past. The exact clarification is creation-arc-addendum.txt. The sequence is Earth-inspired visual progression, not a claim of literal historical dates. Native V9 remains canonical; no model or fidelity substitution is authorized. Windows compute timing and owner visual acceptance remain open on MC-AI-0483.",
+    "complexity": "high",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added a five-phase, ten-second visible creation presentation using native V9 source fields for plate motion, wind, currents, precipitation and ice, with a molten opening, cooling crust, ocean formation, continuous land deformation and a changing sea level that presents uplift and island emergence/submergence. The sequence ends on the exact canonical endpoint. Added Protocol 25 serialization for paired wind/current fields and preserved true world readiness and final scene/frame start fences. Local evidence supports this implementation milestone only; Windows compute timing and owner acceptance remain open.",
+    "plan": [
+      "Trace the exact preview6 request and creation-arc correction, preserving the 10-second presentation and <=4-second computation as separate criteria.",
+      "Integrate the source-backed V9 fields into the generation presentation and versioned progress protocol without changing canonical model output.",
+      "Verify focused message, presentation, UI, and provider contracts plus the native sequence endpoint and 24 Hz late-update bound.",
+      "Record this local milestone while retaining Windows compute, owner visual acceptance, FPS, platform, and aggregate gates on MC-AI-0483."
+    ],
+    "product_changes": [
+      "World generation presents molten cooling, ocean formation, moving continental relief and V9 weather/ice before revealing the exact canonical world; the stages offer visual resemblance rather than a full geologic simulation."
+    ],
+    "code_changes": [
+      "docs/code/GAMEPLAY.md",
+      "docs/code/GENERATION.md",
+      "docs/code/RENDERING.md",
+      "docs/code/source_state.json",
+      "src/client/GameClient.cpp",
+      "src/client/GenerationMapPresentation.cpp",
+      "src/client/PlayerClient.cpp",
+      "src/client/UiPresentation.cpp",
+      "src/client/include/client/GenerationMapPresentation.hpp",
+      "src/client/include/client/PlayerClient.hpp",
+      "src/generation/Generation.cpp",
+      "src/generation/V9Provider.cpp",
+      "src/generation/include/generation/Generation.hpp",
+      "src/shared/include/shared/net/Message.hpp",
+      "src/shared/net/Message.cpp",
+      "tests/client/generation_map_presentation_tests.cpp",
+      "tests/client/ui_presentation_tests.cpp",
+      "tests/core/shared_message_tests.cpp",
+      "tests/generation/v9_provider_tests.cpp"
+    ],
+    "baseline_commit": "f5ac55c128b9bc6e9f95f490d9c686a4c42efaba",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "GAMEPLAY, GENERATION and RENDERING document Protocol 25 field transport, true readiness, the 10-second visible-time presentation, source-backed V9 fields, hidden pause, the 24 Hz latest-image bound, and the canonical unblurred endpoint.",
+    "environment_review": "The recorded 92/92 Release focused suite, link, and native 241-frame endpoint are from the earlier 65a candidate before this f5ac rebase. The 24 Hz late-tick branch has its own same-image/new-image regression. No current-base Windows compute or visual acceptance is claimed.",
+    "backlog_review": "Task 0588 records only the completed local implementation milestone. MC-AI-0483 remains active for Windows <=4 s computation, Windows owner visual acceptance, FPS, platform and aggregate S2 acceptance."
+  },
+  {
     "id": "MC-AI-0591",
     "title": "Stabilize and compact the adaptive HUD",
     "kind": "bug",

@@ -27,35 +27,31 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
   -> VulkanRenderer -> PresentationContext::Frame callback -> present/readback
 ```
 
-Z-up uses zero-to-one depth. `InstalledShaderAssets` reads installed `shaders/`; Android
-`AndroidShaderAssets` reads APK assets. Both require bare `.spv` names, without source fallback.
+Z-up depth is zero-to-one. Desktop/Android load bare installed/APK `.spv` assets;
+no source fallback.
 
-Conservative hierarchy preserves visibility/order. L0 fallback refines 4×4 through
-L1/L2 with stitched edges. A 32-block band aligns actual neighbors; incomplete
-captures retain fallback. Async planning reuses groups. Sealed capture batches
-share identity; tile availability, revision and dense content stay checked.
-Bounded tile changes select exact validation; resident identity diffs detect
-borrowed edits. Textured 16×16 Bedrock bottoms retain edit fallback. Uploads retain
-old scenes until completion; stale columns are preserved.
+Conservative order; L0 refines 4×4 through stitched L1/L2. Incomplete 32-block
+neighbor captures retain fallback. Async plans reuse groups; sealed captures share
+identity and check tile availability, revisions and dense content. Bounded changes
+use exact checks; resident diffs catch borrowed edits. Textured 16×16 Bedrock keeps
+edit fallback. Uploads retain old scenes/stale columns until complete.
 See [gameplay]
 (GAMEPLAY.md), [full-radius qualification](../ai/GAMEPLAY_QUALIFICATION.md), and
 [LOD presentation tests](../../tests/client/terrain_lod_presentation_tests.cpp).
 
-Active LOD terrain, blocks, players and labels bend around camera XY (radius
-131072); Z drops by distance squared /262144. CPU culling bounds curvature.
-Fog starts in the horizon's final 4% (altitude-aware tangent, sea 384), capped
-at 32768. Adaptive projection covers altitude, terrain and maximum bend;
-simulation and GUI stay flat. Captures remain open.
+Terrain, blocks, players and labels bend around camera XY (radius 131,072); Z
+drops by distance²/262,144. CPU culling bounds curvature. Final-4% horizon fog
+(altitude-aware tangent, sea 384), capped at 32,768. Adaptive projection covers
+altitude/terrain/bend; simulation and GUI stay flat. Captures remain open.
 
-Material IDs stay fixed; Sand is 7. Flagged smooth triangles pack temperatures.
-The [pinned vanilla atlas](../../assets/textures/terrain/README.md) keeps tinted
-Grass tops, layered sides and Dirt bottoms; six deterministic Sand faces precede
-the overlay. Each sRGB layer has five linear-light mips (16×16–1×1).
-Premultiply overlay before filtering; magnify nearest, minify trilinear. Decode
-sRGB for lighting; encode for UNORM/sRGB output. Capture `srgb_encoded` reports
-pixel encoding; offscreen stays linear.
+Material IDs fixed; Sand=7. Smooth triangles pack temperatures. The [pinned
+vanilla atlas](../../assets/textures/terrain/README.md) keeps tinted Grass tops,
+layered sides and Dirt bottoms; six deterministic Sand faces precede overlay. Each
+sRGB layer has five linear-light mips (16×16–1×1). Premultiply before filtering;
+magnify nearest/minify trilinear. Decode for lighting; encode for UNORM output.
+`srgb_encoded` reports pixel encoding; offscreen remains linear.
 
-Two ≤512² RGBA8 slots serve eight draws. Preparing/Connecting backdrops; generation hides fallback until Playing. 2× drift; shade scaled/uplifted land only. Five phases: Arrival 25s; True Ready selects final. Pause hidden motion; ship desktop/Android shaders. S2: Sand/Snow, V9 biomes. Generation reuses canonical relief/contour/depth/ice; source temperature drives ice; scalar overlays exact; no phase blur. S2 map fit and vector overlays: see [UI design](../ai/decisions/earlydev_0_1_1_s2_ui.md).
+Two `512²` RGBA8 slots; eight draws. Prep/Connect backdrops hide fallback. Five 2s phases overlap computation; hidden views pause; latest-only 24 Hz. Molten cooling, crust/ocean formation; continuous 2× drift, scaled/uplifted land-only shade. V9 wind/current/rain and temperature ice lead to exact sharp atlas; no RGB blur. Late fields: 1 s. True Ready; prompt waits for formation/scene/frame fences. Desktop/Android. Map fit; +Y up; heading 0 north/+90 east; raster/marker/pointer align.
 
 `setFrameCompletionTracking(true)` exposes `frameProgress()`;
 sequence IDs include swapchain generation. Failed submits do not advance; toggling
