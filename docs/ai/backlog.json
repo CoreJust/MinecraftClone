@@ -20687,5 +20687,43 @@
     "docs_review": "No separate guide change was needed; generated source inventory is refreshed.",
     "environment_review": "Configured existing dependencies and local focused test artifacts were reused; no package prefix mutation.",
     "backlog_review": "The handoff membership prerequisite is complete; all full UI frame-budget and platform gates remain open under MC-AI-0483."
+  },
+  {
+    "id": "MC-AI-0576",
+    "title": "Contain minimap request cancellation at the worker boundary",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Return no minimap artifact for GenerationCancelled without swallowing other failures. Preserve worker request/session identity fences. Reproduce a pre-cancelled worker request and verify normal requests still succeed. Keep the actual Windows fatal attribution and broader runtime qualification separate.",
+    "evidence": "On rebased source at 7d9d6bcd7501dc95ffc8b118777875011f1125ea, the private Release mc_tests build succeeded and the focused S2MapPresentation suite passed 15/15, including a pre-cancelled worker request and a subsequent normal request. Exact candidate source hashes and build/JUnit/log receipts: /Users/core-just/.codex/task-evidence/mc-s2-20261025/metadata-candidates/evidence-0576/receipt.json. The earlier generic Windows fatal remains unattributed; no Windows runtime or FPS qualification is claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Remove a source-confirmed process-termination path when an in-flight minimap request is cancelled during worker destruction, replacement or invalidation.",
+    "context": "buildTerrainLod throws GenerationCancelled when its stop token is requested. S2MinimapLodWorker invokes buildS2MinimapLod on std::thread without a catch; an exception escaping the thread terminates the process. Its existing null-result path already suppresses publication.",
+    "complexity": "low",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added a function-try-block catching only GenerationCancelled in buildS2MinimapLod and returning no artifact; documented cancellation at the declaration and added a threaded pre-cancelled request plus subsequent normal-request regression.",
+    "plan": [],
+    "product_changes": [
+      "Cancelling background minimap work does not terminate the process."
+    ],
+    "code_changes": [
+      "src/client/S2MapPresentation.cpp",
+      "src/client/include/client/S2MapPresentation.hpp",
+      "tests/client/s2_map_presentation_tests.cpp"
+    ],
+    "baseline_commit": "7d9d6bcd7501dc95ffc8b118777875011f1125ea",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Generic Windows crash text does not establish the observed fatal cause; the exception escape is independently reproducible and the code handles only the typed cancellation case.",
+    "docs_review": "The header declares the typed cancellation contract; regenerated docs/code/source_state.json for the source/test changes and ai_docs.py check passed.",
+    "environment_review": "Private Release build configured with the existing pinned arm64-osx dependency prefixes and VCPKG_MANIFEST_INSTALL=OFF; no dependency installation or shared-root mutation. Rebased source/test SHA-256 values and commands are recorded in evidence-0576/receipt.json.",
+    "backlog_review": "This finalized task covers only the cancellation component and its focused 15/15 test suite. Windows cause attribution and S2/owner/FPS qualification remain open under MC-AI-0483."
   }
 ]

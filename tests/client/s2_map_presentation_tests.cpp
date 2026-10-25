@@ -16,7 +16,9 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <stop_token>
 #include <string_view>
+#include <thread>
 #include <variant>
 #include <vector>
 
@@ -548,4 +550,17 @@ TEST(S2MapPresentationTest, LayerAndNavigationActionsAreIndependentAndBounded)
         state, client::S2WorldMapAction::ZoomIn, 2'000.0, 4'000.0));
     EXPECT_FALSE(state.overview);
     EXPECT_GT(state.zoom, 1.0);
+}
+TEST(S2MapPresentationTest, CancelledMinimapRequestReturnsNoResultToWorker)
+{
+    auto const world = mapWorld();
+    std::stop_source cancellation;
+    cancellation.request_stop();
+    std::shared_ptr<shared::TerrainLodArtifact const> result;
+    std::thread worker{[&] {
+        EXPECT_NO_THROW(result = client::buildS2MinimapLod(*world, 0.0, 0.0, cancellation.get_token()));
+    }};
+    worker.join();
+    EXPECT_EQ(result, nullptr);
+    EXPECT_NE(client::buildS2MinimapLod(*world, 0.0, 0.0), nullptr);
 }

@@ -1648,8 +1648,7 @@ std::shared_ptr<shared::TerrainLodArtifact const> buildS2MinimapLod(
     double const player_x,
     double const player_y,
     std::stop_token const& cancellation
-)
-{
+) try {
     auto const atlas = world.atlas();
     if (!atlas || !shared::isValidTerrainIdentity(world.identity())
         || !std::isfinite(player_x) || !std::isfinite(player_y)
@@ -1721,6 +1720,8 @@ std::shared_ptr<shared::TerrainLodArtifact const> buildS2MinimapLod(
         }
     }
     return result;
+} catch (generation::GenerationCancelled const&) {
+    return {};
 }
 
 std::optional<S2MapImage> rasterizeS2Minimap(shared::TerrainLodArtifact const& local_lod)

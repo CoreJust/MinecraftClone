@@ -153,6 +153,7 @@ std::optional<S2MapImage> rasterizeS2WorldMap(
 );
 
 [[nodiscard]]
+// Cancellation returns no artifact so background minimap requests can stop without escaping their worker.
 std::shared_ptr<shared::TerrainLodArtifact const> buildS2MinimapLod(
     shared::TerrainWorld const& world,
     double player_x,
