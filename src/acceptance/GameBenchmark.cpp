@@ -967,6 +967,67 @@ std::shared_ptr<server::WorldPreparation> startBenchmarkTerrainPreparation(
     );
 }
 
+client::PreparedTerrainWorldProvider benchmarkPreparedTerrainWorldProvider(
+    std::shared_ptr<server::WorldPreparation> preparation
+)
+{
+    auto next_terminal_check = Clock::time_point::min();
+    return [
+        preparation = std::move(preparation),
+        next_terminal_check
+    ](shared::TerrainSessionIdentity const& session) mutable {
+        if (preparation->configuration() != session.configuration) {
+            return client::PreparedTerrainWorldStatus{
+                .state = client::PreparedTerrainWorldState::Failed,
+                .error = "Loopback server terrain configuration does not match the client session.",
+            };
+        }
+        if (std::shared_ptr<shared::TerrainWorld const> world = preparation->readyWorld()) {
+            return client::PreparedTerrainWorldStatus{
+                .state = client::PreparedTerrainWorldState::Ready,
+                .world = std::move(world),
+            };
+        }
+
+        Clock::time_point const now = Clock::now();
+        if (now < next_terminal_check) {
+            return client::PreparedTerrainWorldStatus{};
+        }
+        next_terminal_check = now + std::chrono::milliseconds{ 100 };
+
+        server::WorldPreparationSnapshot const snapshot = preparation->latest();
+        switch (snapshot.state) {
+            case server::WorldPreparationState::Preparing:
+                return client::PreparedTerrainWorldStatus{};
+            case server::WorldPreparationState::Ready:
+                if (snapshot.ready_world) {
+                    return client::PreparedTerrainWorldStatus{
+                        .state = client::PreparedTerrainWorldState::Ready,
+                        .world = snapshot.ready_world,
+                    };
+                }
+                return client::PreparedTerrainWorldStatus{
+                    .state = client::PreparedTerrainWorldState::Failed,
+                    .error = "Loopback server marked terrain ready without publishing its world.",
+                };
+            case server::WorldPreparationState::Failed:
+                return client::PreparedTerrainWorldStatus{
+                    .state = client::PreparedTerrainWorldState::Failed,
+                    .error = snapshot.error,
+                };
+            case server::WorldPreparationState::Cancelled:
+                return client::PreparedTerrainWorldStatus{
+                    .state = client::PreparedTerrainWorldState::Cancelled,
+                    .error = snapshot.error,
+                };
+        }
+        return client::PreparedTerrainWorldStatus{
+            .state = client::PreparedTerrainWorldState::Failed,
+            .error = "Loopback server reported an unknown terrain preparation state.",
+        };
+    };
+}
+
 void awaitBenchmarkTerrainPreparation(std::shared_ptr<server::WorldPreparation> const& preparation)
 {
     static constexpr std::chrono::milliseconds POLL_INTERVAL{ 5 };
@@ -2582,7 +2643,8 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         return std::make_unique<client::PlayerClient>(
             shared::WorldMode::Flight,
             std::nullopt,
-            std::move(player_options)
+            std::move(player_options),
+            benchmarkPreparedTerrainWorldProvider(world_preparation)
         );
     }();
     client::PlayerClient& player = *player_storage;

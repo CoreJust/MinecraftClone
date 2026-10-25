@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -39,20 +40,55 @@ bool isValidSession(shared::TerrainSessionIdentity const& session) noexcept
 [[nodiscard]]
 TerrainLodProduct buildTerrainLodProduct(
     shared::TerrainSessionIdentity const& session,
-    std::stop_token const& cancellation
+    std::stop_token const& cancellation,
+    PreparedTerrainWorldProvider const& prepared_world_provider
 )
 {
-    std::shared_ptr<generation::GlobalAtlas const> const atlas = generation::prepareAtlas(
-        session.configuration,
-        cancellation
-    );
-    if (!atlas || atlas->configuration != session.configuration) {
-        throw std::runtime_error{ "Generated atlas does not match the requested terrain configuration." };
-    }
+    std::shared_ptr<shared::TerrainWorld const> world;
+    if (prepared_world_provider) {
+        using namespace std::chrono_literals;
+        while (!cancellation.stop_requested()) {
+            PreparedTerrainWorldStatus const status = prepared_world_provider(session);
+            if (cancellation.stop_requested()) {
+                throw generation::GenerationCancelled{};
+            }
+            switch (status.state) {
+                case PreparedTerrainWorldState::Pending:
+                    std::this_thread::sleep_for(25ms);
+                    continue;
+                case PreparedTerrainWorldState::Ready:
+                    world = status.world;
+                    break;
+                case PreparedTerrainWorldState::Failed:
+                    throw std::runtime_error{ status.error.empty()
+                        ? "Local terrain world preparation failed."
+                        : status.error };
+                case PreparedTerrainWorldState::Cancelled:
+                    throw generation::GenerationCancelled{};
+            }
+            break;
+        }
+        if (cancellation.stop_requested()) {
+            throw generation::GenerationCancelled{};
+        }
+        if (!world
+            || world->identity() != session.terrain
+            || world->atlas()->configuration != session.configuration) {
+            throw std::runtime_error{ "Prepared terrain world does not match the active server session." };
+        }
+    } else {
+        std::shared_ptr<generation::GlobalAtlas const> const atlas = generation::prepareAtlas(
+            session.configuration,
+            cancellation
+        );
+        if (!atlas || atlas->configuration != session.configuration) {
+            throw std::runtime_error{ "Generated atlas does not match the requested terrain configuration." };
+        }
 
-    auto const world = std::make_shared<shared::TerrainWorld const>(atlas, session.terrain.revision);
-    if (world->identity() != session.terrain) {
-        throw std::runtime_error{ "Generated terrain identity does not match the active server session." };
+        world = std::make_shared<shared::TerrainWorld const>(atlas, session.terrain.revision);
+        if (world->identity() != session.terrain) {
+            throw std::runtime_error{ "Generated terrain identity does not match the active server session." };
+        }
     }
     auto const root = shared::buildTerrainLod(
         *world,
@@ -63,6 +99,20 @@ TerrainLodProduct buildTerrainLodProduct(
         cancellation
     );
     return { .world = world, .root = root };
+}
+
+[[nodiscard]]
+TerrainLodSource::Builder makePreparedWorldBuilder(PreparedTerrainWorldProvider provider)
+{
+    if (!provider) {
+        throw std::invalid_argument{ "Prepared terrain LOD source requires a world provider." };
+    }
+    return [provider = std::move(provider)](
+        shared::TerrainSessionIdentity const& session,
+        std::stop_token const& cancellation
+    ) {
+        return buildTerrainLodProduct(session, cancellation, provider);
+    };
 }
 
 [[nodiscard]]
@@ -97,7 +147,9 @@ bool isValidProduct(
 } // namespace
 
 TerrainLodSource::TerrainLodSource()
-    : TerrainLodSource{ buildTerrainLodProduct }
+    : TerrainLodSource{ [](shared::TerrainSessionIdentity const& session, std::stop_token const& cancellation) {
+        return buildTerrainLodProduct(session, cancellation, {});
+    } }
 {
 }
 
@@ -108,6 +160,11 @@ TerrainLodSource::TerrainLodSource(Builder builder)
         throw std::invalid_argument{ "Terrain LOD source requires a builder." };
     }
     m_worker = std::thread{ [this] { workerLoop(); } };
+}
+
+TerrainLodSource::TerrainLodSource(PreparedTerrainWorldProvider provider)
+    : TerrainLodSource{ makePreparedWorldBuilder(std::move(provider)) }
+{
 }
 
 TerrainLodSource::~TerrainLodSource()

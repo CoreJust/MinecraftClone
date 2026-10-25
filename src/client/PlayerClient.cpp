@@ -1537,9 +1537,16 @@ uint64_t PlayerClient::previewCacheRetirementSubmissionCount() const noexcept
 PlayerClient::PlayerClient(
     shared::WorldMode const mode,
     std::optional<PlayerClientCaptureOptions> capture,
-    std::optional<PlayerClientBenchmarkOptions> benchmark
+    std::optional<PlayerClientBenchmarkOptions> benchmark,
+    PreparedTerrainWorldProvider prepared_world_provider
 )
-    : GameClient{ mode }
+    : GameClient{
+        mode,
+        shared::World::canonicalConfiguration(),
+        true,
+        {},
+        std::move(prepared_world_provider),
+    }
     , m_capture(std::move(capture))
     , m_benchmark(std::move(benchmark))
     , m_window(core::platform::glfw::WindowDescriptor{

@@ -1,4 +1,4 @@
-Run [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-distance CHUNKS]`, `--player-client`/`--bot-client` (use `--address IP:PORT`). No args/`--local-game` owns server/window lifetime; local play uses ephemeral loopback; explicit ports are unchanged. T0 precedes preparation. `--player-client-2d --address IP:PORT --replay stationary|ordinary-turning --seconds 1..120 --evidence DIR` records logical CPU column-map frames; graphics-free `mc_column_map` omits selector.
+Use [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-distance CHUNKS]` and `--player-client`/`--bot-client --address IP:PORT`. No args or `--local-game` starts an ephemeral loopback server and window; explicit ports are unchanged, and T0 precedes preparation. `--player-client-2d ... --evidence DIR` records logical CPU column-map frames; graphics-free `mc_column_map` omits the selector.
 
 ## Shared simulation
 
@@ -41,49 +41,48 @@ Preview batches cap at 64 operations/12,678 bytes and fit a maximum 16-bit tile.
 
 ## Terrain-v2 preparation and authority
 
-[GENERATION.md](GENERATION.md) documents the atlas and regional sampler.
-`WorldPreparation` publishes an immutable configured `TerrainWorld` with stage
-snapshots. `HeightTileWorkerPool` shares it across previews/chunks, bounded to 128
-queued/submitted jobs. Cancellation/drain preserve result ownership; `GameServer`
-owns scheduling, stale-result rejection and publication.
+[GENERATION.md](GENERATION.md) documents atlas and regional sampling.
+`WorldPreparation` publishes an immutable `TerrainWorld` with stage snapshots.
+`HeightTileWorkerPool` shares it across previews/chunks, bounded to 128 jobs;
+`GameServer` owns scheduling, stale-result rejection and publication. LocalGame
+reuses this world for client L0; remote clients prepare against the negotiated
+session.
 
-Prepared joins keep T0. Dense 48 permits prompt/start; first public full Ready
-requires 768 startup-reserve profiles. `startup_prefetch_primed_at` records priming;
-readiness then tracks current 640. Begin/restart/cancel or complete-profile clear
-rearms it; partial reserve loss preserves current complete coverage. Session/epoch/
-identity gate publication. Dense 48/80 delivery and ACK-gated promotion stay
-separate. See [Generation](GENERATION.md#bounded-materialized-prefetch).
+Prepared joins keep T0. Dense 48 permits prompt/start; full Ready requires 768
+startup-reserve profiles, then current 640. `startup_prefetch_primed_at` records
+priming. Begin/restart/cancel or complete-profile loss rearms it; partial reserve
+loss preserves current coverage. Session/epoch/identity fence publication. Dense
+48/80 delivery and ACK promotion stay separate. See
+[materialized prefetch](GENERATION.md#bounded-materialized-prefetch).
 
-Prepared Flight joins without an explicit spawn use nearest safe dry land
-near world center, with wrapped distance and deterministic ties. Support stays asynchronous; explicit spawns retain validation. See
-[nearest-land spawn](GENERATION.md#nearest-land-prepared-spawn).
+Unconfigured Flight joins choose nearest safe dry land near world center by wrapped
+distance and deterministic ties. Support stays asynchronous; explicit spawns are
+validated. See [nearest-land spawn](GENERATION.md#nearest-land-prepared-spawn).
 
-Preview meshes grow from near-camera connected coverage and publish after a
-cardinal neighbor is ready. Interest changes/removals rebuild them; retired meshes
-leave canonical resident data available for remeshing.
+Preview meshes publish from connected near-camera coverage after cardinal
+neighbors are ready. Interest changes rebuild them; canonical data remains
+available for remeshing.
 
-Preparing/Connecting show a backdrop. Generation pairs truthful status/counters
-with a square map; six captions are illustrative. Ready shows final map/prompt;
-fresh input starts after its frame. Held keys stay consumed until release; gameplay
-waits for ACK; focus loss releases capture. Pixels need matching metadata and
-authoritative highest-solid coverage; otherwise Unknown.
+Preparing/Connecting show progress over a map; Ready shows the final map and
+prompt. Fresh input starts gameplay after its frame; gameplay waits for server
+ACK, and focus loss releases cursor capture. Pixels require matching metadata and
+authoritative coverage; otherwise they are Unknown.
 
 ## Client and qualification
 
 `GameClient` uses cancellable 25 ms polls, 250 ms retries and 30-second peers.
-`FrameScheduler` preserves 100 ms phase and skips missed ticks. Interpolation
-holds gaps over one tick; flight is linear in Z, gravity/collision use
-velocity-continuous Hermite. Prediction replays pending input against ACKs.
+`FrameScheduler` preserves 100 ms ticks and skips missed ones. Interpolation holds
+gaps over a tick; flight is linear in Z, gravity/collision use velocity-continuous
+Hermite, and prediction replays pending input after ACKs.
 
-Desktop/Android share `TerrainLodRuntime`: persistent prioritized discovery and
-capture queues preserve useful columns across movement; up to eight captures
-fit each deadline. Async scene tickets reject stale sources or lost required
-rendered columns. Android background rendering returns after platform events.
+Desktop/Android share `TerrainLodRuntime`: prioritized discovery/capture queues
+preserve useful columns across movement, fitting up to eight captures per
+deadline. Async tickets reject stale sources or missing required columns. Android
+returns from background rendering after platform events.
 
-Hooks bind deadlines, inputs, accepted poses and camera.
-[Qualification](../ai/GAMEPLAY_QUALIFICATION.md) separates S1's turning x30 and
-full 640 profile route from generic 320 geometry and x200 stress. T0 never resets. Legacy
-180-second warmup is non-gating.
+Hooks bind deadlines, inputs, accepted poses and camera. [Qualification](../ai/GAMEPLAY_QUALIFICATION.md)
+separates S1's turning x30/640-profile route from generic 320 geometry and x200
+stress. T0 never resets; legacy 180-second warmup is non-gating.
 
 [PlayerClient](../../src/client/PlayerClient.cpp) uses GLFW/Vulkan. Cursor aims;
 camera-relative WASD. LMB breaks while held; RMB places once; B cycles blocks, G

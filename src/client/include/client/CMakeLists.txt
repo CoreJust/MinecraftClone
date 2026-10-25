@@ -26,6 +26,7 @@ target_sources(mc
             PlayerClientInputState.hpp
             PlayerPreviewLod.hpp
             PlayerPresentation.hpp
+            PreparedTerrainWorld.hpp
             PreviewMeshConnectivity.hpp
             PreviewMeshWorkQueue.hpp
             PreviewMeshing.hpp

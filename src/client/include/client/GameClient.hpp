@@ -5,6 +5,7 @@
 #include "PreviewResidency.hpp"
 #include "WorldLoading.hpp"
 
+#include <client/PreparedTerrainWorld.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
@@ -89,7 +90,8 @@ public:
         shared::WorldMode const mode = shared::WorldMode::Flat,
         shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration(),
         bool const wants_previews = true,
-        std::unique_ptr<ClientAudioOutput> audio_output = {}
+        std::unique_ptr<ClientAudioOutput> audio_output = {},
+        PreparedTerrainWorldProvider prepared_world_provider = {}
     );
     ~GameClient() override;
 
@@ -305,6 +307,7 @@ protected:
     uint64_t m_benchmark_bytes_received = 0U;
     WorldLoading m_world_loading;
     std::optional<shared::TerrainSessionIdentity> m_terrain_session;
+    PreparedTerrainWorldProvider m_prepared_world_provider;
     std::unique_ptr<TerrainLodSource> m_terrain_lod_source;
     std::unique_ptr<shared::SparseWorld> m_authoritative_world;
     std::optional<uint64_t> m_active_coverage_epoch;

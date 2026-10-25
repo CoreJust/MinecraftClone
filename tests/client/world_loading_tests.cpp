@@ -260,6 +260,60 @@ TEST(WorldLoadingTest, AtlasCompletionAttestationAllowsJoinReadinessWithoutClien
     EXPECT_TRUE(loading.status(T0 + 1s).spawn_safe);
 }
 
+TEST(WorldLoadingTest, StartReadinessWaitsForEveryInitialSphereChunk)
+{
+    static constexpr Clock::time_point T0{};
+    static constexpr shared::PlayerPosition CENTER{ .x = 1'024, .y = 1'024, .z = 430 };
+    client::WorldLoading loading{ client::WorldLoadingPlatform::Windows };
+    client::WorldLoadingIdentity const world_identity = identity();
+    ASSERT_TRUE(loading.begin(world_identity, T0));
+    ASSERT_TRUE(loading.publishAtlasCompletion(
+        world_identity,
+        terrainIdentity(world_identity.configuration),
+        T0 + 1s
+    ));
+    ASSERT_TRUE(loading.publishRefinedSpawn(
+        world_identity,
+        CENTER,
+        client::SpawnValidation::Safe,
+        T0 + 1s
+    ));
+
+    std::vector<shared::ChunkCoordinate> const initial_keys = client::WorldLoading::requiredChunkKeys(
+        CENTER,
+        client::WorldLoading::INITIAL_READY_SPHERE_RADIUS_BLOCKS
+    );
+    ASSERT_GT(initial_keys.size(), 1U);
+    uint32_t const required_count = static_cast<uint32_t>(initial_keys.size());
+    ASSERT_EQ(required_count, 208U);
+    shared::ChunkCoordinate const missing_key = initial_keys.back();
+    for (shared::ChunkCoordinate const key : initial_keys) {
+        if (key != missing_key) {
+            ASSERT_TRUE(loading.publishMaterializedChunk(
+                world_identity,
+                shared::Chunk{ key },
+                T0 + 2s
+            ));
+        }
+    }
+
+    client::WorldLoadingStatus const partial_status = loading.status(T0 + 2s);
+    EXPECT_FALSE(partial_status.initial_sphere_ready);
+    EXPECT_EQ(partial_status.initial_sphere_ready_chunks, required_count - 1U);
+    EXPECT_EQ(partial_status.initial_sphere_required_chunks, required_count);
+    EXPECT_EQ(partial_status.state, client::WorldLoadingState::PreparingSpawn);
+
+    ASSERT_TRUE(loading.publishMaterializedChunk(
+        world_identity,
+        shared::Chunk{ missing_key },
+        T0 + 3s
+    ));
+    client::WorldLoadingStatus const ready_status = loading.status(T0 + 3s);
+    EXPECT_TRUE(ready_status.initial_sphere_ready);
+    EXPECT_EQ(ready_status.initial_sphere_ready_chunks, required_count);
+    EXPECT_EQ(ready_status.state, client::WorldLoadingState::ReadyForStart);
+}
+
 TEST(WorldLoadingTest, KeyIsConsumedUntilTheReadyPromptWasActuallyPresented)
 {
     static constexpr Clock::time_point T0{};

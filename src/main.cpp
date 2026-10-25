@@ -346,12 +346,81 @@ std::shared_ptr<server::WorldPreparation> prepareServerTerrain(
     );
 }
 
+[[nodiscard]]
+client::PreparedTerrainWorldProvider localPreparedTerrainWorldProvider(
+    std::shared_ptr<server::WorldPreparation> preparation
+)
+{
+    using Clock = server::WorldPreparation::Clock;
+    auto next_terminal_check = Clock::time_point::min();
+    return [
+        preparation = std::move(preparation),
+        next_terminal_check
+    ](shared::TerrainSessionIdentity const& session) mutable {
+        if (preparation->configuration() != session.configuration) {
+            return client::PreparedTerrainWorldStatus{
+                .state = client::PreparedTerrainWorldState::Failed,
+                .error = "Local server terrain configuration does not match the client session.",
+            };
+        }
+
+        if (std::shared_ptr<shared::TerrainWorld const> world = preparation->readyWorld()) {
+            return client::PreparedTerrainWorldStatus{
+                .state = client::PreparedTerrainWorldState::Ready,
+                .world = std::move(world),
+            };
+        }
+
+        Clock::time_point const now = Clock::now();
+        if (now < next_terminal_check) {
+            return client::PreparedTerrainWorldStatus{};
+        }
+        next_terminal_check = now + std::chrono::milliseconds{ 100 };
+
+        server::WorldPreparationSnapshot const snapshot = preparation->latest();
+        switch (snapshot.state) {
+            case server::WorldPreparationState::Preparing:
+                return client::PreparedTerrainWorldStatus{};
+            case server::WorldPreparationState::Ready:
+                if (snapshot.ready_world) {
+                    return client::PreparedTerrainWorldStatus{
+                        .state = client::PreparedTerrainWorldState::Ready,
+                        .world = snapshot.ready_world,
+                    };
+                }
+                return client::PreparedTerrainWorldStatus{
+                    .state = client::PreparedTerrainWorldState::Failed,
+                    .error = "Local server marked terrain ready without publishing its world.",
+                };
+            case server::WorldPreparationState::Failed:
+                return client::PreparedTerrainWorldStatus{
+                    .state = client::PreparedTerrainWorldState::Failed,
+                    .error = snapshot.error,
+                };
+            case server::WorldPreparationState::Cancelled:
+                return client::PreparedTerrainWorldStatus{
+                    .state = client::PreparedTerrainWorldState::Cancelled,
+                    .error = snapshot.error,
+                };
+        }
+        return client::PreparedTerrainWorldStatus{
+            .state = client::PreparedTerrainWorldState::Failed,
+            .error = "Local server reported an unknown terrain preparation state.",
+        };
+    };
+}
+
 void runLocalGame(LaunchCommand const& command)
 {
     auto const accepted_at = server::WorldPreparation::Clock::now();
-    auto player = std::make_unique<client::PlayerClient>(shared::WorldMode::Flight);
     shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration();
     auto preparation = prepareServerTerrain(configuration, accepted_at, command.backend);
+    auto player = std::make_unique<client::PlayerClient>(
+        shared::WorldMode::Flight,
+        std::nullopt,
+        std::nullopt,
+        localPreparedTerrainWorldProvider(preparation)
+    );
     std::vector<server::GameServer::SpawnPoint> spawn_points;
     if (command.spawn) {
         spawn_points.push_back({

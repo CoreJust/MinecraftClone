@@ -43,10 +43,7 @@ shared::TerrainSessionIdentity makeSession(uint64_t const seed, uint64_t const r
 }
 
 [[nodiscard]]
-client::TerrainLodProduct makeProduct(
-    shared::TerrainSessionIdentity const& session,
-    std::stop_token const& cancellation = {}
-)
+std::shared_ptr<shared::TerrainWorld const> makeWorld(shared::TerrainSessionIdentity const& session)
 {
     auto atlas = std::make_shared<generation::GlobalAtlas>();
     atlas->configuration = session.configuration;
@@ -60,7 +57,16 @@ client::TerrainLodProduct makeProduct(
     atlas->lake_mask.assign(count, 0U);
     atlas->river_mask.assign(count, 0U);
 
-    auto const world = std::make_shared<shared::TerrainWorld const>(atlas, session.terrain.revision);
+    return std::make_shared<shared::TerrainWorld const>(atlas, session.terrain.revision);
+}
+
+[[nodiscard]]
+client::TerrainLodProduct makeProduct(
+    shared::TerrainSessionIdentity const& session,
+    std::stop_token const& cancellation = {}
+)
+{
+    auto const world = makeWorld(session);
     auto const root = shared::buildTerrainLod(
         *world,
         shared::TerrainLodLevel::L0,
@@ -203,4 +209,124 @@ TEST(TerrainLodSourceTest, DefaultBuilderPreparesMatchingAtlasAndFullWorldL0)
     EXPECT_EQ(root->extent, generation::WORLD_SIZE_BLOCKS);
     EXPECT_EQ(root->side, 257U);
     EXPECT_EQ(root->nodes.size(), 257U * 257U);
+}
+
+TEST(TerrainLodSourceTest, PreparedWorldProviderBuildsL0FromTheSinglePreparedWorld)
+{
+    shared::TerrainSessionIdentity const session = makeSession(42U, 7U, 1U);
+    uint32_t prepared_world_factory_calls = 0U;
+    auto const prepare_world = [&] {
+        ++prepared_world_factory_calls;
+        return makeWorld(session);
+    };
+    std::shared_ptr<shared::TerrainWorld const> const prepared_world = prepare_world();
+    std::atomic<uint32_t> provider_calls{ 0U };
+    client::TerrainLodSource source{ [&](shared::TerrainSessionIdentity const& requested_session) {
+        ++provider_calls;
+        if (requested_session != session) {
+            return client::PreparedTerrainWorldStatus{
+                .state = client::PreparedTerrainWorldState::Failed,
+                .error = "unexpected local client session",
+            };
+        }
+        return client::PreparedTerrainWorldStatus{
+            .state = client::PreparedTerrainWorldState::Ready,
+            .world = prepared_world,
+        };
+    } };
+
+    ASSERT_TRUE(source.request(session));
+    ASSERT_TRUE(waitForPublication(source, session, 2s));
+
+    std::shared_ptr<shared::TerrainWorld const> const client_world = source.worldFor(session);
+    ASSERT_NE(client_world, nullptr);
+    EXPECT_EQ(prepared_world_factory_calls, 1U);
+    EXPECT_EQ(provider_calls.load(), 1U);
+    EXPECT_EQ(client_world, prepared_world);
+    EXPECT_EQ(client_world->identity(), session.terrain);
+    EXPECT_EQ(client_world->sampleSurfaceHeight(4'096U, 8'192U),
+        prepared_world->sampleSurfaceHeight(4'096U, 8'192U));
+    ASSERT_NE(source.rootFor(session), nullptr);
+    EXPECT_EQ(source.rootFor(session)->terrain_identity, prepared_world->identity());
+}
+
+TEST(TerrainLodSourceTest, PreparedWorldProviderStopsOnTerminalStateAndRejectsMismatchedWorld)
+{
+    shared::TerrainSessionIdentity const session = makeSession(42U, 7U, 1U);
+    for (client::PreparedTerrainWorldState const terminal_state : {
+            client::PreparedTerrainWorldState::Failed,
+            client::PreparedTerrainWorldState::Cancelled,
+        }) {
+        std::atomic<uint32_t> provider_calls{ 0U };
+        client::TerrainLodSource source{ [&](shared::TerrainSessionIdentity const&) {
+            ++provider_calls;
+            return client::PreparedTerrainWorldStatus{
+                .state = terminal_state,
+                .error = "preparation ended",
+            };
+        } };
+        ASSERT_TRUE(source.request(session));
+        auto const deadline = std::chrono::steady_clock::now() + 2s;
+        while (provider_calls.load() == 0U && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(1ms);
+        }
+        ASSERT_EQ(provider_calls.load(), 1U);
+        std::this_thread::sleep_for(30ms);
+        EXPECT_EQ(provider_calls.load(), 1U);
+        EXPECT_FALSE(source.worldFor(session));
+        EXPECT_FALSE(source.rootFor(session));
+    }
+
+    shared::TerrainSessionIdentity const wrong_session = makeSession(43U, 7U, 1U);
+    std::shared_ptr<shared::TerrainWorld const> const mismatched_world = makeWorld(wrong_session);
+    std::atomic<uint32_t> mismatched_provider_calls{ 0U };
+    client::TerrainLodSource mismatched_source{ [&](shared::TerrainSessionIdentity const&) {
+        ++mismatched_provider_calls;
+        return client::PreparedTerrainWorldStatus{
+            .state = client::PreparedTerrainWorldState::Ready,
+            .world = mismatched_world,
+        };
+    } };
+    ASSERT_TRUE(mismatched_source.request(session));
+    auto const mismatch_deadline = std::chrono::steady_clock::now() + 2s;
+    while (mismatched_provider_calls.load() == 0U && std::chrono::steady_clock::now() < mismatch_deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
+    ASSERT_EQ(mismatched_provider_calls.load(), 1U);
+    std::this_thread::sleep_for(30ms);
+    EXPECT_FALSE(mismatched_source.worldFor(session));
+    EXPECT_FALSE(mismatched_source.rootFor(session));
+}
+
+TEST(TerrainLodSourceTest, ClientCancellationStopsWaitingWithoutCancellingOrOutlivingPreparation)
+{
+    struct PreparationLifetime final {
+        std::atomic_bool cancelled{ false };
+        std::atomic<uint32_t> provider_calls{ 0U };
+    };
+    auto preparation = std::make_shared<PreparationLifetime>();
+    std::weak_ptr<PreparationLifetime> const weak_preparation = preparation;
+    shared::TerrainSessionIdentity const session = makeSession(42U, 7U, 1U);
+    {
+        client::TerrainLodSource source{ [preparation](shared::TerrainSessionIdentity const&) {
+            ++preparation->provider_calls;
+            return client::PreparedTerrainWorldStatus{};
+        } };
+        preparation.reset();
+        ASSERT_TRUE(source.request(session));
+        auto const deadline = std::chrono::steady_clock::now() + 2s;
+        while (std::chrono::steady_clock::now() < deadline) {
+            std::shared_ptr<PreparationLifetime> const current_preparation = weak_preparation.lock();
+            if (!current_preparation || current_preparation->provider_calls.load() != 0U) {
+                break;
+            }
+            std::this_thread::sleep_for(1ms);
+        }
+        std::shared_ptr<PreparationLifetime> const current_preparation = weak_preparation.lock();
+        ASSERT_NE(current_preparation, nullptr);
+        source.cancel();
+        EXPECT_FALSE(current_preparation->cancelled.load());
+    }
+
+    EXPECT_TRUE(weak_preparation.expired());
 }

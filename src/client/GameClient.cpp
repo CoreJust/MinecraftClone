@@ -281,7 +281,8 @@ GameClient::GameClient(
     shared::WorldMode const mode,
     shared::WorldConfiguration const configuration,
     bool const wants_previews,
-    std::unique_ptr<ClientAudioOutput> audio_output
+    std::unique_ptr<ClientAudioOutput> audio_output,
+    PreparedTerrainWorldProvider prepared_world_provider
 )
     : core::Client{ 2 }
     , m_world{ mode, configuration }
@@ -294,6 +295,7 @@ GameClient::GameClient(
 #else
     , m_world_loading{ WorldLoadingPlatform::Mac }
 #endif
+    , m_prepared_world_provider{ std::move(prepared_world_provider) }
 {
 }
 
@@ -916,7 +918,11 @@ bool GameClient::applyWorldPreparation(
         if (message.failure.empty()) {
             try {
                 if (!m_terrain_lod_source) {
-                    m_terrain_lod_source = std::make_unique<TerrainLodSource>();
+                    if (m_prepared_world_provider) {
+                        m_terrain_lod_source = std::make_unique<TerrainLodSource>(m_prepared_world_provider);
+                    } else {
+                        m_terrain_lod_source = std::make_unique<TerrainLodSource>();
+                    }
                 }
                 auto const request_started_at = std::chrono::steady_clock::now();
                 bool const requested = m_terrain_lod_source->request(message.session);

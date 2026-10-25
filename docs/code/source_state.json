@@ -37,7 +37,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "422d3544655dc61fe60bbf49d6a8ad9c62ca1e76aeb9c76c56f342733c3051e3"
+      "sources_sha256": "81a5af538a9a03cec01ebad3de9844d4aa9427e5daafa610558379d8995c59de"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -247,7 +247,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "ddb7a7c6caa0cc2daf6fd713954bca07df8e1b1104eaf51c4f319ef8409052f3",
+      "guide_sha256": "b71f11a018081cfe2e2a5c02595e45ac9283e6c34365e1cb99dd7e22f7ddc720",
       "id": "gameplay",
       "sources": [
         "src/client/BlockActionPresentation.cpp",
@@ -296,6 +296,7 @@
         "src/client/include/client/PlayerClientInputState.hpp",
         "src/client/include/client/PlayerPresentation.hpp",
         "src/client/include/client/PlayerPreviewLod.hpp",
+        "src/client/include/client/PreparedTerrainWorld.hpp",
         "src/client/include/client/PreviewMeshConnectivity.hpp",
         "src/client/include/client/PreviewMeshWorkQueue.hpp",
         "src/client/include/client/PreviewMeshing.hpp",
@@ -397,11 +398,11 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "c8cb00b8b54c48e4fd9560ca1c9ab6bcb5d6a9c0ee78a95f91ffe30e106d0888"
+      "sources_sha256": "3017890c5a8aca4261dbd7885c0d9397b2cc7e0d7b23dff9085937afc7c4a892"
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "e2c29e65d04a16edeb94ffe776f49813c204a381345028ab463dda30148e3eab",
+      "guide_sha256": "3e087815839cec1deb5f4e415184975a7bd7a6e3d151e829016403f172549314",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -1138,7 +1139,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "a859912eaed9b8ecb9266143941357c0fceedba70296bbbff9a67ad913adffed"
+      "sources_sha256": "8c8ec3d7242da7599658b4e08772d5ddb72717f11b6703fdf64a3c4c9b4eff50"
     }
   ],
   "version": 1

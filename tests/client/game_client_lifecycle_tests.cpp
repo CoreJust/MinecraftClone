@@ -5,6 +5,7 @@
 #include <shared/net/Message.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/TerrainLod.hpp>
 #include <shared/world/TerrainWorld.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldCoverage.hpp>
@@ -151,6 +152,25 @@ private:
     std::thread m_thread;
 };
 
+[[nodiscard]]
+std::shared_ptr<shared::TerrainWorld const> makePreparedTerrainWorld(
+    shared::TerrainSessionIdentity const& session
+)
+{
+    auto atlas = std::make_shared<generation::GlobalAtlas>();
+    atlas->configuration = session.configuration;
+    atlas->vertical_scale = 10.0;
+    uint32_t const count = session.configuration.resolution * session.configuration.resolution;
+    atlas->elevation.assign(count, 1.5F);
+    atlas->temperature.assign(count, 12.0F);
+    atlas->precipitation.assign(count, 0.3F);
+    atlas->water_level.assign(count, 0.0F);
+    atlas->ocean_mask.assign(count, 0U);
+    atlas->lake_mask.assign(count, 0U);
+    atlas->river_mask.assign(count, 0U);
+    return std::make_shared<shared::TerrainWorld const>(atlas, session.terrain.revision);
+}
+
 class CoverageClient final : public client::GameClient {
 public:
     using Clock = std::chrono::steady_clock;
@@ -162,8 +182,14 @@ public:
     using GameClient::resetConnectionState;
     using GameClient::retryEditResync;
 
-    CoverageClient()
-        : GameClient{ shared::WorldMode::Flat, shared::World::canonicalConfiguration(), false }
+    explicit CoverageClient(client::PreparedTerrainWorldProvider prepared_world_provider = {})
+        : GameClient{
+            shared::WorldMode::Flat,
+            shared::World::canonicalConfiguration(),
+            false,
+            {},
+            std::move(prepared_world_provider),
+        }
     { }
 
     [[nodiscard]] bool initialize(shared::PlayerPosition const spawn, Clock::time_point const accepted_at)
@@ -499,6 +525,42 @@ uint16_t unusedPort()
 }
 
 } // namespace
+
+TEST(GameClientLifecycleTest, LocalPreparedWorldProviderSuppliesTheExactServerWorldToClientLod)
+{
+    std::atomic<uint32_t> server_atlas_builds{ 0U };
+    std::atomic<uint32_t> provider_calls{ 0U };
+    std::shared_ptr<shared::TerrainWorld const> prepared_world;
+    CoverageClient client{ [&](shared::TerrainSessionIdentity const& session) {
+        ++provider_calls;
+        if (!prepared_world) {
+            ++server_atlas_builds;
+            prepared_world = makePreparedTerrainWorld(session);
+        }
+        return client::PreparedTerrainWorldStatus{
+            .state = client::PreparedTerrainWorldState::Ready,
+            .world = prepared_world,
+        };
+    } };
+    auto const request_time = std::chrono::steady_clock::now();
+
+    ASSERT_TRUE(client.initialize({ .x = 32, .y = 32, .z = 32 }, request_time));
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
+    while (!client.terrainLodWorld() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{ 1 });
+    }
+
+    std::shared_ptr<shared::TerrainWorld const> const client_world = client.terrainLodWorld();
+    ASSERT_NE(client_world, nullptr);
+    ASSERT_NE(client.terrainLodRoot(), nullptr);
+    EXPECT_EQ(server_atlas_builds.load(), 1U);
+    EXPECT_EQ(provider_calls.load(), 1U);
+    EXPECT_EQ(client_world, prepared_world);
+    EXPECT_EQ(client_world->identity(), prepared_world->identity());
+    EXPECT_EQ(client_world->sampleSurfaceHeight(4'096U, 8'192U),
+        prepared_world->sampleSurfaceHeight(4'096U, 8'192U));
+    EXPECT_EQ(client.terrainLodRoot()->terrain_identity, prepared_world->identity());
+}
 
 TEST(GameClientLifecycleTest, StopBeforeConnectionDoesNotSubmitGameplay)
 {

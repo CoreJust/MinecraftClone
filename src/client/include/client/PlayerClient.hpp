@@ -578,7 +578,8 @@ public:
     explicit PlayerClient(
         shared::WorldMode mode = shared::WorldMode::Flat,
         std::optional<PlayerClientCaptureOptions> capture = std::nullopt,
-        std::optional<PlayerClientBenchmarkOptions> benchmark = std::nullopt
+        std::optional<PlayerClientBenchmarkOptions> benchmark = std::nullopt,
+        PreparedTerrainWorldProvider prepared_world_provider = {}
     );
     ~PlayerClient();
     [[nodiscard]] RendererRuntimeInfo benchmarkRuntimeInfo() const;

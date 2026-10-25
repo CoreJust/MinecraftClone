@@ -290,6 +290,7 @@ Files:
 - [`src/client/include/client/PlayerClientInputState.hpp`](../../src/client/include/client/PlayerClientInputState.hpp)
 - [`src/client/include/client/PlayerPresentation.hpp`](../../src/client/include/client/PlayerPresentation.hpp)
 - [`src/client/include/client/PlayerPreviewLod.hpp`](../../src/client/include/client/PlayerPreviewLod.hpp)
+- [`src/client/include/client/PreparedTerrainWorld.hpp`](../../src/client/include/client/PreparedTerrainWorld.hpp)
 - [`src/client/include/client/PreviewMeshConnectivity.hpp`](../../src/client/include/client/PreviewMeshConnectivity.hpp)
 - [`src/client/include/client/PreviewMeshWorkQueue.hpp`](../../src/client/include/client/PreviewMeshWorkQueue.hpp)
 - [`src/client/include/client/PreviewMeshing.hpp`](../../src/client/include/client/PreviewMeshing.hpp)

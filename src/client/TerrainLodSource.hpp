@@ -1,5 +1,6 @@
 #pragma once
 
+#include <client/PreparedTerrainWorld.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/world/TerrainLod.hpp>
 #include <shared/world/TerrainWorld.hpp>
@@ -27,9 +28,9 @@ public:
         shared::TerrainSessionIdentity const&,
         std::stop_token
     )>;
-
     TerrainLodSource();
     explicit TerrainLodSource(Builder builder);
+    explicit TerrainLodSource(PreparedTerrainWorldProvider provider);
     ~TerrainLodSource();
 
     TerrainLodSource(TerrainLodSource const&) = delete;

@@ -63,12 +63,13 @@ caves/overhangs. Memo saturation recomputes misses into caller-owned values.
 Numeric bounds, L0–L3/seams, platform parity and performance remain MC-AI-0483
 gates.
 
-Default no-argument LocalGame requests V9. CoreLang's v2 plan omits a model tag
-and reconstructs R6 from nine typed fields: seed, resolution, epochs, erosion
-steps, initial/final climate iterations, currents, wind sign and coastal
-elaboration. WorldPreparation maps only the plan tag, validates returned fields
-and plan, restores V9 and checks the full original configuration before atlas
-creation. The client uses the server's V9 session; failures do not fall back.
+No-argument LocalGame requests V9. CoreLang v2 omits its model tag and returns
+nine R6 fields: seed, resolution, epochs, erosion steps, initial/final climate
+iterations, currents, wind sign and coastal elaboration. `WorldPreparation`
+validates the fields and plan, restores V9, and checks the full configuration
+before atlas creation. LocalGame's co-located client reuses this immutable world
+for L0; remote clients prepare from their negotiated session. Failures do not
+fall back.
 
 ## Native V9 seasonal climate
 
