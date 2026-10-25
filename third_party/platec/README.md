@@ -40,11 +40,21 @@ population was observed. They are not directions from the terminal state.
 
 The [eight seed vectors](../../tests/fixtures/terrain_v9/seed_bridge.tsv)
 include zero, boundary values and `UINT64_MAX`. The [raw source oracles](../../tests/fixtures/terrain_v9/source_oracles.tsv)
-bind height, ownership and final-step digests for seeds 10, 2 and 42. On
-AppleClang 17, both standalone Debug and Release builds match all three. The
-Platec translation units use the frozen extension build's default FP
-contraction and `-fno-strict-overflow` semantics, isolated from R6's strict FP
-option. Windows and other compiler parity are not established by this task.
+bind height, ownership and final-step digests for seeds 10, 2 and 42. AppleClang
+17 Release matches all three and passes the focused 8-test stage suite. MSVC
+19.44's standalone native-module build matches all three and passes 7/7 stage
+tests. Its signed-wrap edge test also passes 1/1 on the exact digit-separated
+source. Windows uses `/fp:precise` for Platec, `/fp:strict` for the wrapper and
+SHA code, and no `/fp:contract` or `/arch:AVX2`.
+
+The v9 execution path spells the frozen contracted operations with explicit
+`std::fma` calls and disables implicit contraction for Platec. The seed-square
+remainder preserves the source's two's-complement wrap and signed `% 256` using
+defined unsigned multiplication and `bit_cast`. This isolates the compatibility
+behavior from CPU feature flags and R6's strict-FP setting. The standalone
+Windows result establishes raw-source parity; it does not establish full-game
+runtime or performance acceptance. Other compiler/platform combinations remain
+unverified.
 
 The upstream LGPL-3.0-or-later license is retained as `LICENSE`. The frozen
 NoiseLib dependency closure contains no separate license file. Resolve its

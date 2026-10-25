@@ -18,6 +18,7 @@
  *****************************************************************************/
 
 #include "mass.hpp"
+#include "platec_compat.hpp"
 
 // ----------------------------------------------
 // MassBuilder
@@ -46,8 +47,8 @@ void MassBuilder::addPoint(uint32_t x, uint32_t y, float crust)
     ASSERT(crust >= 0.0f, "Crust should be not negative");
     mass += crust;
     // Update the center coordinates weighted by mass.
-    cx += x * crust;
-    cy += y * crust;
+    cx = platec_compat::fusedMultiplyAdd(static_cast<float>(x), crust, cx);
+    cy = platec_compat::fusedMultiplyAdd(static_cast<float>(y), crust, cy);
 }
 
 Mass MassBuilder::build()

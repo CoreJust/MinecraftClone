@@ -210,7 +210,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "7a47a498f0444c127832b0a51a0eecc1140d47f75da3daf4d81448efae68ba2d"
+      "sources_sha256": "1d8be771d1012a92971df8e330f020be1575cb9703e75531ac096dcf81b5507a"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -966,10 +966,11 @@
         "tests/generation/geology_tests.cpp",
         "tests/generation/hydrology_tests.cpp",
         "tests/generation/numpy_random_tests.cpp",
+        "tests/generation/platec_compat_tests.cpp",
         "tests/generation/reference_tests.cpp",
         "tests/generation/v9_platec_source_tests.cpp"
       ],
-      "sources_sha256": "a9832804f843adbcba71bd736020f3269478c0fd48e04e07fe546580f9fc7334"
+      "sources_sha256": "28e853309d1302d17727bad93d2852deff51e4fd31ee6be43e30c0b64ff0b946"
     },
     {
       "guide": "docs/code/RENDERING.md",

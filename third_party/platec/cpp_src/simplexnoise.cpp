@@ -27,6 +27,7 @@
 #include <cstdlib>
 
 #include "simplexnoise.hpp"
+#include "platec_compat.hpp"
 
 /* 2D, 3D and 4D Simplex Noise functions return 'random' values in (-1, 1).
 
@@ -117,7 +118,10 @@ float octave_noise_4d(const float octaves, const float persistence, const float 
     float maxAmplitude = 0;
 
     for (int i = 0; i < octaves; i++) {
-        total += raw_noise_4d(x * frequency, y * frequency, z * frequency, w * frequency) * amplitude;
+        total = platec_compat::fusedMultiplyAdd(
+            raw_noise_4d(x * frequency, y * frequency, z * frequency, w * frequency),
+            amplitude,
+            total);
 
         frequency *= 2;
         maxAmplitude += amplitude;
@@ -532,7 +536,10 @@ float dot(const int* g, const float x, const float y, const float z) {
     return g[0] * x + g[1] * y + g[2] * z;
 }
 float dot(const int* g, const float x, const float y, const float z, const float w) {
-    return g[0] * x + g[1] * y + g[2] * z + g[3] * w;
+    float result = g[1] * y;
+    result = platec_compat::fusedMultiplyAdd(static_cast<float>(g[0]), x, result);
+    result = platec_compat::fusedMultiplyAdd(static_cast<float>(g[2]), z, result);
+    return platec_compat::fusedMultiplyAdd(static_cast<float>(g[3]), w, result);
 }
 
 #define PI 3.14159265

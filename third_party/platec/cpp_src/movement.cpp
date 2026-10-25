@@ -20,6 +20,7 @@
 #include "movement.hpp"
 #include "plate.hpp"
 #include "mass.hpp"
+#include "platec_compat.hpp"
 
 // Missing on Windows
 #ifndef M_PI
@@ -66,7 +67,7 @@ void Movement::move() {
 
     // Force direction of plate to be unit vector.
     // Update velocity so that the distance of movement doesn't change.
-    float len = sqrt(vx*vx + vy*vy);
+    float len = sqrt(platec_compat::fusedMultiplyAdd(vx, vx, vy * vy));
     ASSERT(len > 0, "Velocity is zero!");
     // MK: Calculating the inverse length and multiplying changes the output data for maps!
     // I have held off on optimizations like these until the more important optimizations
@@ -84,8 +85,8 @@ void Movement::move() {
     float alpha_vel = alpha * velocity;
     float _cos = cos(alpha_vel);
     float _sin = sin(alpha_vel);
-    float _vx = vx * _cos - vy * _sin;
-    float _vy = vy * _cos + vx * _sin;
+    float _vx = platec_compat::fusedMultiplyAdd(vx, _cos, -vy * _sin);
+    float _vy = platec_compat::fusedMultiplyAdd(vy, _cos, vx * _sin);
     vx = _vx;
     vy = _vy;
 }
@@ -109,7 +110,7 @@ float Movement::velocityOnY(float length) const {
 }
 
 float Movement::dot(float dx_, float dy_) const {
-    return vx * dx_ + vy * dy_;
+    return platec_compat::fusedMultiplyAdd(vx, dx_, vy * dy_);
 }
 
 float Movement::relativeUnitVelocityOnX(float otherVx) const {

@@ -20,6 +20,7 @@
 #include <string>
 #include <math.h>
 #include "noise.hpp"
+#include "platec_compat.hpp"
 #include "sqrdmd.hpp"
 #include "simplexnoise.hpp"
 #include "utils.hpp"
@@ -54,7 +55,9 @@ void createSlowNoise(float* map, const WorldDimension& tmpDim, SimpleRandom rand
     float noiseScale = 0.593;
     float ka = 256/seed;
     float kb = seed*567%256;
-    float kc = (seed*seed) % 256;
+    float kc = static_cast<float>(
+        platec_compat::wrappedSignedSquareRemainder256(static_cast<uint32_t>(seed))
+    );
     float kd = (567-seed) % 256;
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
@@ -73,10 +76,10 @@ void createSlowNoise(float* map, const WorldDimension& tmpDim, SimpleRandom rand
                                              0.25f,
                                              0.0f,
                                              1.0f,
-                                             ka+a*noiseScale,
-                                             kb+b*noiseScale,
-                                             kc+c*noiseScale,
-                                             kd+d*noiseScale);
+                                             platec_compat::fusedMultiplyAdd(a, noiseScale, ka),
+                                             platec_compat::fusedMultiplyAdd(b, noiseScale, kb),
+                                             platec_compat::fusedMultiplyAdd(c, noiseScale, kc),
+                                             platec_compat::fusedMultiplyAdd(d, noiseScale, kd));
             map[y * width + x] = v;
         }
     }

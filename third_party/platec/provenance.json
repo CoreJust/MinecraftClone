@@ -37,8 +37,14 @@
     }
   ],
   "intentional_variant_changes": {
-    "cpp_src/noise.cpp": "single-Y angular wrap: 2*pi, frozen variant hash recorded in source_closure",
-    "cpp_src/simplexnoise.cpp": "single-Y angular wrap: 2*pi, frozen variant hash recorded in source_closure"
+    "cpp_src/noise.cpp": "single-Y angular wrap: 2*pi; defined signed-wrap seed square; explicit std::fma for all four 4D noise coordinates",
+    "cpp_src/simplexnoise.cpp": "single-Y angular wrap: 2*pi; explicit std::fma for 4D octave accumulation and gradient dot products",
+    "cpp_src/geometry.hpp": "explicit std::fma for FloatVector length and dotProduct on the v9 execution path",
+    "cpp_src/lithosphere.cpp": "explicit std::fma for initial land/sea mapping, collision ratio, buoyancy and restart blending",
+    "cpp_src/mass.cpp": "explicit std::fma for crust-weighted center accumulation",
+    "cpp_src/movement.cpp": "explicit std::fma for velocity length, rotation and dot product",
+    "cpp_src/plate.cpp": "explicit std::fma for subduction, age blending, erosion and crust redistribution",
+    "cpp_src/platec_compat.hpp": "project-authored portable helpers for explicit std::fma and defined two's-complement seed-square wrap"
   },
   "license": {
     "license_path": "LICENSE",
@@ -50,6 +56,46 @@
   },
   "model_identity": "b4229a9c5a3c090521488091d701f290084c2c330e5f2a67248ec0d52ab16572",
   "native_port_evidence_sha256": "5a01f750b523e5f6dab354f1f5ea58cfe14e8ff557829bce5bed8c4bb22c38d6",
+  "portable_numeric_compatibility": {
+    "task": "MC-AI-0563",
+    "seed_square": "uint64 multiply, bit_cast to int64, then signed remainder % 256; this defines the upstream two's-complement wrap without signed-overflow UB",
+    "fused_operations": "The observed frozen contractions on the v9 execution path use explicit std::fma; implicit Platec contraction is disabled.",
+    "mac": {
+      "compiler": "AppleClang 17.0.0.17000603",
+      "vendor_options": "-ffp-contract=off;-fno-strict-overflow",
+      "focused_tests": "8/8 passed, including raw seeds 10, 2 and 42",
+      "test_log": "task-0563/mac-explicit-fma-tests-final.log",
+      "test_log_sha256": "974bdbc4a3f4b65f80a0d647a8d4d25781db3625c912ad67cd2b24e3c2a32208"
+    },
+    "windows": {
+      "compiler": "MSVC 19.44.35229",
+      "vendor_options": "/fp:precise",
+      "wrapper_sha_options": "/fp:strict",
+      "architecture_options": "No /fp:contract or /arch:AVX2",
+      "focused_tests": "7/7 V9 stage tests passed, including raw seeds 10, 2 and 42",
+      "source_readback_matches": true,
+      "receipt": "task-0563/windows-explicit-fma/receipt.json",
+      "receipt_sha256": "339b3cee2c3c9a9dbaf7608b8f390d598449a93f5c47218ae83f44bed46ac680",
+      "test_log": "task-0563/windows-explicit-fma/build-test.log",
+      "test_log_sha256": "af2374f5720591be5875ef478404ea1d8f5e754bd3c2169f8e88dc79f83302c8",
+      "wrap_edge_test": {
+        "result": "1/1 passed",
+        "vectors": [
+          0,
+          3037000499,
+          3037000500,
+          4294967294,
+          4294967295
+        ],
+        "receipt": "task-0563/windows-wrap-edges/receipt-corrected.json",
+        "receipt_sha256": "58621dad969c71fea18d606b8bdccfdf59ce7762c31b82f01f74ab2fc93040f4",
+        "test_log": "task-0563/windows-wrap-edges/build-test-corrected.log",
+        "test_log_sha256": "66a9ec66aa74f4362be2062f53178f22ef403f6827a233533e2a36b9289e9a3a",
+        "source_sha256": "841edc77832ad247e48d60cf61f0692864994a1d5bc1adb59df9948f21faf75"
+      }
+    },
+    "qualification_boundary": "This is native module raw-oracle parity; full game runtime and performance acceptance are separate."
+  },
   "package": "PyPlatec 1.4.1 local single-Y angular-wrap variant",
   "schema": 1,
   "source_closure": [
@@ -283,7 +329,7 @@
     },
     {
       "path": "cpp_src/geometry.hpp",
-      "sha256": "19b490bf11324526acb8d01d18b17aaedc7b166249c238dfea4c38da0be88aa0"
+      "sha256": "1cbe968608da93b794b869d24dda7241047404e70d718d68acdeb6e1b1205ad1"
     },
     {
       "path": "cpp_src/heightmap.cpp",
@@ -295,7 +341,7 @@
     },
     {
       "path": "cpp_src/lithosphere.cpp",
-      "sha256": "a10f8cbc2aac699ffcb12475a7e5266eb47fff67fe51dea5bb09cb3fe092eb95"
+      "sha256": "3a70339cd6183f9f284096b3d4b09f87b01d6bff4faaf009e6b0300217abfa74"
     },
     {
       "path": "cpp_src/lithosphere.hpp",
@@ -303,7 +349,7 @@
     },
     {
       "path": "cpp_src/mass.cpp",
-      "sha256": "7fd9d223535fbd538ca5a7faf77235f99d3e470663309a0b3494fd9a79465026"
+      "sha256": "a959a0d2c1cb7d386c2df5d8b4c54b990411f0da4e39b7badb5bd3e2f58c50f7"
     },
     {
       "path": "cpp_src/mass.hpp",
@@ -311,7 +357,7 @@
     },
     {
       "path": "cpp_src/movement.cpp",
-      "sha256": "d06fdc16ac4e5451f97031db1cbc4daf05e0c75809c9e1ea71bebf82a9ac31cd"
+      "sha256": "8bf6c2ae116063ceb794fc389dcab493007bafa44a964fc8eca49f90497e5201"
     },
     {
       "path": "cpp_src/movement.hpp",
@@ -319,7 +365,7 @@
     },
     {
       "path": "cpp_src/noise.cpp",
-      "sha256": "9c197ee2a5cd42f4d8b989ffbf388a2530f5821168877bffa0cc6dd18f0242c9"
+      "sha256": "317a5b93fdaa6b5b15e436bf9b5f529109ebd5ff8f4550dc8a19a7ad657a8b26"
     },
     {
       "path": "cpp_src/noise.hpp",
@@ -327,7 +373,7 @@
     },
     {
       "path": "cpp_src/plate.cpp",
-      "sha256": "3a83f4fe4bc15a8c513bbbfaa080b9cfc7e0c43bd33e114bea752562e7548174"
+      "sha256": "f8f26aa4e1fb6ed1ae819fec21b1f2180d9b9ab0dbb938ec5eb5d15e2190649d"
     },
     {
       "path": "cpp_src/plate.hpp",
@@ -383,7 +429,7 @@
     },
     {
       "path": "cpp_src/simplexnoise.cpp",
-      "sha256": "6bbff8efaac829ffe98e3b9e9fef7c8ec48e5056fb812650a6282f812ff41ba3"
+      "sha256": "6f1c47e0f9dd9d9ccd3a1b36c9031eca870358ab02dbfd3654903261c89a7bb4"
     },
     {
       "path": "cpp_src/simplexnoise.hpp",
@@ -412,6 +458,10 @@
     {
       "path": "cpp_src/world_point.hpp",
       "sha256": "280ecffe50dd34c830fb47ca56d51b1b3056c377d30c573d05f4914878d9a93a"
+    },
+    {
+      "path": "cpp_src/platec_compat.hpp",
+      "sha256": "0ea60cdaac439c9147f69f316ccf963979da0ff56d14242b16f8252b993fdcd4"
     }
   ]
 }

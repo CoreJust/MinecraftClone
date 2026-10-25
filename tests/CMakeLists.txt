@@ -170,6 +170,7 @@ add_executable(mc_tests
     generation/geology_tests.cpp
     generation/hydrology_tests.cpp
     generation/numpy_random_tests.cpp
+    generation/platec_compat_tests.cpp
     generation/reference_tests.cpp
     generation/v9_platec_source_tests.cpp
     core/algorithm_tests.cpp
@@ -554,6 +555,7 @@ endif()
 target_include_directories(mc_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/generation
+    ${PROJECT_SOURCE_DIR}/third_party/platec/cpp_src
 )
 target_compile_definitions(mc_tests PRIVATE
     MC_TERRAIN_REFERENCE_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/terrain_v2"

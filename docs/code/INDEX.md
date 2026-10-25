@@ -958,6 +958,7 @@ Files:
 - [`tests/generation/geology_tests.cpp`](../../tests/generation/geology_tests.cpp)
 - [`tests/generation/hydrology_tests.cpp`](../../tests/generation/hydrology_tests.cpp)
 - [`tests/generation/numpy_random_tests.cpp`](../../tests/generation/numpy_random_tests.cpp)
+- [`tests/generation/platec_compat_tests.cpp`](../../tests/generation/platec_compat_tests.cpp)
 - [`tests/generation/reference_tests.cpp`](../../tests/generation/reference_tests.cpp)
 - [`tests/generation/v9_platec_source_tests.cpp`](../../tests/generation/v9_platec_source_tests.cpp)
 

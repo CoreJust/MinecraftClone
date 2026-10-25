@@ -21,6 +21,7 @@
 #define GEOMETRY_HPP
 
 #include <math.h>
+#include "platec_compat.hpp"
 #include <stdexcept>
 #include "utils.hpp"
 #include "world_point.hpp"
@@ -84,7 +85,7 @@ public:
         return _y;
     }
     float length() const {
-        return sqrt(_x * _x + _y * _y);
+        return sqrt(platec_compat::fusedMultiplyAdd(_x, _x, _y * _y));
     }
     float normalize() {
         float len = length();
@@ -99,7 +100,7 @@ public:
         return IntVector((int)_x, (int)_y);
     }
     float dotProduct(const FloatVector& other) const {
-        return x() * other.x() + y() * other.y();
+        return platec_compat::fusedMultiplyAdd(x(), other.x(), y() * other.y());
     }
     friend bool operator==(const FloatVector& a, const FloatVector& b) {
         return a.x() == b.x() && a.y() == b.y();

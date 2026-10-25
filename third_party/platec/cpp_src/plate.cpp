@@ -33,6 +33,7 @@
 #include "rectangle.hpp"
 #include "utils.hpp"
 #include "plate_functions.hpp"
+#include "platec_compat.hpp"
 
 using namespace std;
 
@@ -128,8 +129,8 @@ void plate::addCrustBySubduction(uint32_t x, uint32_t y, float z, uint32_t t,
     float offset2 = (float)_randsource.next_double();
     float offset_sign2 = 2 * (int)(_randsource.next() % 2) - 1;
     offset2 *= offset2 * offset2 * offset_sign2;
-    dx = 10 * dx + 3 * offset;
-    dy = 10 * dy + 3 * offset2;
+    dx = platec_compat::fusedMultiplyAdd(10.0f, dx, 3.0f * offset);
+    dy = platec_compat::fusedMultiplyAdd(10.0f, dy, 3.0f * offset2);
 
     float fx = x + dx;
     float fy = y + dy;
@@ -139,7 +140,11 @@ void plate::addCrustBySubduction(uint32_t x, uint32_t y, float z, uint32_t t,
         index = _bounds->index(fx, fy);
         if (map[index] > 0)
         {
-            t = (map[index] * age_map[index] + z * t) / (map[index] + z);
+            t = static_cast<uint32_t>(
+                platec_compat::fusedMultiplyAdd(
+                    map[index], static_cast<float>(age_map[index]),
+                    z * static_cast<float>(t)) /
+                (map[index] + z));
             age_map[index] = t * (z > 0);
 
             map[index] += z;
@@ -301,10 +306,14 @@ void plate::flowRivers(float lower_bound, vector<uint32_t>* sources, HeightMap& 
                 continue;
             }
 
-            w_crust += (w_crust == 0) * map[index];
-            e_crust += (e_crust == 0) * map[index];
-            n_crust += (n_crust == 0) * map[index];
-            s_crust += (s_crust == 0) * map[index];
+            w_crust = platec_compat::fusedMultiplyAdd(
+                static_cast<float>(w_crust == 0), map[index], w_crust);
+            e_crust = platec_compat::fusedMultiplyAdd(
+                static_cast<float>(e_crust == 0), map[index], e_crust);
+            n_crust = platec_compat::fusedMultiplyAdd(
+                static_cast<float>(n_crust == 0), map[index], n_crust);
+            s_crust = platec_compat::fusedMultiplyAdd(
+                static_cast<float>(s_crust == 0), map[index], s_crust);
 
             // Find lowest neighbour.
             float lowest_crust = w_crust;
@@ -332,7 +341,10 @@ void plate::flowRivers(float lower_bound, vector<uint32_t>* sources, HeightMap& 
             }
 
             // Erode this location with the water flow.
-            tmp[index] -= (tmp[index] - lower_bound) * 0.2;
+            tmp[index] = static_cast<float>(platec_compat::fusedMultiplyAdd(
+                static_cast<double>(tmp[index] - lower_bound),
+                -0.2,
+                static_cast<double>(tmp[index])));
         }
 
 
@@ -355,7 +367,11 @@ void plate::erode(float lower_bound)
     // Add random noise (10 %) to heightmap.
     for (uint32_t i = 0; i < _bounds->area(); ++i) {
         float alpha = 0.2 * (float)_randsource.next_double();
-        tmpHm[i] += 0.1 * tmpHm[i] - alpha * tmpHm[i];
+        float const height = tmpHm[i];
+        double const erosion = platec_compat::fusedMultiplyAdd(
+            static_cast<double>(height), 0.1,
+            -static_cast<double>(alpha * height));
+        tmpHm[i] = static_cast<float>(erosion + static_cast<double>(height));
     }
 
     map = tmpHm;
@@ -407,16 +423,22 @@ void plate::erode(float lower_bound)
             float s_diff = map[index] - s_crust;
 
             float min_diff = w_diff;
-            min_diff -= (min_diff - e_diff) * (e_diff < min_diff);
-            min_diff -= (min_diff - n_diff) * (n_diff < min_diff);
-            min_diff -= (min_diff - s_diff) * (s_diff < min_diff);
+            min_diff = platec_compat::fusedMultiplyAdd(
+                -(min_diff - e_diff), static_cast<float>(e_diff < min_diff), min_diff);
+            min_diff = platec_compat::fusedMultiplyAdd(
+                -(min_diff - n_diff), static_cast<float>(n_diff < min_diff), min_diff);
+            min_diff = platec_compat::fusedMultiplyAdd(
+                -(min_diff - s_diff), static_cast<float>(s_diff < min_diff), min_diff);
 
             // Calculate the sum of difference between lower neighbours and
             // the TALLEST lower neighbour.
-            float diff_sum = (w_diff - min_diff) * (w_crust > 0) +
-                             (e_diff - min_diff) * (e_crust > 0) +
-                             (n_diff - min_diff) * (n_crust > 0) +
-                             (s_diff - min_diff) * (s_crust > 0);
+            float diff_sum = (e_diff - min_diff) * (e_crust > 0);
+            diff_sum = platec_compat::fusedMultiplyAdd(
+                w_diff - min_diff, static_cast<float>(w_crust > 0), diff_sum);
+            diff_sum = platec_compat::fusedMultiplyAdd(
+                n_diff - min_diff, static_cast<float>(n_crust > 0), diff_sum);
+            diff_sum = platec_compat::fusedMultiplyAdd(
+                s_diff - min_diff, static_cast<float>(s_crust > 0), diff_sum);
 
             // Erosion difference sum is negative!
             ASSERT(diff_sum >= 0, "Difference sum must be positive");
@@ -427,10 +449,14 @@ void plate::erode(float lower_bound)
                 // crust from this peak so that it would be as tall as its
                 // tallest lower neighbour. Thus first step is make ALL
                 // lower neighbours and this point equally tall.
-                tmpHm[w] += (w_diff - min_diff) * (w_crust > 0);
-                tmpHm[e] += (e_diff - min_diff) * (e_crust > 0);
-                tmpHm[n] += (n_diff - min_diff) * (n_crust > 0);
-                tmpHm[s] += (s_diff - min_diff) * (s_crust > 0);
+                tmpHm[w] = platec_compat::fusedMultiplyAdd(
+                    w_diff - min_diff, static_cast<float>(w_crust > 0), tmpHm[w]);
+                tmpHm[e] = platec_compat::fusedMultiplyAdd(
+                    e_diff - min_diff, static_cast<float>(e_crust > 0), tmpHm[e]);
+                tmpHm[n] = platec_compat::fusedMultiplyAdd(
+                    n_diff - min_diff, static_cast<float>(n_crust > 0), tmpHm[n]);
+                tmpHm[s] = platec_compat::fusedMultiplyAdd(
+                    s_diff - min_diff, static_cast<float>(s_crust > 0), tmpHm[s]);
                 tmpHm[index] -= min_diff;
 
                 min_diff -= diff_sum;
@@ -439,10 +465,14 @@ void plate::erode(float lower_bound)
                 min_diff /= 1 + (w_crust > 0) + (e_crust > 0) +
                             (n_crust > 0) + (s_crust > 0);
 
-                tmpHm[w] += min_diff * (w_crust > 0);
-                tmpHm[e] += min_diff * (e_crust > 0);
-                tmpHm[n] += min_diff * (n_crust > 0);
-                tmpHm[s] += min_diff * (s_crust > 0);
+                tmpHm[w] = platec_compat::fusedMultiplyAdd(
+                    min_diff, static_cast<float>(w_crust > 0), tmpHm[w]);
+                tmpHm[e] = platec_compat::fusedMultiplyAdd(
+                    min_diff, static_cast<float>(e_crust > 0), tmpHm[e]);
+                tmpHm[n] = platec_compat::fusedMultiplyAdd(
+                    min_diff, static_cast<float>(n_crust > 0), tmpHm[n]);
+                tmpHm[s] = platec_compat::fusedMultiplyAdd(
+                    min_diff, static_cast<float>(s_crust > 0), tmpHm[s]);
                 tmpHm[index] += min_diff;
             }
             else
@@ -454,10 +484,14 @@ void plate::erode(float lower_bound)
                 tmpHm[index] -= min_diff;
 
                 // Spread all removed crust among all other lower neighbours.
-                tmpHm[w] += unit * (w_diff - min_diff) * (w_crust > 0);
-                tmpHm[e] += unit * (e_diff - min_diff) * (e_crust > 0);
-                tmpHm[n] += unit * (n_diff - min_diff) * (n_crust > 0);
-                tmpHm[s] += unit * (s_diff - min_diff) * (s_crust > 0);
+                tmpHm[w] = platec_compat::fusedMultiplyAdd(
+                    unit * (w_diff - min_diff), static_cast<float>(w_crust > 0), tmpHm[w]);
+                tmpHm[e] = platec_compat::fusedMultiplyAdd(
+                    unit * (e_diff - min_diff), static_cast<float>(e_crust > 0), tmpHm[e]);
+                tmpHm[n] = platec_compat::fusedMultiplyAdd(
+                    unit * (n_diff - min_diff), static_cast<float>(n_crust > 0), tmpHm[n]);
+                tmpHm[s] = platec_compat::fusedMultiplyAdd(
+                    unit * (s_diff - min_diff), static_cast<float>(s_crust > 0), tmpHm[s]);
             }
         }
     }
@@ -620,8 +654,11 @@ void plate::setCrust(uint32_t x, uint32_t y, float z, uint32_t t)
     // If no new crust is added, original time remains intact.
     const uint32_t old_crust = -(map[index] > 0);
     const uint32_t new_crust = -(z > 0);
-    t = (t & ~old_crust) | ((uint32_t)((map[index] * age_map[index] + z * t) /
-                                       (map[index] + z)) & old_crust);
+    float const blended_age = platec_compat::fusedMultiplyAdd(
+        map[index], static_cast<float>(age_map[index]), z * static_cast<float>(t)) /
+        (map[index] + z);
+    t = (t & ~old_crust) |
+        (static_cast<uint32_t>(blended_age) & old_crust);
     age_map[index] = (t & new_crust) | (age_map[index] & ~new_crust);
 
     _mass.incMass(-1.0f * map[index]);

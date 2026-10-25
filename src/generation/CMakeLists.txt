@@ -79,9 +79,8 @@ else()
     target_compile_options(mc_generation PRIVATE -ffp-contract=off)
 endif()
 
-# The frozen setuptools build used -fno-strict-overflow and the compiler's
-# default contraction mode. Keep those Platec source semantics independent of
-# the R6 target precision policy above.
+# The frozen build contracts specific Platec expressions. Spell those out with
+# std::fma so the output does not depend on compiler or CPU feature flags.
 get_target_property(MC_GENERATION_SOURCES mc_generation SOURCES)
 set(MC_PLATEC_SOURCE_FILES)
 foreach(MC_GENERATION_SOURCE IN LISTS MC_GENERATION_SOURCES)
@@ -92,7 +91,7 @@ endforeach()
 if(MSVC)
     set_source_files_properties(${MC_PLATEC_SOURCE_FILES} PROPERTIES COMPILE_OPTIONS "/fp:precise")
 else()
-    set_source_files_properties(${MC_PLATEC_SOURCE_FILES} PROPERTIES COMPILE_OPTIONS "-ffp-contract=on;-fno-strict-overflow")
+    set_source_files_properties(${MC_PLATEC_SOURCE_FILES} PROPERTIES COMPILE_OPTIONS "-ffp-contract=off;-fno-strict-overflow")
 endif()
 
 if(COMMAND mc_apply_target_defaults)
@@ -157,6 +156,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND MC_GENERATION_BUILD_TE
         "${MC_REPOSITORY_ROOT}/tests/generation/geology_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/hydrology_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/numpy_random_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/platec_compat_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/reference_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/v9_platec_source_tests.cpp"
     )
@@ -164,6 +164,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND MC_GENERATION_BUILD_TE
     target_include_directories(mc_generation_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src
     )
     target_compile_definitions(mc_generation_tests PRIVATE
         MC_TERRAIN_REFERENCE_FIXTURE_DIR="${MC_REPOSITORY_ROOT}/tests/fixtures/terrain_v2"

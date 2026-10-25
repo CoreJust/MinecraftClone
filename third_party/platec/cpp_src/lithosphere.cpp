@@ -22,6 +22,7 @@
 #include "sqrdmd.hpp"
 #include "simplexnoise.hpp"
 #include "noise.hpp"
+#include "platec_compat.hpp"
 
 #include <cfloat>
 #include <cmath>
@@ -132,9 +133,10 @@ lithosphere::lithosphere(long seed, uint32_t width, uint32_t height, float sea_l
     sea_level = sea_threshold;
     for (uint32_t i = 0; i < A; ++i) // Genesis 1:9-10.
     {
-        tmp[i] = (tmp[i] > sea_level) *
-                 (tmp[i] + CONTINENTAL_BASE) +
-                 (tmp[i] <= sea_level) * OCEANIC_BASE;
+        float const continental = tmp[i] + CONTINENTAL_BASE;
+        float const oceanic = static_cast<float>(tmp[i] <= sea_level) * OCEANIC_BASE;
+        tmp[i] = platec_compat::fusedMultiplyAdd(
+            static_cast<float>(tmp[i] > sea_level), continental, oceanic);
     }
 
     // Scalp the +1 away from map side to get a power of two side length!
@@ -567,8 +569,10 @@ void lithosphere::updateCollisions()
             // Like earlier, it's the "experience" of the smaller
             // plate that matters here.
             coll_ratio = coll_ratio_i;
-            coll_ratio += (coll_ratio_j - coll_ratio) *
-                          (coll_ratio_j > coll_ratio);
+            coll_ratio = platec_compat::fusedMultiplyAdd(
+                coll_ratio_j - coll_ratio,
+                static_cast<float>(coll_ratio_j > coll_ratio),
+                coll_ratio);
 
             if ((coll_count > aggr_overlap_abs) |
                     (coll_ratio > aggr_overlap_rel))
@@ -734,8 +738,11 @@ void lithosphere::update()
             crust_age = MAX_BUOYANCY_AGE - crust_age;
             crust_age &= -(crust_age <= MAX_BUOYANCY_AGE);
 
-            hmap[i] += (hmap[i] < CONTINENTAL_BASE) * BUOYANCY_BONUS_X *
-                       OCEANIC_BASE * crust_age * MULINV_MAX_BUOYANCY_AGE;
+            float const buoyancy =
+                static_cast<float>(hmap[i] < CONTINENTAL_BASE) * BUOYANCY_BONUS_X *
+                OCEANIC_BASE * static_cast<float>(crust_age);
+            hmap[i] = platec_compat::fusedMultiplyAdd(
+                buoyancy, MULINV_MAX_BUOYANCY_AGE, hmap[i]);
         }
 
         ++iter_count;
@@ -833,8 +840,11 @@ void lithosphere::restart()
             crust_age = MAX_BUOYANCY_AGE - crust_age;
             crust_age &= -(crust_age <= MAX_BUOYANCY_AGE);
 
-            hmap[i] += (hmap[i] < CONTINENTAL_BASE) * BUOYANCY_BONUS_X *
-                       OCEANIC_BASE * crust_age * MULINV_MAX_BUOYANCY_AGE;
+            float const buoyancy =
+                static_cast<float>(hmap[i] < CONTINENTAL_BASE) * BUOYANCY_BONUS_X *
+                OCEANIC_BASE * static_cast<float>(crust_age);
+            hmap[i] = platec_compat::fusedMultiplyAdd(
+                buoyancy, MULINV_MAX_BUOYANCY_AGE, hmap[i]);
         }
     } catch (const exception& e) {
         std::string msg = "Problem during restart: ";
