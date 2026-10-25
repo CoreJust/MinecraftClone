@@ -210,7 +210,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "3ac399cab0953a050ea734be33c956305478096402c833f07680c757d988a590"
+      "sources_sha256": "2e3c952666a581678bdba59e0008d27129898af67717e5febf2e7b6494c38b67"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -401,7 +401,7 @@
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "4dfa3f90b4be0783d6295523d7e5313552b6cdb0e65e592c71d0bb11b4811fef",
+      "guide_sha256": "6c3bfb542e8fa53bd09bdee1d3fa837c4c249c7ba6712bc9a5d1f7c9c26aea24",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -416,6 +416,10 @@
         "src/generation/NumpyRandom.cpp",
         "src/generation/NumpyRandom.hpp",
         "src/generation/NumpyTanh.cpp",
+        "src/generation/Sha256.cpp",
+        "src/generation/Sha256.hpp",
+        "src/generation/V9PlatecSource.cpp",
+        "src/generation/V9PlatecSource.hpp",
         "src/generation/include/generation/Generation.hpp",
         "src/tools/world_map.cpp",
         "tests/fixtures/terrain_v2/manifest.json",
@@ -954,15 +958,18 @@
         "tests/fixtures/terrain_v2_revision_6/seed-42/top_material_v6.raw",
         "tests/fixtures/terrain_v2_revision_6/seed-777/top_material_v6.raw",
         "tests/fixtures/terrain_v2_revision_6/seed-8800555/top_material_v6.raw",
+        "tests/fixtures/terrain_v9/seed_bridge.tsv",
+        "tests/fixtures/terrain_v9/source_oracles.tsv",
         "tests/generation/climate_tests.cpp",
         "tests/generation/coastal_tests.cpp",
         "tests/generation/generation_tests.cpp",
         "tests/generation/geology_tests.cpp",
         "tests/generation/hydrology_tests.cpp",
         "tests/generation/numpy_random_tests.cpp",
-        "tests/generation/reference_tests.cpp"
+        "tests/generation/reference_tests.cpp",
+        "tests/generation/v9_platec_source_tests.cpp"
       ],
-      "sources_sha256": "42c45db45c8de5a42e3243edb23cb3fd22870df016549f2d1666d0ee1c240a8b"
+      "sources_sha256": "a9832804f843adbcba71bd736020f3269478c0fd48e04e07fe546580f9fc7334"
     },
     {
       "guide": "docs/code/RENDERING.md",

@@ -22,6 +22,26 @@ add_library(mc_generation STATIC
     Numerics.cpp
     NumpyRandom.cpp
     NumpyTanh.cpp
+    Sha256.cpp
+    V9PlatecSource.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/bounds.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/geometry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/heightmap.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/lithosphere.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/mass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/movement.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/noise.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/plate.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/plate_functions.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/rectangle.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/segment_creator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/segment_data.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/segments.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/simplerandom.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/simplexnoise.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/sqrdmd.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/utils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src/world_point.cpp
 )
 
 target_sources(mc_generation
@@ -36,6 +56,8 @@ target_sources(mc_generation
             GenerationStages.hpp
             NumpyRandom.hpp
             Numerics.hpp
+            Sha256.hpp
+            V9PlatecSource.hpp
 )
 
 target_include_directories(mc_generation
@@ -44,6 +66,7 @@ target_include_directories(mc_generation
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src
 )
 target_compile_features(mc_generation PUBLIC cxx_std_23)
 if(ANDROID)
@@ -54,6 +77,22 @@ if(MSVC)
     target_compile_options(mc_generation PRIVATE /fp:strict)
 else()
     target_compile_options(mc_generation PRIVATE -ffp-contract=off)
+endif()
+
+# The frozen setuptools build used -fno-strict-overflow and the compiler's
+# default contraction mode. Keep those Platec source semantics independent of
+# the R6 target precision policy above.
+get_target_property(MC_GENERATION_SOURCES mc_generation SOURCES)
+set(MC_PLATEC_SOURCE_FILES)
+foreach(MC_GENERATION_SOURCE IN LISTS MC_GENERATION_SOURCES)
+    if(MC_GENERATION_SOURCE MATCHES "/third_party/platec/cpp_src/.*\\.cpp$")
+        list(APPEND MC_PLATEC_SOURCE_FILES "${MC_GENERATION_SOURCE}")
+    endif()
+endforeach()
+if(MSVC)
+    set_source_files_properties(${MC_PLATEC_SOURCE_FILES} PROPERTIES COMPILE_OPTIONS "/fp:precise")
+else()
+    set_source_files_properties(${MC_PLATEC_SOURCE_FILES} PROPERTIES COMPILE_OPTIONS "-ffp-contract=on;-fno-strict-overflow")
 endif()
 
 if(COMMAND mc_apply_target_defaults)
@@ -119,6 +158,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND MC_GENERATION_BUILD_TE
         "${MC_REPOSITORY_ROOT}/tests/generation/hydrology_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/numpy_random_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/reference_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/v9_platec_source_tests.cpp"
     )
     target_link_libraries(mc_generation_tests PRIVATE mc_generation GTest::gtest_main)
     target_include_directories(mc_generation_tests PRIVATE
@@ -127,6 +167,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND MC_GENERATION_BUILD_TE
     )
     target_compile_definitions(mc_generation_tests PRIVATE
         MC_TERRAIN_REFERENCE_FIXTURE_DIR="${MC_REPOSITORY_ROOT}/tests/fixtures/terrain_v2"
+        MC_V9_PLATEC_FIXTURE_DIR="${MC_REPOSITORY_ROOT}/tests/fixtures/terrain_v9"
     )
     target_compile_features(mc_generation_tests PRIVATE cxx_std_23)
     include(GoogleTest)

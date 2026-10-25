@@ -5,3 +5,7 @@ script/ci/vcpkg-overlays/gmp/*.patch whitespace=-blank-at-eol,-space-before-tab
 # Unified-diff blank context lines require a leading space.
 script/ci/diagnostics/sustained-flight/*.patch whitespace=-blank-at-eol
 script/ci/diagnostics/sustained-flight/vcpkg-overlay/enet/*.patch whitespace=-blank-at-eol
+
+# Preserve the frozen Platec bytes while allowing source CRLF in whitespace checks.
+third_party/platec/** -text -eol whitespace=cr-at-eol
+third_party/platec/cpp_src/mass.cpp whitespace=cr-at-eol,-blank-at-eof

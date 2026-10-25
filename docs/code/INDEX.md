@@ -408,6 +408,10 @@ Files:
 - [`src/generation/NumpyRandom.cpp`](../../src/generation/NumpyRandom.cpp)
 - [`src/generation/NumpyRandom.hpp`](../../src/generation/NumpyRandom.hpp)
 - [`src/generation/NumpyTanh.cpp`](../../src/generation/NumpyTanh.cpp)
+- [`src/generation/Sha256.cpp`](../../src/generation/Sha256.cpp)
+- [`src/generation/Sha256.hpp`](../../src/generation/Sha256.hpp)
+- [`src/generation/V9PlatecSource.cpp`](../../src/generation/V9PlatecSource.cpp)
+- [`src/generation/V9PlatecSource.hpp`](../../src/generation/V9PlatecSource.hpp)
 - [`src/generation/include/generation/Generation.hpp`](../../src/generation/include/generation/Generation.hpp)
 - [`src/tools/world_map.cpp`](../../src/tools/world_map.cpp)
 - [`tests/fixtures/terrain_v2/manifest.json`](../../tests/fixtures/terrain_v2/manifest.json)
@@ -946,6 +950,8 @@ Files:
 - [`tests/fixtures/terrain_v2_revision_6/seed-42/top_material_v6.raw`](../../tests/fixtures/terrain_v2_revision_6/seed-42/top_material_v6.raw)
 - [`tests/fixtures/terrain_v2_revision_6/seed-777/top_material_v6.raw`](../../tests/fixtures/terrain_v2_revision_6/seed-777/top_material_v6.raw)
 - [`tests/fixtures/terrain_v2_revision_6/seed-8800555/top_material_v6.raw`](../../tests/fixtures/terrain_v2_revision_6/seed-8800555/top_material_v6.raw)
+- [`tests/fixtures/terrain_v9/seed_bridge.tsv`](../../tests/fixtures/terrain_v9/seed_bridge.tsv)
+- [`tests/fixtures/terrain_v9/source_oracles.tsv`](../../tests/fixtures/terrain_v9/source_oracles.tsv)
 - [`tests/generation/climate_tests.cpp`](../../tests/generation/climate_tests.cpp)
 - [`tests/generation/coastal_tests.cpp`](../../tests/generation/coastal_tests.cpp)
 - [`tests/generation/generation_tests.cpp`](../../tests/generation/generation_tests.cpp)
@@ -953,6 +959,7 @@ Files:
 - [`tests/generation/hydrology_tests.cpp`](../../tests/generation/hydrology_tests.cpp)
 - [`tests/generation/numpy_random_tests.cpp`](../../tests/generation/numpy_random_tests.cpp)
 - [`tests/generation/reference_tests.cpp`](../../tests/generation/reference_tests.cpp)
+- [`tests/generation/v9_platec_source_tests.cpp`](../../tests/generation/v9_platec_source_tests.cpp)
 
 ## `rendering`
 

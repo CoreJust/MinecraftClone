@@ -5,6 +5,9 @@
 exports with gameplay's atlas/sampler. RGB diagnostics use fused multiply-add
 for stable rounding.
 
+For private v9 Platec seed, raw-output, cancellation, direction-snapshot,
+compiler and provenance contracts, see the [native-stage notes](../../third_party/platec/README.md).
+
 With a callback, the atlas publishes immutable snapshots after tectonic, coast,
 drainage, climate and erosion. Without one, snapshot work is skipped; final fields match. Consumers may coalesce snapshots; readiness requires
 a completed atlas. Cancellation/failure stay explicit; configuration validates
