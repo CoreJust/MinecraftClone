@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -159,6 +160,133 @@ TEST(ScriptedWorldTest, RejectsUnsupportedOptionsAndCallbackBudget)
     EXPECT_EQ(invalid_dimensions.error().code, shared::ScriptedWorldErrorCode::InvalidOptions);
     EXPECT_FALSE(bounded.has_value());
     EXPECT_EQ(bounded.error().code, shared::ScriptedWorldErrorCode::HostCallLimitExceeded);
+}
+
+TEST(ScriptedWorldTest, AcceptsExactHostCallBudgetAndRejectsTheFirstCallBeyondIt)
+{
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
+@use minecraft
+pub fn generate(seed: u64) {
+    set_block(0i32, 0i32, 0i32, 1i32)
+    publish()
+}
+)";
+
+    auto const at_limit = shared::ScriptedWorld::load(SOURCE, {.max_host_calls = 2U});
+    auto const one_over = shared::ScriptedWorld::load(SOURCE, {.max_host_calls = 1U});
+
+    ASSERT_TRUE(at_limit.has_value()) << at_limit.error().message;
+    ASSERT_FALSE(one_over.has_value());
+    EXPECT_EQ(one_over.error().code, shared::ScriptedWorldErrorCode::HostCallLimitExceeded);
+}
+
+TEST(ScriptedWorldTest, RejectsTerrainRandomWithASeedDifferentFromTheConfiguredSeed)
+{
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
+@use minecraft
+pub fn generate(seed: u64) {
+    let sample = terrain_random(seed + 1u64, 0i32, 0i32, 0i32)
+    publish()
+}
+)";
+
+    auto const world = shared::ScriptedWorld::load(SOURCE);
+
+    ASSERT_FALSE(world.has_value());
+    EXPECT_EQ(world.error().code, shared::ScriptedWorldErrorCode::RuntimeFailed);
+}
+
+TEST(ScriptedWorldTest, RejectsTerrainRandomOutsideTheConfiguredChunk)
+{
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
+@use minecraft
+pub fn generate(seed: u64) {
+    let sample = terrain_random(seed, 16i32, 0i32, 0i32)
+    publish()
+}
+)";
+
+    auto const world = shared::ScriptedWorld::load(SOURCE);
+
+    ASSERT_FALSE(world.has_value());
+    EXPECT_EQ(world.error().code, shared::ScriptedWorldErrorCode::RuntimeFailed);
+}
+
+TEST(ScriptedWorldTest, RejectsSetBlockOutsideTheChunkOnYAndZ)
+{
+    static constexpr std::array<std::string_view, 2U> SOURCES{
+        R"(@version(0.1.5)
+@use minecraft
+pub fn generate(seed: u64) {
+    set_block(0i32, 16i32, 0i32, 1i32)
+    publish()
+}
+)",
+        R"(@version(0.1.5)
+@use minecraft
+pub fn generate(seed: u64) {
+    set_block(0i32, 0i32, 16i32, 1i32)
+    publish()
+}
+)",
+    };
+
+    for (std::string_view const source : SOURCES) {
+        auto const world = shared::ScriptedWorld::load(source);
+
+        EXPECT_FALSE(world.has_value());
+        if (!world.has_value()) {
+            EXPECT_EQ(world.error().code, shared::ScriptedWorldErrorCode::RuntimeFailed);
+        }
+    }
+}
+
+TEST(ScriptedWorldTest, RejectsUnsupportedBlockId)
+{
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
+@use minecraft
+pub fn generate(seed: u64) {
+    set_block(0i32, 0i32, 0i32, 2i32)
+    publish()
+}
+)";
+
+    auto const world = shared::ScriptedWorld::load(SOURCE);
+
+    ASSERT_FALSE(world.has_value());
+    EXPECT_EQ(world.error().code, shared::ScriptedWorldErrorCode::RuntimeFailed);
+}
+
+TEST(ScriptedWorldTest, RejectsASecondPublication)
+{
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
+@use minecraft
+pub fn generate(seed: u64) {
+    publish()
+    publish()
+}
+)";
+
+    auto const world = shared::ScriptedWorld::load(SOURCE);
+
+    ASSERT_FALSE(world.has_value());
+    EXPECT_EQ(world.error().code, shared::ScriptedWorldErrorCode::RuntimeFailed);
+}
+
+TEST(ScriptedWorldTest, RejectsBlockWritesAfterPublication)
+{
+    static constexpr std::string_view SOURCE = R"(@version(0.1.5)
+@use minecraft
+pub fn generate(seed: u64) {
+    publish()
+    set_block(0i32, 0i32, 0i32, 1i32)
+}
+)";
+
+    auto const world = shared::ScriptedWorld::load(SOURCE);
+
+    ASSERT_FALSE(world.has_value());
+    EXPECT_EQ(world.error().code, shared::ScriptedWorldErrorCode::RuntimeFailed);
 }
 
 TEST(ScriptedWorldTest, RejectsDynamicLoopsBeforeCallingGenerate)

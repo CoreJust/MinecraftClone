@@ -20001,5 +20001,42 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0566",
+    "title": "Close source-confirmed scripting boundary coverage gaps",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Cover source-confirmed public scripting limits at exact and first-over boundaries, documented per-axis coordinate values -2,-1,0,1,2, and missing generation binding order/duplicate/range cases. Reuse existing positive and negative coverage rather than duplicate it. Preserve callable behavior and documented trust limits; if a new test exposes a real contract defect, report and fix only that defect with focused evidence. Produce a source-linked coverage matrix and passing affected CPU suites. Full S2 platform and aggregate qualification remain with MC-AI-0483.",
+    "evidence": "Final-base local build completed and the affected CoreLang scenario, scripted-world, and generation-plan suites passed 52/52. Source-linked before/after matrix: /Users/core-just/.codex/task-evidence/mc-s2-20261024/task-0566-public-contract/results/coverage-matrix.md. Build/test receipt: /Users/core-just/.codex/task-evidence/mc-s2-20261024/task-0566-public-contract/results/test-results.txt.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Complete the broad S1 review follow-up requested for S2 using actual public-contract boundary evidence.",
+    "context": "Closure audit confirms missing API-003, API-004 and API-006 test matrices; API-005 already has source-linked coverage and requires no duplicate tests. Source register: docs/ai/decisions/earlydev_0_1_1_s2_review_findings.json; audit evidence: closure-audit-20261025/api-matrix.",
+    "complexity": "medium",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Closed API-003 exact/first-over budget coverage and API-004 per-axis input ranges; reused API-005 coverage; added missing API-006 scripted-world and generation-plan negative contract fixtures, including set_block x/y/z bounds. No production behavior changed; full S2 and platform qualification remain open.",
+    "plan": [],
+    "product_changes": [],
+    "code_changes": [
+      "Added CoreLang scenario budget and input component boundary tests in tests/core/corelang_scenario_tests.cpp.",
+      "Added scripted-world seed, coordinate, block, publication, write-order, and host-call boundary tests in tests/core/scripted_world_tests.cpp.",
+      "Added generation-plan ordering, duplicate, value, extent, and stage boundary tests in tests/core/world_generation_tests.cpp.",
+      "Refreshed generated docs/code/source_state.json inventory."
+    ],
+    "baseline_commit": "09222b1e13ab0871518f3718013a1db73db6ec82",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
