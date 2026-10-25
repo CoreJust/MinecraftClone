@@ -15,8 +15,8 @@ namespace client
 
 using GenerationMapRgba8 = std::array<uint8_t, 4U>;
 
-inline constexpr uint32_t GENERATION_MAP_ANIMATION_RESOLUTION = 128U;
-inline constexpr uint32_t GENERATION_MAP_ANIMATION_SCALE = 3U;
+inline constexpr uint32_t GENERATION_MAP_ANIMATION_RESOLUTION = 256U;
+inline constexpr uint32_t GENERATION_MAP_ANIMATION_SCALE = 2U;
 inline constexpr uint32_t GENERATION_MAP_ANIMATION_RENDER_RESOLUTION =
     GENERATION_MAP_ANIMATION_RESOLUTION * GENERATION_MAP_ANIMATION_SCALE;
 inline constexpr uint8_t GENERATION_MAP_ICE_NONE = 0U;
@@ -69,6 +69,8 @@ struct GenerationMapAnimationFrame final
 
 struct GenerationMapAnimationCache;
 
+// Retains only the latest visual tick image, at the prototype's 120 ticks per five-second phase.
+// Repeated ticks reuse the immutable image; source or display-mask changes invalidate it.
 class GenerationMapAnimator final
 {
 public:
@@ -93,6 +95,7 @@ public:
 private:
     std::unique_ptr<GenerationMapAnimationCache> cache_;
 };
+
 
 [[nodiscard]]
 std::optional<GenerationMapDisplayIceMask> makeGenerationMapDisplayIceMask(

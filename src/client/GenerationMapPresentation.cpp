@@ -1,5 +1,7 @@
 #include <client/GenerationMapPresentation.hpp>
 
+#include <client/S2MapPresentation.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -697,6 +699,7 @@ struct AnimationSourceFields final
     std::span<uint8_t const> river_mask;
     std::span<uint8_t const> ice_kind;
     std::span<float const> ice_temperature;
+    bool native_palette = false;
     bool hydrology_available = false;
     bool climate_available = false;
     float sea_level = 0.0F;
@@ -712,6 +715,8 @@ struct PreparedAnimationMap final
     std::vector<AnimationRainDrop> rain_drops;
     float sea_level = 0.0F;
     float elevation_range = 1.0F;
+    std::array<float, 2U> elevation_limits{};
+    bool native_palette = false;
     float minimum_ice_temperature = 0.0F;
     float maximum_ice_temperature = 0.0F;
     bool has_ice = false;
@@ -972,6 +977,8 @@ std::optional<PreparedAnimationMap> prepareAnimationMap(AnimationSourceFields co
             }
         }
     }
+    data.native_palette = source.native_palette;
+    data.elevation_limits = {minimum_elevation, maximum_elevation};
     data.elevation_range = std::max(0.001F, maximum_elevation - minimum_elevation);
 
     if (data.has_ice)
@@ -1301,6 +1308,8 @@ std::optional<PreparedAnimationMap> prepareAnimationMap(
             .lake_mask = source.lake_mask,
             .river_mask = source.river_mask,
             .ice_kind = source.ice_surface_kind,
+            .ice_temperature = source.temperature_celsius,
+            .native_palette = true,
             .hydrology_available = snapshot.stage >= generation::GenerationStage::V9Water,
             .climate_available = !source.temperature_celsius.empty() || !source.precipitation_mm_year.empty(),
             .sea_level = 0.0F,
@@ -1657,102 +1666,6 @@ void animateWeather(GenerationMapImage& image, PreparedAnimationMap const& data,
 }
 
 [[nodiscard]]
-float earlyEdgeSoftening(AnimationPhaseState const& phase, float const progress) noexcept
-{
-    if (phase.phase_index == 0U)
-    {
-        return 0.28F - 0.08F * progress;
-    }
-    if (phase.phase_index == 1U)
-    {
-        return 0.20F * (1.0F - progress);
-    }
-    return 0.0F;
-}
-
-[[nodiscard]]
-uint32_t maximumColorDifference(GenerationMapRgba8 const& left, GenerationMapRgba8 const& right) noexcept
-{
-    uint32_t difference = 0U;
-    for (uint32_t channel = 0U; channel < 3U; ++channel)
-    {
-        uint32_t const left_value = left[channel];
-        uint32_t const right_value = right[channel];
-        difference = std::max(difference, left_value > right_value ? left_value - right_value : right_value - left_value);
-    }
-    return difference;
-}
-
-void softenEarlyImageEdges(
-    GenerationMapImage& image,
-    std::span<int32_t const> source_map,
-    PreparedAnimationMap const& data,
-    float const strength
-)
-{
-    if (strength <= 0.0F)
-    {
-        return;
-    }
-    static constexpr uint32_t EDGE_COLOR_DIFFERENCE = 18U;
-    uint32_t const width = image.width;
-    uint32_t const height = image.height;
-    std::vector<GenerationMapRgba8> const source_pixels = image.rgba;
-    for (uint32_t y = 0U; y < height; ++y)
-    {
-        for (uint32_t x = 0U; x < width; ++x)
-        {
-            uint32_t const index = y * width + x;
-            std::array<uint32_t, 4U> const neighbors{
-                y * width + (x + width - 1U) % width,
-                y * width + (x + 1U) % width,
-                (y + height - 1U) % height * width + x,
-                (y + 1U) % height * width + x,
-            };
-            bool hard_edge = std::any_of(neighbors.begin(), neighbors.end(), [&](uint32_t const neighbor) {
-                return maximumColorDifference(source_pixels[index], source_pixels[neighbor])
-                    >= EDGE_COLOR_DIFFERENCE;
-            });
-            int32_t const source_index = source_map[index];
-            if (!hard_edge && source_index >= 0)
-            {
-                int16_t const plate_index = data.cells[static_cast<size_t>(source_index)].plate_index;
-                if (plate_index >= 0)
-                {
-                    hard_edge = std::any_of(neighbors.begin(), neighbors.end(), [&](uint32_t const neighbor) {
-                        int32_t const neighbor_source_index = source_map[neighbor];
-                        return neighbor_source_index >= 0
-                            && data.cells[static_cast<size_t>(neighbor_source_index)].plate_index >= 0
-                            && data.cells[static_cast<size_t>(neighbor_source_index)].plate_index != plate_index;
-                    });
-                }
-            }
-            if (!hard_edge)
-            {
-                continue;
-            }
-
-            GenerationMapRgba8 softened_pixel = source_pixels[index];
-            for (uint32_t channel = 0U; channel < 3U; ++channel)
-            {
-                uint32_t total = 0U;
-                for (uint32_t offset_y = 0U; offset_y < 3U; ++offset_y)
-                {
-                    uint32_t const source_y = (y + height + offset_y - 1U) % height;
-                    for (uint32_t offset_x = 0U; offset_x < 3U; ++offset_x)
-                    {
-                        uint32_t const source_x = (x + width + offset_x - 1U) % width;
-                        total += source_pixels[source_y * width + source_x][channel];
-                    }
-                }
-                softened_pixel[channel] = static_cast<uint8_t>((total + 4U) / 9U);
-            }
-            blendPixel(image.rgba[index], softened_pixel, strength);
-        }
-    }
-}
-
-[[nodiscard]]
 GenerationMapImage renderAnimationFrame(
     PreparedAnimationMap const& data,
     AnimationPhaseState const& phase,
@@ -1760,20 +1673,19 @@ GenerationMapImage renderAnimationFrame(
 )
 {
     float const progress = phaseProgressForRender(phase, reduced_motion);
-    float const drift = animationDrift(phase, progress, data.has_motion);
+    // Preserve the world-space drift authored on the prototype's 128-cell presentation grid.
+    float const drift = animationDrift(phase, progress, data.has_motion) * 2.0F;
     float const height_scale = animationHeightScale(phase, progress);
     float const sea_level = animationSeaLevel(data, phase, progress);
     float const water_progress = animationWaterProgress(phase, progress);
     float const ice_progress = animationIceProgress(phase, progress);
     float const climate_progress = animationClimateProgress(phase, progress);
     float const uplift = animationUpliftProgress(phase, progress, data.has_motion);
-    static constexpr uint32_t RASTER_OVERSAMPLE = 2U;
     bool const samples_fractional_drift = data.has_motion && drift > 0.0F;
-    uint32_t const raster_oversample = samples_fractional_drift ? RASTER_OVERSAMPLE : 1U;
     uint32_t const render_resolution = GENERATION_MAP_ANIMATION_RENDER_RESOLUTION;
     uint32_t const render_count = render_resolution * render_resolution;
-    uint32_t const raster_scale = GENERATION_MAP_ANIMATION_SCALE * raster_oversample;
-    uint32_t const raster_resolution = render_resolution * raster_oversample;
+    uint32_t const raster_scale = GENERATION_MAP_ANIMATION_SCALE;
+    uint32_t const raster_resolution = render_resolution;
     uint32_t const raster_count = raster_resolution * raster_resolution;
     std::vector<int32_t> raster_source_map(raster_count, -1);
     std::vector<float> height_map(raster_count, -std::numeric_limits<float>::infinity());
@@ -1873,148 +1785,148 @@ GenerationMapImage renderAnimationFrame(
     image.width = render_resolution;
     image.height = render_resolution;
     image.rgba.resize(render_count);
-    std::vector<int32_t> source_map(render_count, -1);
-    uint32_t const downsample_pixel_count = raster_oversample * raster_oversample;
-    uint32_t const center_sample = raster_oversample / 2U;
     for (uint32_t output_index = 0U; output_index < render_count; ++output_index)
     {
         uint32_t const x = output_index % render_resolution;
         uint32_t const y = output_index / render_resolution;
-        std::array<uint32_t, 3U> channel_totals{};
-        for (uint32_t sample_index = 0U; sample_index < downsample_pixel_count; ++sample_index)
+        uint32_t const raster_x = x;
+        uint32_t const raster_y = y;
+        uint32_t const raster_index = raster_y * raster_resolution + raster_x;
+        int32_t const mapped_index = raster_source_map[raster_index];
+        uint32_t const source_index = static_cast<uint32_t>(mapped_index);
+        uint32_t const native_x = raster_x / raster_scale;
+        uint32_t const native_y = raster_y / raster_scale;
+        uint32_t const native_index = animationCellIndex(native_x, native_y);
+        AnimationCell const& source_cell = data.cells[source_index];
+        AnimationCell const& native_cell = data.cells[native_index];
+        float const elevation = height_map[raster_index];
+        bool wet = false;
+        GenerationMapRgba8 color{};
+        float original_slope = 0.0F;
+        if (samples_fractional_drift)
         {
-            uint32_t const raster_x = x * raster_oversample + sample_index % raster_oversample;
-            uint32_t const raster_y = y * raster_oversample + sample_index / raster_oversample;
-            uint32_t const raster_index = raster_y * raster_resolution + raster_x;
-            int32_t const mapped_index = raster_source_map[raster_index];
-            uint32_t const source_index = static_cast<uint32_t>(mapped_index);
-            uint32_t const native_x = raster_x / raster_scale;
-            uint32_t const native_y = raster_y / raster_scale;
-            uint32_t const native_index = animationCellIndex(native_x, native_y);
-            AnimationCell const& source_cell = data.cells[source_index];
-            AnimationCell const& native_cell = data.cells[native_index];
-            float const elevation = height_map[raster_index];
-            bool wet = false;
-            GenerationMapRgba8 color{};
-            float original_slope = 0.0F;
-            if (samples_fractional_drift)
+            bool const is_fallback = raster_fallback_map[raster_index] != 0U;
+            wet = is_fallback || (data.has_hydrology && source_cell.water_mask != 0U);
+            color = is_fallback ? motion_fallback_colors[source_index] : motion_colors[source_index];
+            original_slope = source_slopes[source_index];
+        }
+        else
+        {
+            wet = animationWaterAt(
+                source_cell,
+                elevation,
+                sea_level,
+                data.sea_level,
+                water_progress,
+                data.has_hydrology
+            );
+            color = elevationColor(elevation);
+            if (wet)
             {
-                bool const is_fallback = raster_fallback_map[raster_index] != 0U;
-                wet = is_fallback || (data.has_hydrology && source_cell.water_mask != 0U);
-                color = is_fallback ? motion_fallback_colors[source_index] : motion_colors[source_index];
-                original_slope = source_slopes[source_index];
-            }
-            else
-            {
-                wet = animationWaterAt(
-                    source_cell,
-                    elevation,
-                    sea_level,
-                    data.sea_level,
-                    water_progress,
-                    data.has_hydrology
-                );
-                color = elevationColor(elevation);
-                if (wet)
+                if (source_cell.water_mask != 0U)
                 {
-                    if (source_cell.water_mask != 0U)
-                    {
-                        color = waterColor(
-                            color,
-                            elevation,
-                            source_cell.water_level,
-                            (source_cell.water_mask & 1U) != 0U ? 1U : 0U,
-                            (source_cell.water_mask & 2U) != 0U ? 1U : 0U,
-                            (source_cell.water_mask & 4U) != 0U ? 1U : 0U,
-                            1.0F
-                        );
-                    }
-                    else
-                    {
-                        blendPixel(color, { 44U, 97U, 121U, 255U }, std::max(water_progress, 0.72F));
-                    }
-                }
-                if (data.has_climate && climate_progress > 0.0F)
-                {
-                    color = blendColor(
+                    color = waterColor(
                         color,
-                        climateColor(
-                            native_cell.temperature,
-                            native_cell.precipitation,
-                            data.has_temperature,
-                            data.has_precipitation
-                        ),
-                        0.32F * climate_progress
+                        elevation,
+                        source_cell.water_level,
+                        (source_cell.water_mask & 1U) != 0U ? 1U : 0U,
+                        (source_cell.water_mask & 2U) != 0U ? 1U : 0U,
+                        (source_cell.water_mask & 4U) != 0U ? 1U : 0U,
+                        1.0F
                     );
                 }
-                if (data.has_ice && ice_progress > 0.0F && native_cell.ice_kind != GENERATION_MAP_ICE_NONE)
+                else
                 {
-                    float const ice_limit = data.minimum_ice_temperature
-                        + (data.maximum_ice_temperature - data.minimum_ice_temperature) * ice_progress;
-                    bool const target_reached = native_cell.ice_temperature <= ice_limit;
-                    if (target_reached)
-                    {
-                        color = frozenSurfaceColor(color, native_cell.ice_kind, 1.0F);
-                    }
+                    blendPixel(color, { 44U, 97U, 121U, 255U }, std::max(water_progress, 0.72F));
                 }
-                original_slope = data.cells[animationCellIndex(
-                    (native_x + data.resolution - 1U) % data.resolution,
-                    native_y
-                )].elevation - data.cells[animationCellIndex(
-                    (native_x + 1U) % data.resolution,
-                    native_y
-                )].elevation + 0.65F * (
-                    data.cells[animationCellIndex(
-                        native_x,
-                        (native_y + data.resolution - 1U) % data.resolution
-                    )].elevation - data.cells[animationCellIndex(native_x, (native_y + 1U) % data.resolution)].elevation
+            }
+            if (data.has_climate && climate_progress > 0.0F)
+            {
+                color = blendColor(
+                    color,
+                    climateColor(
+                        native_cell.temperature,
+                        native_cell.precipitation,
+                        data.has_temperature,
+                        data.has_precipitation
+                    ),
+                    0.32F * climate_progress
                 );
             }
-            uint32_t const west = raster_y * raster_resolution
-                + (raster_x + raster_resolution - raster_scale) % raster_resolution;
-            uint32_t const east = raster_y * raster_resolution
-                + (raster_x + raster_scale) % raster_resolution;
-            uint32_t const north = ((raster_y + raster_resolution - raster_scale) % raster_resolution)
-                * raster_resolution + raster_x;
-            uint32_t const south = ((raster_y + raster_scale) % raster_resolution) * raster_resolution + raster_x;
-            float const slope = height_map[west] - height_map[east]
-                + (height_map[north] - height_map[south]) * 0.65F;
-            float const shade = wet
-                ? 1.0F
-                : std::clamp(1.0F + (slope - original_slope) * 4.0F / data.elevation_range, 0.65F, 1.25F);
-            for (uint32_t channel = 0U; channel < 3U; ++channel)
+            if (data.has_ice && ice_progress > 0.0F && native_cell.ice_kind != GENERATION_MAP_ICE_NONE)
             {
-                color[channel] = static_cast<uint8_t>(std::clamp(
-                    static_cast<float>(color[channel]) * shade,
-                    0.0F,
-                    255.0F
-                ));
-                channel_totals[channel] += color[channel];
+                float const ice_limit = data.minimum_ice_temperature
+                    + (data.maximum_ice_temperature - data.minimum_ice_temperature) * ice_progress;
+                bool const target_reached = native_cell.ice_temperature <= ice_limit;
+                if (target_reached)
+                {
+                    color = frozenSurfaceColor(color, native_cell.ice_kind, 1.0F);
+                }
             }
-            if (sample_index == center_sample * raster_oversample + center_sample)
-            {
-                source_map[output_index] = mapped_index;
-            }
-        }
-        GenerationMapRgba8& output_pixel = image.rgba[output_index];
-        for (uint32_t channel = 0U; channel < 3U; ++channel)
-        {
-            output_pixel[channel] = static_cast<uint8_t>(
-                (channel_totals[channel] + downsample_pixel_count / 2U) / downsample_pixel_count
+            original_slope = data.cells[animationCellIndex(
+                (native_x + data.resolution - 1U) % data.resolution,
+                native_y
+            )].elevation - data.cells[animationCellIndex(
+                (native_x + 1U) % data.resolution,
+                native_y
+            )].elevation + 0.65F * (
+                data.cells[animationCellIndex(
+                    native_x,
+                    (native_y + data.resolution - 1U) % data.resolution
+                )].elevation - data.cells[animationCellIndex(native_x, (native_y + 1U) % data.resolution)].elevation
             );
         }
-        output_pixel[3U] = 255U;
+        uint32_t const west = raster_y * raster_resolution
+            + (raster_x + raster_resolution - raster_scale) % raster_resolution;
+        uint32_t const east = raster_y * raster_resolution
+            + (raster_x + raster_scale) % raster_resolution;
+        uint32_t const north = ((raster_y + raster_resolution - raster_scale) % raster_resolution)
+            * raster_resolution + raster_x;
+        uint32_t const south = ((raster_y + raster_scale) % raster_resolution) * raster_resolution + raster_x;
+        float const slope = height_map[west] - height_map[east]
+            + (height_map[north] - height_map[south]) * 0.65F;
+        if (data.native_palette)
+        {
+            uint8_t ice_kind = GENERATION_MAP_ICE_NONE;
+            float const ice_limit = data.minimum_ice_temperature
+                + (data.maximum_ice_temperature - data.minimum_ice_temperature) * ice_progress;
+            if (ice_progress > 0.0F && native_cell.ice_temperature <= ice_limit)
+            {
+                ice_kind = native_cell.ice_kind;
+            }
+            bool const canonical_wet = data.has_hydrology && water_progress >= 1.0F
+                ? source_cell.water_mask != 0U : wet;
+            auto const canonical = s2NativeTerrainColor(
+                elevation * 1'000.0F,
+                {data.elevation_limits[0] * 1'000.0F, data.elevation_limits[1] * 1'000.0F},
+                {height_map[east] * 1'000.0F, height_map[south] * 1'000.0F}, canonical_wet,
+                (source_cell.water_level - elevation) * 1'000.0F, ice_kind);
+            for (uint32_t channel = 0U; channel < 3U; ++channel)
+            {
+                color[channel] = static_cast<uint8_t>(std::clamp(std::lround(canonical[channel]), 0L, 255L));
+            }
+            image.rgba[output_index] = color;
+            image.rgba[output_index][3U] = 255U;
+            continue;
+        }
+        float const shade = wet
+            ? 1.0F
+            : std::clamp(1.0F + (slope - original_slope) * 4.0F / data.elevation_range, 0.65F, 1.25F);
+        for (uint32_t channel = 0U; channel < 3U; ++channel)
+        {
+            color[channel] = static_cast<uint8_t>(std::clamp(
+                static_cast<float>(color[channel]) * shade,
+                0.0F,
+                255.0F
+            ));
+        }
+        image.rgba[output_index] = color;
+        image.rgba[output_index][3U] = 255U;
     }
     if (phase.phase_index == 4U && (data.has_wind || data.has_currents || !data.rain_drops.empty()))
     {
         animateWeather(image, data, phaseProgressForRender(phase, reduced_motion));
     }
-    softenEarlyImageEdges(
-        image,
-        source_map,
-        data,
-        earlyEdgeSoftening(phase, progress)
-    );
     return image;
 }
 
@@ -2112,6 +2024,15 @@ struct GenerationMapAnimationCache final
     GenerationMapDisplayIceMaskHandle display_ice_mask;
     std::optional<PreparedAnimationMap> prepared;
     bool uses_atlas = false;
+    uint32_t rendered_phase_index = 0U;
+    uint32_t rendered_tick = 0U;
+    GenerationMapImageHandle rendered_image;
+    std::array<bool, 3U> feature_available{};
+    std::array<bool, 3U> feature_missing_seen{};
+    std::array<bool, 3U> late_phase_pending{};
+    std::optional<uint32_t> late_phase;
+    std::chrono::milliseconds late_phase_started{};
+    std::chrono::milliseconds last_visible_elapsed{};
 };
 
 GenerationMapAnimator::GenerationMapAnimator() = default;
@@ -2132,16 +2053,17 @@ GenerationMapAnimationFrame GenerationMapAnimator::update(
     GenerationMapAnimationClock const& clock
 )
 {
-    AnimationPhaseState const phase = animationPhase(clock);
+    auto const visible_elapsed = std::max(clock.visible_elapsed, std::chrono::milliseconds::zero());
+    if (cache_ == nullptr || visible_elapsed < cache_->last_visible_elapsed)
+    {
+        cache_ = std::make_unique<GenerationMapAnimationCache>();
+    }
+    cache_->last_visible_elapsed = visible_elapsed;
+    AnimationPhaseState phase = animationPhase(clock);
     GenerationMapAnimationFrame frame{
         .phase = phase.phase,
         .phase_progress = phase.progress,
     };
-    if (phase.phase == GenerationMapAnimationPhase::Arrival && final_image != nullptr)
-    {
-        frame.image = std::move(final_image);
-        return frame;
-    }
     if (clock.reduced_motion)
     {
         if (final_image != nullptr)
@@ -2177,23 +2099,29 @@ GenerationMapAnimationFrame GenerationMapAnimator::update(
 
     if (matching_atlas != nullptr)
     {
-        bool const cache_matches = cache_ != nullptr && cache_->uses_atlas
+        // Native V9 atlases have no legacy fields; retain their valid snapshot preparation too.
+        bool const cache_matches = cache_ != nullptr
             && cache_->atlas == matching_atlas && cache_->display_ice_mask == final_display_ice_mask;
         if (!cache_matches)
         {
             std::optional<PreparedAnimationMap> prepared = prepareAnimationMap(*matching_atlas, final_display_ice_mask);
             if (prepared)
             {
-                cache_ = std::make_unique<GenerationMapAnimationCache>(GenerationMapAnimationCache{
-                    .atlas = matching_atlas,
-                    .display_ice_mask = final_display_ice_mask,
-                    .prepared = std::move(prepared),
-                    .uses_atlas = true,
-                });
+                cache_->snapshot.reset();
+                cache_->atlas = matching_atlas;
+                cache_->display_ice_mask = final_display_ice_mask;
+                cache_->prepared = std::move(prepared);
+                cache_->uses_atlas = true;
+                cache_->rendered_image.reset();
             }
             else
             {
-                cache_.reset();
+                cache_->atlas = matching_atlas;
+                cache_->display_ice_mask = final_display_ice_mask;
+                cache_->snapshot.reset();
+                cache_->prepared.reset();
+                cache_->uses_atlas = false;
+                cache_->rendered_image.reset();
             }
         }
     }
@@ -2206,22 +2134,86 @@ GenerationMapAnimationFrame GenerationMapAnimator::update(
         if (!cache_matches)
         {
             std::optional<PreparedAnimationMap> prepared = prepareAnimationMap(*snapshot, final_display_ice_mask);
-            cache_ = std::make_unique<GenerationMapAnimationCache>(GenerationMapAnimationCache{
-                .snapshot = snapshot,
-                .atlas = matching_atlas,
-                .display_ice_mask = final_display_ice_mask,
-                .prepared = std::move(prepared),
-                .uses_atlas = false,
-            });
+            cache_->snapshot = snapshot;
+            cache_->atlas = matching_atlas;
+            cache_->display_ice_mask = final_display_ice_mask;
+            cache_->prepared = std::move(prepared);
+            cache_->uses_atlas = false;
+            cache_->rendered_image.reset();
         }
     }
 
+    if (cache_ != nullptr && cache_->prepared)
+    {
+        PreparedAnimationMap const& data = *cache_->prepared;
+        std::array<bool, 3U> const available{
+            data.has_hydrology,
+            data.has_ice,
+            data.has_climate && (data.has_precipitation || data.has_wind || data.has_currents),
+        };
+        for (uint32_t index = 0U; index < available.size(); ++index)
+        {
+            if (!available[index])
+            {
+                cache_->feature_missing_seen[index] = true;
+            }
+            else if (!cache_->feature_available[index])
+            {
+                cache_->feature_available[index] = true;
+                cache_->late_phase_pending[index] = cache_->feature_missing_seen[index]
+                    && visible_elapsed >= std::chrono::seconds{5U * (index + 3U)};
+            }
+        }
+        // Late authoritative fields receive a short visible phase without restarting the normal timeline.
+        static constexpr auto LATE_PHASE_DURATION = std::chrono::seconds{1};
+        if (cache_->late_phase && visible_elapsed - cache_->late_phase_started >= LATE_PHASE_DURATION)
+        {
+            cache_->late_phase.reset();
+        }
+        if (!cache_->late_phase)
+        {
+            for (uint32_t index = 0U; index < cache_->late_phase_pending.size(); ++index)
+            {
+                if (cache_->late_phase_pending[index])
+                {
+                    cache_->late_phase_pending[index] = false;
+                    cache_->late_phase = index + 2U;
+                    cache_->late_phase_started = visible_elapsed;
+                    break;
+                }
+            }
+        }
+        if (cache_->late_phase)
+        {
+            phase.phase_index = *cache_->late_phase;
+            phase.phase = static_cast<GenerationMapAnimationPhase>(*cache_->late_phase);
+            phase.progress = std::clamp(
+                static_cast<float>((visible_elapsed - cache_->late_phase_started).count()) / 1'000.0F, 0.0F, 1.0F);
+            frame.phase = phase.phase;
+            frame.phase_progress = phase.progress;
+        }
+    }
+    if (phase.phase == GenerationMapAnimationPhase::Arrival && final_image != nullptr)
+    {
+        frame.image = std::move(final_image);
+        return frame;
+    }
     if (cache_ == nullptr || !cache_->prepared)
     {
         return frame;
     }
-    GenerationMapImage rendered = renderAnimationFrame(*cache_->prepared, phase, clock.reduced_motion);
-    frame.image = std::make_shared<GenerationMapImage const>(std::move(rendered));
+    static constexpr uint32_t VISUAL_TICKS_PER_PHASE = 120U;
+    uint32_t const tick = static_cast<uint32_t>(std::lround(phase.progress * VISUAL_TICKS_PER_PHASE));
+    if (!cache_->rendered_image || cache_->rendered_phase_index != phase.phase_index || cache_->rendered_tick != tick)
+    {
+        AnimationPhaseState render_phase = phase;
+        render_phase.progress = static_cast<float>(tick) / VISUAL_TICKS_PER_PHASE;
+        GenerationMapImage rendered = renderAnimationFrame(*cache_->prepared, render_phase, clock.reduced_motion);
+        cache_->rendered_image = std::make_shared<GenerationMapImage const>(std::move(rendered));
+        cache_->rendered_phase_index = phase.phase_index;
+        cache_->rendered_tick = tick;
+    }
+    frame.image = cache_->rendered_image;
     return frame;
 }
 

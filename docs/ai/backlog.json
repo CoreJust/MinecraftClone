@@ -20806,6 +20806,54 @@
     "backlog_review": "Added MC-AI-0581 as a done/finalized basic child of MC-AI-0483; the parent remains active and unfinalized. The implementation and tests match the approved initial c67 payload (fingerprint 47e5e2251cb997e88332b13f71c7bca2507b05fb8b389d318822491212695b77); this record is rebased to bdcde292. Full S2/minor gates, owner hands-on acceptance, Android, performance, and broader gameplay qualification remain open."
   },
   {
+    "id": "MC-AI-0582",
+    "title": "Use the canonical native painter in generation previews",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0560"
+    ],
+    "acceptance": "Native V9 generation previews reuse the canonical S2 terrain painter for elevation range/color, contours, water depth, and physical ice; source temperature drives ice growth, scalar overlays stay exact, and no phase-only blur is applied. Preserve displaced formation geometry, weather, and normal early five-second pacing. Use only arrived source fields: Water may arrive at 31 s, Ice at 32 s, progressive ice at 32.25–32.75 s, Climate at 33 s, and exact final at 34 s without restarting the full sequence. The corrected endpoint Release tests pass 51/51; a source-bound native probe shows 182,588/182,588 completed-water non-ice pixels match the canonical final with zero RGB difference. This closes only the local implementation and native visual proof. The owner's clarified overall wait and Windows acceptance remain open under MC-AI-0483; no FPS or speedup qualification is claimed.",
+    "evidence": "Source of truth and ordered owner criteria are copied under /Users/core-just/.codex/task-evidence/mc-s2-20261025/task-0582-generation-presentation/prepared-on-e5c7 (request SHA-256 cc3c843191533202ffadc6e627ee3e4cecf15094fd410d00b3df7c80d42a7844; exact generation-feedback-1350 clarification and ice addendum are retained). Candidate is based on e5c7ebe28a58668e1d7cee0915824cf99910df99. The final 0582 six-path patch applies cleanly; its 4 production-file hashes match production-only.patch SHA-256 7870327a47f1035f98e228226b5157087e9c067970173bcba0e3390c02b346ea. Focused configured Release tests passed 51/51 after the final water endpoint correction (mc0582-green.log/XML). The source-bound canonical-alignment probe reports 182,588 completed-water non-ice pixels, zero mismatches, and zero maximum RGB delta. Exact native stage screenshots canonical-aligned-final/water/ice/moving and canonical-final-fixed are hash-bound in evidence-sources.json. One same-reviewer Luna/high renewal and local documentation/source checks are required on the rebased candidate. No Windows runtime, overall-wait improvement, FPS, or relative-speedup claim is included.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "The owner reported blurred, dull generation and missing visible ice. Native generation frames had diverged from the canonical S2 terrain painter, especially at the completed-water endpoint.",
+    "context": "The owner requires generation stages to retain the accepted prototype sharpness and finish with the exact native atlas. Feedback 1350 clarifies the overall wait is too long; this task addresses visual presentation and stage-data correctness only. Startup wait and Windows visual acceptance stay open under MC-AI-0483. R6 remains a real consumer and its existing painter path is not redefined as compatibility for this change.",
+    "complexity": "medium",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Removed phase-only RGB softening and oversampled blur; shared the canonical S2 elevation/contour/depth/ice painter with V9 generation presentation while retaining displaced source relief, actual temperature-driven ice, source weather, scalar layer semantics, and late-source phase progression. Added source-bound canonical color and phase-cache regressions. The exact completed-water final matches the canonical native painter across 182,588 non-ice pixels. Windows acceptance and the clarified overall wait remain open on the parent.",
+    "plan": [
+      "Use the owner feedback and accepted final/reference image as visual authority; keep R6 as its existing independent consumer.",
+      "Share the native S2 terrain color composition with generation previews, preserving source elevation range, displacement, contours, water depth, physical ice and scalar overlays.",
+      "Render late native Water/Ice/Climate stages only from arrived fields, retaining progressive ice and the existing early phase pacing.",
+      "Verify focused Release tests, source-bound actual phase images, completed-water pixel parity, documentation, and an exact Luna/high reviewer receipt; leave Windows and startup-wait acceptance open."
+    ],
+    "product_changes": [
+      "Generation-phase maps retain canonical terrain sharpness, native material and water depth shading, and actual progressive ice/weather while converging to the exact final atlas."
+    ],
+    "code_changes": [
+      "src/client/GenerationMapPresentation.cpp",
+      "src/client/S2MapPresentation.cpp",
+      "src/client/include/client/GenerationMapPresentation.hpp",
+      "src/client/include/client/S2MapPresentation.hpp",
+      "tests/client/generation_map_presentation_tests.cpp",
+      "tests/client/s2_map_presentation_tests.cpp"
+    ],
+    "baseline_commit": "e5c7ebe28a58668e1d7cee0915824cf99910df99",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Sharing the canonical painter, rather than matching dimensions alone, preserves final-map sharpness and native material composition throughout formation while late visual phases use only arrived fields.",
+    "docs_review": "Updated docs/code/RENDERING.md with the V9 generation-to-S2 painter contract: relief/contour/depth/ice composition, source-driven temperature growth, unchanged scalar overlays, and no phase-only blur. The guide remains 898 words; docs/code/INDEX.md and source_state.json are refreshed and checked.",
+    "environment_review": "Configured focused Release verification passed 51/51 after the final water endpoint correction on the prior bdcde-based candidate. The same six source/test files apply cleanly to e5c7 and production hashes match, but no focused rerun or Windows runtime was claimed for the rebased candidate. No startup-wait or FPS qualification is claimed.",
+    "backlog_review": "Added MC-AI-0582 as a done/finalized basic child of MC-AI-0483 for local visual implementation and native image proof only. Parent remains active/unfinalized; clarified overall wait and Windows owner acceptance remain open."
+  },
+  {
     "id": "MC-AI-0583",
     "title": "Reuse the prepared terrain world during local startup",
     "kind": "bug",

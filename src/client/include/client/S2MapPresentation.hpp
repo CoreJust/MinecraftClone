@@ -17,6 +17,13 @@
 
 namespace client {
 
+// Shared native terrain palette, contour, depth and ice composition for map and formation frames.
+[[nodiscard]]
+std::array<float, 3U> s2NativeTerrainColor(
+    float elevation_m, std::array<float, 2U> height_range_m, std::array<float, 2U> neighbors_m,
+    bool is_water, float water_depth_m, uint8_t ice_kind
+) noexcept;
+
 enum class S2WorldMapLayer : uint8_t {
     Plates,
     Heights,

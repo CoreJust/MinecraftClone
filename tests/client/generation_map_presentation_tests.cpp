@@ -1,5 +1,7 @@
 #include <client/GenerationMapPresentation.hpp>
 
+#include <client/S2MapPresentation.hpp>
+
 #include <generation/Generation.hpp>
 
 #include <gtest/gtest.h>
@@ -562,7 +564,7 @@ TEST(GenerationMapPresentationTest, AnimationGrowsIceMonotonicallyTowardTheShare
     ASSERT_NE(early, nullptr);
     ASSERT_NE(late, nullptr);
     uint32_t const colder_pixel = animationRenderPixelIndex(0U, 0U);
-    uint32_t const warmer_pixel = animationRenderPixelIndex(1U, 0U);
+    uint32_t const warmer_pixel = animationRenderPixelIndex(WARMER_SOURCE_INDEX, 0U);
     EXPECT_GT(early->rgba[colder_pixel][0U], early->rgba[warmer_pixel][0U]);
     EXPECT_GT(late->rgba[warmer_pixel][0U], early->rgba[warmer_pixel][0U]);
 }
@@ -616,9 +618,9 @@ TEST(GenerationMapPresentationTest, AnimationIsBoundedDeterministicAndSettlesToT
     EXPECT_EQ(client::animateGenerationMap(snapshot, final_image, nullptr, ready_clock), final_image);
 }
 
-TEST(GenerationMapPresentationTest, TectonicDriftSamplesFractionalMotionAndStaysContinuousAcrossRelief)
+TEST(GenerationMapPresentationTest, TectonicDriftKeepsNearestSharpnessAndStaysContinuousAcrossRelief)
 {
-    static constexpr uint32_t NATIVE_EDGE_X = 64U;
+    static constexpr uint32_t NATIVE_EDGE_X = 128U;
     static constexpr uint32_t EDGE_WINDOW_RADIUS = 8U;
     static constexpr uint32_t EDGE_ROW = 100U * client::GENERATION_MAP_ANIMATION_SCALE;
     static constexpr uint32_t HIGH_COLOR_THRESHOLD = 130U;
@@ -667,7 +669,7 @@ TEST(GenerationMapPresentationTest, TectonicDriftSamplesFractionalMotionAndStays
     EXPECT_EQ(relief_start.phase, client::GenerationMapAnimationPhase::Relief);
 
     uint32_t const center_edge = NATIVE_EDGE_X * client::GENERATION_MAP_ANIMATION_SCALE
-        - 3U * client::GENERATION_MAP_ANIMATION_SCALE;
+        - 6U * client::GENERATION_MAP_ANIMATION_SCALE;
     uint32_t const edge_first_x = center_edge - EDGE_WINDOW_RADIUS;
     uint32_t const edge_last_x = center_edge + EDGE_WINDOW_RADIUS;
     double const start_edge = verticalEdgePosition(*at_start.image, EDGE_ROW, edge_first_x, edge_last_x);
@@ -678,8 +680,9 @@ TEST(GenerationMapPresentationTest, TectonicDriftSamplesFractionalMotionAndStays
         edge_last_x
     );
     double const fractional_shift = fractional_edge - start_edge;
-    EXPECT_GT(fractional_shift, 0.20);
-    EXPECT_LT(fractional_shift, 0.65);
+    EXPECT_GE(fractional_shift, 0.0);
+    EXPECT_LE(fractional_shift, 1.0);
+    EXPECT_GT(verticalEdgePosition(*after_fractional_drift.image, EDGE_ROW, edge_first_x, edge_last_x) - start_edge, 0.5);
 
     double const phase_boundary_shift = verticalEdgePosition(
         *relief_start.image,
@@ -709,8 +712,9 @@ TEST(GenerationMapPresentationTest, TectonicDriftPreservesWaterInteriorColorAndS
 {
     static constexpr uint32_t RESOLUTION = 256U;
     static constexpr uint32_t FIELD_COUNT = RESOLUTION * RESOLUTION;
-    static constexpr uint32_t SAMPLE_X = 60U;
-    static constexpr uint32_t SAMPLE_Y = 50U;
+    // Flooded cell beside the translated relief: only the dry control receives hillshade.
+    static constexpr uint32_t SAMPLE_X = 121U;
+    static constexpr uint32_t SAMPLE_Y = 100U;
 
     auto water_atlas = std::make_shared<generation::GlobalAtlas>(*makeDriftingMapAtlas());
     water_atlas->sea_level = 20.0F;
@@ -810,7 +814,7 @@ TEST(GenerationMapPresentationTest, HigherMovingPlateKeepsOwnershipWhenItOverlap
     static constexpr uint32_t RESOLUTION = 256U;
     static constexpr uint32_t MOVING_PLATE_START = 128U;
     static constexpr uint32_t MOVING_PLATE_END = 160U;
-    static constexpr uint32_t OVERLAP_NATIVE_X = 80U;
+    static constexpr uint32_t OVERLAP_NATIVE_X = 160U;
     static constexpr uint32_t SAMPLE_Y = 100U;
     static constexpr uint32_t HIGH_COLOR_THRESHOLD = 130U;
 
@@ -849,8 +853,8 @@ TEST(GenerationMapPresentationTest, MovingDriftUsesNearestWaterColorToFillNewGap
     static constexpr uint32_t RESOLUTION = 256U;
     static constexpr uint32_t WATER_X = 124U;
     static constexpr uint32_t WATER_Y = 200U;
-    static constexpr uint32_t GAP_PIXEL_X = 190U;
-    static constexpr uint32_t GAP_PIXEL_Y = 300U;
+    static constexpr uint32_t GAP_PIXEL_X = 253U;
+    static constexpr uint32_t GAP_PIXEL_Y = 400U;
     static constexpr uint32_t HIGH_COLOR_THRESHOLD = 120U;
 
     auto atlas = std::make_shared<generation::GlobalAtlas>(*makeDriftingMapAtlas());
@@ -1212,6 +1216,166 @@ TEST(GenerationMapPresentationTest, V9PlatecPreviewRendersSourceReliefAndPlateDr
     ASSERT_NE(drifting.image, nullptr);
     EXPECT_EQ(initial.phase, client::GenerationMapAnimationPhase::Tectonics);
     EXPECT_NE(initial.image->rgba, drifting.image->rgba);
+    auto atlas = std::make_shared<generation::GlobalAtlas>();
+    atlas->configuration.model_tag = generation::TerrainModelTag::V9;
+    EXPECT_TRUE(atlas->elevation.empty());
+    auto with_atlas = animator.update(immutable_snapshot, atlas, nullptr, nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{2'500}});
+    auto same_tick = animator.update(immutable_snapshot, atlas, nullptr, nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{2'501}});
+    EXPECT_EQ(with_atlas.image, same_tick.image);
+}
+
+TEST(GenerationMapPresentationTest, ReusesOnlyLatestVisualTickAndInvalidatesChangedInputs)
+{
+    auto snapshot = std::make_shared<generation::GenerationSnapshot const>(
+        makeSnapshot(generation::GenerationStage::Tectonics));
+    client::GenerationMapAnimator animator;
+    auto render = [&](auto const& source, auto const& mask, int64_t const elapsed) {
+        return animator.update(source, nullptr, nullptr, mask,
+            {.visible_elapsed = std::chrono::milliseconds{elapsed}}).image;
+    };
+    client::GenerationMapDisplayIceMaskHandle const no_mask;
+    auto first = render(snapshot, no_mask, 750);
+    ASSERT_NE(first, nullptr);
+    EXPECT_EQ(first, render(snapshot, no_mask, 751));
+    auto changed_tick = render(snapshot, no_mask, 1'000);
+    EXPECT_NE(first, changed_tick);
+    auto changed_phase = render(snapshot, no_mask, 5'750);
+    EXPECT_NE(changed_tick, changed_phase);
+    auto changed_source = std::make_shared<generation::GenerationSnapshot const>(*snapshot);
+    auto source_frame = render(changed_source, no_mask, 5'750);
+    EXPECT_NE(changed_phase, source_frame);
+    auto mask = std::make_shared<client::GenerationMapDisplayIceMask const>();
+    auto mask_frame = render(changed_source, mask, 5'750);
+    EXPECT_NE(source_frame, mask_frame);
+    EXPECT_EQ(mask_frame, render(changed_source, mask, 5'751));
+    animator.reset();
+    EXPECT_NE(mask_frame, render(changed_source, mask, 5'751));
+
+    std::weak_ptr<client::GenerationMapImage const> previous;
+    {
+        auto frame = render(snapshot, no_mask, 750);
+        previous = frame;
+    }
+    ASSERT_FALSE(previous.expired());
+    static_cast<void>(render(snapshot, no_mask, 1'000));
+    EXPECT_TRUE(previous.expired());
+    auto atlas = makeDriftingMapAtlas();
+    auto atlas_frame = animator.update(nullptr, atlas, nullptr, nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{750}});
+    EXPECT_EQ(atlas_frame.image, animator.update(nullptr, atlas, nullptr, nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{751}}).image);
+    auto changed_atlas = std::make_shared<generation::GlobalAtlas const>(*atlas);
+    EXPECT_NE(atlas_frame.image, animator.update(nullptr, changed_atlas, nullptr, nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{751}}).image);
+}
+
+TEST(GenerationMapPresentationTest, DelayedNativeWaterShowsProgressiveIceAndWeatherBeforeExactArrival)
+{
+    static constexpr uint32_t RESOLUTION = 256U;
+    static constexpr uint32_t COUNT = RESOLUTION * RESOLUTION;
+    auto water = std::make_shared<generation::GenerationSnapshot>();
+    water->stage = generation::GenerationStage::V9Water;
+    water->resolution = RESOLUTION;
+    water->v9.emplace();
+    auto& fields = *water->v9;
+    fields.source_elevation_m.assign(COUNT, 500.0F);
+    fields.plate_ids.assign(COUNT, 1U);
+    fields.plate_directions = {{1U, 1.0F, 0.0F}};
+    fields.temperature_celsius.resize(COUNT);
+    fields.precipitation_mm_year.assign(COUNT, 500.0F);
+    fields.water_level_m.assign(COUNT, 0.0F);
+    fields.ocean_mask.assign(COUNT, 0U);
+    fields.lake_mask.assign(COUNT, 0U);
+    fields.river_mask.assign(COUNT, 0U);
+    fields.ice_surface_kind.resize(COUNT);
+    for (uint32_t index = 0U; index < COUNT; ++index)
+    {
+        uint32_t const x = index % RESOLUTION;
+        fields.temperature_celsius[index] = -20.0F + static_cast<float>(x) / 6.0F;
+        fields.ice_surface_kind[index] = x < 120U ? client::GENERATION_MAP_ICE_SNOW : client::GENERATION_MAP_ICE_NONE;
+    }
+    ASSERT_TRUE(generation::isValidGenerationSnapshot(*water));
+    auto early = std::make_shared<generation::GenerationSnapshot>(*water);
+    early->stage = generation::GenerationStage::V9Platec;
+    early->v9->temperature_celsius.clear();
+    early->v9->precipitation_mm_year.clear();
+    early->v9->water_level_m.clear();
+    early->v9->ocean_mask.clear();
+    early->v9->lake_mask.clear();
+    early->v9->river_mask.clear();
+    early->v9->ice_surface_kind.clear();
+    ASSERT_TRUE(generation::isValidGenerationSnapshot(*early));
+    auto climate = std::make_shared<generation::GenerationSnapshot>(*early);
+    climate->stage = generation::GenerationStage::V9Climate;
+    climate->v9->temperature_celsius = fields.temperature_celsius;
+    ASSERT_TRUE(generation::isValidGenerationSnapshot(*climate));
+    auto final_pixels = client::rasterizeGenerationMap(*water, fields.ice_surface_kind);
+    ASSERT_TRUE(final_pixels);
+    auto final_image = std::make_shared<client::GenerationMapImage const>(std::move(*final_pixels));
+    client::GenerationMapAnimator animator;
+    static_cast<void>(animator.update(early, nullptr, nullptr, nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{750}}));
+    static_cast<void>(animator.update(climate, nullptr, nullptr, nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{5'834}}));
+    auto render = [&](int64_t const elapsed) {
+        return animator.update(water, nullptr, final_image, nullptr,
+            {.visible_elapsed = std::chrono::milliseconds{elapsed}, .ready = true});
+    };
+    auto filling = render(31'000);
+    ASSERT_EQ(filling.phase, client::GenerationMapAnimationPhase::Water);
+    EXPECT_NE(filling.image, final_image);
+    auto ice_start = render(32'000);
+    ASSERT_EQ(ice_start.phase, client::GenerationMapAnimationPhase::Ice);
+    auto const canonical_base = client::s2NativeTerrainColor(500.0F, {500.0F, 500.0F}, {500.0F, 500.0F}, false, 0.0F, 0U);
+    Rgba8 expected_base{0U, 0U, 0U, 255U};
+    for (uint32_t channel = 0U; channel < 3U; ++channel)
+    {
+        expected_base[channel] = static_cast<uint8_t>(std::lround(canonical_base[channel]));
+    }
+    EXPECT_TRUE(std::all_of(ice_start.image->rgba.begin(), ice_start.image->rgba.end(),
+        [&](Rgba8 const& pixel) { return pixel == expected_base; }));
+    auto ice_early = render(32'250);
+    auto ice_late = render(32'750);
+    auto frozen_count = [](auto const& image) {
+        return std::count_if(image->rgba.begin(), image->rgba.end(), [](Rgba8 const& pixel) {
+            return pixel[1U] >= 235U && pixel[2U] >= 220U;
+        });
+    };
+    EXPECT_GT(frozen_count(ice_late.image), frozen_count(ice_early.image));
+    auto climate_start = render(33'000);
+    EXPECT_EQ(climate_start.phase, client::GenerationMapAnimationPhase::Climate);
+    auto weather = render(33'500);
+    EXPECT_EQ(weather.phase, client::GenerationMapAnimationPhase::Climate);
+    EXPECT_NE(weather.image->rgba, climate_start.image->rgba);
+    EXPECT_GE(frozen_count(weather.image), frozen_count(ice_late.image));
+    auto arrival = render(34'000);
+    EXPECT_EQ(arrival.phase, client::GenerationMapAnimationPhase::Arrival);
+    EXPECT_EQ(arrival.image, final_image);
+}
+
+TEST(GenerationMapPresentationTest, MovingNearestSamplesKeepSourceColorsWithoutPhaseOnlyRgbBlur)
+{
+    auto atlas = std::make_shared<generation::GlobalAtlas>(*makeDriftingMapAtlas());
+    uint32_t const count = atlas->configuration.resolution * atlas->configuration.resolution;
+    atlas->water_level.assign(count, 0.0F);
+    atlas->ocean_mask.assign(count, 1U);
+    atlas->lake_mask.assign(count, 0U);
+    atlas->river_mask.assign(count, 0U);
+    std::array<Rgba8, 2U> const source_colors{{
+        {35U, 72U, 94U, 255U}, {229U, 231U, 224U, 255U},
+    }};
+    client::GenerationMapAnimator animator;
+    for (int64_t const elapsed : {0, 750, 1'500, 5'750})
+    {
+        auto const frame = animator.update(nullptr, atlas, nullptr, nullptr,
+            {.visible_elapsed = std::chrono::milliseconds{elapsed}});
+        ASSERT_NE(frame.image, nullptr);
+        EXPECT_TRUE(std::all_of(frame.image->rgba.begin(), frame.image->rgba.end(), [&](Rgba8 const& pixel) {
+            return std::find(source_colors.begin(), source_colors.end(), pixel) != source_colors.end();
+        }));
+    }
 }
 
 } // namespace

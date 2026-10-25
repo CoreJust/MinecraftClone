@@ -180,6 +180,23 @@ TEST(S2MapPresentationTest, V9WorldMapReadsAllEightNativeLayers)
     EXPECT_EQ(image->v9_ocean_v_m_s.size(), CLIMATE_COUNT);
     EXPECT_EQ(image->rgba.size(), client::S2_WORLD_MAP_IMAGE_SIDE * client::S2_WORLD_MAP_IMAGE_SIDE);
 
+    auto const default_view = client::rasterizeS2WorldMap(*world, *lod, {});
+    ASSERT_TRUE(default_view);
+    static constexpr size_t UNFROZEN_SOURCE = 128U * 256U + 128U;
+    EXPECT_EQ(default_view->v9_ice_surface_kind[UNFROZEN_SOURCE], 0U);
+    EXPECT_EQ(default_view->rgba[256U * default_view->width + 256U],
+        (std::array<uint8_t, 4U>{28U, 56U, 72U, 255U}));
+    for (uint8_t const kind : {uint8_t{1U}, uint8_t{3U}}) {
+        auto const found = std::find(default_view->v9_ice_surface_kind.begin(), default_view->v9_ice_surface_kind.end(), kind);
+        ASSERT_NE(found, default_view->v9_ice_surface_kind.end());
+        size_t const source_index = static_cast<size_t>(found - default_view->v9_ice_surface_kind.begin());
+        size_t const pixel_index = source_index / 256U * 2U * default_view->width + source_index % 256U * 2U;
+        auto const& frozen = default_view->rgba[pixel_index];
+        EXPECT_GE(frozen[0U], kind == 3U ? 120U : 170U);
+        EXPECT_GE(frozen[1U], kind == 3U ? 150U : 170U);
+        EXPECT_GE(frozen[2U], 160U);
+    }
+
     std::vector<generation::V9RegisteredFieldView> const fields = generation::v9RegisteredFields(*atlas);
     auto const findField = [&](std::string_view const name) {
         return std::find_if(fields.begin(), fields.end(), [name](auto const& field) {

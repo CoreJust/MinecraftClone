@@ -1350,14 +1350,15 @@ std::optional<S2MapImage> rasterizeS2V9WorldMap(
     Range const height_range{
         static_cast<float>(*height_minimum), static_cast<float>(*height_maximum),
     };
-    float const height_extent = std::max(0.001F, height_range.maximum - height_range.minimum);
-    float const contour_step = niceStep(height_extent / 8.0F);
     auto const source_index = [](uint32_t x, uint32_t y) {
         return static_cast<size_t>(y % SOURCE_RESOLUTION) * SOURCE_RESOLUTION + x % SOURCE_RESOLUTION;
     };
     auto const root_sample = [&world_lod](uint32_t x, uint32_t y) -> shared::TerrainLodSample const& {
         return world_lod.nodes[static_cast<size_t>(y) * world_lod.side + x].sample;
     };
+    bool const scalar_overlay = state.layers[static_cast<size_t>(S2WorldMapLayer::Temperature)]
+        || state.layers[static_cast<size_t>(S2WorldMapLayer::Moisture)]
+        || state.layers[static_cast<size_t>(S2WorldMapLayer::Precipitation)];
     for (uint32_t y = 0U; y < image.height; ++y) {
         uint32_t const source_y = y * SOURCE_RESOLUTION / image.height;
         for (uint32_t x = 0U; x < image.width; ++x) {
@@ -1367,29 +1368,16 @@ std::optional<S2MapImage> rasterizeS2V9WorldMap(
                 || v9ValueAt(*lake, index) != 0.0 || v9ValueAt(*river, index) != 0.0;
             uint8_t const ice_kind = image.v9_ice_surface_kind[index];
             Color color = is_water ? Color{35.0F, 69.0F, 87.0F} : materialColor(root_sample(source_x, source_y).top_material);
-            if (ice_kind == 1U) {
-                blend(color, {236.0F, 242.0F, 235.0F}, 0.34F);
-            } else if (ice_kind == 2U) {
-                blend(color, {208.0F, 225.0F, 223.0F}, 0.58F);
-            } else if (ice_kind == 3U) {
-                blend(color, {203.0F, 227.0F, 231.0F}, 0.62F);
-            }
             if (state.layers[static_cast<size_t>(S2WorldMapLayer::Biomes)]) {
                 color = BIOME_COLORS[image.v9_biome_ids[index]];
             }
             if (state.layers[static_cast<size_t>(S2WorldMapLayer::Heights)]) {
-                float const value = static_cast<float>(image.v9_elevation_m[index]);
-                color = elevationColor(value, height_range);
-                uint32_t const east = (source_x + 1U) % SOURCE_RESOLUTION;
-                uint32_t const south = (source_y + 1U) % SOURCE_RESOLUTION;
-                bool const contour = std::floor(value / contour_step)
-                    != std::floor(static_cast<float>(image.v9_elevation_m[source_index(east, source_y)]) / contour_step)
-                    || std::floor(value / contour_step)
-                    != std::floor(static_cast<float>(image.v9_elevation_m[source_index(source_x, south)]) / contour_step);
-                if (contour) {
-                    blend(color, is_water ? Color{105.0F, 151.0F, 169.0F} : Color{235.0F, 222.0F, 186.0F},
-                        is_water ? 0.19F : 0.29F);
-                }
+                color = s2NativeTerrainColor(
+                    static_cast<float>(image.v9_elevation_m[index]), {height_range.minimum, height_range.maximum},
+                    {static_cast<float>(image.v9_elevation_m[source_index(source_x + 1U, source_y)]),
+                     static_cast<float>(image.v9_elevation_m[source_index(source_x, source_y + 1U)])},
+                    is_water, static_cast<float>(v9ValueAt(*water_level, index) - image.v9_elevation_m[index]),
+                    scalar_overlay ? 0U : ice_kind);
             }
             if (state.layers[static_cast<size_t>(S2WorldMapLayer::Temperature)]) {
                 color = heatColor(S2WorldMapLayer::Temperature, image.v9_temperature_mean_c[index], {-40.0F, 30.0F});
@@ -1405,9 +1393,20 @@ std::optional<S2MapImage> rasterizeS2V9WorldMap(
                 color = heatColor(S2WorldMapLayer::Precipitation,
                     image.v9_precipitation_mean_mm_year[index], precipitation_range);
             }
-            if (is_water && ice_kind != 3U) {
+            bool const canonical_terrain = state.layers[static_cast<size_t>(S2WorldMapLayer::Heights)] && !scalar_overlay;
+            if (is_water && ice_kind != 3U && !canonical_terrain) {
                 double const depth_m = std::clamp(v9ValueAt(*water_level, index) - image.v9_elevation_m[index], 0.0, 600.0);
                 blend(color, {20.0F, 45.0F, 60.0F}, static_cast<float>(std::min(0.40, depth_m * 0.0007)));
+            }
+            // Scalar legends stay exact; physical ice overlays the selected terrain layers.
+            if (!scalar_overlay && !canonical_terrain) {
+                if (ice_kind == 1U) {
+                    blend(color, {236.0F, 242.0F, 235.0F}, 0.34F);
+                } else if (ice_kind == 2U) {
+                    blend(color, {208.0F, 225.0F, 223.0F}, 0.58F);
+                } else if (ice_kind == 3U) {
+                    blend(color, {203.0F, 227.0F, 231.0F}, 0.62F);
+                }
             }
             if (state.layers[static_cast<size_t>(S2WorldMapLayer::Plates)]) {
                 uint32_t const plate = image.v9_plate_ids[index];
@@ -1424,6 +1423,31 @@ std::optional<S2MapImage> rasterizeS2V9WorldMap(
 }
 
 } // namespace
+
+std::array<float, 3U> s2NativeTerrainColor(
+    float const elevation_m, std::array<float, 2U> const height_range_m, std::array<float, 2U> const neighbors_m,
+    bool const is_water, float const water_depth_m, uint8_t const ice_kind
+) noexcept
+{
+    Color color = elevationColor(elevation_m, {height_range_m[0], height_range_m[1]});
+    float const step = niceStep(std::max(0.001F, height_range_m[1] - height_range_m[0]) / 8.0F);
+    if (std::floor(elevation_m / step) != std::floor(neighbors_m[0] / step)
+        || std::floor(elevation_m / step) != std::floor(neighbors_m[1] / step)) {
+        blend(color, is_water ? Color{105.0F, 151.0F, 169.0F} : Color{235.0F, 222.0F, 186.0F},
+            is_water ? 0.19F : 0.29F);
+    }
+    if (is_water && ice_kind != 3U) {
+        blend(color, {20.0F, 45.0F, 60.0F}, std::min(0.40F, std::clamp(water_depth_m, 0.0F, 600.0F) * 0.0007F));
+    }
+    if (ice_kind == 1U) {
+        blend(color, {236.0F, 242.0F, 235.0F}, 0.34F);
+    } else if (ice_kind == 2U) {
+        blend(color, {208.0F, 225.0F, 223.0F}, 0.58F);
+    } else if (ice_kind == 3U) {
+        blend(color, {203.0F, 227.0F, 231.0F}, 0.62F);
+    }
+    return color;
+}
 
 std::optional<S2MapImage> rasterizeS2WorldMap(
     shared::TerrainWorld const& world,
