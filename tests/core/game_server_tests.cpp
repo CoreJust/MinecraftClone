@@ -649,6 +649,66 @@ TEST_F(GameServerTest, MismatchedJoinConfigurationDoesNotCreateAuthoritativeStat
     }), 1);
 }
 
+TEST(GameServerPreparationTest, SendsOrderedSourceMilestonesAndExactTerminalSnapshot)
+{
+    std::shared_ptr<server::WorldPreparation> const preparation = quickPreparedFlightWorld();
+    ASSERT_TRUE(waitUntilPrepared(preparation));
+    server::WorldPreparationSnapshot const source = preparation->latest();
+    std::vector<generation::GenerationStage> expected_source_stages;
+    for (server::WorldPreparationProgressMilestone const& milestone : source.progress_milestones) {
+        if (milestone.kind == server::WorldPreparationProgressMilestoneKind::SourceSnapshot) {
+            ASSERT_NE(milestone.update.progress.snapshot, nullptr);
+            expected_source_stages.push_back(milestone.update.progress.snapshot->stage);
+        }
+    }
+    ASSERT_FALSE(expected_source_stages.empty());
+
+    shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration();
+    server::GameServer game_server{
+        0U,
+        {},
+        shared::WorldMode::Flight,
+        configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS,
+        nullptr,
+        preparation,
+        server::GameServer::BindMode::Loopback,
+    };
+    ProtocolClient client;
+    client.enablePreparedProtocol();
+    ASSERT_TRUE(joinPreparedManually(game_server, client, '@', configuration, std::chrono::seconds{ 15 }));
+
+    std::vector<shared::ServerWorldPreparationMessage const*> messages;
+    for (shared::Message const& message : client.messages) {
+        if (auto const* preparation_message = std::get_if<shared::ServerWorldPreparationMessage>(&message)) {
+            messages.push_back(preparation_message);
+        }
+    }
+    ASSERT_EQ(messages.size(), source.progress_milestones.size());
+    std::vector<generation::GenerationStage> actual_source_stages;
+    uint64_t previous_sequence = 0U;
+    uint8_t previous_stage = 0U;
+    bool has_previous_stage = false;
+    for (shared::ServerWorldPreparationMessage const* const message : messages) {
+        ASSERT_NE(message, nullptr);
+        EXPECT_GT(message->sequence, previous_sequence);
+        EXPECT_GE(static_cast<uint8_t>(message->stage), previous_stage);
+        previous_sequence = message->sequence;
+        previous_stage = static_cast<uint8_t>(message->stage);
+        has_previous_stage = true;
+        if (message->latest_snapshot) {
+            actual_source_stages.push_back(message->latest_snapshot->stage);
+        }
+    }
+    ASSERT_TRUE(has_previous_stage);
+    ASSERT_FALSE(messages.empty());
+    EXPECT_TRUE(messages.back()->final_atlas_complete);
+    ASSERT_NE(messages.back()->latest_snapshot, nullptr);
+    EXPECT_EQ(messages.back()->latest_snapshot->stage, expected_source_stages.back());
+    expected_source_stages.push_back(expected_source_stages.back());
+    EXPECT_EQ(actual_source_stages, expected_source_stages);
+}
+
 TEST(GameServerActionTest, WrongSessionActionReturnsTypedRejectionWithoutMovingPlayer)
 {
     server::GameServer server{0};

@@ -3,6 +3,7 @@
 #include <shared/world/Chunk.hpp>
 #include <shared/world/TerrainWorld.hpp>
 #include <generation/Generation.hpp>
+#include <generation/V9Provider.hpp>
 
 #include <algorithm>
 #include <array>
@@ -48,6 +49,7 @@ uint16_t cachedParentHeight(
     shared::TerrainWorld const& world,
     uint32_t const x,
     uint32_t const y,
+    shared::TerrainLodLevel const source_level,
     ParentHeightCache& cache
 )
 {
@@ -56,7 +58,10 @@ uint16_t cachedParentHeight(
     if (found != cache.end()) {
         return found->second;
     }
-    uint16_t const height = world.sampleSurfaceHeight(x, y);
+    uint16_t const height = world.atlas()->configuration.model_tag == generation::TerrainModelTag::V9
+        ? generation::mapV9ElevationToBlock(generation::sampleV9Surface(
+            *world.atlas(), x, y, static_cast<uint32_t>(source_level)).elevation_m)
+        : world.sampleSurfaceHeight(x, y);
     cache.emplace(key, height);
     return height;
 }
@@ -73,7 +78,9 @@ double parentHeight(
         return height;
     }
     auto const parent = static_cast<shared::TerrainLodLevel>(static_cast<uint8_t>(level) - 1U);
-    uint32_t const spacing = shared::terrainLodSpacing(world.atlas()->configuration.resolution, parent);
+    uint32_t const spacing = shared::terrainLodSpacing(
+        world.atlas()->configuration.resolution, parent, world.atlas()->configuration.model_tag
+    );
     uint32_t const x0 = position.x / spacing * spacing;
     uint32_t const y0 = position.y / spacing * spacing;
     if (position.x == x0 && position.y == y0) {
@@ -82,10 +89,10 @@ double parentHeight(
     double const fx = static_cast<double>(position.x - x0) / spacing;
     double const fy = static_cast<double>(position.y - y0) / spacing;
     return blend(
-        blend(cachedParentHeight(world, x0, y0, cache),
-            cachedParentHeight(world, wrap(x0 + spacing), y0, cache), fx),
-        blend(cachedParentHeight(world, x0, wrap(y0 + spacing), cache),
-            cachedParentHeight(world, wrap(x0 + spacing), wrap(y0 + spacing), cache), fx), fy
+        blend(cachedParentHeight(world, x0, y0, parent, cache),
+            cachedParentHeight(world, wrap(x0 + spacing), y0, parent, cache), fx),
+        blend(cachedParentHeight(world, x0, wrap(y0 + spacing), parent, cache),
+            cachedParentHeight(world, wrap(x0 + spacing), wrap(y0 + spacing), parent, cache), fx), fy
     );
 }
 
@@ -111,15 +118,26 @@ shared::TerrainLodSample makeSample(
 )
 {
     auto const& atlas = *world.atlas();
-    size_t const index = atlasIndex(atlas, x, y);
     shared::TerrainLodSample sample;
-    sample.height = level == shared::TerrainLodLevel::L3 ? 0.0 : world.sampleSurfaceHeight(x, y);
-    auto const climate = world.sampleClimate(x, y);
-    sample.temperature = climate.temperature_celsius;
-    sample.precipitation = climate.precipitation;
-    sample.water_present = atlas.ocean_mask[index] || atlas.lake_mask[index] || atlas.river_mask[index];
-    sample.water_height = static_cast<uint16_t>(std::clamp(std::floor(atlas.block_sea_level
-        + atlas.vertical_scale * (atlas.water_level[index] - atlas.sea_level)), 0.0, 1023.0));
+    if (atlas.configuration.model_tag == generation::TerrainModelTag::V9) {
+        generation::V9SurfaceSample const source = generation::sampleV9Surface(
+            atlas, x, y, static_cast<uint32_t>(level)
+        );
+        sample.height = generation::mapV9ElevationToBlock(source.elevation_m);
+        sample.temperature = source.temperature_celsius;
+        sample.precipitation = source.precipitation_mm_year;
+        sample.water_present = source.ocean || source.lake || source.river;
+        sample.water_height = generation::mapV9WaterLevelToBlock(source.water_level_m);
+    } else {
+        size_t const index = atlasIndex(atlas, x, y);
+        sample.height = level == shared::TerrainLodLevel::L3 ? 0.0 : world.sampleSurfaceHeight(x, y);
+        auto const climate = world.sampleClimate(x, y);
+        sample.temperature = climate.temperature_celsius;
+        sample.precipitation = climate.precipitation;
+        sample.water_present = atlas.ocean_mask[index] || atlas.lake_mask[index] || atlas.river_mask[index];
+        sample.water_height = static_cast<uint16_t>(std::clamp(std::floor(atlas.block_sea_level
+            + atlas.vertical_scale * (atlas.water_level[index] - atlas.sea_level)), 0.0, 1023.0));
+    }
     sample.top_material = surfaceMaterial(sample, atlas.block_sea_level);
     if (level == shared::TerrainLodLevel::L3) {
         uint64_t const key = static_cast<uint64_t>(y / shared::Chunk::SIDE_LENGTH) * PERIOD
@@ -150,7 +168,11 @@ shared::TerrainLodSample makeSample(
 
 namespace shared {
 
-uint32_t terrainLodSpacing(uint32_t const atlas_resolution, TerrainLodLevel const level)
+uint32_t terrainLodSpacing(
+    uint32_t const atlas_resolution,
+    TerrainLodLevel const level,
+    generation::TerrainModelTag const model
+)
 {
     if ((atlas_resolution != 256U && atlas_resolution != 512U)
         || static_cast<uint8_t>(level) > static_cast<uint8_t>(TerrainLodLevel::L3)) {
@@ -159,7 +181,10 @@ uint32_t terrainLodSpacing(uint32_t const atlas_resolution, TerrainLodLevel cons
     if (level == TerrainLodLevel::L3) {
         return 1U;
     }
-    return PERIOD / atlas_resolution / (1U << (2U * static_cast<uint8_t>(level)));
+    uint32_t const base_spacing = model == generation::TerrainModelTag::V9
+        ? 256U
+        : PERIOD / atlas_resolution;
+    return base_spacing / (1U << (2U * static_cast<uint8_t>(level)));
 }
 
 std::shared_ptr<TerrainLodArtifact const> buildTerrainLod(
@@ -172,7 +197,9 @@ std::shared_ptr<TerrainLodArtifact const> buildTerrainLod(
 )
 {
     checkCancellation(cancellation);
-    uint32_t const spacing = terrainLodSpacing(world.atlas()->configuration.resolution, level);
+    uint32_t const spacing = terrainLodSpacing(
+        world.atlas()->configuration.resolution, level, world.atlas()->configuration.model_tag
+    );
     uint64_t const side = static_cast<uint64_t>(extent) / spacing + 1U;
     if (extent == 0U || extent > PERIOD || origin_x >= PERIOD || origin_y >= PERIOD
         || origin_x % spacing || origin_y % spacing || extent % spacing
@@ -182,6 +209,7 @@ std::shared_ptr<TerrainLodArtifact const> buildTerrainLod(
     }
     auto artifact = std::make_shared<TerrainLodArtifact>();
     artifact->terrain_identity = world.identity();
+    artifact->model_identity = terrainLodModel(world.atlas()->configuration.model_tag);
     artifact->level = level;
     artifact->spacing = spacing;
     artifact->origin_x = origin_x;
@@ -193,7 +221,9 @@ std::shared_ptr<TerrainLodArtifact const> buildTerrainLod(
     ParentHeightCache parent_height_cache;
     if (level != TerrainLodLevel::L0) {
         auto const parent = static_cast<TerrainLodLevel>(static_cast<uint8_t>(level) - 1U);
-        uint64_t const parent_side = extent / terrainLodSpacing(world.atlas()->configuration.resolution, parent) + 3U;
+        uint64_t const parent_side = extent / terrainLodSpacing(
+            world.atlas()->configuration.resolution, parent, world.atlas()->configuration.model_tag
+        ) + 3U;
         parent_height_cache.reserve(static_cast<size_t>(parent_side * parent_side));
     }
     for (uint32_t row = 0U; row < side; ++row) {
@@ -235,7 +265,9 @@ TerrainLodSample sampleTerrainLod(TerrainLodArtifact const& artifact, double wor
     result.temperature = blend(blend(a.temperature, b.temperature, fx), blend(c.temperature, d.temperature, fx), fy);
     result.precipitation = blend(blend(a.precipitation, b.precipitation, fx),
         blend(c.precipitation, d.precipitation, fx), fy);
-    result.top_material = surfaceMaterial(result, generation::BLOCK_SEA_LEVEL);
+    result.top_material = surfaceMaterial(result, artifact.terrain_identity.terrain_version
+        == generation::terrainVersion(generation::TerrainModelTag::V9)
+        ? generation::V9_BLOCK_SEA_LEVEL : generation::BLOCK_SEA_LEVEL);
     return result;
 }
 

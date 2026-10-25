@@ -4,6 +4,7 @@
 #include <client/render/TextRenderer.hpp>
 
 #include <generation/Generation.hpp>
+#include <generation/V9Provider.hpp>
 
 #include <algorithm>
 #include <array>
@@ -79,14 +80,17 @@ bool validL0Source(shared::TerrainWorld const& world, shared::TerrainLodArtifact
 {
     auto const atlas = world.atlas();
     if (!atlas || !shared::isValidTerrainIdentity(world.identity())
-        || lod.terrain_identity != world.identity() || lod.model_identity != shared::TERRAIN_LOD_MODEL
+        || lod.terrain_identity != world.identity()
+        || lod.model_identity != shared::terrainLodModel(world.atlas()->configuration.model_tag)
         || lod.level != shared::TerrainLodLevel::L0 || lod.extent != generation::WORLD_SIZE_BLOCKS
         || lod.origin_x != 0U || lod.origin_y != 0U
         || (atlas->configuration.resolution != 256U && atlas->configuration.resolution != 512U)) {
         return false;
     }
-    uint32_t const expected_side = atlas->configuration.resolution + 1U;
-    uint32_t const expected_spacing = generation::WORLD_SIZE_BLOCKS / atlas->configuration.resolution;
+    uint32_t const expected_spacing = shared::terrainLodSpacing(
+        atlas->configuration.resolution, shared::TerrainLodLevel::L0, atlas->configuration.model_tag
+    );
+    uint32_t const expected_side = generation::WORLD_SIZE_BLOCKS / expected_spacing + 1U;
     return lod.spacing == expected_spacing && lod.side == expected_side
         && lod.nodes.size() == static_cast<uint64_t>(expected_side) * expected_side;
 }
@@ -117,6 +121,97 @@ Range fieldRange(std::vector<TValue> const& field) noexcept
 {
     auto const [minimum, maximum] = std::minmax_element(field.begin(), field.end());
     return {static_cast<float>(*minimum), static_cast<float>(*maximum)};
+}
+
+[[nodiscard]]
+generation::V9RegisteredFieldView const* v9Field(
+    std::span<generation::V9RegisteredFieldView const> fields,
+    std::string_view const name
+) noexcept
+{
+    auto const found = std::find_if(fields.begin(), fields.end(), [name](auto const& field) {
+        return field.name == name;
+    });
+    return found == fields.end() ? nullptr : &*found;
+}
+
+[[nodiscard]]
+bool hasV9Shape(
+    generation::V9RegisteredFieldView const* const field,
+    std::span<uint32_t const> expected_shape
+) noexcept
+{
+    if (field == nullptr || !std::ranges::equal(field->shape, expected_shape)) {
+        return false;
+    }
+    size_t expected_count = 1U;
+    for (uint32_t const extent : expected_shape) {
+        if (extent == 0U || expected_count > std::numeric_limits<size_t>::max() / extent) {
+            return false;
+        }
+        expected_count *= extent;
+    }
+    return std::visit([expected_count](auto const values) {
+        return values.size() == expected_count;
+    }, field->values);
+}
+
+[[nodiscard]]
+double v9ValueAt(generation::V9RegisteredFieldView const& field, size_t const index) noexcept
+{
+    return std::visit([index](auto const values) {
+        return index < values.size()
+            ? static_cast<double>(values[index])
+            : std::numeric_limits<double>::quiet_NaN();
+    }, field.values);
+}
+
+[[nodiscard]]
+bool v9FiniteField(generation::V9RegisteredFieldView const& field) noexcept
+{
+    return std::visit([](auto const values) {
+        return std::all_of(values.begin(), values.end(), [](auto const value) {
+            return std::isfinite(static_cast<double>(value));
+        });
+    }, field.values);
+}
+
+[[nodiscard]]
+bool v9BooleanField(generation::V9RegisteredFieldView const& field) noexcept
+{
+    return std::visit([](auto const values) {
+        return std::all_of(values.begin(), values.end(), [](auto const value) {
+            double const converted = static_cast<double>(value);
+            return converted == 0.0 || converted == 1.0;
+        });
+    }, field.values);
+}
+
+[[nodiscard]]
+double v9PhaseMean(
+    generation::V9RegisteredFieldView const& field,
+    size_t const phase_size,
+    size_t const index
+) noexcept
+{
+    double total = 0.0;
+    for (size_t phase = 0U; phase < 8U; ++phase) {
+        total += v9ValueAt(field, phase * phase_size + index);
+    }
+    return total / 8.0;
+}
+
+[[nodiscard]]
+std::vector<float> v9MeanPhaseField(
+    generation::V9RegisteredFieldView const& field,
+    size_t const phase_size
+)
+{
+    std::vector<float> result(phase_size);
+    for (size_t index = 0U; index < phase_size; ++index) {
+        result[index] = static_cast<float>(v9PhaseMean(field, phase_size, index));
+    }
+    return result;
 }
 
 [[nodiscard]]
@@ -297,7 +392,9 @@ bool validLocalLod(shared::TerrainLodArtifact const& lod) noexcept
     bool const valid_spacing = lod.level == shared::TerrainLodLevel::L1
         && (lod.spacing == 32U || lod.spacing == 64U);
     return shared::isValidTerrainIdentity(lod.terrain_identity)
-        && lod.model_identity == shared::TERRAIN_LOD_MODEL
+        && lod.model_identity == (lod.terrain_identity.terrain_version
+            == generation::terrainVersion(generation::TerrainModelTag::V9)
+            ? shared::TERRAIN_LOD_MODEL_V9 : shared::TERRAIN_LOD_MODEL)
         && valid_spacing
         && lod.spacing != 0U && lod.extent >= S2_MINIMAP_WORLD_EXTENT
         && lod.extent <= generation::WORLD_SIZE_BLOCKS && lod.extent % lod.spacing == 0U
@@ -433,7 +530,8 @@ std::optional<size_t> mapSampleIndex(
     if (!atlas || (atlas->configuration.resolution != 256U && atlas->configuration.resolution != 512U)) {
         return std::nullopt;
     }
-    uint32_t const resolution = atlas->configuration.resolution;
+    uint32_t const resolution = image->source_resolution != 0U
+        ? image->source_resolution : atlas->configuration.resolution;
     uint32_t const x = static_cast<uint32_t>(wrapWorld(player_x) * resolution / WORLD_SIZE);
     uint32_t const y = static_cast<uint32_t>(wrapWorld(player_y) * resolution / WORLD_SIZE);
     return static_cast<size_t>(y % resolution) * resolution + (x % resolution);
@@ -860,7 +958,7 @@ void buildPlateMotions(
             continue;
         }
         image.plate_motions.push_back({
-            .id = static_cast<int16_t>(id),
+            .id = static_cast<uint32_t>(id),
             .x = (static_cast<float>(plate.center_index % resolution) + 0.5F) / static_cast<float>(resolution),
             .y = (static_cast<float>(plate.center_index / resolution) + 0.5F) / static_cast<float>(resolution),
             .vector_x = vector_x[plate.center_index],
@@ -927,18 +1025,25 @@ void appendWorldMapVectors(
     std::vector<GuiVectorVertex>& output
 )
 {
-    uint32_t const resolution = atlas.configuration.resolution;
-    size_t const atlas_size = static_cast<size_t>(resolution) * resolution;
-    if ((resolution != 256U && resolution != 512U) || atlas_size == 0U) {
+    bool const v9 = atlas.configuration.model_tag == generation::TerrainModelTag::V9;
+    uint32_t const resolution = v9 ? image.vector_field_resolution : atlas.configuration.resolution;
+    size_t const atlas_size = static_cast<size_t>(atlas.configuration.resolution)
+        * atlas.configuration.resolution;
+    size_t const vector_size = static_cast<size_t>(resolution) * resolution;
+    if ((atlas.configuration.resolution != 256U && atlas.configuration.resolution != 512U)
+        || resolution == 0U || vector_size == 0U) {
         return;
     }
     bool const show_wind = state.layers[static_cast<size_t>(S2WorldMapLayer::Wind)]
         && image.available_layers[static_cast<size_t>(S2WorldMapLayer::Wind)]
-        && atlas.wind_u.size() == atlas_size && atlas.wind_v.size() == atlas_size;
+        && (v9 ? image.v9_wind_u_m_s.size() == vector_size && image.v9_wind_v_m_s.size() == vector_size
+            : atlas.wind_u.size() == atlas_size && atlas.wind_v.size() == atlas_size);
     bool const show_currents = state.layers[static_cast<size_t>(S2WorldMapLayer::Currents)]
         && image.available_layers[static_cast<size_t>(S2WorldMapLayer::Currents)]
-        && atlas.current_u.size() == atlas_size && atlas.current_v.size() == atlas_size
-        && atlas.ocean_mask.size() == atlas_size;
+        && (v9 ? image.v9_ocean_u_m_s.size() == vector_size && image.v9_ocean_v_m_s.size() == vector_size
+            && image.v9_ocean_cells.size() == vector_size
+            : atlas.current_u.size() == atlas_size && atlas.current_v.size() == atlas_size
+                && atlas.ocean_mask.size() == atlas_size);
     bool const show_plates = state.layers[static_cast<size_t>(S2WorldMapLayer::Plates)]
         && image.available_layers[static_cast<size_t>(S2WorldMapLayer::Plates)];
     if (!show_wind && !show_currents && !show_plates) {
@@ -987,8 +1092,10 @@ void appendWorldMapVectors(
             [&](uint32_t const x, uint32_t const y, float const, float const, ScreenPoint const screen,
                 ScreenRect const& viewport) {
                 size_t const index = static_cast<size_t>(y) * resolution + x;
+                float const u = v9 ? image.v9_wind_u_m_s[index] : atlas.wind_u[index];
+                float const v = v9 ? image.v9_wind_v_m_s[index] : atlas.wind_v[index];
                 static_cast<void>(appendScreenArrow(output, screen,
-                    atlas.wind_u[index], atlas.wind_v[index], (compact ? 13.0F : 18.0F) * dpi_scale,
+                    u, v, (compact ? 13.0F : 18.0F) * dpi_scale,
                     WIND_COLOR, false, viewport, excluded_rectangles));
             });
     }
@@ -997,11 +1104,14 @@ void appendWorldMapVectors(
             [&](uint32_t const x, uint32_t const y, float const, float const, ScreenPoint const screen,
                 ScreenRect const& viewport) {
                 size_t const index = static_cast<size_t>(y) * resolution + x;
-                if (atlas.ocean_mask[index] == 0U) {
+                bool const ocean = v9 ? image.v9_ocean_cells[index] != 0U : atlas.ocean_mask[index] != 0U;
+                if (!ocean) {
                     return;
                 }
+                float const u = v9 ? image.v9_ocean_u_m_s[index] : atlas.current_u[index];
+                float const v = v9 ? image.v9_ocean_v_m_s[index] : atlas.current_v[index];
                 static_cast<void>(appendScreenArrow(output, screen,
-                    atlas.current_u[index], atlas.current_v[index], (compact ? 13.0F : 18.0F) * dpi_scale,
+                    u, v, (compact ? 13.0F : 18.0F) * dpi_scale,
                     CURRENT_COLOR, true, viewport, excluded_rectangles));
             });
     }
@@ -1036,6 +1146,281 @@ void appendWorldMapVectors(
     }
 }
 
+[[nodiscard]]
+std::optional<S2MapImage> rasterizeS2V9WorldMap(
+    shared::TerrainWorld const& world,
+    shared::TerrainLodArtifact const& world_lod,
+    S2WorldMapState const& state
+)
+{
+    auto const atlas = world.atlas();
+    if (!atlas || !validL0Source(world, world_lod)) {
+        return std::nullopt;
+    }
+    constexpr uint32_t SOURCE_RESOLUTION = 256U;
+    constexpr uint32_t CLIMATE_RESOLUTION = 32U;
+    constexpr size_t SOURCE_COUNT = static_cast<size_t>(SOURCE_RESOLUTION) * SOURCE_RESOLUTION;
+    constexpr size_t CLIMATE_COUNT = static_cast<size_t>(CLIMATE_RESOLUTION) * CLIMATE_RESOLUTION;
+    constexpr size_t V9_BIOME_COUNT = 13U;
+    constexpr std::array<uint32_t, 2U> SOURCE_SHAPE{SOURCE_RESOLUTION, SOURCE_RESOLUTION};
+    constexpr std::array<uint32_t, 3U> SOURCE_PHASE_SHAPE{8U, SOURCE_RESOLUTION, SOURCE_RESOLUTION};
+    constexpr std::array<uint32_t, 3U> CLIMATE_PHASE_SHAPE{8U, CLIMATE_RESOLUTION, CLIMATE_RESOLUTION};
+
+    std::vector<generation::V9RegisteredFieldView> const views = generation::v9RegisteredFields(*atlas);
+    auto const* elevation = v9Field(views, "elevation");
+    auto const* temperature = v9Field(views, "temperature_C");
+    auto const* precipitation = v9Field(views, "precipitation_mm_year");
+    auto const* biome = v9Field(views, "biome_id");
+    auto const* ocean = v9Field(views, "ocean");
+    auto const* lake = v9Field(views, "lake");
+    auto const* river = v9Field(views, "river");
+    auto const* water_level = v9Field(views, "water_level");
+    auto const* wind_u = v9Field(views, "u");
+    auto const* wind_v = v9Field(views, "v");
+    auto const* ocean_u = v9Field(views, "ocean_u");
+    auto const* ocean_v = v9Field(views, "ocean_v");
+    auto const* moisture = v9Field(views, "bucket_kg_m2");
+    auto const* land_snow = v9Field(views, "land_snow_water_equivalent_m");
+    auto const* glacier = v9Field(views, "glacier_thickness_m");
+    auto const* sea_ice = v9Field(views, "sea_ice_thickness_m");
+    if (!hasV9Shape(elevation, SOURCE_SHAPE)
+        || !hasV9Shape(temperature, SOURCE_PHASE_SHAPE)
+        || !hasV9Shape(precipitation, SOURCE_PHASE_SHAPE)
+        || !hasV9Shape(biome, SOURCE_SHAPE)
+        || !hasV9Shape(ocean, SOURCE_SHAPE)
+        || !hasV9Shape(lake, SOURCE_SHAPE)
+        || !hasV9Shape(river, SOURCE_SHAPE)
+        || !hasV9Shape(water_level, SOURCE_SHAPE)
+        || !hasV9Shape(wind_u, CLIMATE_PHASE_SHAPE)
+        || !hasV9Shape(wind_v, CLIMATE_PHASE_SHAPE)
+        || !hasV9Shape(ocean_u, CLIMATE_PHASE_SHAPE)
+        || !hasV9Shape(ocean_v, CLIMATE_PHASE_SHAPE)
+        || !hasV9Shape(moisture, CLIMATE_PHASE_SHAPE)
+        || !hasV9Shape(land_snow, SOURCE_PHASE_SHAPE)
+        || !hasV9Shape(glacier, SOURCE_PHASE_SHAPE)
+        || !hasV9Shape(sea_ice, SOURCE_PHASE_SHAPE)
+        || !v9FiniteField(*elevation) || !v9FiniteField(*temperature)
+        || !v9FiniteField(*precipitation) || !v9FiniteField(*water_level)
+        || !v9FiniteField(*biome)
+        || !v9FiniteField(*wind_u) || !v9FiniteField(*wind_v)
+        || !v9FiniteField(*ocean_u) || !v9FiniteField(*ocean_v)
+        || !v9FiniteField(*moisture) || !v9FiniteField(*land_snow)
+        || !v9FiniteField(*glacier) || !v9FiniteField(*sea_ice)
+        || !v9BooleanField(*ocean) || !v9BooleanField(*lake) || !v9BooleanField(*river)) {
+        return std::nullopt;
+    }
+    std::span<uint32_t const> const plate_ids = generation::v9CurrentPlateIds(*atlas);
+    std::span<generation::V9PlateDirection const> const plate_directions = generation::v9PlateDirections(*atlas);
+    if (plate_ids.size() != SOURCE_COUNT) {
+        return std::nullopt;
+    }
+
+    S2MapImage image;
+    image.width = S2_WORLD_MAP_IMAGE_SIDE;
+    image.height = S2_WORLD_MAP_IMAGE_SIDE;
+    image.source_identity = world.identity();
+    image.source_model_identity = world_lod.model_identity;
+    image.source_resolution = SOURCE_RESOLUTION;
+    image.vector_field_resolution = CLIMATE_RESOLUTION;
+    image.v9_plate_ids.assign(plate_ids.begin(), plate_ids.end());
+    image.v9_elevation_m.resize(SOURCE_COUNT);
+    image.v9_temperature_mean_c = v9MeanPhaseField(*temperature, SOURCE_COUNT);
+    image.v9_precipitation_mean_mm_year = v9MeanPhaseField(*precipitation, SOURCE_COUNT);
+    image.v9_moisture_mean_kg_m2 = v9MeanPhaseField(*moisture, CLIMATE_COUNT);
+    image.v9_wind_u_m_s = v9MeanPhaseField(*wind_u, CLIMATE_COUNT);
+    image.v9_wind_v_m_s = v9MeanPhaseField(*wind_v, CLIMATE_COUNT);
+    image.v9_ocean_u_m_s = v9MeanPhaseField(*ocean_u, CLIMATE_COUNT);
+    image.v9_ocean_v_m_s = v9MeanPhaseField(*ocean_v, CLIMATE_COUNT);
+    image.v9_ocean_cells.resize(CLIMATE_COUNT);
+    image.v9_biome_ids.resize(SOURCE_COUNT);
+    image.v9_ice_surface_kind.resize(SOURCE_COUNT);
+    image.rgba.resize(WORLD_PIXEL_COUNT);
+    for (size_t index = 0U; index < SOURCE_COUNT; ++index) {
+        image.v9_elevation_m[index] = v9ValueAt(*elevation, index);
+        double const biome_id = v9ValueAt(*biome, index);
+        if (biome_id < 0.0 || biome_id >= static_cast<double>(V9_BIOME_COUNT)
+            || std::floor(biome_id) != biome_id) {
+            return std::nullopt;
+        }
+        image.v9_biome_ids[index] = static_cast<uint8_t>(biome_id);
+        bool const is_water = v9ValueAt(*ocean, index) != 0.0
+            || v9ValueAt(*lake, index) != 0.0 || v9ValueAt(*river, index) != 0.0;
+        bool const snow = !is_water && v9PhaseMean(*land_snow, SOURCE_COUNT, index) > 0.0;
+        bool const ice = !is_water && v9PhaseMean(*glacier, SOURCE_COUNT, index) > 0.0;
+        bool const sea = v9ValueAt(*ocean, index) != 0.0
+            && v9PhaseMean(*sea_ice, SOURCE_COUNT, index) > 0.0;
+        image.v9_ice_surface_kind[index] = sea ? 3U : (ice ? 2U : (snow ? 1U : 0U));
+        image.ice_snow_count += snow;
+        image.ice_glacier_count += ice;
+        image.ice_water_count += sea;
+    }
+    for (uint32_t y = 0U; y < CLIMATE_RESOLUTION; ++y) {
+        for (uint32_t x = 0U; x < CLIMATE_RESOLUTION; ++x) {
+            size_t const climate_index = static_cast<size_t>(y) * CLIMATE_RESOLUTION + x;
+            size_t const source_index = static_cast<size_t>(y * 8U + 4U) * SOURCE_RESOLUTION + x * 8U + 4U;
+            image.v9_ocean_cells[climate_index] = static_cast<uint8_t>(v9ValueAt(*ocean, source_index) != 0.0);
+        }
+    }
+
+    static constexpr std::array<Color, 13U> BIOME_COLORS{{
+        {222.0F, 231.0F, 224.0F}, {153.0F, 172.0F, 154.0F}, {62.0F, 103.0F, 78.0F},
+        {154.0F, 180.0F, 117.0F}, {67.0F, 119.0F, 75.0F}, {207.0F, 175.0F, 107.0F},
+        {174.0F, 174.0F, 94.0F}, {115.0F, 151.0F, 83.0F}, {43.0F, 116.0F, 63.0F},
+        {169.0F, 164.0F, 146.0F}, {35.0F, 69.0F, 87.0F}, {49.0F, 102.0F, 131.0F},
+        {63.0F, 138.0F, 162.0F},
+    }};
+    bool const fields_finite = std::all_of(image.v9_elevation_m.begin(), image.v9_elevation_m.end(),
+            [](double value) { return std::isfinite(value); })
+        && std::all_of(image.v9_temperature_mean_c.begin(), image.v9_temperature_mean_c.end(),
+            [](float value) { return std::isfinite(value); })
+        && std::all_of(image.v9_precipitation_mean_mm_year.begin(), image.v9_precipitation_mean_mm_year.end(),
+            [](float value) { return std::isfinite(value); })
+        && std::all_of(image.v9_moisture_mean_kg_m2.begin(), image.v9_moisture_mean_kg_m2.end(),
+            [](float value) { return std::isfinite(value); })
+        && std::all_of(image.v9_biome_ids.begin(), image.v9_biome_ids.end(),
+            [](uint8_t value) { return value < BIOME_COLORS.size(); });
+    if (!fields_finite) {
+        return std::nullopt;
+    }
+
+    auto const [height_minimum, height_maximum] = std::minmax_element(
+        image.v9_elevation_m.begin(), image.v9_elevation_m.end()
+    );
+    auto const moisture_range = fieldRange(image.v9_moisture_mean_kg_m2);
+    auto const precipitation_range = fieldRange(image.v9_precipitation_mean_mm_year);
+    image.layer_ranges[static_cast<size_t>(S2WorldMapLayer::Plates)] = {0.0F,
+        static_cast<float>(*std::max_element(plate_ids.begin(), plate_ids.end()))};
+    image.layer_ranges[static_cast<size_t>(S2WorldMapLayer::Heights)] = {
+        static_cast<float>(*height_minimum), static_cast<float>(*height_maximum),
+    };
+    image.layer_ranges[static_cast<size_t>(S2WorldMapLayer::Temperature)] = {-40.0F, 30.0F};
+    image.layer_ranges[static_cast<size_t>(S2WorldMapLayer::Biomes)] = {0.0F, 12.0F};
+    image.layer_ranges[static_cast<size_t>(S2WorldMapLayer::Moisture)] = {
+        moisture_range.minimum, moisture_range.maximum,
+    };
+    image.layer_ranges[static_cast<size_t>(S2WorldMapLayer::Precipitation)] = {
+        precipitation_range.minimum, precipitation_range.maximum,
+    };
+    for (S2WorldMapLayer const layer : {
+        S2WorldMapLayer::Plates, S2WorldMapLayer::Heights, S2WorldMapLayer::Temperature,
+        S2WorldMapLayer::Biomes, S2WorldMapLayer::Moisture, S2WorldMapLayer::Precipitation,
+    }) {
+        image.has_numeric_range[static_cast<size_t>(layer)] = true;
+    }
+    image.available_layers.fill(true);
+    image.has_display_ice_mask = true;
+    std::vector<uint32_t> observed_ids(plate_ids.begin(), plate_ids.end());
+    std::sort(observed_ids.begin(), observed_ids.end());
+    observed_ids.erase(std::unique(observed_ids.begin(), observed_ids.end()), observed_ids.end());
+    image.plate_motions.reserve(observed_ids.size());
+    bool directions_complete = true;
+    for (uint32_t const id : observed_ids) {
+        auto const direction = std::find_if(plate_directions.begin(), plate_directions.end(), [id](auto const& item) {
+            return item.plate_id == id;
+        });
+        if (direction == plate_directions.end() || !std::isfinite(direction->x) || !std::isfinite(direction->y)) {
+            directions_complete = false;
+            continue;
+        }
+        uint64_t count = 0U;
+        double sum_x = 0.0;
+        double sum_y = 0.0;
+        for (size_t index = 0U; index < SOURCE_COUNT; ++index) {
+            if (plate_ids[index] == id) {
+                ++count;
+                sum_x += static_cast<double>(index % SOURCE_RESOLUTION);
+                sum_y += static_cast<double>(index / SOURCE_RESOLUTION);
+            }
+        }
+        if (count != 0U) {
+            image.plate_motions.push_back({
+                .id = id,
+                .x = (static_cast<float>(sum_x / static_cast<double>(count)) + 0.5F) / SOURCE_RESOLUTION,
+                .y = (static_cast<float>(sum_y / static_cast<double>(count)) + 0.5F) / SOURCE_RESOLUTION,
+                .vector_x = direction->x,
+                .vector_y = direction->y,
+            });
+        }
+    }
+    image.available_layers[static_cast<size_t>(S2WorldMapLayer::Plates)]
+        = directions_complete && image.plate_motions.size() == observed_ids.size();
+
+    Range const height_range{
+        static_cast<float>(*height_minimum), static_cast<float>(*height_maximum),
+    };
+    float const height_extent = std::max(0.001F, height_range.maximum - height_range.minimum);
+    float const contour_step = niceStep(height_extent / 8.0F);
+    auto const source_index = [](uint32_t x, uint32_t y) {
+        return static_cast<size_t>(y % SOURCE_RESOLUTION) * SOURCE_RESOLUTION + x % SOURCE_RESOLUTION;
+    };
+    auto const root_sample = [&world_lod](uint32_t x, uint32_t y) -> shared::TerrainLodSample const& {
+        return world_lod.nodes[static_cast<size_t>(y) * world_lod.side + x].sample;
+    };
+    for (uint32_t y = 0U; y < image.height; ++y) {
+        uint32_t const source_y = y * SOURCE_RESOLUTION / image.height;
+        for (uint32_t x = 0U; x < image.width; ++x) {
+            uint32_t const source_x = x * SOURCE_RESOLUTION / image.width;
+            size_t const index = source_index(source_x, source_y);
+            bool const is_water = v9ValueAt(*ocean, index) != 0.0
+                || v9ValueAt(*lake, index) != 0.0 || v9ValueAt(*river, index) != 0.0;
+            uint8_t const ice_kind = image.v9_ice_surface_kind[index];
+            Color color = is_water ? Color{35.0F, 69.0F, 87.0F} : materialColor(root_sample(source_x, source_y).top_material);
+            if (ice_kind == 1U) {
+                blend(color, {236.0F, 242.0F, 235.0F}, 0.34F);
+            } else if (ice_kind == 2U) {
+                blend(color, {208.0F, 225.0F, 223.0F}, 0.58F);
+            } else if (ice_kind == 3U) {
+                blend(color, {203.0F, 227.0F, 231.0F}, 0.62F);
+            }
+            if (state.layers[static_cast<size_t>(S2WorldMapLayer::Biomes)]) {
+                color = BIOME_COLORS[image.v9_biome_ids[index]];
+            }
+            if (state.layers[static_cast<size_t>(S2WorldMapLayer::Heights)]) {
+                float const value = static_cast<float>(image.v9_elevation_m[index]);
+                color = elevationColor(value, height_range);
+                uint32_t const east = (source_x + 1U) % SOURCE_RESOLUTION;
+                uint32_t const south = (source_y + 1U) % SOURCE_RESOLUTION;
+                bool const contour = std::floor(value / contour_step)
+                    != std::floor(static_cast<float>(image.v9_elevation_m[source_index(east, source_y)]) / contour_step)
+                    || std::floor(value / contour_step)
+                    != std::floor(static_cast<float>(image.v9_elevation_m[source_index(source_x, south)]) / contour_step);
+                if (contour) {
+                    blend(color, is_water ? Color{105.0F, 151.0F, 169.0F} : Color{235.0F, 222.0F, 186.0F},
+                        is_water ? 0.19F : 0.29F);
+                }
+            }
+            if (state.layers[static_cast<size_t>(S2WorldMapLayer::Temperature)]) {
+                color = heatColor(S2WorldMapLayer::Temperature, image.v9_temperature_mean_c[index], {-40.0F, 30.0F});
+            }
+            uint32_t const climate_x = source_x / 8U;
+            uint32_t const climate_y = source_y / 8U;
+            size_t const climate_index = static_cast<size_t>(climate_y) * CLIMATE_RESOLUTION + climate_x;
+            if (state.layers[static_cast<size_t>(S2WorldMapLayer::Moisture)]) {
+                color = heatColor(S2WorldMapLayer::Moisture,
+                    image.v9_moisture_mean_kg_m2[climate_index], moisture_range);
+            }
+            if (state.layers[static_cast<size_t>(S2WorldMapLayer::Precipitation)]) {
+                color = heatColor(S2WorldMapLayer::Precipitation,
+                    image.v9_precipitation_mean_mm_year[index], precipitation_range);
+            }
+            if (is_water && ice_kind != 3U) {
+                double const depth_m = std::clamp(v9ValueAt(*water_level, index) - image.v9_elevation_m[index], 0.0, 600.0);
+                blend(color, {20.0F, 45.0F, 60.0F}, static_cast<float>(std::min(0.40, depth_m * 0.0007)));
+            }
+            if (state.layers[static_cast<size_t>(S2WorldMapLayer::Plates)]) {
+                uint32_t const plate = image.v9_plate_ids[index];
+                bool const boundary = plate != image.v9_plate_ids[source_index(source_x + 1U, source_y)]
+                    || plate != image.v9_plate_ids[source_index(source_x, source_y + 1U)];
+                if (boundary) {
+                    blend(color, PLATE_COLOR, 0.95F);
+                }
+            }
+            setPixel(image, static_cast<int32_t>(x), static_cast<int32_t>(y), color);
+        }
+    }
+    return image;
+}
+
 } // namespace
 
 std::optional<S2MapImage> rasterizeS2WorldMap(
@@ -1048,6 +1433,9 @@ std::optional<S2MapImage> rasterizeS2WorldMap(
         return std::nullopt;
     }
     auto const atlas = world.atlas();
+    if (atlas->configuration.model_tag == generation::TerrainModelTag::V9) {
+        return rasterizeS2V9WorldMap(world, world_lod, state);
+    }
     uint32_t const resolution = atlas->configuration.resolution;
     size_t const count = static_cast<size_t>(resolution) * resolution;
     S2MapImage image{
@@ -1055,6 +1443,7 @@ std::optional<S2MapImage> rasterizeS2WorldMap(
         .height = S2_WORLD_MAP_IMAGE_SIDE,
         .source_identity = world.identity(),
         .source_model_identity = world_lod.model_identity,
+        .source_resolution = resolution,
     };
     image.rgba.resize(WORLD_PIXEL_COUNT);
 
@@ -1267,7 +1656,7 @@ std::shared_ptr<shared::TerrainLodArtifact const> buildS2MinimapLod(
         return {};
     }
     uint32_t const spacing = shared::terrainLodSpacing(
-        atlas->configuration.resolution, shared::TerrainLodLevel::L1);
+        atlas->configuration.resolution, shared::TerrainLodLevel::L1, atlas->configuration.model_tag);
     uint32_t const origin_x = static_cast<uint32_t>(wrapWorld(player_x - S2_MINIMAP_WORLD_EXTENT / 2.0))
         / spacing * spacing;
     uint32_t const origin_y = static_cast<uint32_t>(wrapWorld(player_y - S2_MINIMAP_WORLD_EXTENT / 2.0))
@@ -1278,6 +1667,7 @@ std::shared_ptr<shared::TerrainLodArtifact const> buildS2MinimapLod(
     auto const y_segments = splitWrappedAxis(origin_y, S2_MINIMAP_WORLD_EXTENT, y_segment_count);
     auto result = std::make_shared<shared::TerrainLodArtifact>();
     result->terrain_identity = world.identity();
+    result->model_identity = shared::terrainLodModel(atlas->configuration.model_tag);
     result->level = shared::TerrainLodLevel::L1;
     result->spacing = spacing;
     result->origin_x = origin_x;
@@ -1665,13 +2055,19 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
         add_panel(x, y, overlay_width, 232.0F, 2U);
         std::string source = image && sample_source_matches
             ? " / SEED " + std::to_string(world->identity().seed) + " / "
-                + std::to_string(atlas->configuration.resolution) + "x" + std::to_string(atlas->configuration.resolution)
+                + std::to_string(image->source_resolution != 0U
+                    ? image->source_resolution : atlas->configuration.resolution)
+                + "x" + std::to_string(image->source_resolution != 0U
+                    ? image->source_resolution : atlas->configuration.resolution)
             : " / SOURCE UNAVAILABLE";
         plain("LAYER DETAILS / L Close" + source, {231.0F, 226.0F, 204.0F}, x + 10.0F, y + 8.0F);
         bool const ice_available = image && image->has_display_ice_mask;
+        bool const v9 = image && image->source_identity.terrain_version
+            == generation::terrainVersion(generation::TerrainModelTag::V9);
         std::string const ice_rule = ice_available
-            ? "ICE PROXY: Snow land / water <= -10 C"
-            : "ICE PROXY: source unavailable";
+            ? (v9 ? "MODEL STOCK: land snow / glacier / sea ice"
+                  : "ICE PROXY: Snow land / water <= -10 C")
+            : "ICE SOURCE UNAVAILABLE";
         plain(ice_rule, {181.0F, 216.0F, 220.0F},
             x + overlay_width - static_cast<float>(ice_rule.size()) * 8.0F - 10.0F, y + 8.0F);
 
@@ -1689,45 +2085,75 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
             }
             info[1].clear();
             if (index == static_cast<size_t>(S2WorldMapLayer::Plates)) {
-                if (atlas && sample_index && *sample_index < atlas->plate_id.size()) {
+                if (v9 && sample_index && *sample_index < image->v9_plate_ids.size()) {
+                    info[0] = "ID " + std::to_string(image->v9_plate_ids[*sample_index]);
+                } else if (atlas && sample_index && *sample_index < atlas->plate_id.size()) {
                     info[0] = "ID " + std::to_string(atlas->plate_id[*sample_index]);
                 }
-                info[1] = "Edges; model world/epoch drift arrows";
+                info[1] = v9 ? "Current uint32 ownership; arrows use actual per-plate unit directions"
+                    : "Edges; model world/epoch drift arrows";
             } else if (index == static_cast<size_t>(S2WorldMapLayer::Heights)) {
-                if (auto const value = sample_float(atlas ? &atlas->elevation : nullptr)) {
+                if (v9 && sample_index && *sample_index < image->v9_elevation_m.size()) {
+                    info[0] = numberText(static_cast<float>(image->v9_elevation_m[*sample_index])) + " m";
+                } else if (auto const value = sample_float(atlas ? &atlas->elevation : nullptr)) {
                     info[0] = numberText(*value) + " km";
                 }
                 float const step = niceStep((image->layer_ranges[index][1] - image->layer_ranges[index][0]) / 8.0F);
-                info[1] = numberText(step) + " km contours / " + rangeText(*image, S2WorldMapLayer::Heights)
-                    + " km / sea 0";
+                info[1] = numberText(step) + (v9 ? " m" : " km") + " contours / "
+                    + rangeText(*image, S2WorldMapLayer::Heights) + (v9 ? " m / sea 0 m" : " km / sea 0");
             } else if (index == static_cast<size_t>(S2WorldMapLayer::Temperature)) {
-                if (auto const value = sample_float(atlas ? &atlas->temperature : nullptr)) {
+                if (v9 && sample_index && *sample_index < image->v9_temperature_mean_c.size()) {
+                    info[0] = numberText(image->v9_temperature_mean_c[*sample_index]) + " C mean";
+                } else if (auto const value = sample_float(atlas ? &atlas->temperature : nullptr)) {
                     info[0] = numberText(*value) + " C";
                 }
                 info[1] = "Opaque field / " + rangeText(*image, S2WorldMapLayer::Temperature) + " C";
             } else if (index == static_cast<size_t>(S2WorldMapLayer::Biomes)) {
-                if (atlas && sample_index && *sample_index < atlas->climate_zone.size()) {
+                if (v9 && sample_index && *sample_index < image->v9_biome_ids.size()) {
+                    static constexpr std::array<std::string_view, 13U> NAMES{
+                        "Permanent snow/glacier", "Tundra", "Boreal forest", "Temperate grassland",
+                        "Temperate forest", "Hot desert", "Savanna", "Seasonal tropical forest",
+                        "Tropical rainforest", "Cold desert/polar barren", "Ocean", "Lake", "River reach",
+                    };
+                    uint8_t const biome_id = image->v9_biome_ids[*sample_index];
+                    info[0] = std::to_string(biome_id) + " " + std::string(NAMES[biome_id]);
+                } else if (atlas && sample_index && *sample_index < atlas->climate_zone.size()) {
                     static constexpr std::array<std::string_view, 6U> NAMES{
                         "Ocean", "Warm dry", "Warm wet", "Temperate", "Cold", "Snow",
                     };
                     uint8_t const zone = atlas->climate_zone[*sample_index];
                     info[0] = zone < NAMES.size() ? std::string(NAMES[zone]) : "Zone " + std::to_string(zone);
                 }
-                info[1] = "Coarse climate-zone proxy";
+                info[1] = v9 ? "V9 catalogue biome_id" : "Coarse climate-zone proxy";
             } else if (index == static_cast<size_t>(S2WorldMapLayer::Wind)) {
-                info[1] = "Cyan single arrows; cells/climate step";
+                info[1] = v9 ? "Mean of eight actual phase wind fields; m/s"
+                    : "Cyan single arrows; cells/climate step";
             } else if (index == static_cast<size_t>(S2WorldMapLayer::Currents)) {
-                info[1] = "White double arrows; cells/climate step";
+                info[1] = v9 ? "Mean of eight ocean-current fields at ocean cells; m/s"
+                    : "White double arrows; cells/climate step";
             } else if (index == static_cast<size_t>(S2WorldMapLayer::Moisture)) {
-                if (auto const value = sample_float(atlas ? &atlas->moisture : nullptr)) {
+                if (v9 && sample_index && image->source_resolution != 0U) {
+                    uint32_t const x_index = static_cast<uint32_t>(*sample_index % image->source_resolution);
+                    uint32_t const y_index = static_cast<uint32_t>(*sample_index / image->source_resolution);
+                    size_t const climate_index = static_cast<size_t>(y_index * image->vector_field_resolution
+                        / image->source_resolution) * image->vector_field_resolution
+                        + x_index * image->vector_field_resolution / image->source_resolution;
+                    if (climate_index < image->v9_moisture_mean_kg_m2.size()) {
+                        info[0] = numberText(image->v9_moisture_mean_kg_m2[climate_index]) + " kg/m2 mean";
+                    }
+                } else if (auto const value = sample_float(atlas ? &atlas->moisture : nullptr)) {
                     info[0] = numberText(*value) + " model";
                 }
-                info[1] = "Reservoir " + rangeText(*image, S2WorldMapLayer::Moisture) + " / linear color";
+                info[1] = v9 ? "Mean soil-water reservoir / kg/m2 / linear color"
+                    : "Reservoir " + rangeText(*image, S2WorldMapLayer::Moisture) + " / linear color";
             } else {
-                if (auto const value = sample_float(atlas ? &atlas->precipitation : nullptr)) {
+                if (v9 && sample_index && *sample_index < image->v9_precipitation_mean_mm_year.size()) {
+                    info[0] = numberText(image->v9_precipitation_mean_mm_year[*sample_index]) + " mm/year mean";
+                } else if (auto const value = sample_float(atlas ? &atlas->precipitation : nullptr)) {
                     info[0] = numberText(*value) + " model";
                 }
-                info[1] = "Accum rain " + rangeText(*image, S2WorldMapLayer::Precipitation) + " / log color";
+                info[1] = v9 ? "Mean annual precipitation / mm/year / log color"
+                    : "Accum rain " + rangeText(*image, S2WorldMapLayer::Precipitation) + " / log color";
             }
             return info;
         };
@@ -1749,31 +2175,57 @@ S2MapOverlayLayout buildS2WorldMapOverlay(
         }
 
         std::string note = image && image->has_display_ice_mask
-            ? "Ice proxy: " + std::to_string(image->ice_snow_count) + " land / "
-                + std::to_string(image->ice_water_count) + " water. Climate view, not freezing physics. Arrows: direction only."
-            : "Ice proxy unavailable. Arrows show direction, not speed.";
-        plain(fitMapText(std::move(note), overlay_width - 20.0F, dpi_scale),
-            {170.0F, 189.0F, 183.0F}, x + 10.0F, y + 186.0F);
+            ? (v9 ? "Model stocks: land snow " + std::to_string(image->ice_snow_count)
+                    + " / glacier " + std::to_string(image->ice_glacier_count)
+                    + " / sea ice " + std::to_string(image->ice_water_count) + ". Arrows show direction only."
+                  : "Ice proxy: " + std::to_string(image->ice_snow_count) + " land / "
+                    + std::to_string(image->ice_water_count) + " water. Climate view, not freezing physics. "
+                    + "Arrows: direction only.")
+            : "Ice source unavailable. Arrows show direction, not speed.";
+        plain(
+            fitMapText(std::move(note), overlay_width - 20.0F, dpi_scale),
+            {170.0F, 189.0F, 183.0F},
+            x + 10.0F,
+            y + 186.0F
+        );
         if (image && image->available_layers[static_cast<size_t>(S2WorldMapLayer::Biomes)]) {
             plain("B:", {158.0F, 177.0F, 179.0F}, x + 10.0F, y + 208.0F);
-            static constexpr std::array<std::string_view, 6U> NAMES{
-                "Ocean", "Warm dry", "Warm wet", "Temperate", "Cold", "Snow",
-            };
             float biome_cursor = x + 38.0F;
-            static constexpr std::array<Color, 6U> BIOME_COLORS{{
-                {35.0F, 69.0F, 87.0F}, {181.0F, 153.0F, 99.0F}, {76.0F, 125.0F, 91.0F},
-                {119.0F, 148.0F, 107.0F}, {153.0F, 172.0F, 154.0F}, {222.0F, 231.0F, 224.0F},
-            }};
-            for (uint8_t zone = 0U; zone < NAMES.size(); ++zone) {
-                add_color_chip(biome_cursor, y + 212.0F, BIOME_COLORS[zone]);
-                plain(NAMES[zone], {185.0F, 198.0F, 187.0F}, biome_cursor + 12.0F, y + 208.0F);
-                biome_cursor += 24.0F + static_cast<float>(NAMES[zone].size()) * 8.0F;
+            if (v9) {
+                static constexpr std::array<std::string_view, 13U> NAMES{
+                    "Gl", "Tu", "Bo", "Gr", "Fo", "De", "Sa", "ST", "TR", "Po", "Oc", "La", "Ri",
+                };
+                static constexpr std::array<Color, 13U> BIOME_COLORS{{
+                    {222.0F, 231.0F, 224.0F}, {153.0F, 172.0F, 154.0F}, {62.0F, 103.0F, 78.0F},
+                    {154.0F, 180.0F, 117.0F}, {67.0F, 119.0F, 75.0F}, {207.0F, 175.0F, 107.0F},
+                    {174.0F, 174.0F, 94.0F}, {115.0F, 151.0F, 83.0F}, {43.0F, 116.0F, 63.0F},
+                    {169.0F, 164.0F, 146.0F}, {35.0F, 69.0F, 87.0F}, {49.0F, 102.0F, 131.0F},
+                    {63.0F, 138.0F, 162.0F},
+                }};
+                for (uint8_t biome_id = 0U; biome_id < NAMES.size(); ++biome_id) {
+                    add_color_chip(biome_cursor, y + 212.0F, BIOME_COLORS[biome_id]);
+                    plain(NAMES[biome_id], {185.0F, 198.0F, 187.0F}, biome_cursor + 12.0F, y + 208.0F);
+                    biome_cursor += 32.0F;
+                }
+            } else {
+                static constexpr std::array<std::string_view, 6U> NAMES{
+                    "Ocean", "Warm dry", "Warm wet", "Temperate", "Cold", "Snow",
+                };
+                static constexpr std::array<Color, 6U> BIOME_COLORS{{
+                    {35.0F, 69.0F, 87.0F}, {181.0F, 153.0F, 99.0F}, {76.0F, 125.0F, 91.0F},
+                    {119.0F, 148.0F, 107.0F}, {153.0F, 172.0F, 154.0F}, {222.0F, 231.0F, 224.0F},
+                }};
+                for (uint8_t zone = 0U; zone < NAMES.size(); ++zone) {
+                    add_color_chip(biome_cursor, y + 212.0F, BIOME_COLORS[zone]);
+                    plain(NAMES[zone], {185.0F, 198.0F, 187.0F}, biome_cursor + 12.0F, y + 208.0F);
+                    biome_cursor += 24.0F + static_cast<float>(NAMES[zone].size()) * 8.0F;
+                }
             }
         }
         if (image && image->available_layers[static_cast<size_t>(S2WorldMapLayer::Heights)]) {
             float height_cursor = x + 498.0F;
-            plain("H km:", {158.0F, 177.0F, 179.0F}, height_cursor, y + 208.0F);
-            height_cursor += 48.0F;
+            plain(v9 ? "H m:" : "H km:", {158.0F, 177.0F, 179.0F}, height_cursor, y + 208.0F);
+            height_cursor += v9 ? 40.0F : 48.0F;
             Range const height_range{
                 image->layer_ranges[static_cast<size_t>(S2WorldMapLayer::Heights)][0],
                 image->layer_ranges[static_cast<size_t>(S2WorldMapLayer::Heights)][1],

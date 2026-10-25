@@ -130,6 +130,13 @@ int32_t textureSeed(uint64_t seed)
 }
 } // namespace
 
+float v9PlatecHeightToSourceMetres(float raw_height)
+{
+    return static_cast<float>(raw_height >= 1.0F
+        ? (raw_height - 1.0) * METRES_PER_RAW_UNIT
+        : -600.0 * std::pow((1.0 - raw_height) / .9, 1.5));
+}
+
 V9TerrainResult prepareV9Terrain(
     uint64_t user_seed, V9PlatecSourceResult const& source,
     std::stop_token cancellation, V9TerrainProgressCallback progress
@@ -156,8 +163,7 @@ V9TerrainResult prepareV9Terrain(
         if (!std::isfinite(raw)) {
             throw std::invalid_argument("nonfinite v9 Platec height");
         }
-        float const elevation = static_cast<float>(raw >= 1.0
-            ? (raw - 1.0) * METRES_PER_RAW_UNIT : -600.0 * std::pow((1.0 - raw) / .9, 1.5));
+        float const elevation = v9PlatecHeightToSourceMetres(source.height_raw[i]);
         result.macro_bed_centres_m[i] = elevation;
         double const uplift = std::max(double{elevation}, 0.0);
         double const continentality = raw >= 1.0 ? 1.0 : 0.0;

@@ -2,6 +2,7 @@
 
 #include "GenerationStages.hpp"
 #include "Numerics.hpp"
+#include "V9ProviderInternal.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -19,9 +20,14 @@ namespace
 
 void validateConfiguration(GenerationConfiguration const& configuration)
 {
+    if (configuration.model_tag != TerrainModelTag::R6
+        && configuration.model_tag != TerrainModelTag::V9)
+    {
+        throw std::invalid_argument("terrain model tag is unsupported");
+    }
     if (configuration.resolution != 256U && configuration.resolution != 512U)
     {
-        throw std::invalid_argument("Terrain-v2 atlas resolution must be 256 or 512");
+        throw std::invalid_argument("terrain display resolution must be 256 or 512");
     }
     if (configuration.epochs == 0U || configuration.epochs > 12U)
     {
@@ -110,6 +116,104 @@ void publishStage(
 
 } // namespace
 
+bool isValidGenerationSnapshot(GenerationSnapshot const& snapshot) noexcept
+{
+    if (static_cast<uint8_t>(snapshot.stage) > static_cast<uint8_t>(GenerationStage::Complete)
+        || (snapshot.resolution != 256U && snapshot.resolution != 512U))
+    {
+        return false;
+    }
+
+    uint32_t const sample_count = snapshot.resolution * snapshot.resolution;
+    auto const valid_float_field = [sample_count](std::vector<float> const& values, bool required) {
+        return required ? values.size() == sample_count
+            && std::ranges::all_of(values, [](float const value) { return std::isfinite(value); })
+            : values.empty() || (values.size() == sample_count
+                && std::ranges::all_of(values, [](float const value) { return std::isfinite(value); }));
+    };
+    auto const valid_mask = [sample_count](std::vector<uint8_t> const& values, bool required) {
+        return required ? values.size() == sample_count
+            && std::ranges::all_of(values, [](uint8_t const value) { return value <= 1U; })
+            : values.empty() || (values.size() == sample_count
+                && std::ranges::all_of(values, [](uint8_t const value) { return value <= 1U; }));
+    };
+
+    if (!snapshot.v9)
+    {
+        if (snapshot.stage >= GenerationStage::V9Platec)
+        {
+            return false;
+        }
+        bool const has_legacy_field = !snapshot.elevation.empty() || !snapshot.temperature.empty()
+            || !snapshot.precipitation.empty() || !snapshot.water_level.empty()
+            || !snapshot.ocean_mask.empty() || !snapshot.lake_mask.empty() || !snapshot.river_mask.empty();
+        return has_legacy_field
+            && valid_float_field(snapshot.elevation, true)
+            && valid_float_field(snapshot.temperature, false)
+            && valid_float_field(snapshot.precipitation, false)
+            && valid_float_field(snapshot.water_level, false)
+            && valid_mask(snapshot.ocean_mask, false)
+            && valid_mask(snapshot.lake_mask, false)
+            && valid_mask(snapshot.river_mask, false);
+    }
+
+    if (snapshot.resolution != 256U || !snapshot.elevation.empty() || !snapshot.temperature.empty()
+        || !snapshot.precipitation.empty() || !snapshot.water_level.empty()
+        || !snapshot.ocean_mask.empty() || !snapshot.lake_mask.empty() || !snapshot.river_mask.empty())
+    {
+        return false;
+    }
+
+    V9GenerationSnapshotFields const& fields = *snapshot.v9;
+    uint32_t const native_sample_count = 256U * 256U;
+    bool const has_climate = snapshot.stage >= GenerationStage::V9Climate;
+    bool const has_water = snapshot.stage >= GenerationStage::V9Water;
+    if (fields.source_elevation_m.size() != native_sample_count
+        || fields.plate_ids.size() != native_sample_count
+        || fields.plate_directions.empty() || fields.plate_directions.size() > 1024U
+        || fields.plate_directions_observed_after_native_step > 2400U
+        || !std::ranges::all_of(fields.source_elevation_m, [](float const value) { return std::isfinite(value); })
+        || !valid_float_field(fields.temperature_celsius, has_climate)
+        || !valid_float_field(fields.precipitation_mm_year, has_water)
+        || !valid_float_field(fields.water_level_m, has_water)
+        || !valid_mask(fields.ocean_mask, has_water)
+        || !valid_mask(fields.lake_mask, has_water)
+        || !valid_mask(fields.river_mask, has_water)
+        || (has_water
+            ? fields.ice_surface_kind.size() != native_sample_count
+            : !fields.ice_surface_kind.empty()))
+    {
+        return false;
+    }
+    if (has_water && !std::ranges::all_of(fields.ice_surface_kind, [](uint8_t const value) {
+            return value <= static_cast<uint8_t>(V9GenerationIceSurfaceKind::WaterIce);
+        }))
+    {
+        return false;
+    }
+
+    for (size_t index = 0U; index < fields.plate_directions.size(); ++index)
+    {
+        GenerationPlateDirection const& direction = fields.plate_directions[index];
+        if (!std::isfinite(direction.x) || !std::isfinite(direction.y))
+        {
+            return false;
+        }
+        for (size_t previous_index = 0U; previous_index < index; ++previous_index)
+        {
+            if (fields.plate_directions[previous_index].plate_id == direction.plate_id)
+            {
+                return false;
+            }
+        }
+    }
+    return std::ranges::all_of(fields.plate_ids, [&fields](uint32_t const plate_id) {
+        return std::ranges::any_of(fields.plate_directions, [plate_id](GenerationPlateDirection const& direction) {
+            return direction.plate_id == plate_id;
+        });
+    });
+}
+
 GenerationCancelled::GenerationCancelled()
     : std::runtime_error("Terrain-v2 generation was cancelled")
 {
@@ -118,6 +222,18 @@ GenerationCancelled::GenerationCancelled()
 std::string configurationIdentity(GenerationConfiguration const& configuration)
 {
     validateConfiguration(configuration);
+    if (configuration.model_tag == TerrainModelTag::V9)
+    {
+        std::string identity = "terrain-v9;model=coherent-practical-macro-watershed-weather-v9";
+        identity += ";water=v74;source-closure-sha256=";
+        identity += "f7b6f593c025fe6fb389da4521f030522806d5c064235a2a1c6eddaa7d856de5";
+        identity += ";seed=" + std::to_string(configuration.seed);
+        identity += ";display-resolution=" + std::to_string(configuration.resolution);
+        identity += ";mapping=floor(384+source_m/10)";
+        identity += ";domain=0..1023;";
+        identity += "native-v9-v74-r1";
+        return identity;
+    }
     std::string identity = "terrain-v" + std::to_string(TERRAIN_VERSION);
     identity += ";model-revision=" + std::to_string(MODEL_REVISION);
     identity += ";source-map-sha256=";
@@ -148,6 +264,15 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     ProgressCallback progress_context = std::move(progress);
     detail::checkCancellation(cancellation_context);
     validateConfiguration(configuration);
+
+    if (configuration.model_tag == TerrainModelTag::V9)
+    {
+        return detail::prepareV9GlobalAtlas(
+            configuration,
+            cancellation_context,
+            std::move(progress_context)
+        );
+    }
 
     detail::TectonicsFields geology = detail::generateTectonics(
         configuration,
@@ -407,6 +532,28 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
 
     publishStage(progress_context, GenerationStage::Complete, cancellation_context);
     return std::make_shared<GlobalAtlas const>(std::move(atlas));
+}
+
+bool isValidAtlas(GlobalAtlas const& atlas) noexcept
+{
+    if (atlas.configuration.model_tag == TerrainModelTag::V9)
+    {
+        return atlas.v9_provider != nullptr
+            && atlas.block_sea_level == V9_BLOCK_SEA_LEVEL
+            && atlas.max_height == V9_MAX_HEIGHT
+            && atlas.elevation.empty()
+            && atlas.temperature.empty()
+            && atlas.precipitation.empty();
+    }
+    if (atlas.configuration.model_tag != TerrainModelTag::R6 || atlas.v9_provider != nullptr)
+    {
+        return false;
+    }
+    size_t const sample_count = static_cast<size_t>(atlas.configuration.resolution)
+        * atlas.configuration.resolution;
+    return atlas.elevation.size() == sample_count
+        && atlas.temperature.size() == sample_count
+        && atlas.precipitation.size() == sample_count;
 }
 
 } // namespace generation

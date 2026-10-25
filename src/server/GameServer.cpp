@@ -533,7 +533,7 @@ shared::TerrainSessionIdentity terrainSessionIdentity(
     return {
         .join_epoch = join_epoch,
         .terrain = shared::TerrainIdentity{
-            .terrain_version = generation::TERRAIN_VERSION,
+            .terrain_version = generation::terrainVersion(generation_configuration.model_tag),
             .revision = world_configuration.algorithm_version,
             .seed = generation_configuration.seed,
             .configuration_identity = generation::configurationIdentity(generation_configuration),
@@ -1920,6 +1920,33 @@ void GameServer::processWorldPreparation()
         return;
     }
     WorldPreparationSnapshot const snapshot = m_world_preparation->latest();
+    auto const publish_milestones = [this, &snapshot](PendingTerrainJoin& join, bool const terminal) {
+        while (join.next_progress_milestone < snapshot.progress_milestones.size()) {
+            WorldPreparationProgressMilestone const& milestone =
+                snapshot.progress_milestones[join.next_progress_milestone];
+            WorldPreparationProgress const& update = milestone.update;
+            join.last_progress_source_sequence = std::max(join.last_progress_source_sequence, update.sequence);
+            bool const is_boundary = milestone.kind == WorldPreparationProgressMilestoneKind::StageBoundary;
+            if (is_boundary && update.progress.stage == generation::GenerationStage::Complete) {
+                ++join.next_progress_milestone;
+                continue;
+            }
+            if (milestone.kind == WorldPreparationProgressMilestoneKind::SourceSnapshot
+                && !terminal
+                && (!snapshot.latest_progress
+                    || static_cast<uint8_t>(snapshot.latest_progress->progress.stage)
+                        <= static_cast<uint8_t>(update.progress.stage))) {
+                break;
+            }
+            std::shared_ptr<generation::GenerationSnapshot const> source_snapshot =
+                milestone.kind == WorldPreparationProgressMilestoneKind::SourceSnapshot
+                    ? update.progress.snapshot
+                    : nullptr;
+            publishWorldPreparation(join, &update.progress, std::move(source_snapshot), false);
+            join.progress_throttle.notePublished(update.progress, WorldPreparation::Clock::now());
+            ++join.next_progress_milestone;
+        }
+    };
     if (snapshot.state == WorldPreparationState::Ready && !m_prepared_world_initialized) {
         try {
             initializePreparedWorld(snapshot.ready_world);
@@ -1942,6 +1969,7 @@ void GameServer::processWorldPreparation()
             join = m_pending_terrain_joins.erase(join);
             continue;
         }
+        publish_milestones(*join, snapshot.state != WorldPreparationState::Preparing);
         if (snapshot.state == WorldPreparationState::Failed
             || snapshot.state == WorldPreparationState::Cancelled) {
             std::string failure = snapshot.error;
@@ -1979,9 +2007,13 @@ void GameServer::processWorldPreparation()
         if (snapshot.latest_progress.has_value()
             && snapshot.latest_progress->sequence > join->last_progress_source_sequence) {
             join->last_progress_source_sequence = snapshot.latest_progress->sequence;
-            publishWorldPreparation(*join, &snapshot.latest_progress->progress, snapshot.latest_map_snapshot, false);
+            generation::GenerationProgress const& progress = snapshot.latest_progress->progress;
+            if (progress.stage != generation::GenerationStage::Complete
+                && join->progress_throttle.admit(progress, WorldPreparation::Clock::now())) {
+                publishWorldPreparation(*join, &progress, nullptr, false);
+            }
         } else if (join->next_message_sequence == 1U) {
-            publishWorldPreparation(*join, nullptr, snapshot.latest_map_snapshot, false);
+            publishWorldPreparation(*join, nullptr, nullptr, false);
         }
         ++join;
     }

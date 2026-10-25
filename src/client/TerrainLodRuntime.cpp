@@ -486,7 +486,9 @@ void TerrainLodRuntime::update(
                 CORE_INFO(
                     "Terrain LOD scene active: model={} leaves={} faces={} "
                     "actual_columns={}",
-                    shared::TERRAIN_LOD_MODEL,
+                    m_pending->identity.terrain_version
+                        == generation::terrainVersion(generation::TerrainModelTag::V9)
+                        ? shared::TERRAIN_LOD_MODEL_V9 : shared::TERRAIN_LOD_MODEL,
                     m_pending->leaves.size(),
                     m_pending->faces.size(),
                     m_pending->actual_column_count

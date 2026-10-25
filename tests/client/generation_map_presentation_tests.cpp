@@ -1168,4 +1168,50 @@ TEST(GenerationMapPresentationTest, AnimatorKeepsItsThirtySecondTimelineAfterRea
     EXPECT_EQ(arrival.image, final_image);
 }
 
+TEST(GenerationMapPresentationTest, V9PlatecPreviewRendersSourceReliefAndPlateDrift)
+{
+    static constexpr uint32_t RESOLUTION = 256U;
+    static constexpr uint32_t FIELD_COUNT = RESOLUTION * RESOLUTION;
+    auto snapshot = std::make_shared<generation::GenerationSnapshot>();
+    snapshot->stage = generation::GenerationStage::V9Platec;
+    snapshot->resolution = RESOLUTION;
+    snapshot->v9.emplace();
+    snapshot->v9->source_elevation_m.resize(FIELD_COUNT);
+    snapshot->v9->plate_ids.resize(FIELD_COUNT);
+    for (uint32_t y = 0U; y < RESOLUTION; ++y)
+    {
+        for (uint32_t x = 0U; x < RESOLUTION; ++x)
+        {
+            size_t const index = static_cast<size_t>(y) * RESOLUTION + x;
+            snapshot->v9->source_elevation_m[index] = (static_cast<float>(x) - 128.0F) * 30.0F;
+            snapshot->v9->plate_ids[index] = x < RESOLUTION / 2U ? 11U : 42U;
+        }
+    }
+    snapshot->v9->plate_directions = {{11U, 1.0F, 0.0F}, {42U, -1.0F, 0.0F}};
+    snapshot->v9->plate_directions_observed_after_native_step = 2'399U;
+    ASSERT_TRUE(generation::isValidGenerationSnapshot(*snapshot));
+
+    auto const immutable_snapshot = std::make_shared<generation::GenerationSnapshot const>(*snapshot);
+    client::GenerationMapAnimator animator;
+    client::GenerationMapAnimationFrame const initial = animator.update(
+        immutable_snapshot,
+        nullptr,
+        nullptr,
+        nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{0}}
+    );
+    client::GenerationMapAnimationFrame const drifting = animator.update(
+        immutable_snapshot,
+        nullptr,
+        nullptr,
+        nullptr,
+        {.visible_elapsed = std::chrono::milliseconds{2'500}}
+    );
+
+    ASSERT_NE(initial.image, nullptr);
+    ASSERT_NE(drifting.image, nullptr);
+    EXPECT_EQ(initial.phase, client::GenerationMapAnimationPhase::Tectonics);
+    EXPECT_NE(initial.image->rgba, drifting.image->rgba);
+}
+
 } // namespace

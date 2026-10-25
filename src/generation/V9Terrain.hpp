@@ -37,6 +37,9 @@ enum class V9TerrainStage : uint8_t
 using V9TerrainProgressCallback = std::function<void(V9TerrainStage)>;
 
 [[nodiscard]]
+float v9PlatecHeightToSourceMetres(float raw_height);
+
+[[nodiscard]]
 V9TerrainResult prepareV9Terrain(
     uint64_t user_seed,
     V9PlatecSourceResult const& source,

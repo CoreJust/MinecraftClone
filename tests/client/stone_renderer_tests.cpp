@@ -313,6 +313,31 @@ TEST_F(StoneRendererAcceptanceTest, CanonicalClimateMatchesPhysicalMaterialDespi
     }
 }
 
+TEST_F(StoneRendererAcceptanceTest, V9Display512UsesNativeCanonicalFieldResolution)
+{
+    auto const atlas = generation::prepareAtlas({
+        .seed = 42U,
+        .resolution = 512U,
+        .model_tag = generation::TerrainModelTag::V9,
+    });
+    ASSERT_NE(atlas, nullptr);
+
+    auto scene = std::make_shared<client::TerrainLodScene>();
+    scene->shading_atlas = atlas;
+    scene->block_sea_level = atlas->block_sea_level;
+    static constexpr std::array<std::array<int32_t, 3U>, 3U> VERTICES{{
+        {0, 0, 8}, {16, 0, 8}, {0, 16, 8},
+    }};
+    scene->faces.push_back(client::StoneFaceInstance::fromTerrainTriangle(VERTICES, shared::Block::Grass));
+
+    m_renderer->setTerrainLodScene(scene);
+    m_renderer->setCamera(ABOVE_CAMERA);
+    client::RendererFrameCapture const capture = render(*m_renderer);
+    EXPECT_EQ(capture.width, WIDTH);
+    EXPECT_EQ(capture.height, HEIGHT);
+    EXPECT_EQ(m_renderer->validationErrorCount(), 0U);
+}
+
 TEST_F(StoneRendererAcceptanceTest, DeterministicChunkRendersFromAboveAndBelow)
 {
     shared::ChunkMesh const mesh = deterministicChunk();

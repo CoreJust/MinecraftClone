@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <stop_token>
 #include <string>
@@ -12,6 +13,11 @@
 
 namespace generation
 {
+
+namespace detail
+{
+struct V9ProviderState;
+} // namespace detail
 
 inline constexpr uint32_t WORLD_SIZE_BLOCKS = 65'536U;
 inline constexpr uint32_t WORLD_DEPTH_BLOCKS = 1'024U;
@@ -27,6 +33,20 @@ inline constexpr std::string_view MODEL_SOURCE_MAP_SHA256 =
 inline constexpr size_t CONFIGURATION_IDENTITY_MAX_BYTES = 320U;
 inline constexpr uint32_t BLOCK_SEA_LEVEL = 384U;
 inline constexpr uint32_t MAX_HEIGHT = 1'020U;
+inline constexpr uint32_t V9_BLOCK_SEA_LEVEL = 384U;
+inline constexpr uint32_t V9_MAX_HEIGHT = WORLD_DEPTH_BLOCKS - 1U;
+
+enum class TerrainModelTag : uint8_t
+{
+    R6,
+    V9,
+};
+
+[[nodiscard]]
+constexpr uint32_t terrainVersion(TerrainModelTag const model) noexcept
+{
+    return model == TerrainModelTag::V9 ? 9U : TERRAIN_VERSION;
+}
 
 struct GenerationConfiguration
 {
@@ -39,6 +59,7 @@ struct GenerationConfiguration
     bool currents = true;
     int8_t wind_sign = 1;
     bool coastal_elaboration = true;
+    TerrainModelTag model_tag = TerrainModelTag::R6;
 
     [[nodiscard]] bool operator==(GenerationConfiguration const&) const = default;
 };
@@ -52,7 +73,44 @@ enum class GenerationStage : uint8_t
     TerrainErosion,
     FinalClimate,
     FinalDrainage,
+    V9Platec,
+    V9Terrain,
+    V9Climate,
+    V9Water,
     Complete,
+};
+
+struct GenerationPlateDirection final
+{
+    uint32_t plate_id = 0U;
+    float x = 0.0F;
+    float y = 0.0F;
+
+    bool operator==(GenerationPlateDirection const&) const = default;
+};
+
+enum class V9GenerationIceSurfaceKind : uint8_t
+{
+    None,
+    LandSnow,
+    WaterIce,
+};
+
+struct V9GenerationSnapshotFields final
+{
+    std::vector<float> source_elevation_m;
+    std::vector<float> temperature_celsius;
+    std::vector<float> precipitation_mm_year;
+    std::vector<float> water_level_m;
+    std::vector<uint8_t> ocean_mask;
+    std::vector<uint8_t> lake_mask;
+    std::vector<uint8_t> river_mask;
+    std::vector<uint8_t> ice_surface_kind;
+    std::vector<uint32_t> plate_ids;
+    std::vector<GenerationPlateDirection> plate_directions;
+    uint32_t plate_directions_observed_after_native_step = 0U;
+
+    bool operator==(V9GenerationSnapshotFields const&) const = default;
 };
 
 struct GenerationSnapshot
@@ -67,7 +125,11 @@ struct GenerationSnapshot
     std::vector<uint8_t> ocean_mask;
     std::vector<uint8_t> lake_mask;
     std::vector<uint8_t> river_mask;
+    std::optional<V9GenerationSnapshotFields> v9;
 };
+
+[[nodiscard]]
+bool isValidGenerationSnapshot(GenerationSnapshot const& snapshot) noexcept;
 
 struct GenerationProgress
 {
@@ -88,6 +150,9 @@ public:
 struct GlobalAtlas
 {
     GenerationConfiguration configuration;
+    // V9 retains its typed source-stage registry behind this immutable payload.
+    // R6 fields below remain empty for V9 atlases.
+    std::shared_ptr<detail::V9ProviderState const> v9_provider;
     float sea_level = 0.0F;
     uint32_t block_sea_level = BLOCK_SEA_LEVEL;
     uint32_t max_height = MAX_HEIGHT;
@@ -140,5 +205,8 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     std::stop_token cancellation = {},
     ProgressCallback progress = {}
 );
+
+[[nodiscard]]
+bool isValidAtlas(GlobalAtlas const& atlas) noexcept;
 
 } // namespace generation

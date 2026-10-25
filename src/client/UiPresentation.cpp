@@ -159,6 +159,14 @@ std::string_view generationPhase(generation::GenerationStage const stage) noexce
         return "Refining the climate";
     case generation::GenerationStage::FinalDrainage:
         return "Finalizing rivers and lakes";
+    case generation::GenerationStage::V9Platec:
+        return "Advancing native tectonic plates";
+    case generation::GenerationStage::V9Terrain:
+        return "Forming native terrain";
+    case generation::GenerationStage::V9Climate:
+        return "Solving native climate";
+    case generation::GenerationStage::V9Water:
+        return "Routing native water and ice";
     case generation::GenerationStage::Complete:
         return "Preparing the starting area";
     }

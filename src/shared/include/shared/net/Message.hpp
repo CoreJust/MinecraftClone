@@ -20,7 +20,7 @@
 namespace shared {
 
 constexpr uint8_t PROTOCOL_MAGIC = 0x4DU;
-constexpr uint8_t PROTOCOL_VERSION = 21U;
+constexpr uint8_t PROTOCOL_VERSION = 23U;
 constexpr uint8_t GAME_CHANNEL = 0U;
 constexpr uint8_t HEIGHT_TILE_CHANNEL = 1U;
 constexpr uint32_t MAX_MESSAGE_SIZE_BYTES = 5'000'000U;

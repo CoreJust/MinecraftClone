@@ -203,6 +203,25 @@ std::shared_ptr<generation::GenerationSnapshot const> generationSnapshot256()
     return snapshot;
 }
 
+std::shared_ptr<generation::GenerationSnapshot const> generationV9PlatecSnapshot()
+{
+    static constexpr uint32_t RESOLUTION = 256U;
+    static constexpr uint32_t SAMPLE_COUNT = RESOLUTION * RESOLUTION;
+    auto snapshot = std::make_shared<generation::GenerationSnapshot>();
+    snapshot->stage = generation::GenerationStage::V9Platec;
+    snapshot->resolution = RESOLUTION;
+    snapshot->v9.emplace();
+    snapshot->v9->source_elevation_m.resize(SAMPLE_COUNT);
+    snapshot->v9->plate_ids.resize(SAMPLE_COUNT);
+    for (uint32_t index = 0U; index < SAMPLE_COUNT; ++index) {
+        snapshot->v9->source_elevation_m[index] = static_cast<float>(index % RESOLUTION);
+        snapshot->v9->plate_ids[index] = index % RESOLUTION < RESOLUTION / 2U ? 11U : 42U;
+    }
+    snapshot->v9->plate_directions = {{11U, 1.0F, 0.0F}, {42U, 0.0F, -1.0F}};
+    snapshot->v9->plate_directions_observed_after_native_step = 2'399U;
+    return snapshot;
+}
+
 shared::MaterializedChunkPayload uniformChunkPayload(
     shared::ChunkCoordinate const coordinate,
     shared::Block const material
@@ -340,6 +359,7 @@ void expectRoundTrip(MessageTy const& expected) {
             EXPECT_EQ(actual.latest_snapshot->ocean_mask, expected.latest_snapshot->ocean_mask);
             EXPECT_EQ(actual.latest_snapshot->lake_mask, expected.latest_snapshot->lake_mask);
             EXPECT_EQ(actual.latest_snapshot->river_mask, expected.latest_snapshot->river_mask);
+            EXPECT_EQ(actual.latest_snapshot->v9, expected.latest_snapshot->v9);
         }
         EXPECT_EQ(
             static_cast<bool>(actual.refined_safe_spawn),
@@ -846,10 +866,12 @@ TEST(MessageTest, PreservesEveryStableBlockIdInSingleAndBatchTileCodecs)
         EXPECT_EQ(observed, MATERIALS);
     };
 
-    shared::ServerHeightTileMessage const tile = materialHeightTileMessage();
+    auto tile_owner = std::make_unique<shared::ServerHeightTileMessage>(materialHeightTileMessage());
+    shared::ServerHeightTileMessage const& tile = *tile_owner;
     verify_materials(tile);
 
-    shared::ServerHeightTileMessage second = tile;
+    auto second_owner = std::make_unique<shared::ServerHeightTileMessage>(tile);
+    shared::ServerHeightTileMessage& second = *second_owner;
     second.key = { .x = tile.key.x + 1, .y = tile.key.y };
     second.surface.coordinate = { .x = second.key.x, .y = second.key.y, .z = 0 };
     shared::ServerHeightTileBatchMessage const batch{
@@ -1294,7 +1316,7 @@ TEST(MessageTest, MapsExactDiskCardinalitiesToEverySupportedRadius)
         shared::heightTileInterestCount(257U),
     };
 
-    EXPECT_EQ(shared::PROTOCOL_VERSION, 21U);
+    EXPECT_EQ(shared::PROTOCOL_VERSION, 23U);
     EXPECT_EQ(shared::HEIGHT_TILE_BATCH_CAPACITY, 64U);
     EXPECT_EQ(shared::HEIGHT_TILE_RESIDENCY_RECEIPT_KEY_CAPACITY, 128U);
     EXPECT_EQ(
@@ -1314,6 +1336,36 @@ TEST(MessageTest, MapsExactDiskCardinalitiesToEverySupportedRadius)
     for (uint32_t const count : INVALID_COUNTS) {
         EXPECT_EQ(shared::heightTileInterestRadiusForCount(count), std::nullopt);
     }
+}
+
+TEST(MessageTest, V9PlatecPreviewRoundTripsTypedSourceHeightAndPlateMotion)
+{
+    shared::ServerWorldPreparationMessage preparation = worldPreparationMessage();
+    preparation.session.configuration.model_tag = generation::TerrainModelTag::V9;
+    preparation.session.terrain.terrain_version = generation::terrainVersion(generation::TerrainModelTag::V9);
+    preparation.session.terrain.configuration_identity =
+        generation::configurationIdentity(preparation.session.configuration);
+    preparation.stage = generation::GenerationStage::V9Platec;
+    preparation.work_completed = 2'400U;
+    preparation.work_total = 2'400U;
+    preparation.latest_snapshot = generationV9PlatecSnapshot();
+
+    std::vector<uint8_t> const bytes = shared::encodeMessage(shared::Message{preparation});
+    auto const decoded = shared::decodeMessage(bytes);
+
+    ASSERT_TRUE(decoded);
+    auto const* const actual = std::get_if<shared::ServerWorldPreparationMessage>(&*decoded);
+    ASSERT_NE(actual, nullptr);
+    ASSERT_NE(actual->latest_snapshot, nullptr);
+    ASSERT_TRUE(actual->latest_snapshot->v9.has_value());
+    EXPECT_EQ(actual->latest_snapshot->stage, generation::GenerationStage::V9Platec);
+    EXPECT_EQ(actual->latest_snapshot->resolution, 256U);
+    EXPECT_EQ(actual->latest_snapshot->v9, preparation.latest_snapshot->v9);
+
+    auto invalid = std::make_shared<generation::GenerationSnapshot>(*preparation.latest_snapshot);
+    invalid->v9->plate_ids[0U] = 99U;
+    preparation.latest_snapshot = invalid;
+    EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(shared::Message{preparation})));
 }
 
 TEST(MessageTest, RejectsMalformedHeightTileDescriptorCardinalities)

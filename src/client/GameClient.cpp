@@ -793,17 +793,40 @@ void GameClient::onReceived(core::ReceiveEvent event) {
         auto const apply_started_at = std::chrono::steady_clock::now();
         bool const applied = applyWorldPreparation(*world_preparation, apply_started_at);
         auto const apply_completed_at = std::chrono::steady_clock::now();
-        if (world_preparation->sequence <= 32U || world_preparation->final_atlas_complete) {
-            auto const* snapshot = world_preparation->latest_snapshot.get();
-            size_t const snapshot_payload_bytes = snapshot == nullptr ? 0U
-                : (snapshot->elevation.size() + snapshot->temperature.size()
-                    + snapshot->precipitation.size() + snapshot->water_level.size()) * sizeof(float)
-                    + snapshot->ocean_mask.size() + snapshot->lake_mask.size() + snapshot->river_mask.size();
-            CORE_INFO("startup-boundary preparation-client sequence={} receive_steady_ns={} packet_bytes={} "
-                "snapshot_payload_bytes={} decode_us={} apply_us={} applied={} final={}",
+        auto const* snapshot = world_preparation->latest_snapshot.get();
+        if (snapshot != nullptr || world_preparation->sequence <= 32U || world_preparation->final_atlas_complete) {
+            uint64_t snapshot_payload_bytes = 0U;
+            if (snapshot != nullptr && snapshot->v9) {
+                auto const& fields = *snapshot->v9;
+                snapshot_payload_bytes = static_cast<uint64_t>(fields.source_elevation_m.size()) * sizeof(float)
+                    + static_cast<uint64_t>(fields.temperature_celsius.size()) * sizeof(float)
+                    + static_cast<uint64_t>(fields.precipitation_mm_year.size()) * sizeof(float)
+                    + static_cast<uint64_t>(fields.water_level_m.size()) * sizeof(float)
+                    + static_cast<uint64_t>(fields.ocean_mask.size()) * sizeof(uint8_t)
+                    + static_cast<uint64_t>(fields.lake_mask.size()) * sizeof(uint8_t)
+                    + static_cast<uint64_t>(fields.river_mask.size()) * sizeof(uint8_t)
+                    + static_cast<uint64_t>(fields.ice_surface_kind.size()) * sizeof(uint8_t)
+                    + static_cast<uint64_t>(fields.plate_ids.size()) * sizeof(uint32_t)
+                    + static_cast<uint64_t>(fields.plate_directions.size()) * sizeof(generation::GenerationPlateDirection);
+            } else if (snapshot != nullptr) {
+                snapshot_payload_bytes = static_cast<uint64_t>(
+                    snapshot->elevation.size() + snapshot->temperature.size()
+                    + snapshot->precipitation.size() + snapshot->water_level.size()
+                ) * sizeof(float)
+                    + static_cast<uint64_t>(snapshot->ocean_mask.size() + snapshot->lake_mask.size()
+                        + snapshot->river_mask.size()) * sizeof(uint8_t);
+            }
+            uint32_t const snapshot_stage = snapshot == nullptr
+                ? std::numeric_limits<uint32_t>::max()
+                : static_cast<uint32_t>(snapshot->stage);
+            char const* const snapshot_model = snapshot == nullptr ? "none" : (snapshot->v9 ? "v9" : "r6");
+            CORE_INFO("startup-boundary preparation-client sequence={} stage_id={} receive_steady_ns={} "
+                "packet_bytes={} snapshot_model={} snapshot_stage_id={} snapshot_payload_bytes={} "
+                "decode_us={} apply_us={} applied={} final={}",
                 world_preparation->sequence,
+                static_cast<uint32_t>(world_preparation->stage),
                 std::chrono::duration_cast<std::chrono::nanoseconds>(diagnostic_receive_at.time_since_epoch()).count(),
-                event.data.size(), snapshot_payload_bytes,
+                event.data.size(), snapshot_model, snapshot_stage, snapshot_payload_bytes,
                 std::chrono::duration_cast<std::chrono::microseconds>(apply_started_at - diagnostic_receive_at).count(),
                 std::chrono::duration_cast<std::chrono::microseconds>(apply_completed_at - apply_started_at).count(),
                 applied, world_preparation->final_atlas_complete);

@@ -10,12 +10,14 @@ python script\build_windows_singleplayer.py --runtime <runtime-directory> --asse
 ```
 
 The runtime directory must contain mc_main.exe, its redistributable DLLs, and
-exactly 16 compiled SPIR-V files in shaders/. The builder snapshots regular files
+exactly 19 compiled SPIR-V files in shaders/. The builder snapshots regular files
 with the existing package_snapshot helpers. It also includes assets, scenarios,
-the game license and HUD licenses. It never downloads dependencies or copies GPU
-drivers. A supplied DLL closure must already have passed Windows execution and
-dependency inspection. Only the final MinecraftClone.exe goes to the owner;
-the manifest sidecar remains with build evidence.
+the game and HUD licenses, and the native model vendors' original license and
+provenance files under `licenses/model/{platec,structural,superlu,gsw}/`. Those
+files are copied byte-for-byte. The builder never downloads dependencies or
+copies GPU drivers. A supplied DLL closure must already have passed Windows
+execution and dependency inspection. Only the final MinecraftClone.exe goes to
+the owner; the manifest sidecar remains with build evidence.
 
 The deterministic RCDATA format is eight bytes MCSINGLE, little-endian uint32
 schema=1, uint32 file count, then sorted records: uint32 UTF-8 path length,

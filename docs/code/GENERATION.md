@@ -49,49 +49,45 @@ L0 spans the periodic world; L1/L2 refine 4×4 and L3 samples canonical columns.
 Triangle fans share constrained edges and seams. Complete captures replace one
 16-block L2 cell at 256 or four 8-block cells at 512; gaps retain fallback.
 
-V9 runs the frozen native Platec, terrain, climate and water stages. Terrain
-retains source metres; climate fields retain physical units. Structural
-hierarchy queries return source-metre H0–H3 values, with L0 coarse and L3
-finest. World overview may use L0, while canonical surface, collision and edit
-queries use L3. The game mapping is globally fixed as
-`floor(384 + source_m / 10)` over blocks 0–1023; out-of-domain queries fail,
-and the model never normalizes each seed independently. Atlas registries retain
-source fields and dtypes. Columns remain solid layers followed by air; no caves
-or overhangs are generated. Once the structural memo reaches its logical cache
-budget, later misses are recomputed into caller-owned values; saturation does
-not invalidate a valid world query. Snow/Sand material use follows pipeline
-integration. Broader numeric bounds, full L0–L3/seam coverage, cross-platform
-parity and generator performance remain aggregate acceptance gates.
+V9 uses frozen native Platec, terrain, climate and water. Terrain keeps source
+metres; climate fields keep physical units. H0–H3 queries return metres; L0 is
+coarsest, L3 finest. Overview may use L0; canonical surface, collision and edits
+use L3. Game Z is `floor(384 + source_m / 10)`, blocks 0–1023; out-of-domain
+queries fail, with no per-seed normalization. Retain typed fields. Columns are
+solid then air, with no caves or overhangs. Memo saturation recomputes misses
+into caller-owned values. Full numeric bounds, L0–L3/seams, platform parity and
+performance remain MC-AI-0483 gates.
+
+Default no-argument LocalGame requests V9. CoreLang's v2 plan omits a model tag
+and reconstructs R6 from nine typed fields: seed, resolution, epochs, erosion
+steps, initial/final climate iterations, currents, wind sign and coastal
+elaboration. WorldPreparation maps only the plan tag, validates returned fields
+and plan, restores V9 and checks the full original configuration before atlas
+creation. The client uses the server's V9 session; failures do not fall back.
 
 ## Native V9 seasonal climate
 
-The private climate component consumes the canonical 256×256 terrain bed and
-runs the source eight-phase seasonal climate, QG weather and moisture sequence.
-Its portable transforms, RNG and sparse solve retain source order and physical
-units; the pinned SuperLU closure supplies the sparse factorization without a
-platform BLAS or Python runtime. Wind, currents, precipitation and snow remain
-computed fields rather than latitude-band substitutes. Cancellation propagates
-through weather and thermal work without publishing a partial climate result;
-progress reports completed stages.
+Climate consumes the canonical 256×256 bed for source eight-phase seasonal
+climate, QG weather and moisture. Portable transforms, RNG and SuperLU retain
+source order and physical units without platform BLAS or Python. Wind, currents,
+precipitation and snow come from these calculations. Cancellation prevents
+partial climate publication; progress reports completed stages.
 
-MC-AI-0558 closes this local component prerequisite. The integrated three-seed
-95-field comparison and Windows generation packet establish bounded evidence,
-not universal numerical equivalence. The accepted q-only bound does not qualify
-all model fields. Untested seeds, full numerical-chain bounds, all-domain L0–L3
-coverage, Windows/Android canonical parity, performance and full game runtime
-acceptance remain open under MC-AI-0483.
+MC-AI-0558 passes bounded three-seed field comparison and Windows generation
+tests; this is not universal numerical equivalence. The q-only bound does not
+qualify other fields. Untested seeds, full numeric-chain bounds, all-domain
+L0–L3, Windows/Android canonical parity, performance and game runtime remain
+MC-AI-0483 gates.
 
 ## Native V9 water and biome
 
-V9 water uses seasonal forcing and a 256×256 source-metre bed for equilibrium,
-routing, marine salt/ice, snow/firn and biomes while preserving periodic TIN
-ties. Queries expose water support and clipped meshes; incomplete catchments or
-receiver closure fail. Generation reports progress and observes cancellation.
-`V9OceanographicToolboxMsvc.cpp` is in the generation source inventory. Six GSW
-files and the license stay byte-identical in `third_party/gsw`; provenance
-hashes them and leaves the upstream C revision unresolved. MC-AI-0560 owns
-provider integration. Numeric margins and actual-predecessor L0–L3 seams remain
-MC-AI-0483 gates.
+V9 water consumes seasonal forcing and a 256×256 source-metre bed for
+equilibrium, routing, marine salt/ice, snow/firn and biomes. Periodic TIN ties
+are retained; incomplete catchment or receiver closure fails. It reports
+progress and observes cancellation. The MSVC wrapper is inventoried. Six GSW
+files remain byte-identical under `third_party/gsw`; hashes and unresolved
+upstream revision are recorded. Numeric margins and actual-predecessor L0–L3
+seams remain MC-AI-0483 gates.
 
 ## Bounded materialized prefetch
 

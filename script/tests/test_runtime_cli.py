@@ -49,6 +49,12 @@ class RuntimeCliTests(unittest.TestCase):
                     'if "%~1"=="--player-client-2d" '
                     '(echo 2D replay seconds must be an integer from 1 to 120 1>&2 & exit /b 1)\r\n'
                     'if "%~1"=="--benchmark-game" (\r\n'
+                    'if "%~2"=="--terrain-model" if "%~3"=="invalid" '
+                    "echo terrain model must be r6 or v9 1>&2\r\n"
+                    'if "%~2"=="--terrain-model" if "%~3"=="invalid" exit /b 1\r\n'
+                    'if "%~2"=="--terrain-model" if "%~3"=="v9" '
+                    "echo gameplay proof requires the R6 terrain model 1>&2\r\n"
+                    'if "%~2"=="--terrain-model" if "%~3"=="v9" exit /b 1\r\n'
                     'if "%~2"=="--corelang-backend" if "%~3"=="invalid" '
                     "echo CoreLang backend must be interpreter, jit, or aot 1>&2\r\n"
                     'if "%~2"=="--corelang-backend" if "%~3"=="invalid" exit /b 1\r\n'
@@ -72,6 +78,10 @@ class RuntimeCliTests(unittest.TestCase):
                     'if [ "$1" = "--player-client-2d" ]; then\n'
                     "printf '%s\\n' '2D replay seconds must be an integer from 1 to 120' >&2\nexit 1\nfi\n"
                     'if [ "$1" = "--benchmark-game" ]; then\n'
+                    'if [ "$2" = "--terrain-model" ] && [ "$3" = "invalid" ]; then\n'
+                    "printf '%s\\n' 'terrain model must be r6 or v9' >&2\nexit 1\nfi\n"
+                    'if [ "$2" = "--terrain-model" ] && [ "$3" = "v9" ]; then\n'
+                    "printf '%s\\n' 'gameplay proof requires the R6 terrain model' >&2\nexit 1\nfi\n"
                     'if [ "$2" = "--corelang-backend" ] && [ "$3" = "invalid" ]; then\n'
                     "printf '%s\\n' 'CoreLang backend must be interpreter, jit, or aot' >&2\nexit 1\nfi\n"
                     'if [ "$3" = "speed-200-full-radius" ]; then\n'

@@ -5,6 +5,8 @@
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
 
+#include <generation/Generation.hpp>
+
 #include <acceptance/EvidenceJson.hpp>
 #include <acceptance/ReplayInput.hpp>
 
@@ -286,6 +288,7 @@ struct GameBenchmarkOptions final {
     shared::corelang::Backend backend = shared::corelang::Backend::Interpreter;
     std::chrono::seconds full_radius_warmup_timeout = GAME_BENCHMARK_FULL_RADIUS_DEFAULT_WARMUP_TIMEOUT;
     bool diagnostic_full_radius_capture = false;
+    generation::TerrainModelTag terrain_model = generation::TerrainModelTag::R6;
     std::filesystem::path frame_capture_image;
     std::string frame_capture_phase = "playing";
     std::chrono::milliseconds frame_capture_delay{0};

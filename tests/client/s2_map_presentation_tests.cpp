@@ -3,7 +3,9 @@
 
 #include <shared/world/TerrainLod.hpp>
 #include <shared/world/TerrainWorld.hpp>
+
 #include <generation/Generation.hpp>
+#include <generation/V9Provider.hpp>
 
 #include <gtest/gtest.h>
 
@@ -14,6 +16,8 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <string_view>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -127,6 +131,102 @@ TEST(S2MapPresentationTest, WorldRasterUsesOnlyFieldsPresentInTheMatchingAtlas)
     EXPECT_FALSE(partial->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Biomes)]);
     EXPECT_FALSE(partial->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Moisture)]);
     EXPECT_TRUE(partial->available_layers[static_cast<size_t>(client::S2WorldMapLayer::Precipitation)]);
+}
+
+TEST(S2MapPresentationTest, V9WorldMapReadsAllEightNativeLayers)
+{
+    static constexpr size_t SOURCE_COUNT = 256U * 256U;
+    static constexpr size_t CLIMATE_COUNT = 32U * 32U;
+    generation::GenerationConfiguration configuration{};
+    configuration.seed = 42U;
+    configuration.model_tag = generation::TerrainModelTag::V9;
+    std::shared_ptr<generation::GlobalAtlas const> const atlas = generation::prepareAtlas(configuration);
+    ASSERT_NE(atlas, nullptr);
+
+    auto const world = std::make_shared<shared::TerrainWorld const>(atlas, 17U);
+    auto const lod = shared::buildTerrainLod(*world, shared::TerrainLodLevel::L0);
+    ASSERT_NE(lod, nullptr);
+
+    client::S2WorldMapState state;
+    state.layers.fill(true);
+    auto const image = client::rasterizeS2WorldMap(*world, *lod, state);
+
+    ASSERT_TRUE(image.has_value());
+    EXPECT_EQ(image->source_identity, world->identity());
+    EXPECT_EQ(image->source_model_identity, shared::TERRAIN_LOD_MODEL_V9);
+    EXPECT_EQ(image->source_resolution, 256U);
+    EXPECT_EQ(image->vector_field_resolution, 32U);
+    for (bool const available : image->available_layers) {
+        EXPECT_TRUE(available);
+    }
+
+    EXPECT_EQ(image->v9_plate_ids.size(), SOURCE_COUNT);
+    EXPECT_EQ(image->v9_elevation_m.size(), SOURCE_COUNT);
+    EXPECT_EQ(image->v9_temperature_mean_c.size(), SOURCE_COUNT);
+    EXPECT_EQ(image->v9_precipitation_mean_mm_year.size(), SOURCE_COUNT);
+    EXPECT_EQ(image->v9_biome_ids.size(), SOURCE_COUNT);
+    EXPECT_EQ(image->v9_moisture_mean_kg_m2.size(), CLIMATE_COUNT);
+    EXPECT_EQ(image->v9_wind_u_m_s.size(), CLIMATE_COUNT);
+    EXPECT_EQ(image->v9_wind_v_m_s.size(), CLIMATE_COUNT);
+    EXPECT_EQ(image->v9_ocean_u_m_s.size(), CLIMATE_COUNT);
+    EXPECT_EQ(image->v9_ocean_v_m_s.size(), CLIMATE_COUNT);
+    EXPECT_EQ(image->rgba.size(), client::S2_WORLD_MAP_IMAGE_SIDE * client::S2_WORLD_MAP_IMAGE_SIDE);
+
+    std::vector<generation::V9RegisteredFieldView> const fields = generation::v9RegisteredFields(*atlas);
+    auto const findField = [&](std::string_view const name) {
+        return std::find_if(fields.begin(), fields.end(), [name](auto const& field) {
+            return field.name == name;
+        });
+    };
+    auto const elevation = findField("elevation");
+    auto const temperature = findField("temperature_C");
+    auto const precipitation = findField("precipitation_mm_year");
+    auto const biome = findField("biome_id");
+    auto const moisture = findField("bucket_kg_m2");
+    auto const wind_u = findField("u");
+    auto const wind_v = findField("v");
+    auto const current_u = findField("ocean_u");
+    auto const current_v = findField("ocean_v");
+    ASSERT_NE(elevation, fields.end());
+    ASSERT_NE(temperature, fields.end());
+    ASSERT_NE(precipitation, fields.end());
+    ASSERT_NE(biome, fields.end());
+    ASSERT_NE(moisture, fields.end());
+    ASSERT_NE(wind_u, fields.end());
+    ASSERT_NE(wind_v, fields.end());
+    ASSERT_NE(current_u, fields.end());
+    ASSERT_NE(current_v, fields.end());
+
+    auto const fieldValue = [](generation::V9RegisteredFieldView const& field, size_t const index) {
+        return std::visit([index](auto const values) {
+            return static_cast<double>(values[index]);
+        }, field.values);
+    };
+    auto const phaseMean = [&](generation::V9RegisteredFieldView const& field,
+                               size_t const phase_size,
+                               size_t const index) {
+        double total = 0.0;
+        for (size_t phase = 0U; phase < 8U; ++phase) {
+            total += fieldValue(field, phase * phase_size + index);
+        }
+        return static_cast<float>(total / 8.0);
+    };
+    static constexpr std::array<size_t, 3U> SOURCE_PROBES{0U, 8'192U, SOURCE_COUNT - 1U};
+    static constexpr std::array<size_t, 3U> CLIMATE_PROBES{0U, 512U, CLIMATE_COUNT - 1U};
+    for (size_t const index : SOURCE_PROBES) {
+        EXPECT_DOUBLE_EQ(image->v9_elevation_m[index], fieldValue(*elevation, index));
+        EXPECT_FLOAT_EQ(image->v9_temperature_mean_c[index], phaseMean(*temperature, SOURCE_COUNT, index));
+        EXPECT_FLOAT_EQ(image->v9_precipitation_mean_mm_year[index],
+            phaseMean(*precipitation, SOURCE_COUNT, index));
+        EXPECT_EQ(image->v9_biome_ids[index], static_cast<uint8_t>(fieldValue(*biome, index)));
+    }
+    for (size_t const index : CLIMATE_PROBES) {
+        EXPECT_FLOAT_EQ(image->v9_moisture_mean_kg_m2[index], phaseMean(*moisture, CLIMATE_COUNT, index));
+        EXPECT_FLOAT_EQ(image->v9_wind_u_m_s[index], phaseMean(*wind_u, CLIMATE_COUNT, index));
+        EXPECT_FLOAT_EQ(image->v9_wind_v_m_s[index], phaseMean(*wind_v, CLIMATE_COUNT, index));
+        EXPECT_FLOAT_EQ(image->v9_ocean_u_m_s[index], phaseMean(*current_u, CLIMATE_COUNT, index));
+        EXPECT_FLOAT_EQ(image->v9_ocean_v_m_s[index], phaseMean(*current_v, CLIMATE_COUNT, index));
+    }
 }
 
 TEST(S2MapPresentationTest, WorldMapUsesTheSharedCompletedAtlasBaseWhenLayersAreDisabled)

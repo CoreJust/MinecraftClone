@@ -14,7 +14,14 @@
 namespace shared {
 
 inline constexpr std::string_view TERRAIN_LOD_MODEL = "lod-canonical-r6-height-v2";
+inline constexpr std::string_view TERRAIN_LOD_MODEL_V9 = "lod-canonical-v9-height-v1";
 inline constexpr uint64_t TERRAIN_LOD_MAX_NODES = 1'050'625U;
+
+[[nodiscard]]
+constexpr std::string_view terrainLodModel(generation::TerrainModelTag const model) noexcept
+{
+    return model == generation::TerrainModelTag::V9 ? TERRAIN_LOD_MODEL_V9 : TERRAIN_LOD_MODEL;
+}
 
 enum class TerrainLodLevel : uint8_t { L0, L1, L2, L3 };
 
@@ -53,7 +60,11 @@ struct TerrainLodArtifact final {
     std::vector<TerrainLodNode> nodes;
 };
 
-[[nodiscard]] uint32_t terrainLodSpacing(uint32_t atlas_resolution, TerrainLodLevel level);
+[[nodiscard]] uint32_t terrainLodSpacing(
+    uint32_t atlas_resolution,
+    TerrainLodLevel level,
+    generation::TerrainModelTag model = generation::TerrainModelTag::R6
+);
 
 // L0 covers the complete periodic world. Other levels require aligned, bounded windows.
 [[nodiscard]] std::shared_ptr<TerrainLodArtifact const> buildTerrainLod(

@@ -14,6 +14,7 @@
 #include <stop_token>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace server
 {
@@ -33,6 +34,56 @@ struct WorldPreparationProgress final
     std::chrono::steady_clock::time_point observed_at{};
 };
 
+enum class WorldPreparationProgressMilestoneKind : uint8_t
+{
+    StageBoundary,
+    SourceSnapshot,
+};
+
+struct WorldPreparationProgressMilestone final
+{
+    WorldPreparationProgressMilestoneKind kind = WorldPreparationProgressMilestoneKind::StageBoundary;
+    WorldPreparationProgress update;
+};
+
+class WorldPreparationProgressJournal final
+{
+public:
+    static constexpr uint32_t MAX_STAGE_COUNT =
+        static_cast<uint32_t>(generation::GenerationStage::Complete) + 1U;
+    static constexpr uint32_t MAX_MILESTONE_COUNT = 2U * MAX_STAGE_COUNT;
+
+    WorldPreparationProgressJournal();
+
+    void record(WorldPreparationProgress const& update);
+
+    [[nodiscard]]
+    std::vector<WorldPreparationProgressMilestone> const& milestones() const noexcept { return m_milestones; }
+
+private:
+    std::optional<generation::GenerationStage> m_latest_stage;
+    std::vector<WorldPreparationProgressMilestone> m_milestones;
+};
+
+class WorldPreparationProgressThrottle final
+{
+public:
+    using TimePoint = std::chrono::steady_clock::time_point;
+    static constexpr std::chrono::milliseconds MIN_INTERVAL{ 250 };
+
+    [[nodiscard]]
+    bool admit(generation::GenerationProgress const& progress, TimePoint now) noexcept;
+
+    void notePublished(generation::GenerationProgress const& progress, TimePoint now) noexcept;
+
+private:
+    std::optional<generation::GenerationStage> m_last_stage;
+    uint32_t m_last_completed = 0U;
+    uint32_t m_last_total = 0U;
+    TimePoint m_last_published_at{};
+    bool m_has_published = false;
+};
+
 struct WorldPreparationSnapshot final
 {
     WorldPreparationState state = WorldPreparationState::Preparing;
@@ -41,6 +92,7 @@ struct WorldPreparationSnapshot final
     std::optional<WorldPreparationProgress> latest_progress;
     std::shared_ptr<generation::GenerationSnapshot const> latest_map_snapshot;
     std::optional<std::chrono::steady_clock::time_point> latest_map_snapshot_observed_at;
+    std::vector<WorldPreparationProgressMilestone> progress_milestones;
     std::shared_ptr<shared::TerrainWorld const> ready_world;
     std::optional<shared::corelang::TerrainPlan> terrain_plan;
     std::string error;
@@ -98,6 +150,7 @@ private:
     mutable std::mutex m_mutex;
     std::mutex m_join_mutex;
     WorldPreparationSnapshot m_snapshot;
+    WorldPreparationProgressJournal m_progress_journal;
     uint64_t m_progress_sequence = 0U;
     std::jthread m_worker;
 };

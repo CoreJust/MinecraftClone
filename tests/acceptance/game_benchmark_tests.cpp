@@ -475,6 +475,19 @@ TEST(GameBenchmark, AcceptsOrdinaryTurningPerformanceProofAtDefaultRadiusBeforeR
     EXPECT_EQ(result.error(), "game benchmark has invalid duration limits");
 }
 
+TEST(GameBenchmark, RejectsV9TerrainForR6GameplayQualification)
+{
+    acceptance::GameBenchmarkOptions options{
+        .workload = acceptance::GameBenchmarkWorkload::OrdinaryTurningMovement,
+        .qualification_proof = "performance",
+        .terrain_model = generation::TerrainModelTag::V9,
+    };
+
+    auto const result = acceptance::runGameBenchmark(options);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), "gameplay proof requires the R6 terrain model");
+}
+
 TEST(GameBenchmark, DoesNotUseSpeed200CoverageWorkloadForPerformanceProof)
 {
     acceptance::GameBenchmarkOptions const options{

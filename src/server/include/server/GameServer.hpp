@@ -1,6 +1,7 @@
 #pragma once
 
 #include <server/HeightTileWorkerPool.hpp>
+#include <server/WorldPreparation.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/policy/Policy.hpp>
 #include <shared/world/Chunk.hpp>
@@ -31,8 +32,6 @@
 #include <vector>
 
 namespace server {
-
-class WorldPreparation;
 
 class GameServer final : public core::Server {
 public:
@@ -306,6 +305,8 @@ private:
         shared::TerrainSessionIdentity session;
         bool wants_previews = false;
         uint64_t last_progress_source_sequence = 0U;
+        uint32_t next_progress_milestone = 0U;
+        WorldPreparationProgressThrottle progress_throttle;
         uint64_t next_message_sequence = 1U;
         bool default_spawn_search_initialized = false;
         std::vector<DefaultSpawnSearchNode> default_spawn_frontier;

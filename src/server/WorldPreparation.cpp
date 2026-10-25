@@ -16,6 +16,74 @@
 namespace server
 {
 
+WorldPreparationProgressJournal::WorldPreparationProgressJournal()
+{
+    m_milestones.reserve(MAX_MILESTONE_COUNT);
+}
+
+void WorldPreparationProgressJournal::record(WorldPreparationProgress const& update)
+{
+    generation::GenerationStage const stage = update.progress.stage;
+    if (m_latest_stage && static_cast<uint8_t>(stage) < static_cast<uint8_t>(*m_latest_stage)) {
+        throw std::logic_error{ "world preparation progress stage regressed" };
+    }
+    if (!m_latest_stage || stage != *m_latest_stage) {
+        WorldPreparationProgress boundary = update;
+        boundary.progress.snapshot.reset();
+        m_milestones.push_back({
+            .kind = WorldPreparationProgressMilestoneKind::StageBoundary,
+            .update = std::move(boundary),
+        });
+        m_latest_stage = stage;
+    }
+    if (update.progress.snapshot) {
+        for (WorldPreparationProgressMilestone& milestone : m_milestones) {
+            if (milestone.kind == WorldPreparationProgressMilestoneKind::SourceSnapshot
+                && milestone.update.progress.stage == stage) {
+                milestone.update = update;
+                return;
+            }
+        }
+        m_milestones.push_back({
+            .kind = WorldPreparationProgressMilestoneKind::SourceSnapshot,
+            .update = update,
+        });
+    }
+    if (m_milestones.size() > MAX_MILESTONE_COUNT) {
+        throw std::logic_error{ "world preparation milestone bound exceeded" };
+    }
+}
+
+bool WorldPreparationProgressThrottle::admit(
+    generation::GenerationProgress const& progress,
+    TimePoint const now
+) noexcept
+{
+    bool const stage_changed = !m_last_stage || progress.stage != *m_last_stage;
+    bool const progress_changed = stage_changed
+        || progress.completed != m_last_completed
+        || progress.total != m_last_total;
+    bool const stage_complete = progress.total > 0U && progress.completed == progress.total;
+    bool const interval_elapsed = !m_has_published || now - m_last_published_at >= MIN_INTERVAL;
+    if (!stage_changed && !stage_complete && !(progress_changed && interval_elapsed)) {
+        return false;
+    }
+    notePublished(progress, now);
+    return true;
+}
+
+void WorldPreparationProgressThrottle::notePublished(
+    generation::GenerationProgress const& progress,
+    TimePoint const now
+) noexcept
+{
+    m_last_stage = progress.stage;
+    m_last_completed = progress.completed;
+    m_last_total = progress.total;
+    m_last_published_at = now;
+    m_has_published = true;
+}
+
 WorldPreparation::WorldPreparation(
     generation::GenerationConfiguration configuration,
     uint64_t const world_revision,
@@ -54,7 +122,9 @@ WorldPreparation::~WorldPreparation()
 WorldPreparationSnapshot WorldPreparation::latest() const
 {
     std::lock_guard const lock{ m_mutex };
-    return m_snapshot;
+    WorldPreparationSnapshot snapshot = m_snapshot;
+    snapshot.progress_milestones = m_progress_journal.milestones();
+    return snapshot;
 }
 
 std::shared_ptr<shared::TerrainWorld const> WorldPreparation::readyWorld() const
@@ -100,7 +170,11 @@ void WorldPreparation::run(std::stop_token const& cancellation)
 {
     try {
         std::string const expected_configuration_identity = generation::configurationIdentity(m_configuration);
-        auto terrain_plan = shared::corelang::prepareTerrainPlan(m_configuration, m_backend, cancellation);
+        generation::GenerationConfiguration plan_request_configuration = m_configuration;
+        plan_request_configuration.model_tag = generation::TerrainModelTag::R6;
+        auto terrain_plan = shared::corelang::prepareTerrainPlan(
+            plan_request_configuration, m_backend, cancellation
+        );
         if (!terrain_plan) {
             if (terrain_plan.error().code == shared::corelang::BackendErrorCode::Cancelled) {
                 publishCancelled();
@@ -108,6 +182,9 @@ void WorldPreparation::run(std::stop_token const& cancellation)
             }
             throw std::runtime_error{ "CoreLang Terrain-v2 plan failed: " + terrain_plan.error().message };
         }
+        // CoreLang's manifest serializes the shared R6 fields only. Model selection
+        // stays in the native request and is restored after that manifest validates.
+        terrain_plan->configuration.model_tag = m_configuration.model_tag;
         if (terrain_plan->configuration != m_configuration
             || terrain_plan->receipt.requested_backend != m_backend
             || terrain_plan->receipt.actual_backend != m_backend
@@ -177,15 +254,22 @@ void WorldPreparation::publishProgress(generation::GenerationProgress const& pro
         || static_cast<uint8_t>(progress.stage) > static_cast<uint8_t>(generation::GenerationStage::Complete)
         || (progress.snapshot
             && (progress.snapshot->stage != progress.stage
-                || progress.snapshot->resolution != m_configuration.resolution))) {
+                || progress.snapshot->resolution != (m_configuration.model_tag == generation::TerrainModelTag::V9
+                    ? 256U
+                    : m_configuration.resolution)
+                || progress.snapshot->v9.has_value()
+                    != (m_configuration.model_tag == generation::TerrainModelTag::V9)
+                || !generation::isValidGenerationSnapshot(*progress.snapshot)))) {
         throw std::runtime_error{ "generation emitted malformed progress or map snapshot data" };
     }
 
-    m_snapshot.latest_progress = WorldPreparationProgress{
+    WorldPreparationProgress const published{
         .sequence = ++m_progress_sequence,
         .progress = progress,
         .observed_at = observed_at,
     };
+    m_snapshot.latest_progress = published;
+    m_progress_journal.record(published);
     if (progress.snapshot) {
         m_snapshot.latest_map_snapshot = progress.snapshot;
         m_snapshot.latest_map_snapshot_observed_at = observed_at;

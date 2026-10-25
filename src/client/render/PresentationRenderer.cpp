@@ -27,6 +27,7 @@
 #include <shared/world/TerrainWorld.hpp>
 #include <shared/world/WorldGeneration.hpp>
 #include <generation/Generation.hpp>
+#include <generation/V9Provider.hpp>
 #include <core/common/Assert.hpp>
 #include <core/common/Version.hpp>
 #include <core/graphics/Graphics.hpp>
@@ -994,24 +995,64 @@ public:
             uint32_t enabled;
         };
         static_assert(sizeof(Header) == 16U);
-        uint32_t const resolution = m_atlas ? m_atlas->configuration.resolution : 1U;
+        uint32_t const configured_resolution = m_atlas ? m_atlas->configuration.resolution : 1U;
+        bool const v9 = m_atlas && m_atlas->configuration.model_tag == generation::TerrainModelTag::V9;
+        constexpr uint32_t V9_SOURCE_RESOLUTION = 256U;
+        uint32_t const resolution = v9 ? V9_SOURCE_RESOLUTION : configured_resolution;
         uint64_t const count = static_cast<uint64_t>(resolution) * resolution;
-        if (m_atlas && ((resolution != 256U && resolution != 512U)
-            || m_atlas->temperature.size() != count || m_atlas->elevation.size() != count
-            || !std::isfinite(m_atlas->sea_level))) {
+        if (m_atlas && ((configured_resolution != 256U && configured_resolution != 512U)
+            || (!v9 && (m_atlas->temperature.size() != count || m_atlas->elevation.size() != count))
+            || !std::isfinite(v9 ? 0.0F : m_atlas->sea_level))) {
             throw std::invalid_argument("Canonical terrain shading atlas is incomplete");
         }
         std::vector<std::byte> data(sizeof(Header) + count * sizeof(std::array<float, 2>));
-        Header const header{resolution, static_cast<uint32_t>(count), m_atlas ? m_atlas->sea_level : 0.0F,
+        Header const header{resolution, static_cast<uint32_t>(count), m_atlas ? (v9 ? 0.0F : m_atlas->sea_level) : 0.0F,
             m_atlas ? 1U : 0U};
         std::memcpy(data.data(), &header, sizeof(header));
         if (m_atlas) {
-            for (size_t i = 0U; i < count; ++i) {
-                std::array<float, 2> const value{m_atlas->temperature[i], m_atlas->elevation[i]};
-                if (!std::isfinite(value[0]) || !std::isfinite(value[1])) {
-                    throw std::invalid_argument("Canonical terrain shading atlas contains nonfinite values");
+            if (v9) {
+                auto const fields = generation::v9RegisteredFields(*m_atlas);
+                auto const elevation = std::find_if(fields.begin(), fields.end(), [](auto const& field) {
+                    return field.name == "elevation";
+                });
+                auto const temperature = std::find_if(fields.begin(), fields.end(), [](auto const& field) {
+                    return field.name == "temperature_C";
+                });
+                constexpr size_t SOURCE_COUNT = static_cast<size_t>(V9_SOURCE_RESOLUTION) * V9_SOURCE_RESOLUTION;
+                if (elevation == fields.end() || temperature == fields.end()
+                    || elevation->type != generation::V9FieldType::Float64
+                    || elevation->shape != std::vector<uint32_t>{V9_SOURCE_RESOLUTION, V9_SOURCE_RESOLUTION}
+                    || temperature->type != generation::V9FieldType::Float32
+                    || temperature->shape != std::vector<uint32_t>{8U, V9_SOURCE_RESOLUTION, V9_SOURCE_RESOLUTION}) {
+                    throw std::invalid_argument("V9 canonical terrain fields have unexpected source shapes or types");
                 }
-                std::memcpy(data.data() + sizeof(Header) + i * sizeof(value), value.data(), sizeof(value));
+                auto const* elevation_values = std::get_if<std::span<double const>>(&elevation->values);
+                auto const* temperature_values = std::get_if<std::span<float const>>(&temperature->values);
+                if (elevation_values == nullptr || temperature_values == nullptr
+                    || elevation_values->size() != SOURCE_COUNT || temperature_values->size() != SOURCE_COUNT * 8U) {
+                    throw std::invalid_argument("V9 canonical terrain fields do not match their registered sizes");
+                }
+                for (size_t i = 0U; i < SOURCE_COUNT; ++i) {
+                    double phase_mean = 0.0;
+                    for (size_t phase = 0U; phase < 8U; ++phase) {
+                        phase_mean += (*temperature_values)[phase * SOURCE_COUNT + i];
+                    }
+                    std::array<float, 2> const value{
+                        static_cast<float>(phase_mean / 8.0), static_cast<float>((*elevation_values)[i]),
+                    };
+                    if (!std::isfinite(value[0]) || !std::isfinite(value[1])) {
+                        throw std::invalid_argument("V9 canonical terrain fields contain nonfinite values");
+                    }
+                    std::memcpy(data.data() + sizeof(Header) + i * sizeof(value), value.data(), sizeof(value));
+                }
+            } else {
+                for (size_t i = 0U; i < count; ++i) {
+                    std::array<float, 2> const value{m_atlas->temperature[i], m_atlas->elevation[i]};
+                    if (!std::isfinite(value[0]) || !std::isfinite(value[1])) {
+                        throw std::invalid_argument("Canonical terrain shading atlas contains nonfinite values");
+                    }
+                    std::memcpy(data.data() + sizeof(Header) + i * sizeof(value), value.data(), sizeof(value));
+                }
             }
         }
         VkPhysicalDeviceProperties limits{};

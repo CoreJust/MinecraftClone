@@ -59,6 +59,35 @@ if(invalid_benchmark_backend_result EQUAL 0
     message(FATAL_ERROR "game benchmark did not reject an invalid CoreLang backend")
 endif()
 
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --terrain-model invalid
+        --evidence "${OUTPUT_DIRECTORY}/invalid-terrain-model.json"
+    RESULT_VARIABLE invalid_terrain_model_result
+    OUTPUT_VARIABLE invalid_terrain_model_stdout
+    ERROR_VARIABLE invalid_terrain_model_stderr
+    TIMEOUT 10
+)
+if(invalid_terrain_model_result EQUAL 0
+    OR NOT "${invalid_terrain_model_stdout}${invalid_terrain_model_stderr}"
+        MATCHES "terrain model must be r6 or v9")
+    message(FATAL_ERROR "game benchmark did not reject an invalid terrain model")
+endif()
+
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --terrain-model v9
+        --workload ordinary-turning --gameplay-proof performance
+        --evidence "${OUTPUT_DIRECTORY}/v9-gameplay-proof.json"
+    RESULT_VARIABLE v9_gameplay_proof_result
+    OUTPUT_VARIABLE v9_gameplay_proof_stdout
+    ERROR_VARIABLE v9_gameplay_proof_stderr
+    TIMEOUT 10
+)
+if(v9_gameplay_proof_result EQUAL 0
+    OR NOT "${v9_gameplay_proof_stdout}${v9_gameplay_proof_stderr}"
+        MATCHES "gameplay proof requires the R6 terrain model")
+    message(FATAL_ERROR "game benchmark did not keep gameplay proof bound to R6")
+endif()
+
 foreach(backend IN ITEMS interpreter jit aot)
     execute_process(
         COMMAND "${MC_MAIN}" --benchmark-game --workload ordinary-turning

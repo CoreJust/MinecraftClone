@@ -895,11 +895,13 @@ std::optional<uint64_t> platformFrameDurationTarget(bool const qualification_pro
 std::shared_ptr<server::WorldPreparation> startBenchmarkTerrainPreparation(
     shared::WorldConfiguration const& world_configuration,
     Clock::time_point const request_accepted_at,
-    shared::corelang::Backend const backend
+    shared::corelang::Backend const backend,
+    generation::TerrainModelTag const terrain_model
 )
 {
     generation::GenerationConfiguration generation_configuration{};
     generation_configuration.seed = world_configuration.seed;
+    generation_configuration.model_tag = terrain_model;
     return std::make_shared<server::WorldPreparation>(
         generation_configuration, world_configuration.algorithm_version, request_accepted_at, backend
     );
@@ -2227,11 +2229,17 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     }
     bool const s1_terrain_workload = options.workload == GameBenchmarkWorkload::OrdinaryTurningMovement;
     bool const full_radius_workload = options.workload == GameBenchmarkWorkload::Speed200FullRadiusRecovery;
+    // Let V9 source-backed preview snapshots reach the client while its atlas is still preparing.
+    bool const source_streaming_workload = s1_terrain_workload
+        || options.terrain_model == generation::TerrainModelTag::V9;
     bool capture_presentation_history = options.qualification_proof == "performance";
 #if !defined(__APPLE__)
     capture_presentation_history = false;
 #endif
     if (!options.qualification_proof.empty()) {
+        if (options.terrain_model != generation::TerrainModelTag::R6) {
+            return std::unexpected("gameplay proof requires the R6 terrain model");
+        }
         bool const proof_workload_matches = options.qualification_proof == "performance"
             ? options.workload == GameBenchmarkWorkload::OrdinaryTurningMovement
             : options.workload == GameBenchmarkWorkload::Speed200FullRadiusRecovery;
@@ -2254,6 +2262,10 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 ? GAME_BENCHMARK_TERRAIN_READINESS_DEADLINE : std::chrono::milliseconds::zero()))) {
         return std::unexpected("game benchmark has invalid duration limits");
     }
+    if (options.terrain_model != generation::TerrainModelTag::R6
+        && options.terrain_model != generation::TerrainModelTag::V9) {
+        return std::unexpected("game benchmark has an unsupported terrain model");
+    }
     if (full_radius_workload
         && !gameBenchmarkFullRadiusWarmupTimeout(options.full_radius_warmup_timeout.count())) {
         return std::unexpected("full-radius warmup timeout must be from 1 to 1800 seconds");
@@ -2270,9 +2282,10 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     auto const world_preparation = startBenchmarkTerrainPreparation(
         world_configuration,
         started_at,
-        options.backend
+        options.backend,
+        options.terrain_model
     );
-    if (!s1_terrain_workload) {
+    if (!source_streaming_workload) {
         awaitBenchmarkTerrainPreparation(world_preparation);
     }
     server::WorldPreparationSnapshot const preparation_snapshot = world_preparation->latest();
@@ -2280,15 +2293,15 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     if (preparation_snapshot.terrain_plan) {
         terrain_backend_receipt = preparation_snapshot.terrain_plan->receipt;
     }
-    if (!s1_terrain_workload && !terrain_backend_receipt) {
+    if (!source_streaming_workload && !terrain_backend_receipt) {
         return std::unexpected("Terrain-v2 benchmark preparation omitted its CoreLang backend receipt");
     }
-    if (!s1_terrain_workload && terrain_backend_receipt
+    if (!source_streaming_workload && terrain_backend_receipt
         && (terrain_backend_receipt->requested_backend != options.backend
             || terrain_backend_receipt->actual_backend != options.backend)) {
         return std::unexpected("Terrain-v2 benchmark preparation reported a mismatched CoreLang backend");
     }
-    std::shared_ptr<shared::TerrainWorld const> const terrain_world = s1_terrain_workload
+    std::shared_ptr<shared::TerrainWorld const> const terrain_world = source_streaming_workload
         ? nullptr : world_preparation->readyWorld();
     std::vector<server::GameServer::SpawnPoint> spawn_points;
     if (options.workload == GameBenchmarkWorkload::WrappedBorder) {
@@ -2298,7 +2311,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             .y = shared::World::FLIGHT_SPAWN.y,
             .z = shared::World::FLIGHT_SPAWN.z,
         });
-    } else if (!s1_terrain_workload) {
+    } else if (!source_streaming_workload) {
         static constexpr int32_t SPAWN_X = 32'768;
         static constexpr int32_t SPAWN_Y = 32'768;
         uint16_t const spawn_surface_height = terrain_world->sampleSurfaceHeight(SPAWN_X, SPAWN_Y);

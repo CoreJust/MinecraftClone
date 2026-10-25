@@ -48,6 +48,13 @@ struct GenerationMapRasterSource final
     std::span<uint8_t const> river_mask;
 };
 
+struct GenerationMapRasterBacking final
+{
+    std::vector<float> elevation_km;
+    std::vector<float> precipitation_m_year;
+    std::vector<float> water_level_km;
+};
+
 struct IceGrowthRange final
 {
     bool has_target = false;
@@ -200,6 +207,8 @@ bool hasValidStageFields(
     {
     case generation::GenerationStage::Tectonics:
     case generation::GenerationStage::CoastalElaboration:
+    case generation::GenerationStage::V9Platec:
+    case generation::GenerationStage::V9Terrain:
         return true;
     case generation::GenerationStage::InitialDrainage:
         uses_hydrology = hasValidHydrology(source, pixel_count);
@@ -217,7 +226,13 @@ bool hasValidStageFields(
         }
         uses_climate = hasValidClimate(source, pixel_count);
         return true;
+    case generation::GenerationStage::V9Climate:
+        return isFiniteField(source.temperature, pixel_count) && source.precipitation.empty();
+    case generation::GenerationStage::V9Water:
     case generation::GenerationStage::Complete:
+        uses_hydrology = hasValidHydrology(source, pixel_count);
+        uses_climate = hasValidClimate(source, pixel_count);
+        return uses_hydrology && uses_climate;
     default:
         return false;
     }
@@ -235,6 +250,51 @@ GenerationMapRasterSource rasterSource(generation::GenerationSnapshot const& sna
         .ocean_mask = std::span<uint8_t const>{ snapshot.ocean_mask },
         .lake_mask = std::span<uint8_t const>{ snapshot.lake_mask },
         .river_mask = std::span<uint8_t const>{ snapshot.river_mask },
+    };
+}
+
+[[nodiscard]]
+GenerationMapRasterSource rasterSource(
+    generation::GenerationSnapshot const& snapshot,
+    GenerationMapRasterBacking& backing
+)
+{
+    if (!snapshot.v9)
+    {
+        return rasterSource(snapshot);
+    }
+
+    generation::V9GenerationSnapshotFields const& fields = *snapshot.v9;
+    backing.elevation_km.reserve(fields.source_elevation_m.size());
+    for (float const elevation_m : fields.source_elevation_m)
+    {
+        backing.elevation_km.push_back(elevation_m / 1'000.0F);
+    }
+    if (!fields.precipitation_mm_year.empty())
+    {
+        backing.precipitation_m_year.reserve(fields.precipitation_mm_year.size());
+        for (float const precipitation_mm_year : fields.precipitation_mm_year)
+        {
+            backing.precipitation_m_year.push_back(precipitation_mm_year / 1'000.0F);
+        }
+    }
+    if (!fields.water_level_m.empty())
+    {
+        backing.water_level_km.reserve(fields.water_level_m.size());
+        for (float const water_level_m : fields.water_level_m)
+        {
+            backing.water_level_km.push_back(water_level_m / 1'000.0F);
+        }
+    }
+    return {
+        .resolution = snapshot.resolution,
+        .elevation = backing.elevation_km,
+        .temperature = fields.temperature_celsius,
+        .precipitation = backing.precipitation_m_year,
+        .water_level = backing.water_level_km,
+        .ocean_mask = fields.ocean_mask,
+        .lake_mask = fields.lake_mask,
+        .river_mask = fields.river_mask,
     };
 }
 
@@ -332,11 +392,20 @@ GenerationMapRgba8 waterColor(
 }
 
 [[nodiscard]]
-GenerationMapRgba8 climateColor(float const temperature, float const precipitation) noexcept
+GenerationMapRgba8 climateColor(
+    float const temperature,
+    float const precipitation,
+    bool const has_temperature,
+    bool const has_precipitation
+) noexcept
 {
     GenerationMapRgba8 const temperature_tint = rampColor(temperature, TEMPERATURE_COLORS);
     GenerationMapRgba8 const precipitation_tint = rampColor(precipitation, PRECIPITATION_COLORS);
-    return blendColor(temperature_tint, precipitation_tint, 0.5F);
+    if (has_temperature && has_precipitation)
+    {
+        return blendColor(temperature_tint, precipitation_tint, 0.5F);
+    }
+    return has_temperature ? temperature_tint : precipitation_tint;
 }
 
 [[nodiscard]]
@@ -498,7 +567,7 @@ std::optional<GenerationMapImage> rasterizeGenerationMapFromSource(
             {
                 color = blendColor(
                     color,
-                    climateColor(source.temperature[source_index], source.precipitation[source_index]),
+                    climateColor(source.temperature[source_index], source.precipitation[source_index], true, true),
                     0.32F * options.climate_progress
                 );
             }
@@ -533,7 +602,12 @@ std::optional<GenerationMapImage> rasterizeGenerationMapInternal(
     RasterOptions const& options
 )
 {
-    GenerationMapRasterSource const source = rasterSource(snapshot);
+    if (snapshot.v9 && !generation::isValidGenerationSnapshot(snapshot))
+    {
+        return std::nullopt;
+    }
+    GenerationMapRasterBacking backing;
+    GenerationMapRasterSource const source = rasterSource(snapshot, backing);
     if (!hasValidResolution(source.resolution) || options.output_resolution == 0U
         || source.resolution % options.output_resolution != 0U)
     {
@@ -556,7 +630,9 @@ std::optional<GenerationMapImage> rasterizeGenerationMapInternal(
         source,
         uses_hydrology,
         uses_climate,
-        display_ice_surface_kind,
+        display_ice_surface_kind.empty() && snapshot.v9
+            ? std::span<uint8_t const>{ snapshot.v9->ice_surface_kind }
+            : display_ice_surface_kind,
         display_ice_temperature,
         options
     );
@@ -643,6 +719,7 @@ struct PreparedAnimationMap final
     bool has_climate = false;
     bool has_moisture = false;
     bool has_temperature = false;
+    bool has_precipitation = false;
     bool has_wind = false;
     bool has_currents = false;
     bool has_motion = false;
@@ -809,8 +886,10 @@ std::optional<PreparedAnimationMap> prepareAnimationMap(AnimationSourceFields co
     PreparedAnimationMap data;
     data.sea_level = std::isfinite(source.sea_level) ? source.sea_level : 0.0F;
     data.has_hydrology = source.hydrology_available;
-    data.has_climate = source.climate_available;
     data.has_temperature = hasExactLength(source.temperature, pixel_count) && isFiniteSpan(source.temperature);
+    data.has_precipitation = hasExactLength(source.precipitation, pixel_count)
+        && isFiniteSpan(source.precipitation);
+    data.has_climate = source.climate_available && (data.has_temperature || data.has_precipitation);
     data.has_moisture = hasExactLength(source.moisture, pixel_count) && isFiniteSpan(source.moisture);
     data.has_wind = hasExactLength(source.wind_u, pixel_count) && hasExactLength(source.wind_v, pixel_count)
         && isFiniteSpan(source.wind_u) && isFiniteSpan(source.wind_v);
@@ -849,7 +928,7 @@ std::optional<PreparedAnimationMap> prepareAnimationMap(AnimationSourceFields co
             {
                 cell.temperature = source.temperature[source_index];
             }
-            if (data.has_climate)
+            if (data.has_precipitation)
             {
                 cell.precipitation = source.precipitation[source_index];
             }
@@ -858,7 +937,7 @@ std::optional<PreparedAnimationMap> prepareAnimationMap(AnimationSourceFields co
                 cell.moisture = source.moisture[source_index];
                 maximum_moisture = std::max(maximum_moisture, cell.moisture);
             }
-            if (data.has_climate)
+            if (data.has_precipitation)
             {
                 maximum_precipitation = std::max(maximum_precipitation, cell.precipitation);
             }
@@ -907,7 +986,7 @@ std::optional<PreparedAnimationMap> prepareAnimationMap(AnimationSourceFields co
         float const moisture = data.has_moisture
             ? cell.moisture / std::max(maximum_moisture, 1.0e-6F) * 0.4F
             : 0.0F;
-        float const rainfall = data.has_climate
+        float const rainfall = data.has_precipitation
             ? std::log1p(std::max(0.0F, cell.precipitation))
                 / std::max(std::log1p(maximum_precipitation), 1.0e-6F) * 0.6F
             : 0.0F;
@@ -1152,6 +1231,84 @@ std::optional<PreparedAnimationMap> prepareAnimationMap(
     GenerationMapDisplayIceMaskHandle const& final_display_ice_mask
 )
 {
+    if (snapshot.v9)
+    {
+        if (!generation::isValidGenerationSnapshot(snapshot))
+        {
+            return std::nullopt;
+        }
+        generation::V9GenerationSnapshotFields const& source = *snapshot.v9;
+        std::vector<float> elevation_km;
+        elevation_km.reserve(source.source_elevation_m.size());
+        for (float const value_m : source.source_elevation_m)
+        {
+            elevation_km.push_back(value_m / 1'000.0F);
+        }
+        std::vector<float> precipitation_m_year;
+        precipitation_m_year.reserve(source.precipitation_mm_year.size());
+        for (float const value_mm_year : source.precipitation_mm_year)
+        {
+            precipitation_m_year.push_back(value_mm_year / 1'000.0F);
+        }
+        std::vector<float> water_level_km;
+        water_level_km.reserve(source.water_level_m.size());
+        for (float const value_m : source.water_level_m)
+        {
+            water_level_km.push_back(value_m / 1'000.0F);
+        }
+
+        std::vector<int16_t> compact_plate_ids;
+        std::vector<float> plate_vx;
+        std::vector<float> plate_vy;
+        if (source.plate_directions.size() <= 64U)
+        {
+            std::vector<generation::GenerationPlateDirection> directions = source.plate_directions;
+            std::sort(directions.begin(), directions.end(), [](auto const& left, auto const& right) {
+                return left.plate_id < right.plate_id;
+            });
+            compact_plate_ids.resize(source.plate_ids.size());
+            plate_vx.resize(source.plate_ids.size());
+            plate_vy.resize(source.plate_ids.size());
+            for (size_t index = 0U; index < source.plate_ids.size(); ++index)
+            {
+                auto const direction = std::lower_bound(
+                    directions.begin(),
+                    directions.end(),
+                    source.plate_ids[index],
+                    [](generation::GenerationPlateDirection const& candidate, uint32_t const plate_id) {
+                        return candidate.plate_id < plate_id;
+                    }
+                );
+                if (direction == directions.end() || direction->plate_id != source.plate_ids[index])
+                {
+                    return std::nullopt;
+                }
+                compact_plate_ids[index] = static_cast<int16_t>(direction - directions.begin());
+                plate_vx[index] = direction->x;
+                plate_vy[index] = direction->y;
+            }
+        }
+        AnimationSourceFields fields{
+            .resolution = snapshot.resolution,
+            .elevation = elevation_km,
+            .temperature = source.temperature_celsius,
+            .precipitation = precipitation_m_year,
+            .water_level = water_level_km,
+            .plate_vx = plate_vx,
+            .plate_vy = plate_vy,
+            .plate_id = compact_plate_ids,
+            .ocean_mask = source.ocean_mask,
+            .lake_mask = source.lake_mask,
+            .river_mask = source.river_mask,
+            .ice_kind = source.ice_surface_kind,
+            .hydrology_available = snapshot.stage >= generation::GenerationStage::V9Water,
+            .climate_available = !source.temperature_celsius.empty() || !source.precipitation_mm_year.empty(),
+            .sea_level = 0.0F,
+        };
+        static_cast<void>(final_display_ice_mask);
+        return prepareAnimationMap(fields);
+    }
+
     GenerationMapRasterSource const source = rasterSource(snapshot);
     if (!hasValidResolution(source.resolution))
     {
@@ -1781,7 +1938,12 @@ GenerationMapImage renderAnimationFrame(
                 {
                     color = blendColor(
                         color,
-                        climateColor(native_cell.temperature, native_cell.precipitation),
+                        climateColor(
+                            native_cell.temperature,
+                            native_cell.precipitation,
+                            data.has_temperature,
+                            data.has_precipitation
+                        ),
                         0.32F * climate_progress
                     );
                 }

@@ -24,6 +24,16 @@ REQUIRED_SHADER_PATHS = frozenset(f"shaders/{name}.spv" for name in (
     "stone_indexed_block.vert", "stone.frag", "stone_solid.frag", "sky.vert", "sky.frag",
     "trivial.frag", "text.vert", "text.frag", "adaptive_text.frag", "map.vert", "map.frag", "gui_vector.vert", "gui_vector.frag",
 ))
+MODEL_NOTICE_FILES = (
+    ("third_party/platec/LICENSE", "licenses/model/platec/LICENSE"),
+    ("third_party/platec/provenance.json", "licenses/model/platec/provenance.json"),
+    ("third_party/structural/LICENSE", "licenses/model/structural/LICENSE"),
+    ("third_party/structural/SOURCE_MANIFEST.json", "licenses/model/structural/SOURCE_MANIFEST.json"),
+    ("third_party/superlu/License.txt", "licenses/model/superlu/License.txt"),
+    ("third_party/superlu/provenance.json", "licenses/model/superlu/provenance.json"),
+    ("third_party/gsw/LICENSE.txt", "licenses/model/gsw/LICENSE.txt"),
+    ("third_party/gsw/provenance.json", "licenses/model/gsw/provenance.json"),
+)
 
 
 def collect_entries(runtime: Path, assets: Path, scenarios: Path) -> list[packages.ArchiveEntry]:
@@ -52,6 +62,8 @@ def collect_entries(runtime: Path, assets: Path, scenarios: Path) -> list[packag
     packages.add_file(entries, ROOT / "LICENSE", "licenses/MinecraftClone-LICENSE", "game license")
     for name in ("DEBUG_HUD_ATTRIBUTION.md", "TAMSYN_LICENSE.txt"):
         packages.add_file(entries, ROOT / "src/client/render/shaders" / name, f"licenses/hud/{name}", "HUD license")
+    for source, destination in MODEL_NOTICE_FILES:
+        packages.add_file(entries, ROOT / source, destination, "native model vendor notice")
     if (runtime / "licenses").exists():
         entries.extend(packages.files_in_tree(runtime / "licenses", "licenses/runtime", "runtime licenses"))
     packages.validate_windows_archive_names(entries)

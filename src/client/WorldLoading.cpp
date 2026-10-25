@@ -64,62 +64,20 @@ bool isValidGenerationConfiguration(generation::GenerationConfiguration const& c
 }
 
 [[nodiscard]]
-bool hasExpectedSize(std::vector<float> const& values, uint64_t const expected) noexcept
-{
-    return values.empty() || static_cast<uint64_t>(values.size()) == expected;
-}
-
-[[nodiscard]]
-bool hasExpectedSize(std::vector<uint8_t> const& values, uint64_t const expected) noexcept
-{
-    return values.empty() || static_cast<uint64_t>(values.size()) == expected;
-}
-
-[[nodiscard]]
-bool hasFiniteValues(std::vector<float> const& values) noexcept
-{
-    return std::ranges::all_of(values, [](float const value) { return std::isfinite(value); });
-}
-
-[[nodiscard]]
-bool hasBooleanValues(std::vector<uint8_t> const& values) noexcept
-{
-    return std::ranges::all_of(values, [](uint8_t const value) { return value <= 1U; });
-}
-
-[[nodiscard]]
 bool isValidSnapshot(
     generation::GenerationSnapshot const& snapshot,
     uint32_t const expected_resolution,
-    generation::GenerationStage const latest_stage
+    generation::GenerationStage const latest_stage,
+    generation::TerrainModelTag const model_tag
 ) noexcept
 {
-    uint64_t const expected_samples = sampleCount(expected_resolution);
-    bool const has_fields = !snapshot.elevation.empty()
-        || !snapshot.temperature.empty()
-        || !snapshot.precipitation.empty()
-        || !snapshot.water_level.empty()
-        || !snapshot.ocean_mask.empty()
-        || !snapshot.lake_mask.empty()
-        || !snapshot.river_mask.empty();
+    uint32_t const source_resolution = model_tag == generation::TerrainModelTag::V9
+        ? 256U
+        : expected_resolution;
     return static_cast<uint8_t>(snapshot.stage) <= static_cast<uint8_t>(latest_stage)
-        && static_cast<uint8_t>(snapshot.stage) <= static_cast<uint8_t>(generation::GenerationStage::Complete)
-        && snapshot.resolution == expected_resolution
-        && has_fields
-        && hasExpectedSize(snapshot.elevation, expected_samples)
-        && hasExpectedSize(snapshot.temperature, expected_samples)
-        && hasExpectedSize(snapshot.precipitation, expected_samples)
-        && hasExpectedSize(snapshot.water_level, expected_samples)
-        && hasExpectedSize(snapshot.ocean_mask, expected_samples)
-        && hasExpectedSize(snapshot.lake_mask, expected_samples)
-        && hasExpectedSize(snapshot.river_mask, expected_samples)
-        && hasFiniteValues(snapshot.elevation)
-        && hasFiniteValues(snapshot.temperature)
-        && hasFiniteValues(snapshot.precipitation)
-        && hasFiniteValues(snapshot.water_level)
-        && hasBooleanValues(snapshot.ocean_mask)
-        && hasBooleanValues(snapshot.lake_mask)
-        && hasBooleanValues(snapshot.river_mask);
+        && snapshot.resolution == source_resolution
+        && snapshot.v9.has_value() == (model_tag == generation::TerrainModelTag::V9)
+        && generation::isValidGenerationSnapshot(snapshot);
 }
 
 [[nodiscard]]
@@ -255,7 +213,11 @@ bool WorldLoading::publishGenerationProgress(
         || (m_has_generation_progress && progress.stage == m_generation_stage
             && (progress.total != m_generation_total || progress.completed < m_generation_completed))
         || (progress.snapshot
-            && !isValidSnapshot(*progress.snapshot, identity.configuration.resolution, progress.stage))) {
+            && !isValidSnapshot(
+                *progress.snapshot,
+                identity.configuration.resolution,
+                progress.stage,
+                identity.configuration.model_tag))) {
         return false;
     }
 
@@ -284,8 +246,7 @@ bool WorldLoading::publishAtlas(
         || m_atlas_ready
         || !atlas
         || atlas->configuration != identity.configuration
-        || static_cast<uint64_t>(atlas->configuration.resolution) * atlas->configuration.resolution
-            != atlas->elevation.size()) {
+        || !generation::isValidAtlas(*atlas)) {
         return false;
     }
 

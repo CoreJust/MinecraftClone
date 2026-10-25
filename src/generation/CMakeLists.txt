@@ -40,6 +40,7 @@ add_library(mc_generation STATIC
     V9ClimateQg.cpp
     V9ClimateThermal.cpp
     V9ClimateSparseSolver.cpp
+    V9Provider.cpp
     V9Numerics.cpp
     V9Random.cpp
     V9Water.cpp
@@ -82,6 +83,7 @@ target_sources(mc_generation
         FILE_SET public_headers TYPE HEADERS
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
         FILES include/generation/Generation.hpp
+            include/generation/V9Provider.hpp
     PRIVATE
         FILE_SET private_headers TYPE HEADERS
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
@@ -97,6 +99,7 @@ target_sources(mc_generation
             V9ClimateQg.hpp
             V9ClimateThermal.hpp
             V9ClimateSparseSolver.hpp
+            V9ProviderInternal.hpp
             V9Numerics.hpp
             V9Random.hpp
             V9Water.hpp

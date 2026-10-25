@@ -50,7 +50,7 @@ struct S2WorldMapState final {
 };
 
 struct S2PlateMotion final {
-    int16_t id = 0;
+    uint32_t id = 0U;
     float x = 0.0F;
     float y = 0.0F;
     float vector_x = 0.0F;
@@ -67,8 +67,23 @@ struct S2MapImage final {
     std::array<std::array<float, 2U>, S2_WORLD_MAP_LAYER_COUNT> layer_ranges{};
     std::array<bool, S2_WORLD_MAP_LAYER_COUNT> has_numeric_range{};
     uint32_t ice_snow_count = 0U;
+    uint32_t ice_glacier_count = 0U;
     uint32_t ice_water_count = 0U;
     bool has_display_ice_mask = false;
+    uint32_t source_resolution = 0U;
+    uint32_t vector_field_resolution = 0U;
+    std::vector<uint32_t> v9_plate_ids;
+    std::vector<double> v9_elevation_m;
+    std::vector<float> v9_temperature_mean_c;
+    std::vector<float> v9_precipitation_mean_mm_year;
+    std::vector<uint8_t> v9_biome_ids;
+    std::vector<float> v9_moisture_mean_kg_m2;
+    std::vector<float> v9_wind_u_m_s;
+    std::vector<float> v9_wind_v_m_s;
+    std::vector<float> v9_ocean_u_m_s;
+    std::vector<float> v9_ocean_v_m_s;
+    std::vector<uint8_t> v9_ocean_cells;
+    std::vector<uint8_t> v9_ice_surface_kind;
     std::vector<S2PlateMotion> plate_motions;
     std::vector<std::array<uint8_t, 4U>> rgba;
 };

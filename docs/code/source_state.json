@@ -37,7 +37,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "a206e680db70d1a425e80aa2411cd66ecc79523f3f98192ab12e63bbe58a916b"
+      "sources_sha256": "feaa94d03c8f329fdb638817f8d20999656bfe7fa849c63377efa75a3d1f8f73"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -210,7 +210,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "1bfedfcf206187f1045828823d92944db50acf898b14d4575b59ddc436055590"
+      "sources_sha256": "cce396a272934ab511fdb4a3d3473d457543fe8cc80a78358c6c9238143b75e5"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -397,11 +397,11 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "74b296e1cf07ba04ab74c1d669757a7b0691d052243a433c706332cb4d1a9f84"
+      "sources_sha256": "da3e774d16b11b8f7eeef9da13664d110bbb8b6892f482186f121d0e7d648674"
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "ecd4fd164e2f1f48cc39ddfc2549b53268649428741011699ebeb4d2c2323a0c",
+      "guide_sha256": "29d5e442a7eb8f5a9bbcc89868090d2b4374ae5cc7e036c824a34d4da0741e0f",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -431,6 +431,8 @@
         "src/generation/V9OceanographicToolboxMsvc.cpp",
         "src/generation/V9PlatecSource.cpp",
         "src/generation/V9PlatecSource.hpp",
+        "src/generation/V9Provider.cpp",
+        "src/generation/V9ProviderInternal.hpp",
         "src/generation/V9Random.cpp",
         "src/generation/V9Random.hpp",
         "src/generation/V9Terrain.cpp",
@@ -454,6 +456,7 @@
         "src/generation/V9WaterRouting.cpp",
         "src/generation/V9WaterRouting.hpp",
         "src/generation/include/generation/Generation.hpp",
+        "src/generation/include/generation/V9Provider.hpp",
         "src/tools/world_map.cpp",
         "tests/fixtures/terrain_v2/manifest.json",
         "tests/fixtures/terrain_v2/rng_oracle_seed42.json",
@@ -1003,10 +1006,11 @@
         "tests/generation/reference_tests.cpp",
         "tests/generation/v9_climate_tests.cpp",
         "tests/generation/v9_platec_source_tests.cpp",
+        "tests/generation/v9_provider_tests.cpp",
         "tests/generation/v9_terrain_tests.cpp",
         "tests/generation/v9_water_tests.cpp"
       ],
-      "sources_sha256": "b0221c5ace16a6febb6c7226d78f574eb8d38e83eaedb4867b671558a1fd68ee"
+      "sources_sha256": "f1acf0fc3de3bdcbeb7e2446c86c8564dbd8cd1ad91fb3276da5e833c40c2116"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -1132,7 +1136,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "39a2c6dfba4af2d7ba1cffa0260580c082e664352fa41ddf3edb10b13069eaa5"
+      "sources_sha256": "38da5cfab598ff1099039bc68323405abedf1f452b56af9f2261053a755eefc4"
     }
   ],
   "version": 1

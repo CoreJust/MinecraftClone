@@ -75,7 +75,7 @@ bool isValidProduct(
         || product.world->identity() != session.terrain
         || product.world->atlas()->configuration != session.configuration
         || product.root->terrain_identity != session.terrain
-        || product.root->model_identity != shared::TERRAIN_LOD_MODEL
+        || product.root->model_identity != shared::terrainLodModel(session.configuration.model_tag)
         || product.root->level != shared::TerrainLodLevel::L0
         || product.root->origin_x != 0U
         || product.root->origin_y != 0U
@@ -85,7 +85,8 @@ bool isValidProduct(
 
     uint32_t const spacing = shared::terrainLodSpacing(
         session.configuration.resolution,
-        shared::TerrainLodLevel::L0
+        shared::TerrainLodLevel::L0,
+        session.configuration.model_tag
     );
     uint32_t const side = generation::WORLD_SIZE_BLOCKS / spacing + 1U;
     return product.root->spacing == spacing

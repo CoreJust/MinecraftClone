@@ -98,6 +98,7 @@ struct RuntimeCommand final {
     bool debug_hud_enabled{ false };
     acceptance::GameBenchmarkWorkload game_benchmark_workload =
         acceptance::GameBenchmarkWorkload::OrdinaryMovement;
+    generation::TerrainModelTag terrain_model = generation::TerrainModelTag::R6;
     uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS;
     std::string qualification_proof;
     std::chrono::seconds full_radius_warmup_timeout =
@@ -338,6 +339,7 @@ std::shared_ptr<server::WorldPreparation> prepareServerTerrain(
 {
     generation::GenerationConfiguration generation_configuration{};
     generation_configuration.seed = configuration.seed;
+    generation_configuration.model_tag = generation::TerrainModelTag::V9;
     return std::make_shared<server::WorldPreparation>(
         generation_configuration, configuration.algorithm_version, accepted_at, backend
     );
@@ -483,6 +485,7 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         command.evidence_path = argv[argc - 1];
         bool backend_selected = false;
         bool workload_selected = false;
+        bool terrain_model_selected = false;
         bool radius_selected = false;
         bool full_radius_timeout_selected = false;
         bool diagnostic_full_radius_capture_selected = false;
@@ -557,6 +560,17 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
                     return std::unexpected("invalid game benchmark workload: " + std::string{ name });
                 }
                 workload_selected = true;
+            } else if (argument == "--terrain-model" && !terrain_model_selected
+                && argument_index + 1 < argc - 2) {
+                std::string_view const model{ argv[++argument_index] };
+                if (model == "r6") {
+                    command.terrain_model = generation::TerrainModelTag::R6;
+                } else if (model == "v9") {
+                    command.terrain_model = generation::TerrainModelTag::V9;
+                } else {
+                    return std::unexpected("terrain model must be r6 or v9");
+                }
+                terrain_model_selected = true;
             } else if (argument == "--full-radius-warmup-seconds"
                 && !full_radius_timeout_selected && argument_index + 1 < argc - 2) {
                 int64_t seconds = 0;
@@ -638,6 +652,7 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         "'--benchmark-game [--present-immediate] "
         "[--corelang-backend interpreter|jit|aot] "
         "[--workload ordinary|ordinary-turning|speed-200|speed-200-full-radius|wrapped-border|permission-collision] "
+        "[--terrain-model r6|v9] "
         "[--gameplay-proof terrain-coverage|performance] "
         "[--render-distance CHUNKS] [--full-radius-warmup-seconds 1..1800] "
         "[--diagnostic-full-radius-capture] [--diagnostic-presentation-stages] "
@@ -848,6 +863,7 @@ int runGameBenchmarkCommand(RuntimeCommand const& command)
         .backend = command.backend,
         .full_radius_warmup_timeout = command.full_radius_warmup_timeout,
         .diagnostic_full_radius_capture = command.diagnostic_full_radius_capture,
+        .terrain_model = command.terrain_model,
         .frame_capture_image = command.benchmark_frame_capture,
         .frame_capture_phase = command.benchmark_frame_capture_phase.empty()
             ? "playing" : command.benchmark_frame_capture_phase,
