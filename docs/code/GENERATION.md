@@ -63,6 +63,24 @@ not invalidate a valid world query. Snow/Sand material use follows pipeline
 integration. Broader numeric bounds, full L0–L3/seam coverage, cross-platform
 parity and generator performance remain aggregate acceptance gates.
 
+## Native V9 seasonal climate
+
+The private climate component consumes the canonical 256×256 terrain bed and
+runs the source eight-phase seasonal climate, QG weather and moisture sequence.
+Its portable transforms, RNG and sparse solve retain source order and physical
+units; the pinned SuperLU closure supplies the sparse factorization without a
+platform BLAS or Python runtime. Wind, currents, precipitation and snow remain
+computed fields rather than latitude-band substitutes. Cancellation propagates
+through weather and thermal work without publishing a partial climate result;
+progress reports completed stages.
+
+MC-AI-0558 closes this local component prerequisite. The integrated three-seed
+95-field comparison and Windows generation packet establish bounded evidence,
+not universal numerical equivalence. The accepted q-only bound does not qualify
+all model fields. Untested seeds, full numerical-chain bounds, all-domain L0–L3
+coverage, Windows/Android canonical parity, performance and full game runtime
+acceptance remain open under MC-AI-0483.
+
 ## Bounded materialized prefetch
 
 Authoritative readiness covers 40 chunks (640 blocks) of horizontal interest:

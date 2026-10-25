@@ -7,8 +7,12 @@ script/ci/diagnostics/sustained-flight/*.patch whitespace=-blank-at-eol
 script/ci/diagnostics/sustained-flight/vcpkg-overlay/enet/*.patch whitespace=-blank-at-eol
 
 # Preserve upstream trailing whitespace in the frozen structural source closure.
-third_party/structural/** whitespace=-blank-at-eol
+third_party/structural/NoiseLib/** whitespace=-blank-at-eol
+third_party/structural/worlds_noise.h whitespace=-blank-at-eol
 
 # Preserve the frozen Platec bytes while allowing source CRLF in whitespace checks.
 third_party/platec/** -text -eol whitespace=cr-at-eol
 third_party/platec/cpp_src/mass.cpp whitespace=cr-at-eol,-blank-at-eof
+
+# Preserve frozen SuperLU source bytes.
+third_party/superlu/** -text -eol whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab,cr-at-eol

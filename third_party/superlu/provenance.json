@@ -1,0 +1,256 @@
+{
+  "upstream": "https://github.com/xiaoyeli/superlu",
+  "version": "7.0.1",
+  "commit": "83a3c82b9e44c966ca2bc26991ffdb2bf63e1e2b",
+  "license_path": "License.txt",
+  "license_sha256": "6b2a6d93c1e1df35200fa5a575fd0ec0ccb222d3fd41229ecf2c7687f583f1b3",
+  "source_selection": "Sequential double-precision dgssv path with one internal CBLAS dtrsv kernel; no external BLAS, Fortran, METIS, MC64, ILU, or other precision source files are included.",
+  "files": [
+    {
+      "path": "CBLAS/dtrsv.c",
+      "sha256": "11969c1bc5ff34cc1a13d18d2d11a3124542ec4dddcc33cb5ca6d47804fbcbba",
+      "upstream_path": "CBLAS/dtrsv.c"
+    },
+    {
+      "path": "CBLAS/f2c.h",
+      "sha256": "0ac2575825da1aebc45f949e1f568dca75b9204ca7c2ce2f2c6a2072623c08ec",
+      "upstream_path": "CBLAS/f2c.h"
+    },
+    {
+      "path": "License.txt",
+      "sha256": "6b2a6d93c1e1df35200fa5a575fd0ec0ccb222d3fd41229ecf2c7687f583f1b3",
+      "upstream_path": "License.txt"
+    },
+    {
+      "path": "SRC/colamd.c",
+      "sha256": "babba748ac5ee9e7182df0acec9ad9961f4371c53ee25ff9252bb97f38fd08c1",
+      "upstream_path": "SRC/colamd.c"
+    },
+    {
+      "path": "SRC/colamd.h",
+      "sha256": "364e7e2584837b2922cc74c22ec9edd8d5d2592548c5f8cae9624738c5b6dfaa",
+      "upstream_path": "SRC/colamd.h"
+    },
+    {
+      "path": "SRC/dcolumn_bmod.c",
+      "sha256": "1608d40bd775b4b98dbab34ad951d9949b505ed7f007ef870e99f4cf17414675",
+      "upstream_path": "SRC/dcolumn_bmod.c"
+    },
+    {
+      "path": "SRC/dcolumn_dfs.c",
+      "sha256": "0bce2876d2c8d829085adda650aadccd240c7aca6b658e48c42f45a299ae99b5",
+      "upstream_path": "SRC/dcolumn_dfs.c"
+    },
+    {
+      "path": "SRC/dcopy_to_ucol.c",
+      "sha256": "461fc8b556e114c4690ad524db62f613019091d81fb9f1ab64592cb0bae10b09",
+      "upstream_path": "SRC/dcopy_to_ucol.c"
+    },
+    {
+      "path": "SRC/dgssv.c",
+      "sha256": "12e5db6bf4a9bb801bc3d831abbf507c7431610537b4a9ce45f3c947162fcf75",
+      "upstream_path": "SRC/dgssv.c"
+    },
+    {
+      "path": "SRC/dgstrf.c",
+      "sha256": "404c973c54d25df38615a083976ec84d3bc76ed1467b7ae7dc808cd7a72337a2",
+      "upstream_path": "SRC/dgstrf.c"
+    },
+    {
+      "path": "SRC/dgstrs.c",
+      "sha256": "f881021a2381ea4fc19b08cdeeb4879e0c2da47946c897338fcaffaed721972d",
+      "upstream_path": "SRC/dgstrs.c"
+    },
+    {
+      "path": "SRC/dlacon2.c",
+      "sha256": "f93788ac665c02bfaceaf8cfcdf6129dfcd0cd4bcde267dce72365409e9c6720",
+      "upstream_path": "SRC/dlacon2.c"
+    },
+    {
+      "path": "SRC/dmach.c",
+      "sha256": "fa7cb1632bfb41145a304415c1f31151b79aae58fe6e021f015dd147f65d4152",
+      "upstream_path": "SRC/dmach.c"
+    },
+    {
+      "path": "SRC/dmemory.c",
+      "sha256": "6889f73ebfd14b3be6f4f4be8e7ebbdc44d9d0fccca4b5996707ded09acc8308",
+      "upstream_path": "SRC/dmemory.c"
+    },
+    {
+      "path": "SRC/dmyblas2.c",
+      "sha256": "def69de2aba6e2623aa943d973e6acedf102d6c9552a056c099247b0a7d35da5",
+      "upstream_path": "SRC/dmyblas2.c"
+    },
+    {
+      "path": "SRC/dpanel_bmod.c",
+      "sha256": "a90e9ee3fbbfcc7a4d8482395e4e185bd8c3c301fef089b7538043dad79c0733",
+      "upstream_path": "SRC/dpanel_bmod.c"
+    },
+    {
+      "path": "SRC/dpanel_dfs.c",
+      "sha256": "dedc24193a94353caf537bf3761aa2c297fbc7b2956d831889dc61221639b650",
+      "upstream_path": "SRC/dpanel_dfs.c"
+    },
+    {
+      "path": "SRC/dpivotL.c",
+      "sha256": "32b8ceae60d88d7c8f6bbdaf0e104ee1a3f971a345ba1e0cbcf6ec6e90603c06",
+      "upstream_path": "SRC/dpivotL.c"
+    },
+    {
+      "path": "SRC/dpruneL.c",
+      "sha256": "eff67eac2a9db3e2d70db15d763e13dd72cfad0a9d22b7bf6970e55e5a33ef1b",
+      "upstream_path": "SRC/dpruneL.c"
+    },
+    {
+      "path": "SRC/dsnode_bmod.c",
+      "sha256": "b5ab10bbe7e3371652642df2cb3803b82eff92544c3ec1e6485ce867ad51dd17",
+      "upstream_path": "SRC/dsnode_bmod.c"
+    },
+    {
+      "path": "SRC/dsnode_dfs.c",
+      "sha256": "59119d5f3bb02d607f0c4820eabb91a165a6a55228f272034e854006d7bb0fe7",
+      "upstream_path": "SRC/dsnode_dfs.c"
+    },
+    {
+      "path": "SRC/dsp_blas2.c",
+      "sha256": "67df37fa2542431b71a92864a6359ab6d7c3fd73de63850007bb3ed8c8125bb0",
+      "upstream_path": "SRC/dsp_blas2.c"
+    },
+    {
+      "path": "SRC/dsp_blas3.c",
+      "sha256": "316f35095fd5be786be9b0270e70845a1b9cd3a7956dd9ba70307139a3635154",
+      "upstream_path": "SRC/dsp_blas3.c"
+    },
+    {
+      "path": "SRC/dutil.c",
+      "sha256": "3ff2d6ff158eead27e6dfd643a355f3baa2a0040f77d24433e23d30f16b24bc2",
+      "upstream_path": "SRC/dutil.c"
+    },
+    {
+      "path": "SRC/get_perm_c.c",
+      "sha256": "7994dd54e2fe57dcd4c182df464ebc1a83ea79523737a0793a4c4eabfed7c7f1",
+      "upstream_path": "SRC/get_perm_c.c"
+    },
+    {
+      "path": "SRC/heap_relax_snode.c",
+      "sha256": "42093ae05e6ff22b827e7969f1efd1885694e340ffc21b856210162b2c8fe73c",
+      "upstream_path": "SRC/heap_relax_snode.c"
+    },
+    {
+      "path": "SRC/input_error.c",
+      "sha256": "1007f35dbcc7d693a7c405b286c993a445e4a9c2854776e04ae279aee3a8dbcf",
+      "upstream_path": "SRC/input_error.c"
+    },
+    {
+      "path": "SRC/mark_relax.c",
+      "sha256": "7febf7a6a1b7a54b10f124e91ea29f00b798dc1eb4c230a5feacd2ee482a3309",
+      "upstream_path": "SRC/mark_relax.c"
+    },
+    {
+      "path": "SRC/memory.c",
+      "sha256": "36cfa36a24204cd9ed2175b933122bc859124bab9abe687855e4aa31e1fe1b2c",
+      "upstream_path": "SRC/memory.c"
+    },
+    {
+      "path": "SRC/mmd.c",
+      "sha256": "9e309d0edbc04e962a0db805dfd71f854525df2611e71e55662061f64c254084",
+      "upstream_path": "SRC/mmd.c"
+    },
+    {
+      "path": "SRC/qselect.c",
+      "sha256": "4dbabab32277c07f710b95d57b9befcaccfafaa809eaf2ccdba8e74232cd2eee",
+      "upstream_path": "SRC/qselect.c"
+    },
+    {
+      "path": "SRC/relax_snode.c",
+      "sha256": "2726b120bb8c18e10808f3698b1e28e4967877360cf7b911508e1a88e1cb8cad",
+      "upstream_path": "SRC/relax_snode.c"
+    },
+    {
+      "path": "SRC/slu_Cnames.h",
+      "sha256": "81f9fe2d39fb1c52b187bce6342c81c8267fc3a5ec3e5cd4b2033e54025b919e",
+      "upstream_path": "SRC/slu_Cnames.h"
+    },
+    {
+      "path": "SRC/slu_cdefs.h",
+      "sha256": "6c0a9647afbc1097a65f10b4a84f14c9e3d1d4c351772def29f1b7fed5ba2af1",
+      "upstream_path": "SRC/slu_cdefs.h"
+    },
+    {
+      "path": "SRC/slu_dcomplex.h",
+      "sha256": "e2b49fc1abaa6e5df4a8423d126631e38eaff877b41c68e9490a6f492515f25a",
+      "upstream_path": "SRC/slu_dcomplex.h"
+    },
+    {
+      "path": "SRC/slu_ddefs.h",
+      "sha256": "3cfc2d3deeb2159bd56d570e24d23f8df8e4010c7f9e3e46fa99ef5da2bba51e",
+      "upstream_path": "SRC/slu_ddefs.h"
+    },
+    {
+      "path": "SRC/slu_scomplex.h",
+      "sha256": "6dc64633910f63c3b67104eb18e663e2f767b9e1cae3131f756a1156f9ae7edd",
+      "upstream_path": "SRC/slu_scomplex.h"
+    },
+    {
+      "path": "SRC/slu_sdefs.h",
+      "sha256": "de554525803ad3384c937977f0b450ba521bbee874d684bc1749ef02d64cf93d",
+      "upstream_path": "SRC/slu_sdefs.h"
+    },
+    {
+      "path": "SRC/slu_util.h",
+      "sha256": "671acec32756ef6351f0467ef0d26860db5fae223d428362d98efd95e54343f0",
+      "upstream_path": "SRC/slu_util.h"
+    },
+    {
+      "path": "SRC/slu_zdefs.h",
+      "sha256": "1a9455dc10f0418ae174db28f47e19d95d939c36bdb7e200d122410571829622",
+      "upstream_path": "SRC/slu_zdefs.h"
+    },
+    {
+      "path": "SRC/sp_coletree.c",
+      "sha256": "1c088027ee48459643cb7c1cd16cf2709060594477caff313a18f915b5608414",
+      "upstream_path": "SRC/sp_coletree.c"
+    },
+    {
+      "path": "SRC/sp_ienv.c",
+      "sha256": "49d62ff689537b026848e319a37527b1c3b9457254d20e4a7152ff31773721e5",
+      "upstream_path": "SRC/sp_ienv.c"
+    },
+    {
+      "path": "SRC/sp_preorder.c",
+      "sha256": "9217c2e607826cdde5054dedc544d2a29dc138986bf4749c4f021530ce8b952e",
+      "upstream_path": "SRC/sp_preorder.c"
+    },
+    {
+      "path": "SRC/superlu_config.h.in",
+      "sha256": "c9eb8ecc12e48e1c9ca58367d1aa63aa36647d25fde97c30507c074f6c62859c",
+      "upstream_path": "SRC/superlu_config.h.in"
+    },
+    {
+      "path": "SRC/superlu_enum_consts.h",
+      "sha256": "8d240148298e27e95fd583a0a8bacb8e8a2d8078fb60b5901afee23ba135e6b1",
+      "upstream_path": "SRC/superlu_enum_consts.h"
+    },
+    {
+      "path": "SRC/superlu_timer.c",
+      "sha256": "64fa3c298b7860eaf8f1483d2e99410814aad32df85721d64ed6eaf497d8d3f9",
+      "upstream_path": "SRC/superlu_timer.c"
+    },
+    {
+      "path": "SRC/supermatrix.h",
+      "sha256": "54c37f5da81f48c017e97e05d920165ffbbbbd16d72d4eb246e471bdf17b0626",
+      "upstream_path": "SRC/supermatrix.h"
+    },
+    {
+      "path": "SRC/util.c",
+      "sha256": "6cf2c24617f4363411047a1334a12412d68d82590ba69e8377a88f55ef250fa2",
+      "upstream_path": "SRC/util.c"
+    }
+  ],
+  "local_integration_files": [
+    {
+      "path": "CMakeLists.txt",
+      "sha256": "78e455830b1a2560be15788f64bbcfbd87ffd82aaddf6220e2adbf087e65fd80"
+    }
+  ]
+}

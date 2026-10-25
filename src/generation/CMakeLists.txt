@@ -3,7 +3,7 @@ set(MC_WORLD_MAP_SOURCE "${MC_WORLD_MAP_SOURCE}" PARENT_SCOPE)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     cmake_minimum_required(VERSION 3.25)
-    project(MinecraftGeneration LANGUAGES CXX)
+    project(MinecraftGeneration LANGUAGES C CXX)
 
     set(CMAKE_CXX_STANDARD 23)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,6 +12,9 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     include(CTest)
     option(MC_GENERATION_BUILD_TESTS "Build optional generation tests" OFF)
 endif()
+
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/superlu"
+    "${CMAKE_CURRENT_BINARY_DIR}/superlu")
 
 add_library(mc_generation STATIC
     Coastal.cpp
@@ -26,6 +29,12 @@ add_library(mc_generation STATIC
     V9PlatecSource.cpp
     V9Terrain.cpp
     V9TerrainMorphology.cpp
+    V9Climate.cpp
+    V9ClimateQg.cpp
+    V9ClimateThermal.cpp
+    V9ClimateSparseSolver.cpp
+    V9Numerics.cpp
+    V9Random.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/math2d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/math3d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/source/perlin.cpp
@@ -67,6 +76,12 @@ target_sources(mc_generation
             V9PlatecSource.hpp
             V9Terrain.hpp
             V9TerrainMorphology.hpp
+            V9Climate.hpp
+            V9ClimateQg.hpp
+            V9ClimateThermal.hpp
+            V9ClimateSparseSolver.hpp
+            V9Numerics.hpp
+            V9Random.hpp
 )
 
 target_include_directories(mc_generation
@@ -76,12 +91,15 @@ target_include_directories(mc_generation
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/..
         ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec/cpp_src
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/superlu/SRC
+        ${CMAKE_CURRENT_BINARY_DIR}/superlu
 )
 target_include_directories(mc_generation SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/include
 )
 target_compile_features(mc_generation PUBLIC cxx_std_23)
+target_link_libraries(mc_generation PRIVATE mc_v9_superlu)
 if(ANDROID)
     # NDK 27 libc++ gates C++20 cancellation APIs behind its experimental-library option.
     target_compile_options(mc_generation PUBLIC -fexperimental-library)
@@ -187,6 +205,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND MC_GENERATION_BUILD_TE
         "${MC_REPOSITORY_ROOT}/tests/generation/reference_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/v9_platec_source_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/v9_terrain_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/v9_climate_tests.cpp"
     )
     target_link_libraries(mc_generation_tests PRIVATE mc_generation GTest::gtest_main)
     target_include_directories(mc_generation_tests PRIVATE

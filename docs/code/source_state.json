@@ -210,7 +210,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "96f4c72da09a4350e2bf10ab846a447d1a4f3cf349a8652040c86b0ba7f3723d"
+      "sources_sha256": "85b63b77f886070175c01643496dce542670bb402aee825ae1e8e02d2bfc8a5b"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -401,7 +401,7 @@
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "b89c4a7dccd41707516e668ae073881f8cc819e25bb94f5a6465ade3814e6940",
+      "guide_sha256": "06a0111b153f4ebea05e97a9614c62b9dcfd1b63449e65139f710e80cd18a29c",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -418,8 +418,20 @@
         "src/generation/NumpyTanh.cpp",
         "src/generation/Sha256.cpp",
         "src/generation/Sha256.hpp",
+        "src/generation/V9Climate.cpp",
+        "src/generation/V9Climate.hpp",
+        "src/generation/V9ClimateQg.cpp",
+        "src/generation/V9ClimateQg.hpp",
+        "src/generation/V9ClimateSparseSolver.cpp",
+        "src/generation/V9ClimateSparseSolver.hpp",
+        "src/generation/V9ClimateThermal.cpp",
+        "src/generation/V9ClimateThermal.hpp",
+        "src/generation/V9Numerics.cpp",
+        "src/generation/V9Numerics.hpp",
         "src/generation/V9PlatecSource.cpp",
         "src/generation/V9PlatecSource.hpp",
+        "src/generation/V9Random.cpp",
+        "src/generation/V9Random.hpp",
         "src/generation/V9Terrain.cpp",
         "src/generation/V9Terrain.hpp",
         "src/generation/V9TerrainMorphology.cpp",
@@ -972,10 +984,11 @@
         "tests/generation/numpy_random_tests.cpp",
         "tests/generation/platec_compat_tests.cpp",
         "tests/generation/reference_tests.cpp",
+        "tests/generation/v9_climate_tests.cpp",
         "tests/generation/v9_platec_source_tests.cpp",
         "tests/generation/v9_terrain_tests.cpp"
       ],
-      "sources_sha256": "47d956ce031a7ae695b3121704edcaecb5f6a6b57f96bb1f883a1fb6f5aa70a7"
+      "sources_sha256": "1c797d4c8e2108caa4175fb7d8f25aa92d736d64402e4824871d41ae5b9d9a4c"
     },
     {
       "guide": "docs/code/RENDERING.md",

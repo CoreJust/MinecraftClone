@@ -174,6 +174,7 @@ add_executable(mc_tests
     generation/reference_tests.cpp
     generation/v9_platec_source_tests.cpp
     generation/v9_terrain_tests.cpp
+    generation/v9_climate_tests.cpp
     core/algorithm_tests.cpp
     core/byte_io_tests.cpp
     core/crash_handler_tests.cpp
