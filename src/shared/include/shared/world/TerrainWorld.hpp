@@ -224,6 +224,13 @@ public:
 
 private:
     [[nodiscard]]
+    SurfaceTile sampleSurfaceColumns(
+        RegionalArtifact const* leaf,
+        ChunkCoordinate coordinate,
+        std::stop_token const& cancellation
+    ) const;
+
+    [[nodiscard]]
     std::shared_ptr<RegionalArtifact const> buildRegion(
         TerrainRegionKey key,
         uint32_t level_index,

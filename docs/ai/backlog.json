@@ -21044,5 +21044,59 @@
     "docs_review": "RENDERING now points to the S2 UI map-fit/vector contract. The decision records the exact viewport ratio, shared pan/drag/wheel/zoom floor, 32-split cap and screen-space overlay behavior while preserving the minimap orientation and alignment contract. Both documents remain within the 900-word limit.",
     "environment_review": "The preserved original-candidate receipt records 16/16 S2MapPresentationTest passes, Release target builds and native Apple M3 Pro Vulkan visual captures. Those checks were run on bdcde plus the frozen patch, not the bd517 composition; no new build/tests were run here. Windows/Android runtime, gameplay owner acceptance, FPS and aggregate S2 gates remain open.",
     "backlog_review": "Closes only local implementation and native visual evidence for the scoped map presentation. MC-AI-0483 remains active and unfinalized; all other owner feedback and platform/performance acceptance stay open."
+  },
+  {
+    "id": "MC-AI-0587",
+    "title": "Preserve canonical terrain continuity during high-speed travel",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0581",
+      "MC-AI-0583"
+    ],
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "complexity": "medium",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "finalized": true,
+    "baseline_commit": "ca19d1870868fd5e2cedb89262939e4970a10733",
+    "commits": [],
+    "blocker": "",
+    "motivation": "Owner feedback item 7 reports x30 travel outrunning terrain and lateral rubberband; higher flight speeds require timely canonical collision data.",
+    "context": "NativeV9 already has a completed immutable canonical atlas, but full-column generation unnecessarily waited for R6 regional leaves. Dense epoch churn discarded verified overlapping profiles, and started canonical delivery competed under a private 16,384-byte window. This is a bounded implementation milestone; the original arbitrary high-speed smoothness request and aggregate qualification remain open.",
+    "acceptance": "Remove redundant NativeV9 leaf preparation, retain verified in-interest columns across dense epochs, prioritize canonical flight corridors and admit started canonical profiles within the unchanged global byte window without starving ready previews. Preserve authoritative collision, sparse edits, current-session/epoch and cancellation fences, startup 208 readiness and existing credit bounds. Verify focused contracts and a source-bound Mac NativeV9 x30/x80/x500 cardinal-turn diagnostic; do not claim full 640 volume, FPS or Windows qualification.",
+    "evidence": "The focused 43/43 Release suite on e5c7+the exact source patch predates the final reserve delta; the final reserve fairness regression passed 1/1 in 3.924 s. The source-bound 17 s NativeV9 cardinal-turn diagnostic (30 x30, 30 x80, 110 x500 inputs) completed with zero position reconciliation changes, maximum one pending input and final ACK 169. At x500, current canonical columns ranged from 331 to 6,056 of 6,561; this is not a full-volume pass. The original e5c7+patch fingerprint was 2f41589e6c55fd109cefb25af146d0969371f129a301b9172254e65b01ff3cda. The ca19 candidate adds committed 0586 map work on separate presentation paths and has not been rebuilt or retested. A separate full-game speed-200 native run in MC-AI-0595 failed current-near readiness at 0/6,561 columns (task-0595-adaptive-streaming/fixed-native-v9/summary.json, SHA-256 1031b39e295f2524cb83bb266cc046e495b5ed9e92ed382d3d27c17886ad6ed8). Full 640/current-volume continuity, FPS, Windows and owner acceptance remain open. See task-0587-continuity/post-reserve-runtime-120s.json, post-reserve-motion-summary.json, final-preview-fairness-green.log and runtime-source-binding.json.",
+    "resolution_changes": "Sample NativeV9 canonical columns directly from the completed immutable atlas with exact worker identity/epoch/cancellation checks; retain the exact typed leaf requirement for R6. Retain verified overlapping profile authority through dense epochs. Prioritize potential flight corridors, process started canonical work before dense refill, and borrow unused global delivery capacity while reserving one legal ready preview batch. Actual movement rights and edit-manifest authority are unchanged.",
+    "plan": [
+      "Trace actual prediction/ACK and canonical frontier availability.",
+      "Remove redundant NativeV9 prerequisites and preserve verified overlap.",
+      "Prioritize canonical demand within conserved byte/credit budgets; verify preview fairness.",
+      "Record source-bound motion evidence and review the frozen candidate."
+    ],
+    "product_changes": [
+      "The bounded source-bound 17-second NativeV9 cardinal-turn diagnostic completed without position reconciliation changes; full-volume travel continuity remains open."
+    ],
+    "code_changes": [
+      "src/client/GameClient.cpp",
+      "src/server/GameServer.cpp",
+      "src/server/HeightTileWorkerPool.cpp",
+      "src/server/include/server/GameServer.hpp",
+      "src/shared/include/shared/world/TerrainWorld.hpp",
+      "src/shared/include/shared/world/WorldGenerationScheduler.hpp",
+      "src/shared/world/TerrainWorld.cpp",
+      "src/shared/world/WorldGenerationScheduler.cpp",
+      "tests/client/game_client_lifecycle_tests.cpp",
+      "tests/core/game_server_preview_tests.cpp",
+      "tests/core/height_tile_worker_pool_tests.cpp"
+    ],
+    "retrospective": "Keep dependency overlays in the composed producer; export code-only diffs through an alternate index. Setup failures under measured host contention are separate from the fixed movement window.",
+    "docs_review": "GAMEPLAY.md summarizes post-start canonical priority and spare-capacity borrowing while retaining the peer, class, credit, edit, preview and authority fences. GENERATION.md distinguishes NativeV9 direct immutable-atlas sampling from R6 typed-leaf requirements. Source state refreshed; ai_docs check passed.",
+    "environment_review": "Release -O3 -DNDEBUG Mac NativeV9. Diagnostic-only setup watchdog 120 s under measured aggregate host contention; shipping timeouts unchanged and movement fixed at 17 s. Fairness fixture preparation wait 90 s; its credit-progress assertions remain 15 s. No FPS/speedup/Windows claim.",
+    "backlog_review": "This closes the scoped local implementation/diagnostic milestone only. A separate speed-200 native readiness run remains failed at 0/6,561 actual columns; parent MC-AI-0483, full-volume/high-speed continuity, FPS, Windows, cross-platform and owner acceptance remain open."
   }
 ]

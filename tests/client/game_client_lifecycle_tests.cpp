@@ -1425,3 +1425,40 @@ TEST(GameClientLifecycleTest, NewCoverageEpochRetiresEveryPendingDenseBatchBefor
     EXPECT_EQ(current.delivery_token, 73U);
     EXPECT_TRUE(current.not_resident_keys.empty());
 }
+
+TEST(GameClientLifecycleTest, DenseEpochTravelRetainsVerifiedOverlappingFullColumns)
+{
+    TerrainReceiptServer server;
+    ServerPump server_pump{server};
+    CoverageClient game_client;
+    ASSERT_TRUE(game_client.connect(core::Address::localhost(server.port()), std::chrono::seconds{2}));
+    auto event_time = CoverageClient::Clock::now();
+    shared::PlayerPosition const center{.x = 32'768, .y = 32'768, .z = 128};
+    std::vector<shared::ChunkCoordinate> const profiles{{2'048, 2'048, 0}, {2'049, 2'048, 0}};
+    ASSERT_TRUE(game_client.initialize(center, event_time));
+    event_time += std::chrono::milliseconds{1};
+    ASSERT_TRUE(game_client.applyCoverage(center, event_time, 1U));
+    ASSERT_TRUE(game_client.applyProfiles(profiles, 1U, 1U, event_time));
+    ASSERT_EQ(game_client.worldLoadingStatus().resident_authoritative_columns, 2U);
+    event_time += std::chrono::milliseconds{1};
+    ASSERT_TRUE(game_client.applyCoverage({33'048, 32'768, 128}, event_time, 2U));
+    EXPECT_EQ(game_client.residentAuthoritativeColumnCount(), 2U);
+    EXPECT_EQ(game_client.worldLoadingStatus().resident_authoritative_columns, 2U);
+    EXPECT_EQ(game_client.worldLoadingStatus().required_authoritative_columns, 6'561U);
+    EXPECT_FALSE(game_client.worldLoadingStatus().playable_sphere_ready);
+    EXPECT_FALSE(game_client.applyProfiles({{2'050, 2'048, 0}}, 2U, 1U, event_time));
+    EXPECT_EQ(game_client.residentAuthoritativeColumnCount(), 2U);
+    event_time += std::chrono::milliseconds{1};
+    ASSERT_TRUE(game_client.applyEditManifest({
+        .session = game_client.session(), .column = profiles.front(), .watermark = 2U,
+        .chunks = {{8U, 1U}},
+    }, event_time));
+    EXPECT_EQ(game_client.residentAuthoritativeColumnCount(), 1U);
+    EXPECT_EQ(game_client.worldLoadingStatus().resident_authoritative_columns, 1U);
+    EXPECT_FALSE(game_client.authoritativeWorld()->blockAt({32'768, 32'768, 128}).has_value());
+    event_time += std::chrono::milliseconds{1};
+    ASSERT_TRUE(game_client.applyCoverage({35'048, 32'768, 128}, event_time, 3U));
+    EXPECT_EQ(game_client.residentAuthoritativeColumnCount(), 0U);
+    EXPECT_EQ(game_client.worldLoadingStatus().resident_authoritative_columns, 0U);
+    EXPECT_FALSE(game_client.authoritativeWorld()->hasAuthoritativeSurface(profiles.front()));
+}

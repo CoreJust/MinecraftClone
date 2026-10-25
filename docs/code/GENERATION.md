@@ -108,10 +108,4 @@ Resident lead chunks promote without retransmission; see [GAMEPLAY.md](GAMEPLAY.
 
 ## Shared surface sampling
 
-The worker pool reuses immutable completed 16×16 tiles across preview and
-materialization. Its LRU holds 8,464 tiles (four 352-block interests at 46×46
-XY); payload is about 83 MiB before index/allocator overhead. Keys bind terrain
-identity, epoch, regional leaf and XY. Validation and cancellation precede
-lookup/insertion; concurrent misses may duplicate work. Identity ignores
-unchanged dense-cache churn but includes edits, deletion and profile replacement.
-Cached samples alone never establish Ready.
+LRU shares 8,464 immutable 16×16 tiles for preview/materialization (~83 MiB). Keys bind terrain/epoch/XY; R6 requires typed regional leaves. NativeV9 canonical tiles read the completed immutable atlas directly. Validate identity/epoch/bounds/cancellation before cache use/publication; duplicate misses possible. Unchanged dense churn ignored; edits/deletion/profile replacement change identity. Cached samples grant no collision/edit authority or Ready; accepted current-session profiles and complete sparse revisions required. Preview cancellation stays separate.

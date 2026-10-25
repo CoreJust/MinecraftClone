@@ -17,13 +17,15 @@ Bypass requires flight ([POLICY.md](POLICY.md)). [`BlockInteraction.hpp`](../../
 [Message.hpp](../../src/shared/include/shared/net/Message.hpp) defines Protocol 24
 for authoritative actions/results, revisioned deltas, sparse edit snapshots and
 manifests. Sessions use nonce; deliveries validate epoch/token. Profiles certify
-columns; edits require manifested Z-chunk revisions. Dense credits/receipts stay
-separate. Bulk/control channels 1/0; caps: peer 49,152, class 16,384 bytes with
-old-epoch debt. Coverage actual/visual: 640/320; caches: 48/80. Inputs:
-XYZ/heading/sequence; positions: subcells/palette/ACK. IDs 0–6 fixed; Sand 7;
-v23 peers reject v24 frames. Height tiles carry V9 source elevation, biome and
-coast metadata. Rights masks allow IDs 1–7. Capabilities
-0/1/3; invalid input/stale ACKs cannot mutate state.
+columns; edits require manifested Z-chunk revisions. Dense credits/receipts stay separate. Bulk/control channels `1/0`; peer cap
+`49,152 B`; old-epoch debt stays charged. Startup canonical/dense class windows:
+`16,384 B`. Post-start canonical precedes dense refill and may borrow spare peer
+bytes, preserving edit/preview reserves, in-interest columns and authority fences.
+Coverage actual/visual: 640/320; caches: 48/80. Inputs: XYZ/heading/sequence;
+positions: subcells/palette/ACK. IDs 0–6 fixed; Sand 7; v23 peers reject v24
+frames. Height tiles carry V9 source elevation, biome and coast metadata. Rights
+masks allow IDs 1–7. Capabilities 0/1/3; invalid input/stale ACKs cannot mutate
+state.
 
 ## Server authority
 

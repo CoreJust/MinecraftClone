@@ -2120,7 +2120,45 @@ void GameServer::resetChunkCoverage(
             };
             return axis(key.x, profile_center.x) + axis(key.y, profile_center.y);
         };
+        auto const flight_corridor = [&] {
+            PlayerReplication::ChunkKeySet result;
+            auto const moving_player = m_world.player(replication.id);
+            if (!direction || direction->cycle_movement_capabilities || !moving_player
+                || !moving_player->movement_capabilities.allows(shared::MovementCapability::Flight)) {
+                return result;
+            }
+            shared::World anchor_world = m_world;
+            for (uint32_t anchor = 0U; anchor < 3U; ++anchor) {
+                shared::Direction forecast_direction = *direction;
+                for (uint32_t heading = 0U; heading < 4U; ++heading) {
+                    shared::World forecast_world = anchor_world;
+                    // Two ticks cover delivery latency after a turn, from
+                    // the current body and both forward lookahead positions.
+                    for (uint32_t step = 0U; step < 2U; ++step) {
+                        static_cast<void>(forecast_world.setPlayerMovementCapabilities(replication.id, {.bits = 1U}));
+                        for (auto key : forecast_world.flightCollisionChunks(replication.id, forecast_direction)) {
+                            key.z = 0;
+                            result.insert(key);
+                        }
+                        static_cast<void>(forecast_world.setPlayerMovementCapabilities(replication.id, {.bits = 3U}));
+                        static_cast<void>(forecast_world.movePlayer(replication.id, forecast_direction));
+                    }
+                    int8_t const prior_x = static_cast<int8_t>(forecast_direction.x);
+                    forecast_direction.x = static_cast<uint8_t>(-static_cast<int8_t>(forecast_direction.y));
+                    forecast_direction.y = static_cast<uint8_t>(prior_x);
+                }
+                // This copy describes potential demand, never authority.
+                static_cast<void>(anchor_world.setPlayerMovementCapabilities(replication.id, {.bits = 3U}));
+                static_cast<void>(anchor_world.movePlayer(replication.id, *direction));
+            }
+            return result;
+        }();
         std::ranges::stable_sort(profile_interest, [&](auto const first, auto const second) {
+            bool const first_corridor = flight_corridor.contains(first);
+            bool const second_corridor = flight_corridor.contains(second);
+            if (first_corridor != second_corridor) {
+                return first_corridor;
+            }
             bool const first_required = replication.required_authoritative_columns.contains(first);
             bool const second_required = replication.required_authoritative_columns.contains(second);
             if (first_required != second_required) {
@@ -2142,9 +2180,9 @@ void GameServer::resetChunkCoverage(
         replication.next_authoritative_delivery_index = 0U;
     }
     if (new_epoch) {
-        replication.acknowledged_authoritative_columns.clear();
         replication.inflight_authoritative_columns.clear();
-    } else if (changed_profile_keys) {
+    }
+    if (new_epoch || changed_profile_keys) {
         std::erase_if(replication.acknowledged_authoritative_columns, [&](auto const key) {
             return !replication.authoritative_interest_columns.contains(key);
         });
@@ -5213,17 +5251,34 @@ void GameServer::acknowledgeAuthoritativeTerrain(
     }
 }
 
-void GameServer::processAuthoritativeTerrain()
+void GameServer::processAuthoritativeTerrain(bool const started_worlds)
 {
     if (m_height_tile_workers == nullptr || m_terrain_world == nullptr || m_physics_world == nullptr) {
         return;
     }
     static constexpr uint32_t MAX_JOBS_PER_PLAYER = 32U;
     static constexpr uint32_t MAX_BATCHES_PER_PUMP = 4U;
+    uint32_t const stream_byte_limit = started_worlds
+        ? MAX_TERRAIN_INFLIGHT_BYTES : MAX_PREPARED_STREAM_INFLIGHT_BYTES;
     for (PlayerReplication& replication : m_player_replications) {
-        if (!replication.terrain_session || !replication.has_chunk_coverage) {
+        if (!replication.terrain_session || !replication.has_chunk_coverage
+            || replication.world_started != started_worlds) {
             continue;
         }
+        auto const available_bytes = [&] {
+            uint32_t const remaining = remainingTerrainDeliveryBytes(replication.id);
+            auto const preview = std::ranges::find(m_preview_streams, replication.id, &PreviewStream::client_id);
+            bool const preview_waiting = preview != m_preview_streams.end()
+                && preview->delivery_credits != 0U && preview->inflight_deliveries.empty()
+                && (!preview->ready_tiles.empty() || !preview->pending_removals.empty());
+            if (started_worlds && preview_waiting) {
+                // Reserve one legal preview batch while borrowing the remaining
+                // shared capacity, so returned preview credit remains usable.
+                uint32_t const reserve = std::min(MAX_PREPARED_STREAM_INFLIGHT_BYTES, PreviewStream::MAX_DELIVERY_BYTES);
+                return remaining > reserve ? remaining - reserve : 0U;
+            }
+            return remaining;
+        };
         uint32_t admitted = 0U;
         shared::ChunkCoordinate root = shared::WorldBounds::chunkCoordinate({
             replication.coverage_center.x, replication.coverage_center.y, 0,
@@ -5255,7 +5310,7 @@ void GameServer::processAuthoritativeTerrain()
             }
             uint64_t const manifest_bytes = shared::encodeMessage(maximum_manifest).size() * batch.tiles.size();
             if (replication.edit_delivery_bytes.size() + batch.tiles.size() > PlayerReplication::MAX_PENDING_INPUTS
-                || encoded_bytes + manifest_bytes > remainingTerrainDeliveryBytes(replication.id)) {
+                || encoded_bytes + manifest_bytes > available_bytes()) {
                 for (auto tile = batch.tiles.rbegin(); tile != batch.tiles.rend(); ++tile) {
                     auto const found = std::ranges::find(replication.ordered_authoritative_columns, tile->coordinate);
                     if (found != replication.ordered_authoritative_columns.end()) {
@@ -5362,8 +5417,8 @@ void GameServer::processAuthoritativeTerrain()
             }
             batch.tiles.push_back(std::move(*tile));
             uint32_t const byte_capacity = std::min(
-                MAX_PREPARED_STREAM_INFLIGHT_BYTES - inflight_bytes,
-                remainingTerrainDeliveryBytes(replication.id)
+                stream_byte_limit - inflight_bytes,
+                available_bytes()
             );
             shared::ServerEditedColumnManifestMessage maximum_manifest{
                 .session = *replication.terrain_session, .column = coordinate,
@@ -5375,7 +5430,7 @@ void GameServer::processAuthoritativeTerrain()
             uint64_t const manifest_bytes = shared::encodeMessage(maximum_manifest).size() * batch.tiles.size();
             if (shared::encodedAuthoritativeTerrainBatchSize(batch) > byte_capacity
                 || shared::encodedAuthoritativeTerrainBatchSize(batch) + manifest_bytes
-                    > remainingTerrainDeliveryBytes(replication.id)
+                    > available_bytes()
                 || replication.edit_delivery_bytes.size() + batch.tiles.size() > PlayerReplication::MAX_PENDING_INPUTS) {
                 batch.tiles.pop_back();
                 replication.authoritative_delivery_frontier.push_front(delivery_index);
@@ -5430,6 +5485,17 @@ void GameServer::processHeightTileStreams()
             );
     }
 
+    phase_started_at = m_benchmark_metrics_enabled
+        ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    // Once play starts, exact canonical columns must win admission over dense
+    // cache refill and visual previews. A fast player can leave those caches
+    // every tick, whereas these columns also serve authoritative collision.
+    processAuthoritativeTerrain(true);
+    if (m_benchmark_metrics_enabled) {
+        m_streaming_metrics.worker_dispatch.duration += std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - phase_started_at
+        );
+    }
     phase_started_at = m_benchmark_metrics_enabled
         ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     fillMaterializedChunkQueue();
@@ -5494,7 +5560,7 @@ void GameServer::processHeightTileStreams()
 
     phase_started_at = m_benchmark_metrics_enabled
         ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-    processAuthoritativeTerrain();
+    processAuthoritativeTerrain(false);
     dispatchHeightTileWork();
     if (m_benchmark_metrics_enabled) {
         ++m_streaming_metrics.worker_dispatch.calls;

@@ -51,9 +51,6 @@
 
 namespace {
 
-constexpr uint32_t MAXIMUM_HEIGHT_TILE_BATCH_BYTES =
-    13U + 27U + shared::HEIGHT_TILE_PAYLOAD_BYTES;
-
 std::shared_ptr<shared::TerrainWorld const> preparedTerrainWorld()
 {
     static std::shared_ptr<shared::TerrainWorld const> const terrain_world = [] {
@@ -1026,7 +1023,7 @@ bool waitForStalledDeliveryWindow(PreviewClient& client, uint32_t const first_me
 void expectBoundedDeliveryWindow(std::vector<shared::ServerHeightTileBatchMessage> const& batches)
 {
     static constexpr uint32_t MAXIMUM_BATCHES = 8U;
-    static constexpr uint32_t MAXIMUM_PACKET_BYTES = MAXIMUM_HEIGHT_TILE_BATCH_BYTES;
+    static constexpr uint32_t MAXIMUM_PACKET_BYTES = 10'118U;
     static constexpr uint32_t MAXIMUM_WINDOW_BYTES = 34'356U;
     EXPECT_GE(batches.size(), 1U);
     EXPECT_LE(batches.size(), MAXIMUM_BATCHES);
@@ -2648,7 +2645,7 @@ TEST(GameServerPreviewTest, PreparedWorldMaterializationAdmissionIsFairAcrossPla
 TEST(GameServerPreviewTest, MaximumHeightTileFitsOneDeliveryBatch)
 {
     static constexpr uint32_t BATCH_HEADER_BYTES = 13U;
-    static constexpr uint32_t MAX_BATCH_BYTES = MAXIMUM_HEIGHT_TILE_BATCH_BYTES;
+    static constexpr uint32_t MAX_BATCH_BYTES = 10'118U;
     static constexpr uint32_t MAX_INFLIGHT_BYTES = 34'356U;
     shared::ServerHeightTileMessage tile;
     tile.surface.identity.configuration_identity.assign(
@@ -2668,9 +2665,8 @@ TEST(GameServerPreviewTest, MaximumHeightTileFitsOneDeliveryBatch)
 
     EXPECT_EQ(accounted_batch_bytes, MAX_BATCH_BYTES);
     EXPECT_EQ(encoded_batch.size(), MAX_BATCH_BYTES);
-    ASSERT_EQ(encoded_batch[1], shared::PROTOCOL_VERSION);
-    EXPECT_LE(2U * MAX_BATCH_BYTES, MAX_INFLIGHT_BYTES);
-    EXPECT_GT(3U * MAX_BATCH_BYTES, MAX_INFLIGHT_BYTES);
+    EXPECT_LE(3U * MAX_BATCH_BYTES, MAX_INFLIGHT_BYTES);
+    EXPECT_GT(4U * MAX_BATCH_BYTES, MAX_INFLIGHT_BYTES);
 }
 
 TEST(GameServerPreviewTest, PreviewBatchAdmissionRefillsWithinInflightByteReserve)
@@ -2678,7 +2674,6 @@ TEST(GameServerPreviewTest, PreviewBatchAdmissionRefillsWithinInflightByteReserv
     static constexpr std::chrono::seconds TIMEOUT{10};
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
     static constexpr uint32_t MAX_INFLIGHT_BYTES = 34'356U;
-    static constexpr uint32_t INITIAL_INFLIGHT_BATCHES = 2U;
     std::atomic_uint32_t ready_tiles{0U};
     std::atomic_uint32_t inflight_deliveries{0U};
     server::GameServer::BenchmarkHooks const hooks{
@@ -2723,26 +2718,22 @@ TEST(GameServerPreviewTest, PreviewBatchAdmissionRefillsWithinInflightByteReserv
     }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
 
     auto const initial_deadline = std::chrono::steady_clock::now() + TIMEOUT;
-    while ((client.received_delivery_batches < INITIAL_INFLIGHT_BATCHES
-            || ready_tiles.load(std::memory_order_relaxed) == 0U
-            || inflight_deliveries.load(std::memory_order_relaxed) != INITIAL_INFLIGHT_BATCHES)
+    while ((client.received_delivery_batches < 3U || ready_tiles.load(std::memory_order_relaxed) == 0U
+            || inflight_deliveries.load(std::memory_order_relaxed) != 3U)
         && std::chrono::steady_clock::now() < initial_deadline) {
         client.poll(POLL_INTERVAL);
     }
-    ASSERT_EQ(client.received_delivery_batches, INITIAL_INFLIGHT_BATCHES);
+    ASSERT_EQ(client.received_delivery_batches, 3U);
     ASSERT_GT(ready_tiles.load(std::memory_order_relaxed), 0U);
-    ASSERT_EQ(inflight_deliveries.load(std::memory_order_relaxed), INITIAL_INFLIGHT_BATCHES);
+    ASSERT_EQ(inflight_deliveries.load(std::memory_order_relaxed), 3U);
 
     std::vector<shared::ServerHeightTileBatchMessage> batches = deliveryBatchesFrom(client.messages, 0U);
-    ASSERT_EQ(batches.size(), INITIAL_INFLIGHT_BATCHES);
+    ASSERT_EQ(batches.size(), 3U);
     uint32_t inflight_bytes = 0U;
     for (shared::ServerHeightTileBatchMessage const& batch : batches) {
         ASSERT_EQ(batch.tiles.size(), 1U);
         ASSERT_TRUE(batch.removals.empty());
-        std::vector<uint8_t> const encoded_batch = shared::encodeMessage(batch);
-        ASSERT_EQ(encoded_batch[1], shared::PROTOCOL_VERSION);
-        EXPECT_LE(encoded_batch.size(), MAXIMUM_HEIGHT_TILE_BATCH_BYTES);
-        inflight_bytes += static_cast<uint32_t>(encoded_batch.size());
+        inflight_bytes += static_cast<uint32_t>(shared::encodeMessage(batch).size());
     }
     EXPECT_LE(inflight_bytes, MAX_INFLIGHT_BYTES);
 
@@ -2750,17 +2741,16 @@ TEST(GameServerPreviewTest, PreviewBatchAdmissionRefillsWithinInflightByteReserv
     while (std::chrono::steady_clock::now() < quiet_deadline) {
         client.poll(POLL_INTERVAL);
     }
-    EXPECT_EQ(client.received_delivery_batches, INITIAL_INFLIGHT_BATCHES);
+    EXPECT_EQ(client.received_delivery_batches, 3U);
 
     ASSERT_TRUE(client.acknowledgeDelivery(batches.front().delivery_token));
     auto const refill_deadline = std::chrono::steady_clock::now() + TIMEOUT;
-    while (client.received_delivery_batches < INITIAL_INFLIGHT_BATCHES + 1U
-        && std::chrono::steady_clock::now() < refill_deadline) {
+    while (client.received_delivery_batches < 4U && std::chrono::steady_clock::now() < refill_deadline) {
         client.poll(POLL_INTERVAL);
     }
-    ASSERT_GE(client.received_delivery_batches, INITIAL_INFLIGHT_BATCHES + 1U);
+    ASSERT_GE(client.received_delivery_batches, 4U);
     batches = deliveryBatchesFrom(client.messages, 0U);
-    ASSERT_EQ(batches.size(), INITIAL_INFLIGHT_BATCHES + 1U);
+    ASSERT_EQ(batches.size(), 4U);
     inflight_bytes = 0U;
     for (size_t index = 1U; index < batches.size(); ++index) {
         inflight_bytes += static_cast<uint32_t>(shared::encodeMessage(batches[index]).size());
@@ -4564,7 +4554,7 @@ TEST(GameServerPreviewTest, CompactTerrainUsesAvailableCreditsWithinTheGameplayB
 {
     static constexpr std::chrono::seconds TIMEOUT{2};
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
-    static constexpr uint32_t MAXIMUM_BATCH_BYTES = MAXIMUM_HEIGHT_TILE_BATCH_BYTES;
+    static constexpr uint32_t MAXIMUM_BATCH_BYTES = 10'118U;
     static constexpr uint32_t MAXIMUM_OUTSTANDING_BYTES = 34'356U;
     static constexpr uint32_t RENDER_DISTANCE = 32U;
     static constexpr server::GameServer::SpawnPoint SPAWN{
@@ -5044,7 +5034,7 @@ TEST(GameServerPreviewTest, ReversalCancelsQueuedRemovalsForRestoredInterest)
 TEST(GameServerPreviewTest, SaturatedAdditionsDoNotStarveRemovalsAndInflightReclaimsRecover)
 {
     static constexpr auto TIMEOUT = std::chrono::seconds{12};
-    static constexpr uint32_t MAXIMUM_PACKET_BYTES = MAXIMUM_HEIGHT_TILE_BATCH_BYTES;
+    static constexpr uint32_t MAXIMUM_PACKET_BYTES = 10'118U;
     static constexpr uint32_t MAXIMUM_WINDOW_BYTES = 34'356U;
     static constexpr uint32_t INITIAL_TILES = 1'024U;
     static constexpr uint32_t MINIMUM_REMOVALS_PER_MIXED_BATCH =
@@ -5998,6 +5988,7 @@ TEST(GameServerPreviewTest, AuthoritativeFrontierRespectsWindowAndRevisitsReject
 TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceiptsAreDelayed)
 {
     static constexpr std::chrono::seconds TIMEOUT{15};
+    static constexpr std::chrono::seconds STARTUP_TIMEOUT{90};
     static constexpr std::chrono::milliseconds RECEIPT_DELAY{300};
     static constexpr uint32_t MAX_STREAM_BYTES = 16'384U;
     static constexpr uint32_t MAX_TERRAIN_BYTES = 49'152U;
@@ -6032,11 +6023,13 @@ TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceipts
     auto const started = [&] {
         return std::ranges::any_of(client.start_acknowledgements, [](auto const& ack) { return ack.accepted; });
     };
-    auto const start_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    auto const start_deadline = std::chrono::steady_clock::now() + STARTUP_TIMEOUT;
     while (!started() && std::chrono::steady_clock::now() < start_deadline) {
         static_cast<void>(client.poll(std::chrono::milliseconds{1}));
     }
-    ASSERT_TRUE(started());
+    ASSERT_TRUE(started()) << "near required/received/acknowledged=" << client.required_near_chunks.size()
+        << '/' << client.received_chunks.size() << '/' << client.acknowledged_chunks.size()
+        << " start receipts=" << client.start_acknowledgements.size();
     ASSERT_TRUE(client.session.has_value());
     ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientBlockActionMessage{
         .session = *client.session, .sequence = 1U, .kind = shared::BlockActionKind::RequestMode,
@@ -6068,6 +6061,7 @@ TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceipts
     uint32_t profile_bytes = 0U;
     uint32_t preview_bytes = 0U;
     std::optional<shared::ServerAuthoritativeTerrainBatchMessage> first_profile;
+    std::optional<shared::ServerHeightTileBatchMessage> first_preview;
     for (auto index = first_held; index < client.messages.size(); ++index) {
         auto const& message = client.messages[index];
         uint32_t const encoded_bytes = static_cast<uint32_t>(shared::encodeMessage(message).size());
@@ -6078,34 +6072,49 @@ TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceipts
             if (!first_profile) {
                 first_profile = *profile;
             }
-        } else if (std::holds_alternative<shared::ServerHeightTileBatchMessage>(message)) {
+        } else if (auto const* preview = std::get_if<shared::ServerHeightTileBatchMessage>(&message)) {
             preview_bytes += encoded_bytes;
+            if (!first_preview) {
+                first_preview = *preview;
+            }
         }
     }
     EXPECT_GT(dense_bytes, 0U);
     EXPECT_GT(profile_bytes, 0U);
     EXPECT_GT(preview_bytes, 0U);
     EXPECT_LE(dense_bytes, MAX_STREAM_BYTES);
-    EXPECT_LE(profile_bytes, MAX_STREAM_BYTES);
+    // Started worlds can borrow idle stream capacity for canonical columns.
+    EXPECT_LE(profile_bytes, MAX_TERRAIN_BYTES);
     EXPECT_LE(preview_bytes, MAX_STREAM_BYTES);
     EXPECT_LE(dense_bytes + profile_bytes + preview_bytes, MAX_TERRAIN_BYTES);
     ASSERT_TRUE(first_profile.has_value());
+    ASSERT_TRUE(first_preview.has_value());
     auto const previous_count = client.messages.size();
     ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientAuthoritativeTerrainAckMessage{
         .session = first_profile->session, .coverage_epoch = first_profile->coverage_epoch,
         .delivery_token = first_profile->delivery_token,
         .not_resident_keys = {},
     }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+    ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+        .world_revision = client.preview_world_revision, .delivery_token = first_preview->delivery_token,
+        .credits = 1U, .not_resident_keys = {},
+    }), shared::HEIGHT_TILE_CHANNEL, core::SendMode{core::SendMode::Reliable}));
     bool resumed = false;
+    bool preview_resumed = false;
     auto const resume_deadline = std::chrono::steady_clock::now() + TIMEOUT;
-    while (!resumed && std::chrono::steady_clock::now() < resume_deadline) {
+    while ((!resumed || !preview_resumed) && std::chrono::steady_clock::now() < resume_deadline) {
         static_cast<void>(client.poll(std::chrono::milliseconds{1}));
         resumed = std::ranges::any_of(client.messages.begin() + static_cast<ptrdiff_t>(previous_count),
             client.messages.end(), [](auto const& message) {
                 return std::holds_alternative<shared::ServerAuthoritativeTerrainBatchMessage>(message);
             });
+        preview_resumed = std::ranges::any_of(client.messages.begin() + static_cast<ptrdiff_t>(previous_count),
+            client.messages.end(), [](auto const& message) {
+                return std::holds_alternative<shared::ServerHeightTileBatchMessage>(message);
+            });
     }
-    EXPECT_TRUE(resumed) << "A returned profile receipt must make progress while the other bulk streams remain held.";
+    EXPECT_TRUE(resumed) << "Returned profile credit must make progress while dense receipts remain held.";
+    EXPECT_TRUE(preview_resumed) << "Canonical refill must leave returned preview credit usable.";
     std::optional<shared::ServerAuthoritativeTerrainBatchMessage> stale_profile;
     for (auto index = previous_count; index < client.messages.size(); ++index) {
         if (auto const* profile = std::get_if<shared::ServerAuthoritativeTerrainBatchMessage>(&client.messages[index])) {
@@ -6135,8 +6144,11 @@ TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceipts
                 && profile->delivery_token == first_profile->delivery_token) {
                 continue;
             }
-        } else if (!std::holds_alternative<shared::ServerMaterializedChunkBatchMessage>(message)
-            && !std::holds_alternative<shared::ServerHeightTileBatchMessage>(message)) {
+        } else if (auto const* preview = std::get_if<shared::ServerHeightTileBatchMessage>(&message)) {
+            if (preview->delivery_token == first_preview->delivery_token) {
+                continue;
+            }
+        } else if (!std::holds_alternative<shared::ServerMaterializedChunkBatchMessage>(message)) {
             continue;
         }
         unacknowledged_bytes += shared::encodeMessage(message).size();

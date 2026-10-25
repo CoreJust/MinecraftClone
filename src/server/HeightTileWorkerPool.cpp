@@ -68,7 +68,7 @@ public:
     [[nodiscard]]
     Tile getOrSample(
         shared::TerrainWorld const& terrain_world,
-        shared::RegionalArtifact const& leaf,
+        shared::RegionalArtifact const* const leaf,
         uint64_t const world_epoch,
         shared::HeightTileCoordinate const coordinate,
         std::stop_token const& cancellation
@@ -77,15 +77,23 @@ public:
         if (cancellation.stop_requested()) {
             throw generation::GenerationCancelled{};
         }
-        if (world_epoch == 0U || leaf.identity() != terrain_world.identity()
-            || leaf.key().extent != shared::TERRAIN_REGION_EXTENTS.back()) {
+        bool const native_surface = terrain_world.atlas()->configuration.model_tag == generation::TerrainModelTag::V9;
+        if (world_epoch == 0U || (!native_surface && leaf == nullptr)
+            || (leaf != nullptr && (leaf->identity() != terrain_world.identity()
+                || leaf->key().extent != shared::TERRAIN_REGION_EXTENTS.back()))) {
             throw std::logic_error{"surface tile cache requires a matching typed leaf"};
         }
 
         SurfaceTileCacheKey key{
             .terrain_identity = terrain_world.identity(),
             .world_epoch = world_epoch,
-            .leaf = leaf.key(),
+            .leaf = leaf == nullptr ? shared::TerrainRegionKey{
+                .origin_x = static_cast<uint32_t>(coordinate.x * shared::Chunk::SIDE_LENGTH)
+                    / shared::TERRAIN_REGION_EXTENTS.back() * shared::TERRAIN_REGION_EXTENTS.back(),
+                .origin_y = static_cast<uint32_t>(coordinate.y * shared::Chunk::SIDE_LENGTH)
+                    / shared::TERRAIN_REGION_EXTENTS.back() * shared::TERRAIN_REGION_EXTENTS.back(),
+                .extent = shared::TERRAIN_REGION_EXTENTS.back(),
+            } : leaf->key(),
             .coordinate = coordinate,
         };
         {
@@ -101,15 +109,10 @@ public:
             }
         }
 
-        shared::SurfaceTile sampled = terrain_world.sampleSurface(
-            leaf,
-            {
-                .x = coordinate.x,
-                .y = coordinate.y,
-                .z = 0,
-            },
-            cancellation
-        );
+        shared::ChunkCoordinate const surface_coordinate{coordinate.x, coordinate.y, 0};
+        shared::SurfaceTile sampled = leaf == nullptr
+            ? terrain_world.sampleSurface(surface_coordinate, cancellation)
+            : terrain_world.sampleSurface(*leaf, surface_coordinate, cancellation);
         m_samples.fetch_add(1U, std::memory_order_relaxed);
         if (cancellation.stop_requested()) {
             throw generation::GenerationCancelled{};
@@ -175,7 +178,7 @@ shared::HeightTile sampleHeightTile(
     tile.coordinate = coordinate;
     tile.surface = *surface_tile_cache.getOrSample(
         terrain_world,
-        *leaf,
+        leaf.get(),
         world_epoch,
         {
             .x = coordinate.x,
@@ -215,7 +218,12 @@ bool matchesLeaf(
     shared::TerrainWorld const& terrain_world
 ) noexcept
 {
-    if (leaf == nullptr || !job.terrain_identity.has_value()
+    if (leaf == nullptr) {
+        return terrain_world.atlas()->configuration.model_tag == generation::TerrainModelTag::V9
+            && job.terrain_identity == terrain_world.identity()
+            && shared::WorldBounds::isValidChunk(job.coordinate);
+    }
+    if (!job.terrain_identity.has_value()
         || *job.terrain_identity != terrain_world.identity()
         || leaf->identity() != terrain_world.identity()
         || leaf->key().extent != shared::TERRAIN_REGION_EXTENTS.back()) {

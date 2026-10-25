@@ -1360,6 +1360,17 @@ SurfaceTile TerrainWorld::sampleSurface(
     if (leaf.m_key.origin_x != expected_x || leaf.m_key.origin_y != expected_y) {
         throw std::invalid_argument{ "surface chunk does not belong to the provided 64-block leaf" };
     }
+    return sampleSurfaceColumns(&leaf, coordinate, cancellation);
+}
+
+SurfaceTile TerrainWorld::sampleSurfaceColumns(
+    RegionalArtifact const* const leaf,
+    ChunkCoordinate const coordinate,
+    std::stop_token const& cancellation
+) const
+{
+    uint32_t const world_x = static_cast<uint32_t>(coordinate.x) * Chunk::SIDE_LENGTH;
+    uint32_t const world_y = static_cast<uint32_t>(coordinate.y) * Chunk::SIDE_LENGTH;
     throwIfCancelled(cancellation);
 
     SurfaceTile tile;
@@ -1396,7 +1407,7 @@ SurfaceTile TerrainWorld::sampleSurface(
                 );
                 continue;
             }
-            RegionalArtifact::Node const node = leaf.evaluate(sample_x, sample_y);
+            RegionalArtifact::Node const node = leaf->evaluate(sample_x, sample_y);
             FieldValues fields{
                 .elevation = node.base_elevation,
                 .temperature = node.sample.temperature_celsius,
@@ -1441,6 +1452,11 @@ SurfaceTile TerrainWorld::sampleSurface(
         || coordinate.x >= static_cast<int32_t>(generation::WORLD_SIZE_BLOCKS / Chunk::SIDE_LENGTH)
         || coordinate.y >= static_cast<int32_t>(generation::WORLD_SIZE_BLOCKS / Chunk::SIDE_LENGTH)) {
         throw std::invalid_argument{ "surface sampling requires a valid XY chunk coordinate" };
+    }
+    if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V9) {
+        // Native V9's canonical sampler consumes the completed immutable atlas,
+        // including its local native detail, rather than R6 regional nodes.
+        return sampleSurfaceColumns(nullptr, coordinate, cancellation);
     }
     uint32_t const world_x = static_cast<uint32_t>(coordinate.x) * Chunk::SIDE_LENGTH;
     uint32_t const world_y = static_cast<uint32_t>(coordinate.y) * Chunk::SIDE_LENGTH;

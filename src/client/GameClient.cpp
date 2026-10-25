@@ -1080,12 +1080,11 @@ bool GameClient::applyChunkCoverage(
                 return false;
             }
         }
-        for (shared::ChunkCoordinate const coordinate : m_connected_authoritative_columns) {
-            static_cast<void>(m_world_loading.evictAuthoritativeColumn(
-                m_world_loading_identity, coordinate, received_at
-            ));
-        }
+        // A dense-body epoch can change after a fast step while verified full
+        // columns still overlap. Their identity and edit fences remain valid.
+        auto retained_authoritative_columns = std::move(m_connected_authoritative_columns);
         clearActiveCoverage();
+        m_connected_authoritative_columns = std::move(retained_authoritative_columns);
         m_initial_chunk_credit_sent = false;
         m_coverage_bfs_root = message.center;
         m_coverage_root_pending = true;

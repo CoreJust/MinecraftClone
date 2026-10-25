@@ -345,7 +345,7 @@ private:
     );
     void refreshHeightTileInterest(PreviewStream& stream, shared::Player const& player);
     void fillHeightTileQueue(PreviewStream& stream);
-    void processAuthoritativeTerrain();
+    void processAuthoritativeTerrain(bool started_worlds);
     bool publishAuthoritativeTerrainResult(HeightTileWorkerPool::Result const& result);
     void acknowledgeAuthoritativeTerrain(
         core::ClientId client_id, shared::ClientAuthoritativeTerrainAckMessage const& acknowledgement
