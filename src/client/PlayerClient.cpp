@@ -4825,6 +4825,15 @@ void PlayerClient::updatePlayingMapPresentation()
 
     bool const show_minimap = m_debug_hud_enabled && !m_s2_world_map_open && world;
     if (show_minimap) {
+        if (!m_s2_minimap_image && root_lod) {
+            auto preview = buildS2MinimapPreview(*world, *root_lod, player_x, player_y);
+            auto image = preview ? rasterizeS2Minimap(*preview) : std::nullopt;
+            if (image && m_renderer.setMapImage(1U, image->width, image->height, image->rgba)) {
+                m_s2_minimap_lod = std::move(preview);
+                m_s2_minimap_image = std::move(image);
+                m_s2_map_view_in_slot_one = false;
+            }
+        }
         if (!m_s2_minimap_lod_worker) {
             m_s2_minimap_lod_worker = std::make_unique<S2MinimapLodWorker>();
         }
@@ -4840,6 +4849,7 @@ void PlayerClient::updatePlayingMapPresentation()
         }
 
         bool request_local_lod = !m_s2_minimap_lod
+            || m_s2_minimap_lod->level != shared::TerrainLodLevel::L1
             || m_s2_minimap_lod->terrain_identity != world->identity();
         if (m_s2_minimap_lod && m_s2_minimap_lod->terrain_identity == world->identity()) {
             uint32_t const extent = m_s2_minimap_lod->extent;
@@ -4856,7 +4866,7 @@ void PlayerClient::updatePlayingMapPresentation()
             constexpr double EDGE_MARGIN = static_cast<double>(S2_MINIMAP_WORLD_EXTENT) * 0.25;
             bool const moving_outside_window = local_x < EDGE_MARGIN || local_x > extent - EDGE_MARGIN
                 || local_y < EDGE_MARGIN || local_y > extent - EDGE_MARGIN;
-            request_local_lod = !covered || moving_outside_window;
+            request_local_lod = request_local_lod || !covered || moving_outside_window;
         }
         if (request_local_lod) {
             m_s2_minimap_lod_worker->request(world, player_x, player_y, join_epoch);

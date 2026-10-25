@@ -152,6 +152,12 @@ std::optional<S2MapImage> rasterizeS2WorldMap(
     S2WorldMapState const& state
 );
 
+// Initial native-resolution crop; the local L1 request subsequently refines the same coverage.
+[[nodiscard]]
+std::shared_ptr<shared::TerrainLodArtifact const> buildS2MinimapPreview(
+    shared::TerrainWorld const& world, shared::TerrainLodArtifact const& root,
+    double player_x, double player_y);
+
 [[nodiscard]]
 // Cancellation returns no artifact so background minimap requests can stop without escaping their worker.
 std::shared_ptr<shared::TerrainLodArtifact const> buildS2MinimapLod(

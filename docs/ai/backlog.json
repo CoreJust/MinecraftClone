@@ -20725,5 +20725,44 @@
     "docs_review": "The header declares the typed cancellation contract; regenerated docs/code/source_state.json for the source/test changes and ai_docs.py check passed.",
     "environment_review": "Private Release build configured with the existing pinned arm64-osx dependency prefixes and VCPKG_MANIFEST_INSTALL=OFF; no dependency installation or shared-root mutation. Rebased source/test SHA-256 values and commands are recorded in evidence-0576/receipt.json.",
     "backlog_review": "This finalized task covers only the cancellation component and its focused 15/15 test suite. Windows cause attribution and S2/owner/FPS qualification remain open under MC-AI-0483."
+  },
+  {
+    "id": "MC-AI-0577",
+    "title": "Show a source-correct minimap before local refinement completes",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Use the already published matching global L0 root for the initial minimap without native re-query, retaining the 16384-block local extent and truthful L0 provenance. Keep asynchronous L1 refinement requested and existing world/join reset and worker deduplication intact. Verify exact node/source identity, wrap seams, raster and marker behavior including native V9. Actual Windows visible minimap proof remains separate.",
+    "evidence": "On root commit 8ab869fff3897e1a0adcab560c9ac07a9eaa1b93, a private Release mc_tests build succeeded and all 16 S2MapPresentation tests passed in 17.62 seconds. Coverage includes the native V9 65-by-65 L0 preview, exact root nodes/source identity, wrap and marker behavior, mismatched-source rejection, and the committed 0576 cancellation regression. Evidence and file hashes: /Users/core-just/.codex/task-evidence/mc-s2-20261025/metadata-candidates/evidence-0577/receipt.json. The three production source files match the Windows frozen source manifest 2fbbc839831b1a3295cc82bec6ea423a5dd471a21cf1f70432663f39accb66f1 exactly. The test source additionally retains the 0576 cancellation case and therefore differs from that manifest. No Windows screenshot/runtime pass is inferred.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Actual Playing capture at one second has no minimap because visibility waits for a costly asynchronous local L1 request despite a source-stamped global L0 already being ready.",
+    "context": "updatePlayingMapPresentation already owns matching world/root data and clears minimap state on world identity/join changes. The initial crop reuses those actual nodes and is explicitly level L0. Existing asynchronous L1 replaces it; request deduplication prevents repeated identical jobs.",
+    "complexity": "low",
+    "created_at": "2026-10-25",
+    "resolved_at": "2026-10-25",
+    "resolution_changes": "Added a native-resolution local crop helper, allowed truthful local L0 rasters/markers, published the initial image when absent, and kept L1 refinement explicitly requested until a local artifact arrives. Existing palette and session fences remain unchanged.",
+    "plan": [],
+    "product_changes": [
+      "An initial source-correct minimap and player marker can appear before local L1 refinement completes."
+    ],
+    "code_changes": [
+      "src/client/PlayerClient.cpp",
+      "src/client/S2MapPresentation.cpp",
+      "src/client/include/client/S2MapPresentation.hpp",
+      "tests/client/s2_map_presentation_tests.cpp"
+    ],
+    "baseline_commit": "8ab869fff3897e1a0adcab560c9ac07a9eaa1b93",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Initial minimap readiness is a distinct product prerequisite; waiting an arbitrary capture delay does not provide it.",
+    "docs_review": "The preview declaration documents native-resolution initial L0 crop and subsequent local L1 refinement. Regenerated docs/code/source_state.json and ai_docs.py check passed.",
+    "environment_review": "Private Release mc_tests build used the existing pinned arm64-osx dependency prefixes with VCPKG_MANIFEST_INSTALL=OFF; no dependency installation or shared-root mutation. Build and focused-test log/JUnit plus SHA-256 identities are in evidence-0577/receipt.json.",
+    "backlog_review": "This task verifies only the source-correct initial minimap component and its focused 16/16 tests. The owner rejected the separate generation presentation; that feedback gate remains open under MC-AI-0483. Windows visible-minimap proof, owner acceptance, and full parent S2 qualification remain open."
   }
 ]

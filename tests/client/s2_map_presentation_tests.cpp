@@ -148,6 +148,12 @@ TEST(S2MapPresentationTest, V9WorldMapReadsAllEightNativeLayers)
     auto const world = std::make_shared<shared::TerrainWorld const>(atlas, 17U);
     auto const lod = shared::buildTerrainLod(*world, shared::TerrainLodLevel::L0);
     ASSERT_NE(lod, nullptr);
+    auto const preview = client::buildS2MinimapPreview(*world, *lod, 35'456.0, 33'408.0);
+    ASSERT_NE(preview, nullptr);
+    EXPECT_EQ(preview->side, 65U);
+    EXPECT_EQ(preview->terrain_identity, world->identity());
+    EXPECT_EQ(preview->model_identity, shared::TERRAIN_LOD_MODEL_V9);
+    ASSERT_TRUE(client::rasterizeS2Minimap(*preview));
 
     client::S2WorldMapState state;
     state.layers.fill(true);
@@ -563,4 +569,30 @@ TEST(S2MapPresentationTest, CancelledMinimapRequestReturnsNoResultToWorker)
     worker.join();
     EXPECT_EQ(result, nullptr);
     EXPECT_NE(client::buildS2MinimapLod(*world, 0.0, 0.0), nullptr);
+}
+
+TEST(S2MapPresentationTest, InitialMinimapUsesExactRootNodesAcrossWrapAndRejectsOtherSources)
+{
+    auto const world = mapWorld();
+    auto root = shared::buildTerrainLod(*world, shared::TerrainLodLevel::L0);
+    auto preview = client::buildS2MinimapPreview(*world, *root, 0.0, 0.0);
+    ASSERT_NE(preview, nullptr);
+    EXPECT_EQ(preview->level, shared::TerrainLodLevel::L0);
+    EXPECT_EQ(preview->terrain_identity, root->terrain_identity);
+    EXPECT_EQ(preview->model_identity, root->model_identity);
+    EXPECT_EQ(preview->extent, client::S2_MINIMAP_WORLD_EXTENT);
+    EXPECT_EQ(preview->spacing, root->spacing);
+    for (auto const& node : preview->nodes) {
+        auto const index = static_cast<size_t>(node.key.y / root->spacing) * root->side
+            + node.key.x / root->spacing;
+        EXPECT_EQ(node, root->nodes[index]);
+    }
+    auto const image = client::rasterizeS2Minimap(*preview);
+    ASSERT_TRUE(image);
+    EXPECT_EQ(image->source_identity, world->identity());
+    EXPECT_TRUE(client::layoutS2MinimapMarker(
+        *preview, 0.0, 0.0, 0.0, {0.0F, 0.0F, 256.0F, 256.0F}).visible);
+    auto mismatched = *root;
+    ++mismatched.terrain_identity.revision;
+    EXPECT_EQ(client::buildS2MinimapPreview(*world, mismatched, 0.0, 0.0), nullptr);
 }

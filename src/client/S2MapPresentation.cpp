@@ -390,8 +390,9 @@ Color minimapMaterialColor(shared::TerrainLodSample const& sample) noexcept
 bool validLocalLod(shared::TerrainLodArtifact const& lod) noexcept
 {
     uint64_t const expected_nodes = static_cast<uint64_t>(lod.side) * lod.side;
-    bool const valid_spacing = lod.level == shared::TerrainLodLevel::L1
-        && (lod.spacing == 32U || lod.spacing == 64U);
+    bool const valid_spacing = (lod.level == shared::TerrainLodLevel::L1
+        && (lod.spacing == 32U || lod.spacing == 64U))
+        || (lod.level == shared::TerrainLodLevel::L0 && (lod.spacing == 128U || lod.spacing == 256U));
     return shared::isValidTerrainIdentity(lod.terrain_identity)
         && lod.model_identity == (lod.terrain_identity.terrain_version
             == generation::terrainVersion(generation::TerrainModelTag::V9)
@@ -1641,6 +1642,35 @@ std::optional<S2MapImage> rasterizeS2WorldMap(
     }
 
     return image;
+}
+
+std::shared_ptr<shared::TerrainLodArtifact const> buildS2MinimapPreview(
+    shared::TerrainWorld const& world, shared::TerrainLodArtifact const& root,
+    double const player_x, double const player_y)
+{
+    if (!validL0Source(world, root) || !std::isfinite(player_x) || !std::isfinite(player_y)) {
+        return {};
+    }
+    auto result = std::make_shared<shared::TerrainLodArtifact>();
+    result->terrain_identity = root.terrain_identity;
+    result->model_identity = root.model_identity;
+    result->level = shared::TerrainLodLevel::L0;
+    result->spacing = root.spacing;
+    result->origin_x = static_cast<uint32_t>(wrapWorld(player_x - S2_MINIMAP_WORLD_EXTENT / 2.0))
+        / root.spacing * root.spacing;
+    result->origin_y = static_cast<uint32_t>(wrapWorld(player_y - S2_MINIMAP_WORLD_EXTENT / 2.0))
+        / root.spacing * root.spacing;
+    result->extent = S2_MINIMAP_WORLD_EXTENT;
+    result->side = result->extent / result->spacing + 1U;
+    result->nodes.reserve(static_cast<size_t>(result->side) * result->side);
+    for (uint32_t y = 0U; y < result->side; ++y) {
+        for (uint32_t x = 0U; x < result->side; ++x) {
+            uint32_t const column = (result->origin_x / root.spacing + x) % (root.side - 1U);
+            uint32_t const row = (result->origin_y / root.spacing + y) % (root.side - 1U);
+            result->nodes.push_back(root.nodes[static_cast<size_t>(row) * root.side + column]);
+        }
+    }
+    return result;
 }
 
 std::shared_ptr<shared::TerrainLodArtifact const> buildS2MinimapLod(
