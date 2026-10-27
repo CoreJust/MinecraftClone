@@ -210,6 +210,21 @@ struct PlayerClientFocusTestAccess final {
         player_client.render();
     }
 
+    static void renderUnavailableWindowFrame(PlayerClient& player_client)
+    {
+        player_client.renderWindowFrame(false, std::chrono::steady_clock::now());
+    }
+
+    static bool running(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_running;
+    }
+
+    static bool windowShouldClose(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_window.shouldClose();
+    }
+
     static bool beginPlayingWorld(PlayerClient& player_client, bool const start = true)
     {
         using Clock = std::chrono::steady_clock;
@@ -3430,4 +3445,58 @@ TEST(PlayerClientFocusTest, BenchmarkInputIsolationIgnoresInjectedMapMovementCli
     Access::setIsolationHooks(player, nullptr);
     std::array const map_key{GLFW_KEY_M};
     EXPECT_TRUE(Access::updatePlatformInputSnapshot(player, map_key));
+}
+
+TEST(PlayerClientFocusTest, UnavailableWindowFrameKeepsLoopAliveAndNativeRenderingResumes)
+{
+    static constexpr uint32_t MAX_RENDER_ATTEMPTS = 24U;
+    static constexpr std::chrono::seconds RENDER_TIMEOUT{ 5 };
+    client::PlayerClient player_client;
+    uint64_t const submitted_before =
+        client::PlayerClientFocusTestAccess::runtimeInfo(player_client).submitted_frame_count;
+
+    // Inject nextFrame's zero-framebuffer result at the production render boundary.
+    for (uint32_t frame = 0U; frame < 3U; ++frame) {
+        client::PlayerClientFocusTestAccess::renderUnavailableWindowFrame(player_client);
+        ASSERT_TRUE(client::PlayerClientFocusTestAccess::running(player_client));
+        EXPECT_FALSE(client::PlayerClientFocusTestAccess::windowShouldClose(player_client));
+        EXPECT_EQ(client::PlayerClientFocusTestAccess::runtimeInfo(player_client).submitted_frame_count,
+            submitted_before);
+    }
+
+    GLFWwindow* const window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    int framebuffer_width = 0;
+    int framebuffer_height = 0;
+    glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
+    ASSERT_GT(framebuffer_width, 0);
+    ASSERT_GT(framebuffer_height, 0);
+    std::chrono::steady_clock::time_point const deadline = std::chrono::steady_clock::now() + RENDER_TIMEOUT;
+    for (uint32_t attempt = 0U;
+         attempt < MAX_RENDER_ATTEMPTS && std::chrono::steady_clock::now() < deadline;
+         ++attempt) {
+        // The restored path must use the real window and renderer, including nextFrame.
+        client::PlayerClientFocusTestAccess::renderFrame(player_client);
+        if (client::PlayerClientFocusTestAccess::runtimeInfo(player_client).submitted_frame_count
+            > submitted_before) {
+            break;
+        }
+    }
+    EXPECT_GT(client::PlayerClientFocusTestAccess::runtimeInfo(player_client).submitted_frame_count,
+        submitted_before);
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::running(player_client));
+}
+
+TEST(PlayerClientFocusTest, NativeWindowCloseStopsLoopWhenNoFrameIsAvailable)
+{
+    client::PlayerClient player_client;
+    uint64_t const submitted_before =
+        client::PlayerClientFocusTestAccess::runtimeInfo(player_client).submitted_frame_count;
+    glfwSetWindowShouldClose(client::PlayerClientFocusTestAccess::nativeWindow(player_client), GLFW_TRUE);
+
+    client::PlayerClientFocusTestAccess::renderFrame(player_client);
+
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::windowShouldClose(player_client));
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::running(player_client));
+    EXPECT_EQ(client::PlayerClientFocusTestAccess::runtimeInfo(player_client).submitted_frame_count,
+        submitted_before);
 }

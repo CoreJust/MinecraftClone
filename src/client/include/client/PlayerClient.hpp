@@ -644,6 +644,10 @@ private:
     void observeMovementDiagnostics();
     void servicePlatformEvents() override;
     void render() override;
+    void renderWindowFrame(
+        bool window_frame_available,
+        std::chrono::steady_clock::time_point render_started_at
+    );
     [[nodiscard]] bool presentationSucceeded() const override;
     void onConnectionStateReset() override;
     void recordPendingNearMeshAge(shared::HeightTileKey key,

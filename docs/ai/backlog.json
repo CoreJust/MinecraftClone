@@ -21348,5 +21348,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0638",
+    "title": "Keep normal client alive during zero-extent fullscreen focus loss",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-011-S2",
+    "depends_on": [
+      "MC-AI-0637"
+    ],
+    "acceptance": "Zero framebuffer extent during minimize or fullscreen Alt-Tab skips rendering and continues event polling; explicit window close terminates. Verify restore, repeated Windows Alt-Tab and F2 in ordinary gameplay; source tests do not substitute for Windows runtime.",
+    "evidence": "The production unavailable-frame branch and render entry match frozen Windows cohort1fdb1ee9. That ordinary zero-argument game survived ten actual Alt-Tab/minimize/restore cycles and subsequent input, produced valid F2 clipboard images before and after focus loss, and exited0: /Users/core-just/.codex/task-evidence/mc-s2-20261026/playtest8-feedback/windows-validation/armed-desktop/fresh-unlock/receipt.json. Its four native Windows readback/availability cases passed. Relevant-path compatibility independently reviewed; this is historical cohort evidence, not a rebuilt recovered-candidate native run. Current source and full native test-file syntax pass; extracted production branch7 assertions pass and both intentional negative mutations fail. Depends on locally committed637 clipboard/capture component; broader parent0483 acceptance remains open.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Prevent the two owner-reported Alt-Tab exits in rejected Playtest8.",
+    "context": "Pinned CoreCpp nextFrame returns false for zero framebuffer extent as well as close; PlayerClient treated every false as terminal. Windows logs show orderly shutdown. Exact source and logs retained in playtest8-feedback/windows-crash.",
+    "complexity": "medium",
+    "created_at": "2026-10-26",
+    "resolved_at": "2026-10-27",
+    "resolution_changes": "Changed false nextFrame handling to skip rendering unless the window explicitly requests close, preserving pending diagnostic capture through temporary zero extent. Extracted the private render entry for deterministic unavailable-frame injection; regressions cover repeated unavailable frames, resumed native rendering and explicit close.",
+    "plan": [],
+    "product_changes": [
+      "Minimize or fullscreen focus loss with zero framebuffer extent retains the normal client event loop; explicit close still exits."
+    ],
+    "code_changes": [
+      "Add shouldClose guard around terminal no-frame handling and pending diagnostic-capture failure.",
+      "Use the existing production render entry in focused unavailable/restore and native-close regressions."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

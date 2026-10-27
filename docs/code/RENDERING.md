@@ -112,3 +112,6 @@ timings/counts; spans overlap; diagnostics sample them. Stationary diagnostics
 freeze input. MoltenVK may lack terrain timestamps; Release disables validation. See [gameplay qualification](../ai/GAMEPLAY_QUALIFICATION.md).
 
 Capture checks exact-radius meshes and 16 headings.
+
+`PlayerClient` skips unavailable window frames while retaining its event loop.
+Explicit close terminates the client and fails pending diagnostic capture.

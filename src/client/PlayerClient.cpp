@@ -5531,20 +5531,29 @@ void PlayerClient::updateTerrainLod(
 }
 
 void PlayerClient::render() {
+    std::chrono::steady_clock::time_point const render_started_at = std::chrono::steady_clock::now();
+    renderWindowFrame(m_window.nextFrame(), render_started_at);
+}
+
+void PlayerClient::renderWindowFrame(
+    bool const window_frame_available,
+    std::chrono::steady_clock::time_point const render_started_at
+) {
     bool const capture_render_diagnostics = m_benchmark.has_value();
     bool const capture_mesh_diagnostics = m_benchmark.has_value() && m_benchmark->enable_mesh_stage_diagnostics;
-    std::chrono::steady_clock::time_point const render_started_at = std::chrono::steady_clock::now();
     if (capture_render_diagnostics) {
         m_render_diagnostics = {};
     }
     if (capture_mesh_diagnostics) {
         m_mesh_result_drain_diagnostics = {};
     }
-    if (!m_window.nextFrame()) {
-        if (m_diagnostic_frame_capture_state == PlayerClientDiagnosticFrameCaptureState::Pending) {
-            failDiagnosticFrameCapture("window closed before the requested frame was rendered");
+    if (!window_frame_available) {
+        if (m_window.shouldClose()) {
+            if (m_diagnostic_frame_capture_state == PlayerClientDiagnosticFrameCaptureState::Pending) {
+                failDiagnosticFrameCapture("window closed before the requested frame was rendered");
+            }
+            m_running = false;
         }
-        m_running = false;
         return;
     }
     // Simulation is intentionally fixed at the 100 ms network tick. Preserve
