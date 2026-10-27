@@ -91,7 +91,9 @@ camera-relative WASD. `LMB` breaks while held; `RMB` places immediately and ever
 `200 ms` at the current target. Release, focus/map/mode change or session reset
 requires a new press. `B` cycles blocks; `G` requests mode; `F5` changes views
 without changing input/interest. First-person hides the body; camera
-collision-clips; `R` reloads.
+collision-clips; `R` reloads. Normal macOS/Windows clients enable F2 readback;
+benchmarks require diagnostic opt-in. F2 copies in-memory PNG on macOS and
+CF_DIBV5 with native window ownership on Windows.
 
 ## Canonical chunks and mesh
 

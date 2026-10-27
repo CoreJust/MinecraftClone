@@ -365,6 +365,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/column_map_client_integration_tests.cpp
             client/generation_map_presentation_tests.cpp
             client/map_image_data_tests.cpp
+            client/screenshot_dib_tests.cpp
             client/presentation_frame_progress_tests.cpp
             client/bot_client_tests.cpp
             client/game_client_benchmark_tests.cpp

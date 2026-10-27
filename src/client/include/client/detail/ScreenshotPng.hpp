@@ -22,6 +22,15 @@ namespace client::detail {
     std::optional<std::string_view> pasteboard_name = std::nullopt
 );
 
+[[nodiscard]] bool copyScreenshotRgba8ToClipboard(
+    uint32_t width,
+    uint32_t height,
+    std::span<uint8_t const> rgba8,
+    std::string& error,
+    void* native_clipboard_owner,
+    std::optional<std::string_view> pasteboard_name = std::nullopt
+);
+
 #if defined(__APPLE__)
 [[nodiscard]] std::optional<std::vector<uint8_t>> takeScreenshotPngFromPasteboard(
     std::string_view pasteboard_name,

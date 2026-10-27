@@ -210,7 +210,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "8bb1fcab2a5619e0b80253e9538054d49d70a3aeb634d62d17ccff6ea788bbf2"
+      "sources_sha256": "2076d9740d38c24cc0705e9e728b86641aa9e05ac1a97879eec50a123f6536f9"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -247,7 +247,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "b638dd705f3907687af54baa0590608e682e59e48442e700a016cc2b048ff2d3",
+      "guide_sha256": "0e174c86e494aad410dc809c5a9e7e947f48cd84ad5719c3a22990400d341ade",
       "id": "gameplay",
       "sources": [
         "src/client/BlockActionPresentation.cpp",
@@ -270,6 +270,7 @@
         "src/client/S2MapPresentation.cpp",
         "src/client/ScreenshotClipboard.cpp",
         "src/client/ScreenshotClipboard.mm",
+        "src/client/ScreenshotDibV5.cpp",
         "src/client/ScreenshotPng.cpp",
         "src/client/TerrainLodPresentation.cpp",
         "src/client/TerrainLodRuntime.cpp",
@@ -307,6 +308,7 @@
         "src/client/include/client/TerrainLodSelection.hpp",
         "src/client/include/client/UiPresentation.hpp",
         "src/client/include/client/WorldLoading.hpp",
+        "src/client/include/client/detail/ScreenshotDibV5.hpp",
         "src/client/include/client/detail/ScreenshotPng.hpp",
         "src/main.cpp",
         "src/server/CMakeLists.txt",
@@ -398,7 +400,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "c0d8c94b4963d0b183b8683c7dadab7cbf225d306b1b34edd0f25373935f4d31"
+      "sources_sha256": "fcc4edba964e26afb9f207e727af3c89bd6e5d7e428af84da00235a5ab46b43c"
     },
     {
       "guide": "docs/code/GENERATION.md",
@@ -1118,6 +1120,7 @@
         "tests/client/renderer_golden_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/s2_map_presentation_tests.cpp",
+        "tests/client/screenshot_dib_tests.cpp",
         "tests/client/shader_assets_tests.cpp",
         "tests/client/stone_face_capacity_tests.cpp",
         "tests/client/stone_indirect_draws_tests.cpp",
@@ -1139,7 +1142,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "fbf92aca200e0ee3b0dca17da57f805f9c0c8f64d11adbcd8cb9137ef7cd23d9"
+      "sources_sha256": "e88fdc8f18fba450b52b25156b6919ee472a00887bbdc43989ee19e1638a4d97"
     }
   ],
   "version": 1

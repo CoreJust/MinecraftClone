@@ -21307,5 +21307,46 @@
     "docs_review": "RENDERING documents unpinned structural memo reclamation, graph lease charge lifetime, movement promotion and exact rendered-source dependencies. The source-backed criteria reject fixed quota interpretation.",
     "environment_review": "Prior CMake/test/runtime evidence is explicitly tied to its frozen pre-rebase candidate. No rebase build/test was run here. Windows FPS, total RAM+VRAM and direct owner visual acceptance remain open.",
     "backlog_review": "This is a local prerequisite only. MC-AI-0483 remains active for user acceptance, Windows visual/FPS qualification and the adaptive combined-memory requirement."
+  },
+  {
+    "id": "MC-AI-0637",
+    "title": "Provide normal Windows F2 clipboard screenshots and framebuffer capture",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Provide Windows CF_DIBV5 clipboard-image backend, encoder/tests, native dispatch/hints and normal framebuffer capture while preserving benchmark opt-in and Mac behavior. Verify a valid pasteable image from normal Windows F2 before focus loss. Combined after-focus F2 remains mandatory in dependent MC-AI-0638 and parent MC-AI-0483; this task does not independently claim focus recovery. Build/component tests alone do not satisfy normal Windows image acceptance.",
+    "evidence": "Recovered screenshot backend files exactly match the frozen accepted source archive. Before-focus normal Windows F2 yielded a decoded and visually inspected 1920x1200 CF_DIBV5 image in frozen EXE 1fdb1ee9; receipt /Users/core-just/.codex/task-evidence/mc-s2-20261026/playtest8-feedback/windows-validation/armed-desktop/fresh-unlock/receipt.json. CPU DIB encoder 2/2 passes, source guard 15 assertions across three platform macro cases passes, current source and full native test file syntax checks pass. Historical component evidence is reused by relevant-path source equivalence, not relabeled as an exact reconstructed-tree runtime. After-focus F2 and repeated focus acceptance remain mandatory in dependent 0638 and parent0483.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "F2 must copy a screenshot in normal Windows play, as required by owner controls parity.",
+    "context": "Playtest8 normal Windows capture flag was omitted. Reconstruction at cd038 also shows that the Windows CF_DIBV5 backend, dispatch and F2 hint are absent there; those are required prerequisites for the same explicit Windows F2 image outcome. Include exact frozen backend, DIB encoder/tests, platform dispatch/hints and normal-capture guard in this task rather than inventing a guard-only acceptance. Frozen1fdb runtime proves real Windows F2 images and focus restore; exact staged-tree evidence compatibility still requires review.",
+    "complexity": "medium",
+    "created_at": "2026-10-26",
+    "resolved_at": "2026-10-27",
+    "resolution_changes": "Implemented normal Windows framebuffer readback, CF_DIBV5 encoding/publication with native game-window ownership and F2 dispatch/help. Preserved benchmark opt-in and Mac PNG/private-pasteboard path. Added CPU encoding and native readback regressions; corrected inherited chrono helper conversion required to compile that native test file.",
+    "plan": [
+      "Provide Windows image encoding, clipboard ownership, F2 dispatch and normal framebuffer readback.",
+      "Verify before-focus normal Windows F2 component behavior; retain combined after-focus regression in dependent 0638 and parent0483."
+    ],
+    "product_changes": [
+      "Normal Windows F2 can copy the rendered image to the clipboard before focus loss."
+    ],
+    "code_changes": [
+      "Enable normal Windows framebuffer readback while preserving benchmark opt-in.",
+      "Recover CF_DIBV5 encoder, Windows clipboard ownership and F2 dispatch, platform build registration and Windows help.",
+      "Add ordinary/benchmark readback regressions and CPU DIB cases; explicitly convert the inherited generation-duration test helper to milliseconds so this native test file compiles."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

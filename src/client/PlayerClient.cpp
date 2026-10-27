@@ -31,6 +31,11 @@
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#if defined(_WIN32)
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#undef GLFW_EXPOSE_NATIVE_WIN32
+#endif
 #include <glm/vec3.hpp>
 
 #include <algorithm>
@@ -302,7 +307,7 @@ void addOutlinedGuiText(
     if (capture.has_value() || (benchmark && benchmark->enable_diagnostic_frame_capture)) {
         return true;
     }
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     return !benchmark.has_value();
 #else
     return false;
@@ -5560,8 +5565,10 @@ void PlayerClient::render() {
         static constexpr float SCREENSHOT_HUD_SCALE = 0.72F;
 #if defined(__APPLE__)
         static constexpr std::string_view SCREENSHOT_HINT = "F2: copy screenshot (or Fn+F2)";
+#elif defined(_WIN32)
+        static constexpr std::string_view SCREENSHOT_HINT = "F2: copy screenshot";
 #else
-        static constexpr std::string_view SCREENSHOT_HINT = "F2: screenshot clipboard (macOS only)";
+        static constexpr std::string_view SCREENSHOT_HINT = "F2: screenshot unavailable";
 #endif
         uint32_t framebuffer_width = 0U;
         uint32_t framebuffer_height = 0U;
@@ -6087,20 +6094,18 @@ void PlayerClient::render() {
         if (std::optional<RendererFrameCapture> capture = m_renderer.takeFrameCapture(); capture.has_value()) {
             m_screenshot_capture_requested = false;
             std::string error;
-            std::optional<std::vector<uint8_t>> const png = detail::encodeRgba8Png(
-                capture->width,
-                capture->height,
-                capture->rgba8,
-                error
-            );
             std::optional<std::string_view> pasteboard_name;
             if (m_screenshot_test_pasteboard_name.has_value()) {
                 pasteboard_name.emplace(*m_screenshot_test_pasteboard_name);
             }
-            if (!png.has_value()) {
-                setScreenshotFeedback("Screenshot failed: " + error);
-                CORE_ERROR("Screenshot PNG encoding failed: {}", error);
-            } else if (!detail::copyScreenshotPngToClipboard(*png, error, pasteboard_name)) {
+#if defined(_WIN32)
+            void* const native_clipboard_owner = glfwGetWin32Window(m_window.nativeHandle());
+#else
+            void* const native_clipboard_owner = nullptr;
+#endif
+            if (!detail::copyScreenshotRgba8ToClipboard(
+                    capture->width, capture->height, capture->rgba8, error, native_clipboard_owner,
+                    pasteboard_name)) {
                 setScreenshotFeedback("Screenshot clipboard failed: " + error);
                 CORE_ERROR("Screenshot clipboard copy failed: {}", error);
             } else {

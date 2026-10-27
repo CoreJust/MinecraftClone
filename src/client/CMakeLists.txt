@@ -28,6 +28,8 @@ if(NOT ANDROID)
     target_sources(mc
         PRIVATE
             PlayerClient.cpp
+            ScreenshotDibV5.cpp
+            include/client/detail/ScreenshotDibV5.hpp
             ScreenshotPng.cpp
             ScreenshotClipboard.cpp
             render/InstalledShaderAssets.cpp
@@ -37,6 +39,9 @@ if(APPLE)
     find_library(MC_APPKIT_FRAMEWORK AppKit REQUIRED)
     target_sources(mc PRIVATE ScreenshotClipboard.mm)
     target_link_libraries(mc PRIVATE ${MC_APPKIT_FRAMEWORK})
+endif()
+if(WIN32)
+    target_link_libraries(mc PRIVATE User32)
 endif()
 if(NOT ANDROID)
     mc_target_shaders(mc

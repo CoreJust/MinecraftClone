@@ -140,7 +140,7 @@ struct PlayerClientFocusTestAccess final {
 
     static std::chrono::milliseconds generationVisibleElapsed(PlayerClient const& player_client)
     {
-        return player_client.m_generation_map_visible_elapsed;
+        return std::chrono::duration_cast<std::chrono::milliseconds>(player_client.m_generation_map_visible_elapsed);
     }
 
     static void restoreOrdinaryStartupAfterCaptureOptIn(PlayerClient& player_client)
@@ -1651,6 +1651,45 @@ TEST(PlayerClientFocusTest, ScreenshotKeyIsOneShotAndDoesNotStartReadyWorld)
         NO_KEYS,
         NO_MOUSE_BUTTONS
     ));
+}
+
+#if defined(__APPLE__) || defined(_WIN32)
+TEST(PlayerClientFocusTest, NormalPlayCapturesFramebufferWithoutDiagnosticOptIn)
+{
+    client::PlayerClient player_client;
+
+    std::optional<client::RendererFrameCapture> const capture =
+        client::PlayerClientFocusTestAccess::capturePlayerFrame(player_client);
+
+    ASSERT_TRUE(capture.has_value())
+        << "normal F2 capture must have framebuffer readback enabled without benchmark options";
+    EXPECT_GT(capture->width, 0U);
+    EXPECT_GT(capture->height, 0U);
+    EXPECT_EQ(capture->rgba8.size(), static_cast<size_t>(capture->width) * capture->height * 4U);
+}
+#endif
+
+TEST(PlayerClientFocusTest, BenchmarkFramebufferReadbackRequiresDiagnosticOptIn)
+{
+    {
+        client::PlayerClient player_client{
+            shared::WorldMode::Flight, std::nullopt, client::PlayerClientBenchmarkOptions{},
+        };
+        client::PlayerClientFocusTestAccess::requestFrameCapture(player_client);
+        EXPECT_EQ(client::PlayerClientFocusTestAccess::captureState(player_client),
+            client::FrameCaptureState::Disabled);
+    }
+    {
+        client::PlayerClient player_client{
+            shared::WorldMode::Flight, std::nullopt,
+            client::PlayerClientBenchmarkOptions{ .enable_diagnostic_frame_capture = true },
+        };
+        std::optional<client::RendererFrameCapture> const capture =
+            client::PlayerClientFocusTestAccess::capturePlayerFrame(player_client);
+        ASSERT_TRUE(capture.has_value());
+        EXPECT_GT(capture->width, 0U);
+        EXPECT_GT(capture->height, 0U);
+    }
 }
 
 #if defined(__APPLE__)
