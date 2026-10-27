@@ -73,6 +73,8 @@ Unknown.
 ## Client and qualification
 
 `GameClient` uses cancellable 25 ms polls, 250 ms retries and 30-second peers.
+`currentMaterializedInterestChunkAvailability()` scans active keys allocation-free;
+missing authoritative world returns unavailable.
 `FrameScheduler` preserves 100 ms ticks and skips missed ones. Interpolation holds
 gaps over a tick; flight is linear in Z, gravity/collision use velocity-continuous
 Hermite, and prediction replays pending input after ACKs.

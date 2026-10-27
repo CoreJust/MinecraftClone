@@ -82,6 +82,11 @@ struct GameClientBenchmarkHooks final {
     )> on_materialized_chunk_recorded = {};
 };
 
+struct MaterializedInterestChunkAvailability final {
+    uint32_t resident_count = 0U;
+    uint32_t required_count = 0U;
+};
+
 class GameClient : public core::Client {
     friend struct PlayerClientFocusTestAccess;
 
@@ -107,6 +112,8 @@ public:
     [[nodiscard]] std::optional<uint32_t> renderDistance() const noexcept { return m_render_distance; }
     [[nodiscard]] bool connectionAttemptStarted() const noexcept { return m_connection_attempt_started; }
     [[nodiscard]] uint64_t worldLoadingJoinEpoch() const noexcept { return m_world_loading_identity.join_epoch; }
+    [[nodiscard]] std::optional<MaterializedInterestChunkAvailability>
+    currentMaterializedInterestChunkAvailability() const noexcept;
     [[nodiscard]] uint32_t requiredHeightTileCount() const noexcept
     {
         return m_render_distance ? shared::heightTileInterestCount(*m_render_distance) : 0U;

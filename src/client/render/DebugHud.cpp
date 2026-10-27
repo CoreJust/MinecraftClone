@@ -462,6 +462,18 @@ void buildDebugHudPresentation(
             (std::min)(logical_width - logical_margin, map_left) - logical_margin
         ) * dpi_scale;
         float const session_y = (layout.compact ? 8.0F : 12.0F) * dpi_scale;
+        std::string chunk_status = layout.compact ? "Chunks" : "Chunks ";
+        chunk_status += snapshot.input.current_interest_chunks_available
+            ? formatNumber(snapshot.input.current_interest_resident_chunks, 0) + "/"
+                + formatNumber(snapshot.input.current_interest_required_chunks, 0)
+            : "--";
+        if (!layout.compact && snapshot.input.current_interest_chunks_available) {
+            chunk_status += " ready";
+        }
+        if (snapshot.input.loaded_dense_chunks_available) {
+            chunk_status += " (" + formatNumber(static_cast<double>(snapshot.input.loaded_dense_chunks), 0)
+                + (layout.compact ? "cached)" : " cached)");
+        }
         std::array<HudFlowEntry, 5U> const session{
             HudFlowEntry{ "FPS " + formatNumber(snapshot.presented_fps, 0), HUD_FOREGROUND },
             HudFlowEntry{
@@ -469,15 +481,7 @@ void buildDebugHudPresentation(
                     + formatUptime(snapshot.uptime_seconds),
                 HUD_FOREGROUND,
             },
-            HudFlowEntry{
-                "Chunks resident " + (snapshot.input.loaded_dense_chunks_available
-                    ? formatNumber(static_cast<double>(snapshot.input.loaded_dense_chunks), 0)
-                        + (snapshot.input.resident_chunk_capacity > 0U
-                            ? "/" + formatNumber(static_cast<double>(snapshot.input.resident_chunk_capacity), 0)
-                            : "")
-                    : "--"),
-                HUD_FOREGROUND,
-            },
+            HudFlowEntry{chunk_status, HUD_FOREGROUND},
             HudFlowEntry{
                 "Terrain ready " + (snapshot.input.required_terrain_columns > 0U
                     ? formatNumber(snapshot.input.ready_terrain_columns, 0) + "/"

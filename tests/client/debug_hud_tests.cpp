@@ -371,7 +371,7 @@ TEST(DebugHudTest, BuildsPrototypeReadoutGroupsFromAvailableRuntimeValues)
     };
     EXPECT_TRUE(hasLabel("FPS 60"));
     EXPECT_TRUE(hasLabel("Uptime 02:14"));
-    EXPECT_TRUE(hasLabel("Chunks resident 18"));
+    EXPECT_TRUE(hasLabel("Chunks -- (18 cached)"));
     EXPECT_TRUE(hasLabel("Memory 42 MiB"));
     EXPECT_TRUE(hasLabel("Position"));
     EXPECT_TRUE(hasLabel("Movement"));
@@ -542,7 +542,7 @@ TEST(DebugHudTest, CompactWindowKeepsTelemetryReadableWithinHalfTheCanvas)
         };
         EXPECT_TRUE(hasLabel("FPS 60"));
         EXPECT_TRUE(hasLabel("Up 1440:00"));
-        EXPECT_TRUE(hasLabel("Chunks resident 513"));
+        EXPECT_TRUE(hasLabel("Chunks-- (513cached)"));
         EXPECT_TRUE(hasLabel("RSS 42 MiB"));
         EXPECT_TRUE(hasLabel("Position"));
         EXPECT_TRUE(hasLabel("X 37888.0"));
@@ -705,27 +705,29 @@ TEST(DebugHudTest, AdaptivePrototypeUsesOneFacePerLabelAndPreservesMixedStyleGly
     EXPECT_EQ(adaptive_batch.glyphs[0U].dark_color, 0xFF2D'2414U);
 }
 
-TEST(DebugHudTest, DefaultColoredContrastKeepsDistinctAxesAndReportsResidentCapacity)
+TEST(DebugHudTest, DefaultColoredContrastShowsCurrentInterestAndCachedTotal)
 {
     client::DebugHudSnapshot snapshot{.enabled = true};
     snapshot.input.loaded_dense_chunks_available = true;
     snapshot.input.loaded_dense_chunks = 1024U;
-    snapshot.input.resident_chunk_capacity = 1024U;
+    snapshot.input.current_interest_chunks_available = true;
+    snapshot.input.current_interest_resident_chunks = 37U;
+    snapshot.input.current_interest_required_chunks = 72U;
     snapshot.input.ready_terrain_columns = 2786U;
     snapshot.input.required_terrain_columns = 6561U;
     client::TextRenderer output;
     client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(1280U, 676U, 1.0F), output);
     std::array<uint32_t, 3U> axes{};
-    bool resident = false;
+    bool chunk_status = false;
     for (auto const& label : output.labels()) {
         EXPECT_TRUE(label.placement.style == client::TextStyle::ColoredAdaptive
             || label.placement.style == client::TextStyle::AdaptiveHalo);
         if (label.value.starts_with("X ")) { axes[0] = label.color.packed(); }
         if (label.value.starts_with("Y ")) { axes[1] = label.color.packed(); }
         if (label.value.starts_with("Z ")) { axes[2] = label.color.packed(); }
-        resident = resident || label.value == "Chunks resident 1024/1024";
+        chunk_status = chunk_status || label.value == "Chunks 37/72 ready (1024 cached)";
     }
-    EXPECT_TRUE(resident);
+    EXPECT_TRUE(chunk_status);
     EXPECT_TRUE(std::any_of(output.labels().begin(), output.labels().end(), [](auto const& label) {
         return label.value == "Terrain ready 2786/6561";
     }));
@@ -742,7 +744,9 @@ TEST(DebugHudTest, WrappedSessionCountersDoNotOverlapInNarrowCompactWindow)
     client::DebugHudSnapshot snapshot{.enabled = true};
     snapshot.input.loaded_dense_chunks_available = true;
     snapshot.input.loaded_dense_chunks = 1024U;
-    snapshot.input.resident_chunk_capacity = 1024U;
+    snapshot.input.current_interest_chunks_available = true;
+    snapshot.input.current_interest_resident_chunks = 37U;
+    snapshot.input.current_interest_required_chunks = 72U;
     snapshot.input.ready_terrain_columns = 2786U;
     snapshot.input.required_terrain_columns = 6561U;
     client::TextRenderer output;

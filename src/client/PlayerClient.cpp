@@ -5940,7 +5940,11 @@ void PlayerClient::renderWindowFrame(
         if (shared::SparseWorld const* const world = authoritativeWorld()) {
             input.loaded_dense_chunks_available = true;
             input.loaded_dense_chunks = world->residentChunkCount();
-            input.resident_chunk_capacity = world->maxResidentChunks();
+        }
+        if (auto const availability = currentMaterializedInterestChunkAvailability()) {
+            input.current_interest_chunks_available = true;
+            input.current_interest_resident_chunks = availability->resident_count;
+            input.current_interest_required_chunks = availability->required_count;
         }
         if (m_client_memory_rss_sampled_at == std::chrono::steady_clock::time_point{}
             || now - m_client_memory_rss_sampled_at >= std::chrono::seconds{ 1 }) {

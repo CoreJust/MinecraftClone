@@ -311,6 +311,22 @@ shared::SparseWorld const* GameClient::authoritativeWorld() const noexcept
     return m_authoritative_world.get();
 }
 
+std::optional<MaterializedInterestChunkAvailability>
+GameClient::currentMaterializedInterestChunkAvailability() const noexcept
+{
+    if (!m_authoritative_world) {
+        return std::nullopt;
+    }
+    MaterializedInterestChunkAvailability availability;
+    availability.required_count = static_cast<uint32_t>(m_active_materialized_interest_set.size());
+    for (shared::ChunkCoordinate const coordinate : m_active_materialized_interest_set) {
+        if (m_authoritative_world->residentChunk(coordinate) != nullptr) {
+            ++availability.resident_count;
+        }
+    }
+    return availability;
+}
+
 std::optional<shared::TerrainIdentity> GameClient::activeTerrainIdentity() const
 {
     if (!m_terrain_session) {

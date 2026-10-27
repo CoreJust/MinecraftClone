@@ -80,7 +80,7 @@ cover builder/selector.
 
 ## Text and GUI boundary
 
-Text: ASCII/UTF-8 fallback, `16,384`-glyph cap; depth-tested world, GUI not. HUD: colored adaptive pixels (`4.5:1`), luminance-aware backing, distinct XYZ hues; co-row XYZ/speed when fitting; hide unavailable humidity, redundant Break/Place. F7 styles only captured-look Playing, map closed, transition-free. Resident/capacity chunks; ready/required columns. Compact windowed <`1050` wide or <`520` high.
+Text: ASCII/UTF-8 fallback, `16,384`-glyph cap; depth-tested world, GUI not. HUD: colored adaptive pixels (`4.5:1`), luminance-aware backing, distinct XYZ hues; co-row XYZ/speed when fitting; hide unavailable humidity, redundant Break/Place. F7 styles only captured-look Playing, map closed, transition-free. Current-interest resident/required chunks; retained cached total separately; ready/required columns. Compact windowed <`1050` wide or <`520` high.
 `BlockInteractionEffects` draws authoritative targets/cracks; accepted receipts
 spawn ≤16 particles each, 256 live total, one-second lifetime. Count successful
 presentations; validation explains errors.

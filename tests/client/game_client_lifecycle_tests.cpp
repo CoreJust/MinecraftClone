@@ -984,6 +984,128 @@ TEST(GameClientLifecycleTest, CurrentEditSnapshotAndDeltaCannotRollBackResidentB
     EXPECT_EQ(game_client.authoritativeWorld()->cellVersion(cell), 4U);
 }
 
+TEST(GameClientLifecycleTest, CurrentInterestAvailabilityTracksPartialDeliveryAndRetainedChunks)
+{
+    UnjoinedServer server;
+    ServerPump server_pump{server};
+    CoverageClient game_client;
+    EXPECT_FALSE(game_client.currentMaterializedInterestChunkAvailability());
+    ASSERT_TRUE(game_client.connect(core::Address::localhost(server.port()), std::chrono::seconds{2}));
+
+    using Clock = CoverageClient::Clock;
+    shared::PlayerPosition center{.x = 32'768, .y = 32'768, .z = 128};
+    Clock::time_point event_time = Clock::now();
+    ASSERT_TRUE(game_client.initialize(center, event_time));
+
+    auto availability = game_client.currentMaterializedInterestChunkAvailability();
+    ASSERT_TRUE(availability);
+    EXPECT_EQ(availability->resident_count, 0U);
+    EXPECT_EQ(availability->required_count, 0U);
+
+    event_time += std::chrono::milliseconds{1};
+    ASSERT_TRUE(game_client.applyCoverage(center, event_time));
+    std::vector<shared::ChunkCoordinate> const initial_interest = shared::materializedInterestChunkKeys(center);
+    ASSERT_GT(initial_interest.size(), 2U);
+    availability = game_client.currentMaterializedInterestChunkAvailability();
+    ASSERT_TRUE(availability);
+    EXPECT_EQ(availability->resident_count, 0U);
+    EXPECT_EQ(availability->required_count, initial_interest.size());
+
+    std::array<shared::ChunkCoordinate, 2U> const initial_delivery{
+        shared::ChunkCoordinate{2'048, 2'048, 8},
+        shared::ChunkCoordinate{2'049, 2'048, 8},
+    };
+    event_time += std::chrono::milliseconds{1};
+    ASSERT_TRUE(game_client.applyAirBatch(1U, initial_delivery, event_time));
+    availability = game_client.currentMaterializedInterestChunkAvailability();
+    ASSERT_TRUE(availability);
+    EXPECT_EQ(availability->resident_count, initial_delivery.size());
+    EXPECT_EQ(availability->required_count, initial_interest.size());
+
+    auto sort_by_distance_from = [](
+        std::vector<shared::ChunkCoordinate>& coordinates, shared::ChunkCoordinate const origin
+    ) {
+        auto const distance_key = [origin](shared::ChunkCoordinate const coordinate) {
+            auto const magnitude = [](int64_t const value) { return value < 0 ? -value : value; };
+            int64_t const distance = magnitude(static_cast<int64_t>(coordinate.x) - origin.x)
+                + magnitude(static_cast<int64_t>(coordinate.y) - origin.y)
+                + magnitude(static_cast<int64_t>(coordinate.z) - origin.z);
+            return std::tuple{distance, coordinate.z, coordinate.y, coordinate.x};
+        };
+        std::sort(coordinates.begin(), coordinates.end(), [&](auto const left, auto const right) {
+            return distance_key(left) < distance_key(right);
+        });
+    };
+    auto const center_chunk = [](shared::PlayerPosition const position) {
+        int32_t constexpr SIDE = static_cast<int32_t>(shared::Chunk::SIDE_LENGTH);
+        return shared::ChunkCoordinate{position.x / SIDE, position.y / SIDE, position.z / SIDE};
+    };
+    uint64_t delivery_token = 2U;
+    auto deliver = [&](std::span<shared::ChunkCoordinate const> coordinates) {
+        size_t offset = 0U;
+        while (offset < coordinates.size()) {
+            size_t const count = (std::min)(
+                static_cast<size_t>(shared::MATERIALIZED_CHUNK_BATCH_CAPACITY),
+                coordinates.size() - offset
+            );
+            event_time += std::chrono::milliseconds{1};
+            if (!game_client.applyAirBatch(
+                    delivery_token++, coordinates.subspan(offset, count), event_time
+                )) {
+                return false;
+            }
+            offset += count;
+        }
+        return true;
+    };
+
+    std::vector<shared::ChunkCoordinate> ordered_initial_interest = initial_interest;
+    sort_by_distance_from(ordered_initial_interest, center_chunk(center));
+    ASSERT_TRUE(deliver(ordered_initial_interest));
+    ASSERT_TRUE(game_client.authoritativeWorld());
+    EXPECT_EQ(game_client.authoritativeWorld()->residentChunkCount(), initial_interest.size());
+
+    auto advance_interest = [&] {
+        for (uint32_t step = 0U; step < 4U; ++step) {
+            center.x += 64;
+            event_time += std::chrono::milliseconds{1};
+            if (!game_client.applyCoverage(center, event_time)) {
+                return false;
+            }
+        }
+        return true;
+    };
+    ASSERT_TRUE(advance_interest());
+    std::vector<shared::ChunkCoordinate> moved_interest = shared::materializedInterestChunkKeys(center);
+    availability = game_client.currentMaterializedInterestChunkAvailability();
+    ASSERT_TRUE(availability);
+    EXPECT_EQ(availability->resident_count, 0U);
+    EXPECT_EQ(availability->required_count, moved_interest.size());
+    uint64_t const capacity = game_client.authoritativeWorld()->maxResidentChunks();
+    uint64_t const resident_before_moved_delivery = game_client.authoritativeWorld()->residentChunkCount();
+    ASSERT_LT(resident_before_moved_delivery, capacity);
+    std::vector<shared::ChunkCoordinate> unresident_moved_interest;
+    for (shared::ChunkCoordinate const coordinate : moved_interest) {
+        if (!game_client.hasResidentChunk(coordinate)) {
+            unresident_moved_interest.push_back(coordinate);
+        }
+    }
+    sort_by_distance_from(unresident_moved_interest, center_chunk(center));
+    uint64_t const needed_for_full_cache = capacity - resident_before_moved_delivery;
+    ASSERT_GE(unresident_moved_interest.size(), needed_for_full_cache);
+    unresident_moved_interest.resize(static_cast<size_t>(needed_for_full_cache));
+    ASSERT_TRUE(deliver(unresident_moved_interest));
+    EXPECT_EQ(game_client.authoritativeWorld()->residentChunkCount(), capacity);
+
+    ASSERT_TRUE(advance_interest());
+    std::vector<shared::ChunkCoordinate> const next_interest = shared::materializedInterestChunkKeys(center);
+    availability = game_client.currentMaterializedInterestChunkAvailability();
+    ASSERT_TRUE(availability);
+    EXPECT_EQ(availability->resident_count, 0U);
+    EXPECT_EQ(availability->required_count, next_interest.size());
+    EXPECT_EQ(game_client.authoritativeWorld()->residentChunkCount(), capacity);
+}
+
 TEST(GameClientLifecycleTest, EditedColumnWaitsForEveryVerticalSnapshotBeforeRestoringProfileAuthority)
 {
     UnjoinedServer server;

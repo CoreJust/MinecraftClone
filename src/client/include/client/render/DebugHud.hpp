@@ -91,7 +91,9 @@ struct DebugHudInput {
     std::optional<std::chrono::steady_clock::time_point> completed_frame_observed_at;
     bool loaded_dense_chunks_available = false;
     uint64_t loaded_dense_chunks = 0U;
-    uint64_t resident_chunk_capacity = 0U;
+    bool current_interest_chunks_available = false;
+    uint32_t current_interest_resident_chunks = 0U;
+    uint32_t current_interest_required_chunks = 0U;
     uint32_t ready_terrain_columns = 0U;
     uint32_t required_terrain_columns = 0U;
     std::optional<uint64_t> client_memory_rss_bytes;
