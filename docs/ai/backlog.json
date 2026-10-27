@@ -21468,5 +21468,46 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0644",
+    "title": "Transport actual source footprints with continuous order-independent scalar overlap",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Use explicit copied actual source-footprint masks and continuous transported supports; remove circular cold-ownership API and hardwinner height selection. Prepare vacated background jointly so source ordering cannot affect it. Preserve rigid single-body interiors outside overlaps, finite complete layered height/water fields, exact smooth finalidentity, torus agreement and supported numericdomain. Overlaps form one continuous order-independent scalar surface and expose hot/remelted overlap state without hard source-color cuts. Prove on actual3majorbody fixture: reversed input order same scalar output, no cropped finalcomponent, meaningful independenttranslations/rotations and bounded temporal transitions/cost. No RGBworldfade, no terrainmodelmathchanges; fullstory/rendering/nativeacceptance remain parent0621/0483.",
+    "evidence": "Current corrected evaluator optimized22/22 and UBSan plus libc++ extensive bounds22/22 pass. New regression first failed extrema winner envelope, then proved both overlapping source heights and water stages influence normalized scalar output. Re-evaluated immutable actual3body fixture without model regeneration:6orders x8times x11channels,0mismatches;9801endpoint-ownedcells and height/water/identity exact;61frames0invalid. Independent double cold-reference error recorded in current rigid-reference receipt. Original frozen644 244output byteidentity and token/IRidentity remain PRE-correction proof only; overlap math intentionally corrected after review. Prior circular order785cells/max2108m, sub-ULP redexit133 and overlap-red failure retained. ASan allocator-init deadlock unqualified. Evidence /Users/core-just/.codex/worktrees/mc-s2-commit-recovery/MinecraftClone/build/recovery-0644/actual-proof-receipt.json, final-test-receipts.json, review-round1.json and actual-proof-corrected/rigid-reference.json. No nativeFPS/fullstory/Windows qualification.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Whole-continent CPU proof exposes assistant circular-support design error: complete actual bodies overlap evenatfinalworld and hardwinnerselection cuts moving terrain.",
+    "context": "Exactownercreationstory under task-evidence/mc-s2-20261027/creation-history/owner-request.txt. circle-planner-check.json and full-story/overlap-attempt prove742/1526 overlapcells and785 order-dependentheightcells,max2108.06m at t0.35. Kernel642 is a reviewed one-body prerequisite, not a validwhole-continent planner. Replace invented circular ownership rather than preserving it as compatibility.",
+    "complexity": "high",
+    "created_at": "2026-10-27",
+    "resolved_at": "2026-10-27",
+    "resolution_changes": "Replaced unpublished circular ownership with copied actual binary footprints, joint vacated height/water reconstruction, canonically ordered normalized scalar contributions, continuous overlap/remelt and mapping-confidence fields. Validated disjoint/nonempty masks with remaining background and preserved numeric domain, rigid unique-body interiors and exact endpoint. Double and float periodic coordinates remain below the upper bound, including sub-ULP negatives. Every overlapping source influences height and water through convex weights, replacing extrema height-winner selection after exact-task review. Documented material-consumer constraints; full story/rendering/native binding remains parent0621/0483 work.",
+    "plan": [
+      "Replace circular ownership with copied actual source-footprint masks, joint vacuum/background reconstruction and commutative continuous scalar overlap; inspect actual3body order/endpoint/motion proof before renderer promotion."
+    ],
+    "product_changes": [
+      "Provide actual-footprint transport and continuous scalar overlap for later creation-history integration."
+    ],
+    "code_changes": [
+      "Replace circle core fields with copied footprint masks and support collars; remove old compatibility API.",
+      "Prepare one joint background and combine canonically ordered normalized scalar contributions without discarding lower raised bodies.",
+      "Expose overlap and continuous mapping confidence; keep body IDs diagnostic only.",
+      "Recover22tests including both-contributor scalar influence, mask ownership, order/torus/lake/continuity/numeric-domain and sub-ULP bounds regressions."
+    ],
+    "baseline_commit": "791acbb060c4eaaf4628a81764f1bb76f68a4ba0",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

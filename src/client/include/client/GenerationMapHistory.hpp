@@ -24,8 +24,9 @@ struct GenerationHistoryCore final
 {
     std::array<double, 2U> source_center{};
     std::array<double, 2U> initial_displacement_cells{};
-    double solid_radius_cells = 0.0;
-    double blend_radius_cells = 0.0;
+    // Exactly resolution squared binary cells; preparation copies this footprint.
+    std::span<uint8_t const> source_footprint;
+    double support_collar_cells = 3.0;
     double initial_rotation_radians = 0.0;
 };
 
@@ -45,7 +46,13 @@ struct GenerationHistoryFrame final
     std::vector<float> liquid_fraction;
     std::vector<float> boundary_heat;
     std::vector<float> water_depth_m;
-    // Exact rigid samples in solid cores; remelted joins have no unique provenance.
+    std::vector<float> overlap_fraction;
+    // Diagnostic ID only; do not threshold rendered color on discrete ownership.
+    // Stable footprint-derived ID for a unique body; zero denotes background/ambiguous overlap.
+    std::vector<uint64_t> source_body_id;
+    // Continuous canonical-color blend weight, zero at full overlap or periodic mapping ambiguity.
+    std::vector<float> source_mapping_weight;
+    // Exact rigid samples in body interiors; weight ambiguous coordinates by source_mapping_weight.
     std::vector<std::array<float, 2U>> final_coordinates;
 
     // Reused evaluator workspace; these are not additional terrain source fields.
@@ -57,7 +64,9 @@ struct GenerationHistoryFrame final
 class GenerationMapHistory final
 {
 public:
-    // At most 16 events. All floating inputs must have magnitude <= max(float)/24:
+    // Footprints must be nonempty, binary, mutually disjoint and leave some background.
+    // Collars are positive and no larger than one quarter of the source side.
+    // At most 64 bodies and 16 events. All floating inputs must have magnitude <= max(float)/24:
     // the 16-event limit plus 8 reserves headroom for scalar sums and water depth.
     // Unsupported values are rejected, never rescaled or saturated.
     [[nodiscard]]
