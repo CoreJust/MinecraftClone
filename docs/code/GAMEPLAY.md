@@ -108,3 +108,5 @@ Air/base-reset overrides across eviction/base arrival; stale updates fail and
 bounded resync repairs gaps. The atomic 65,536-unit cap counts stored cells
 (minimum one/chunk). `ChunkMesher` suppresses seams. Terrain LOD combines edits
 with base profiles; local/boundary-neighbor revisions invalidate captures.
+
+[Creation fields](CREATION_HISTORY.md).

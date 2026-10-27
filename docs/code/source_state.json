@@ -210,7 +210,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "2076d9740d38c24cc0705e9e728b86641aa9e05ac1a97879eec50a123f6536f9"
+      "sources_sha256": "5d9f5c0038370eaff6f29d72bef08b523addb7d45524c0791cdeb74d2f986e4b"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -247,7 +247,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "eb087e565a5ba59dcb9fe18f94db1fb97d7c6adb19d5b1b1a0d5e6e7ec93ff5b",
+      "guide_sha256": "136d8ea0e95554b530108ed0c1c3f3c80891c673bd1e741393866a2c38f7db3c",
       "id": "gameplay",
       "sources": [
         "src/client/BlockActionPresentation.cpp",
@@ -260,6 +260,7 @@
         "src/client/DepthFormat.cpp",
         "src/client/FrameScheduler.cpp",
         "src/client/GameClient.cpp",
+        "src/client/GenerationMapHistory.cpp",
         "src/client/GenerationMapPresentation.cpp",
         "src/client/HeightTileInterestRegion.cpp",
         "src/client/PlayerClient.cpp",
@@ -290,6 +291,7 @@
         "src/client/include/client/ColumnMapPresentation.hpp",
         "src/client/include/client/FrameScheduler.hpp",
         "src/client/include/client/GameClient.hpp",
+        "src/client/include/client/GenerationMapHistory.hpp",
         "src/client/include/client/GenerationMapPresentation.hpp",
         "src/client/include/client/HeightTileInterestRegion.hpp",
         "src/client/include/client/LoadingBackdrop.hpp",
@@ -400,7 +402,7 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "804c7337ccdf973286af6ffb5537d35e9a02edc8973dc4c0be191deca08c51c5"
+      "sources_sha256": "10346226bd137b2c866345704d41e95d4291bf4332776e55b720db1ecf2bc99a"
     },
     {
       "guide": "docs/code/GENERATION.md",
@@ -1095,6 +1097,7 @@
         "tests/client/game_client_benchmark_tests.cpp",
         "tests/client/game_client_lifecycle_tests.cpp",
         "tests/client/game_client_prediction_tests.cpp",
+        "tests/client/generation_map_history_tests.cpp",
         "tests/client/generation_map_presentation_tests.cpp",
         "tests/client/goldens/README.md",
         "tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm",
@@ -1142,7 +1145,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "63c0803c42c6b8db36df9dec85e3d204adf691ffd5ea189f53d42adf36f79938"
+      "sources_sha256": "d89c5ab38fd68476440634876a6fa5a2f67399df7580831673b138945465144f"
     }
   ],
   "version": 1

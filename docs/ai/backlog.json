@@ -21427,5 +21427,46 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0642",
+    "title": "Build continuous planetary creation-history fields conditioned on the final world",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-011-S2",
+    "depends_on": [],
+    "acceptance": "Provide a pure CPU history kernel over typed final terrain/plate fields: complete finite scalar surface at every time, slowly cooling planetary semimolten state, spatial crust/plate formation with hot boundaries, independently moving rigid solid cores, scalar merge/split/submergence events and exact smooth final field identity. Demonstrate actual-source states, meaningful journey/topology and bounded evaluation cost; preserve final model math. Binding, complete narrative visuals and native playback remain required by parent MC-AI-0483 and integration MC-AI-0621, not claimed by this kernel task.",
+    "evidence": "Current standalone12/12tests pass after review-confirmed numeric overflow correction; original9kernel cases retained plus extreme-value/event rejection and bounded-large16-event coverage. Frozen61frame actualV21 fixture proof hashes remain valid; old/new preparation over the same immutable source yields127byte-identical scalar/thermal artifacts and identical field-validation output. evaluate() source bytes and FP operation order are unchanged; prepare now rejects a domain derived from floatoutputmax/(existing16events+8headroom), with all floating source/core/event inputs guarded. Registered library target and normal source checks pass. Prior mechanical token/full-IR equivalence is explicitly before-validation history, not a claim that the new guard is semantically unchanged. Evidence /Users/core-just/.codex/worktrees/mc-s2-commit-recovery/MinecraftClone/build/recovery-0642/validation-delta.json, validation-tests-receipt.json and actual-fixture-validation-identity.json. No model regeneration, fullstory/art/nativeFPS or ASan qualification; two prior sanitizer probes remain failed/unqualified.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0483",
+    "motivation": "Owner rejects material-only/crossfade previews and requires a captivating seamless planetary evolution history.",
+    "context": "Exact owner authority /Users/core-just/.codex/task-evidence/mc-s2-20261027/creation-history/owner-request.txt SHA2d77448424146f994913bfce9ed474f9ed132908ae4133e258d7ec503b304f1e. Read history-design.md and failed shear/globalODE proofs; selected hybrid is final-conditioned typed fields with exact rigid solid samples and coherent scalar reconstruction in remelted zones. No independent-world RGB fade, model rescaling, GUI launches or automatic new model adoption.",
+    "complexity": "high",
+    "created_at": "2026-10-27",
+    "resolved_at": "2026-10-27",
+    "resolution_changes": "Recovered typed CPU field kernel and nine original tests, registered standalone library/header and test source, and cleaned source-policy formatting. Following a reproduced accepted-finite-input overflow, added authorized prepare-only numeric-domain rejection and three regressions; evaluator math/order and actual-source outputs remain unchanged. Full narrative/native binding stays parent0483/integration0621 scope.",
+    "plan": [
+      "Implement and inspect standalone actual-source CPU history states before narrative adapters; retain failed proofs and missed checkpoints."
+    ],
+    "product_changes": [
+      "Provide the pure CPU field-transport prerequisite for later creation-history presentation."
+    ],
+    "code_changes": [
+      "Recover frozen GenerationMapHistory.cpp/.hpp and its nine focused tests; preserve arithmetic/token/optimized-IR identity.",
+      "Register mc_generation_history as a standalone std-only library and public mc dependency, including required header membership.",
+      "Add field-contract documentation and source-owning guide pointer; preserve all unrelated S2 source.",
+      "Reject unsupported finite magnitudes in prepare using float-output/event-count headroom; preserve evaluator arithmetic and add three numeric-domain regressions."
+    ],
+    "baseline_commit": "611099ca3471cd78088edb230dbb5da7b53b71a8",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
