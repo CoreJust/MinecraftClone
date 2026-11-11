@@ -6,20 +6,26 @@
 owns scene, shaders, camera, layouts and programs. CoreCpp's `PresentationContext`
 owns validation, device/queues/synchronization, swapchain, views and surfaces.
 
-`PresentationResourceScope` owns client device children used by an acquired
-frame. Recreation releases cache/program/layout/scope before rebuilding.
-`waitForSubmittedFrames()` drains slots without steady-state
-`vkDeviceWaitIdle`; acquired slots own indirect buffers after fence completion.
-Indirect batches respect `maxDrawIndirectCount`; direct fallback preserves
-logical counts. Allocation/mapping failures use direct draws. Quads share indices `0,1,2,0,2,3`. Direction 6 reuses the 32-byte
-instance for linear triangles with 1/32-block vertex heights; indexed corner 3
-repeats vertex 0. Flagged triangles retain corner temperatures. Fragments sample canonical R6
-temperature/elevation bilinearly from an atlas SSBO, independent of geometry.
-Represented depth still controls deep Stone; universal depth/material parity is unproven.
-Actual materials remain explicit. Stone/player/text pushes are 128/128/96
-bytes; normals use slope lighting.
-Text overwrites and per-image depth reuse are ordered across frame slots.
-Scene/HUD receipts advance after submission, excluding undrawn publication.
+`PresentationResourceScope` owns acquired-frame children. Recreation rebuilds
+resources. Growth drains fences and clears per-image scene/depth and
+selection/Stone descriptors. Matching settings retain device resources. Slot fences
+protect indirect buffers. `waitForSubmittedFrames()` avoids steady-state `vkDeviceWaitIdle`.
+
+Indirect limits and allocation/mapping fallback preserve counts.
+Quads use 0,1,2,0,2,3. Faces are 48 bytes: low three direction bits select
+face 6; bits 3–5 carry vertex height bit 16. Decoders mask direction.
+Top face 2,048 is 65,536 at 1/32-block precision; corner 3 repeats vertex 0.
+Climate temperatures and V21 same-LOD materials retain payload bits.
+16-byte normals average shared Q5 vertices. Voxels/skirts stay flat.
+Weak memberships survive edits. Expired/reordered contributors require full preparation.
+Seam-owner categories use barycentric coverage without ID/albedo blending.
+R6 samples atlas climate. V9 minifies albedo; near textures, IDs and underwater
+cutoffs remain exact. Parity unproven.
+Push sizes: Stone/player/text 128/128/96 bytes.
+[Field builder](../../src/client/render/CanonicalTerrainField.cpp) and
+[GPU record](../../src/client/include/client/render/CanonicalTerrainField.hpp)
+define field uploads. V10 uses authoritative top materials. Slot order protects
+text/depth.
 
 ## Scene and shader policy
 
@@ -28,96 +34,91 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
   -> VulkanRenderer -> PresentationContext::Frame callback -> present/readback
 ```
 
-Z-up uses zero-to-one depth. `InstalledShaderAssets` reads installed `shaders/`; Android
-`AndroidShaderAssets` reads APK assets. Both require bare `.spv` names, without source fallback.
+Z-up uses zero-to-one depth. Desktop/APK shaders require bare `.spv` names. No source fallback.
 
-Frustum tests cull drawing only. LOD keeps full-world L0 while cells refine 4×4 through L1/L2. Shared chains stitch triangles; a 32-block band
-adjusts whole intersecting cells and neighbor edge segments toward actual edges. Incomplete capture retains fallback. Async upload planning reuses canonical groups across unedited cache churn;
-edits invalidate identity. Source matching avoids allocation. Ordinary bottoms use a textured
-16×16 Bedrock rectangle; edits retain exact fallback. Uploads preserve the old scene until candidate completion. Stale candidates preserve columns.
-See [gameplay]
-(GAMEPLAY.md), [full-radius qualification](../ai/GAMEPLAY_QUALIFICATION.md), and
-[LOD presentation tests](../../tests/client/terrain_lod_presentation_tests.cpp).
+L0 refines 4×4 through stitched L1/L2 with a 32-block neighbor band.
+Beyond the distance band, fine-V10 L1 cells reuse a canonical 5×5 child probe
+to refine sampled fan errors >1 block. Residency is unchanged; interiors/seams
+are not globally bounded.
+Matching promotions reuse ordered samples; otherwise recollect.
+[RiverBedMesh](RIVER_BEDS.md) constrains V10 L0–L2.
+V10 positive wet fan vertices use canonical Dirt; authority edges retain voxel materials.
+Authoritative captures store 16×16 columns, one-cell cardinal halos, tile/edit
+versions and edited chunks. Immutable captures share a batch identity and omit
+per-cell configuration strings. Publication validates source versions. Eviction
+preserves bounded canonical proofs. Dense hashes are rechecked. Edits,
+requirements, republication and identity invalidate proofs. Current-first and
+settle fall back to full preparation when local patching fails.
 
-Active LOD terrain, blocks, players and world labels bend visually around camera
-XY with radius 131072: Z drops by horizontal distance squared /262144.
-CPU culling conservatively bounds curvature. Fragment fog starts at
-the last 4% of an altitude-aware tangent horizon (sea 384), capped at 32768.
-Adaptive projection covers altitude, terrain height and maximum bend; simulation
-and GUI stay flat. Captures remain open.
+Terrain, blocks, players and labels bend around camera XY: radius 131072,
+Z drop distance²/262144. CPU culling bounds curvature. Horizon fog starts in the final
+4% (altitude tangent, sea 384), capped at 32768. Adaptive projection covers
+altitude, terrain and max bend; simulation/GUI stay flat.
 
-Block instances carry material IDs; flagged smooth triangles pack temperatures.
-[pinned vanilla atlas](../../assets/textures/terrain/README.md) repeats per
-block: Grass tops are tinted, sides layered, bottoms Dirt. Decode sRGB PNGs to
-linear before lighting; encode once, in shader for UNORM or hardware for sRGB
-attachments. Capture `srgb_encoded` labels pixel encoding; offscreen is raw linear.
+Sand=7. The [pinned
+vanilla atlas](../../assets/textures/terrain/README.md) keeps tinted Grass tops,
+layered sides and Dirt bottoms; six deterministic Sand faces precede the overlay.
+Each sRGB layer has five linear mips (16×16–1×1). Premultiply before
+filtering; magnify nearest, minify trilinear. Decode for lighting; encode for
+UNORM/sRGB output. Capture `srgb_encoded` reports encoding; offscreen stays linear.
 
-Loading copies RGBA8 images up to 512×512, skips unchanged uploads and stages
-nearest-sampled updates with aspect-fitted letterboxing beneath GUI text. Desktop loading
-hides the fallback grid/platform until Playing, including before map arrival. `map.vert`/`map.frag` ship for
-desktop and Android. Loading callers may
-enable `VulkanRenderer::setFrameCompletionTracking(true)` and read `frameProgress()`.
-Submitted/completed IDs pair renderer sequences with swapchain generations.
-While enabled, failures leave submission unchanged; toggling clears progress.
-Completion needs a successful submitted-frame fence observation or completed
-readback fence wait.
-`beforeRecreate` records retired submission/slot receipts only after CoreCpp
-completes every submitted fence. All receipts from that observation share its
-time; prompt readiness cannot credit earlier display time, including a zero
-remaining budget. Re-arm after generation changes; present IDs alone prove no
-GPU completion.
-Benchmarks opt in; ordinary play keeps tracking off.
+Two ≤512² RGBA8 slots serve eight draws. Hidden views pause. Matching native
+fields retain history through replacement. Optional 24 Hz history retains sharp
+wind/current arrows. Plate ownership, phase-zero ice and climate means differ.
+Start requires scene/frame fences. Minimap: +Y up, 0° north, +90° east.
+Player-centered UVs retain half-artifact overscan. Lost coverage rebuilds previews.
+Desktop maps show baked rivers during cancellable viewport rasterization.
 
-CPU retirement transfers cache/queue, slot and draw-index ownership
-to CoreCpp workers; removal and eight-frame GPU quarantine remain
-synchronous. Rejected retirement retains ownership; teardown drains. Reapers
-bound queued storage and recycled buffers separately at 64 MiB.
+`setFrameCompletionTracking(true)` exposes `frameProgress()`. IDs include swapchain
+generation. Failed submits leave IDs unchanged. Toggling clears tracking. Fences
+or readback establish completion. Recreation waits/rearms. Shared timestamps
+prevent early credit. `capture_frame_completion` keeps ordered receipts, ordinary
+tracking the latest. FPS counts unique fence-observed IDs per second.
 
-Terrain uses an 8 ms deadline, with 1 ms shared publication/admission after
-overruns. Acquisition expires at render-entry plus ceil(1s/120); recording is
-not deadline-bound. Capture retains a 1 s preload. Only pre-destruction
-recreation and present-fence timeouts defer growth for 5 s; other Vulkan errors
-are fatal. Diagnostics retain timeout status and distinguish quad from range counts.
-[`height_tile_surface_mesher_tests.cpp`](../../tests/core/height_tile_surface_mesher_tests.cpp)
-covers tops, steps and seams. `ChunkMesher` suppresses neighbor-plane seams;
-caches require exact blocks, neighbors and revision. `ChunkMeshLodBuilder` merges
-coplanar equal-direction/material faces into bounds-preserving, content-identified
-Fine/Coarse variants. The selector uses caller thresholds and hysteresis; invalid
-directions fail before indexing.
-[`LOD tests`](../../tests/core/chunk_mesh_lod_tests.cpp) cover builder/selector
-contracts.
+CoreCpp workers retire cache/queue/slot/draw-index state. Removal and 8-frame GPU
+quarantine stay synchronous. Rejection preserves caller ownership. Teardown
+drains reapers. Queued storage and recycled buffers each cap at 64 MiB.
+
+Terrain has 8 ms plus 1 ms admission/publication overrun. Pending uploads
+reserve 1 ms after planning. Acquisition expires at render-entry + ceil(1s/120).
+Recording is unchecked. Capture preload takes 1 s. Only pre-destruction
+recreation/present-fence timeouts defer growth 5 s. Other Vulkan errors are fatal.
+Diagnostics count timeouts and quads/ranges. [`height_tile_surface_mesher_tests.cpp`](../../tests/core/height_tile_surface_mesher_tests.cpp)
+covers tops/steps/seams. `ChunkMesher` suppresses neighbor seams; caches require
+exact blocks/neighbors/revision. `ChunkMeshLodBuilder` merges coplanar equal-direction/material faces into bounded
+Fine/Coarse variants; selection validates directions and caller thresholds/hysteresis.
 
 ## Text and GUI boundary
 
-`TextRenderer` expands colored screen/world ASCII glyphs with UTF-8 fallback.
-More than 16384 glyphs fails acquisition. World text has depth; GUI does not.
-Count successful presentation completions; enable validation to interpret errors.
+Text uses ASCII/UTF-8 fallback and a 16,384-glyph cap. Only world text is
+depth-tested. HUD defaults to outlines and distinct XYZ hues. Experimental F7
+contrast defaults off. Footer shows target XYZ/material/ID. Spectators lack
+wireframe. Effects use terrain-relative coordinates and flat shader seeds.
+Antialiased fractures use the 16×16 material scale. Held breaks emit particles.
+Bursts spawn ≤16, with 256 live for one second under analytic gravity. Target
+loss preserves bursts. Successful presents count. Validation explains errors.
 
 ## Capture, input, and validation
 
-Recreation/Android window replacement preserve readback. GLFW controls camera
-and authoritative movement; Escape, R, F1 and F5 retain their actions.
-F2 copies one rendered frame as an in-memory PNG to the macOS clipboard;
-no screenshot file is saved. Held F2 neither repeats nor starts a ready world.
-Command-modified input releases pointer capture and suppresses movement.
-Explicit diagnostic file captures remain separate. Playing rebuilds GUI text
-each frame to bound glyph count. Clipboard feedback uses a centered animated toast excluded from the copied image.
-Android uses touch movement/look and hardware F5.
+Captures survive recreation. Native eligibility needs a fresh frame. Desktop
+defaults fullscreen except windowed captures/benchmarks. Escape closes maps or
+asks to exit. F1 hides both HUD sections. Windows/macOS F2 copies to clipboard
+without saving or starting Ready. Command modifiers release capture/suppress
+movement. Diagnostics stay separate. Playing rebuilds text every frame.
+Captures omit hints/toasts. Centered feedback follows. Android uses touch/hardware F5.
 
 [`renderer_smoke_tests.cpp`](../../tests/client/renderer_smoke_tests.cpp)
 covers desktop input, presentation/recreation/readback, HUD and resident faces.
-Material capture checks textures and validation beside a canonical tile; normal
-gameplay and Android runtime remain separate gates.
+Material capture checks textures and validation near a canonical tile. Gameplay and Android runtime qualify separately.
 
-[`renderer_golden_tests.cpp`](../../tests/client/renderer_golden_tests.cpp)
-captures S4 offscreen at 640×480. `VulkanOffscreenTarget` owns linear
-color/submission/readback; Client owns depth and shared recording/pipelines.
-Approval requires validation, the active versioned reference and independent
-depth/scene checks. Review references at native size. S5 checks scene, replacement, validation and remote altitude.
+[`renderer_golden_tests.cpp`](../../tests/client/renderer_golden_tests.cpp) captures S4 at 640×480.
+`VulkanOffscreenTarget` owns linear color/submission/readback; Client owns depth,
+recording and pipelines.
+Approval checks validation, active native-size reference and independent depth/scene
+results. S5 covers scene/replacement/validation/altitude.
 
 `--benchmark-render` excludes server/network/gameplay; `--benchmark-game` counts
-completed player-client present requests. Neither measures scanout. Evidence records GPU, extent, HUD, frame percentiles, CPU phases and submissions.
-Stationary diagnostics freeze input. Optional terrain timestamps may be unsupported
-on MoltenVK; Release disables validation. See [gameplay qualification](../ai/GAMEPLAY_QUALIFICATION.md).
-
-Capture checks exact-radius meshes and 16 headings.
+completed present requests. LOD timings overlap. Stationary diagnostics freeze
+input. MoltenVK can lack timestamps. Release disables validation. Android forwards
+session/coverage identity. Logs show player/worker state and include collection
+waits in job time. See [qualification](../ai/GAMEPLAY_QUALIFICATION.md).

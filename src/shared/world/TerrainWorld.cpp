@@ -1,8 +1,11 @@
 #include <shared/world/TerrainWorld.hpp>
 
 #include <shared/world/Chunk.hpp>
+#include <shared/world/World.hpp>
 
 #include <generation/Generation.hpp>
+#include <generation/V10Provider.hpp>
+#include <generation/V9Provider.hpp>
 
 #include <algorithm>
 #include <array>
@@ -24,12 +27,28 @@
 namespace {
 
 constexpr double WORLD_SIZE = static_cast<double>(generation::WORLD_SIZE_BLOCKS);
+constexpr uint32_t V9_NATIVE_RESOLUTION = 256U;
+constexpr uint32_t V9_NATIVE_CELL_BLOCKS = generation::WORLD_SIZE_BLOCKS / V9_NATIVE_RESOLUTION;
+constexpr uint8_t NO_V9_BIOME = 255U;
+constexpr uint8_t V9_COLD_SUMMIT_BIOME = 0U;
+constexpr uint8_t V9_HOT_DESERT_BIOME = 5U;
+// One L0 cell spans 256 blocks; 20 source metres is two gameplay height blocks.
+constexpr double V9_COAST_SAND_MAX_ELEVATION_M = 20.0;
 constexpr double DOUBLE_2_POW_53 = 9'007'199'254'740'992.0;
 constexpr uint64_t HASH_X = 0x9E37'79B1'85EB'CA87ULL;
 constexpr uint64_t HASH_Y = 0xC2B2'AE3D'27D4'EB4FULL;
 constexpr uint64_t HASH_LEVEL = 0x1656'67B1'9E37'79F9ULL;
 constexpr uint64_t HASH_MIX_1 = 0xBF58'476D'1CE4'E5B9ULL;
 constexpr uint64_t HASH_MIX_2 = 0x94D0'49BB'1331'11EBULL;
+
+[[nodiscard]]
+uint32_t worldDepth(generation::GlobalAtlas const& atlas) noexcept
+{
+    return atlas.configuration.model_tag == generation::TerrainModelTag::V21
+            || atlas.configuration.model_tag == generation::TerrainModelTag::V10
+        ? generation::V21_WORLD_DEPTH_BLOCKS
+        : generation::WORLD_DEPTH_BLOCKS;
+}
 
 [[nodiscard]]
 uint32_t regionLevelIndex(shared::TerrainRegionKey const key)
@@ -107,6 +126,78 @@ struct TerrainRegionAxisSample final {
     uint32_t origin;
     uint32_t extent;
 };
+
+[[nodiscard]]
+uint32_t v9NativeCellCoordinate(uint32_t const world_coordinate) noexcept
+{
+    return ((world_coordinate % generation::WORLD_SIZE_BLOCKS + V9_NATIVE_CELL_BLOCKS / 2U)
+        / V9_NATIVE_CELL_BLOCKS) % V9_NATIVE_RESOLUTION;
+}
+
+[[nodiscard]]
+size_t v9NativeCellIndex(uint32_t const world_x, uint32_t const world_y) noexcept
+{
+    uint32_t const cell_x = v9NativeCellCoordinate(world_x);
+    uint32_t const cell_y = v9NativeCellCoordinate(world_y);
+    return static_cast<size_t>(cell_y) * V9_NATIVE_RESOLUTION + cell_x;
+}
+
+[[nodiscard]]
+bool v9HasAdjacentOceanOrLake(
+    std::span<uint8_t const> const ocean_mask,
+    std::span<uint8_t const> const lake_mask,
+    uint32_t const world_x,
+    uint32_t const world_y
+) noexcept
+{
+    if (ocean_mask.empty() || lake_mask.empty()) {
+        return false;
+    }
+    uint32_t const center_x = v9NativeCellCoordinate(world_x);
+    uint32_t const center_y = v9NativeCellCoordinate(world_y);
+    for (int32_t dy = -1; dy <= 1; ++dy) {
+        for (int32_t dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dy == 0) {
+                continue;
+            }
+            uint32_t const x = static_cast<uint32_t>(
+                (static_cast<int32_t>(center_x) + dx + static_cast<int32_t>(V9_NATIVE_RESOLUTION))
+                % static_cast<int32_t>(V9_NATIVE_RESOLUTION)
+            );
+            uint32_t const y = static_cast<uint32_t>(
+                (static_cast<int32_t>(center_y) + dy + static_cast<int32_t>(V9_NATIVE_RESOLUTION))
+                % static_cast<int32_t>(V9_NATIVE_RESOLUTION)
+            );
+            size_t const index = static_cast<size_t>(y) * V9_NATIVE_RESOLUTION + x;
+            if (ocean_mask[index] != 0U || lake_mask[index] != 0U) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+template <typename TValue>
+[[nodiscard]]
+std::span<TValue const> v9RegisteredGridField(
+    std::vector<generation::V9RegisteredFieldView> const& fields,
+    std::string_view const name,
+    generation::V9FieldType const type
+)
+{
+    auto const field = std::find_if(fields.begin(), fields.end(), [name](auto const& candidate) {
+        return candidate.name == name;
+    });
+    if (field == fields.end() || field->type != type
+        || field->shape != std::vector<uint32_t>{V9_NATIVE_RESOLUTION, V9_NATIVE_RESOLUTION}) {
+        throw std::logic_error{"V9 native material field is missing or has an unexpected shape"};
+    }
+    auto const* const values = std::get_if<std::span<TValue const>>(&field->values);
+    if (values == nullptr || values->size() != V9_NATIVE_RESOLUTION * V9_NATIVE_RESOLUTION) {
+        throw std::logic_error{"V9 native material field has an unexpected value type or size"};
+    }
+    return *values;
+}
 
 [[nodiscard]]
 double wrapCoordinate(double coordinate) noexcept
@@ -448,8 +539,17 @@ double finalSurfaceElevation(
 }
 
 [[nodiscard]]
-uint16_t mappedHeight(double elevation, generation::GlobalAtlas const& atlas) noexcept
+uint16_t mappedHeight(double elevation, generation::GlobalAtlas const& atlas)
 {
+    if (atlas.configuration.model_tag == generation::TerrainModelTag::V10) {
+        return generation::mapV10ElevationToBlock(elevation);
+    }
+    if (atlas.configuration.model_tag == generation::TerrainModelTag::V9) {
+        return generation::mapV9ElevationToBlock(elevation);
+    }
+    if (atlas.configuration.model_tag == generation::TerrainModelTag::V21) {
+        return generation::mapV21ElevationToBlock(elevation);
+    }
     double const raw = static_cast<double>(atlas.block_sea_level)
         + static_cast<double>(atlas.vertical_scale)
             * (elevation - static_cast<double>(atlas.sea_level));
@@ -462,8 +562,17 @@ uint16_t mappedHeight(double elevation, generation::GlobalAtlas const& atlas) no
 }
 
 [[nodiscard]]
-uint16_t mappedWaterHeight(double water_level, generation::GlobalAtlas const& atlas) noexcept
+uint16_t mappedWaterHeight(double water_level, generation::GlobalAtlas const& atlas)
 {
+    if (atlas.configuration.model_tag == generation::TerrainModelTag::V10) {
+        return generation::mapV10ElevationToBlock(water_level);
+    }
+    if (atlas.configuration.model_tag == generation::TerrainModelTag::V9) {
+        return generation::mapV9WaterLevelToBlock(water_level);
+    }
+    if (atlas.configuration.model_tag == generation::TerrainModelTag::V21) {
+        return generation::mapV21WaterLevelToBlock(water_level);
+    }
     double const raw = static_cast<double>(atlas.block_sea_level)
         + static_cast<double>(atlas.vertical_scale)
             * (water_level - static_cast<double>(atlas.sea_level));
@@ -494,6 +603,30 @@ bool regionAxisPosition(
 
 void validateAtlas(generation::GlobalAtlas const& atlas)
 {
+    if (atlas.configuration.model_tag == generation::TerrainModelTag::V10) {
+        if (!generation::isValidAtlas(atlas)
+            || atlas.block_sea_level != generation::V10_BLOCK_SEA_LEVEL
+            || atlas.max_height != generation::V10_MAX_HEIGHT) {
+            throw std::invalid_argument{"V10 terrain atlas has an invalid provider or gameplay domain"};
+        }
+        return;
+    }
+    if (atlas.configuration.model_tag == generation::TerrainModelTag::V9) {
+        if (!generation::isValidAtlas(atlas)
+            || atlas.block_sea_level != generation::V9_BLOCK_SEA_LEVEL
+            || atlas.max_height != generation::V9_MAX_HEIGHT) {
+            throw std::invalid_argument{ "V9 terrain atlas has an invalid provider or gameplay domain" };
+        }
+        return;
+    }
+    if (atlas.configuration.model_tag == generation::TerrainModelTag::V21) {
+        if (!generation::isValidAtlas(atlas)
+            || atlas.block_sea_level != generation::V21_BLOCK_SEA_LEVEL
+            || atlas.max_height != generation::V21_MAX_HEIGHT) {
+            throw std::invalid_argument{ "V21 terrain atlas has an invalid provider or gameplay domain" };
+        }
+        return;
+    }
     uint32_t const resolution = atlas.configuration.resolution;
     if (resolution < 2U || static_cast<uint64_t>(resolution) * resolution
             > std::numeric_limits<size_t>::max()) {
@@ -540,12 +673,17 @@ uint16_t groundFirst(uint16_t const height, uint32_t const sea_level, bool const
 }
 
 [[nodiscard]]
-uint16_t groundEnd(uint16_t const height, uint32_t const sea_level, bool const submerged) noexcept
+uint16_t groundEnd(
+    uint16_t const height,
+    uint32_t const sea_level,
+    bool const submerged,
+    uint32_t const world_depth
+) noexcept
 {
     uint32_t const first = groundFirst(height, sea_level, submerged);
     uint32_t end = submerged ? static_cast<uint32_t>(height) + 1U : height;
     end = std::max(end, first);
-    return static_cast<uint16_t>(std::min(end, generation::WORLD_DEPTH_BLOCKS));
+    return static_cast<uint16_t>(std::min(end, world_depth));
 }
 
 [[nodiscard]]
@@ -581,6 +719,80 @@ bool hasCanonicalConfigurationIdentity(
     uint64_t const expected_seed
 ) noexcept
 {
+    if (configuration_identity.starts_with(generation::V10_MODEL_IDENTITY)) {
+        constexpr std::string_view V10_FIELDS =
+            ";seed=42;resolution=256;platec=1.4.3-direct;foundation=v1;fine-climate=v1"
+            ";fresh-climate=v7;scale=1;datum=512;depth=2048;native-v10-r1;water=v5-fine-bed-v1"
+            ";river=c8f9b851f7891e555165648d473b39df1ecffc9b73ae65cf5b14ed9f5ba04703";
+        std::string_view const suffix = configuration_identity.substr(generation::V10_MODEL_IDENTITY.size());
+        constexpr std::string_view trial_fine = ";fine=e52e2e82b3e9873e14e543e0a7583fb978a182f1555997bda6febcd9ff25061a";
+        return expected_seed == 42U
+            && (suffix == V10_FIELDS
+                || (suffix.size() == V10_FIELDS.size() + trial_fine.size()
+                    && suffix.substr(0U, V10_FIELDS.size()) == V10_FIELDS
+                    && suffix.substr(V10_FIELDS.size()) == trial_fine));
+    }
+    constexpr std::string_view V21_PREFIX =
+        "terrain-v21;model=a3f58ba8feb417556f6ae90e5e9b96b4ca318c169908dc8f30ce87bce61010cc;"
+        "src=8a8e3a5bb29881b152884f65eb26b0d0e5988cae39591bb2c2a126625108a9bd;"
+        "closure=4feecac718b0f6b6160cfb8d300abaaef062783dd3e3efcec0e9d2b7e15ff216;seed=";
+    if (configuration_identity.starts_with(V21_PREFIX)) {
+        std::string_view remaining = configuration_identity.substr(V21_PREFIX.size());
+        size_t const seed_separator = remaining.find(';');
+        if (seed_separator == std::string_view::npos) {
+            return false;
+        }
+        uint64_t seed = 0U;
+        if (!parseUnsignedField(remaining.substr(0U, seed_separator), "", 0U,
+                std::numeric_limits<uint64_t>::max(), seed)
+            || seed != expected_seed) {
+            return false;
+        }
+        remaining.remove_prefix(seed_separator + 1U);
+        size_t const resolution_separator = remaining.find(';');
+        if (resolution_separator == std::string_view::npos) {
+            return false;
+        }
+        uint64_t resolution = 0U;
+        if (!parseUnsignedField(remaining.substr(0U, resolution_separator),
+                "resolution=", 256U, 512U, resolution)
+            || (resolution != 256U && resolution != 512U)) {
+            return false;
+        }
+        remaining.remove_prefix(resolution_separator + 1U);
+        return remaining == "scale=0.34;datum=384;depth=2048;shore-contact=v1;native-v21-r3";
+    }
+
+    constexpr std::string_view V9_PREFIX =
+        "terrain-v9;model=coherent-practical-macro-watershed-weather-v9;water=v74;"
+        "source-closure-sha256=f7b6f593c025fe6fb389da4521f030522806d5c064235a2a1c6eddaa7d856de5;seed=";
+    if (configuration_identity.starts_with(V9_PREFIX)) {
+        std::string_view remaining = configuration_identity.substr(V9_PREFIX.size());
+        size_t const separator = remaining.find(';');
+        if (separator == std::string_view::npos) {
+            return false;
+        }
+        uint64_t seed = 0U;
+        if (!parseUnsignedField(remaining.substr(0U, separator), "", 0U,
+                std::numeric_limits<uint64_t>::max(), seed)
+            || seed != expected_seed) {
+            return false;
+        }
+        remaining.remove_prefix(separator + 1U);
+        size_t const resolution_separator = remaining.find(';');
+        if (resolution_separator == std::string_view::npos) {
+            return false;
+        }
+        uint64_t resolution = 0U;
+        if (!parseUnsignedField(remaining.substr(0U, resolution_separator),
+                "display-resolution=", 256U, 512U, resolution)
+            || (resolution != 256U && resolution != 512U)) {
+            return false;
+        }
+        remaining.remove_prefix(resolution_separator + 1U);
+        return remaining == "mapping=floor(384+source_m/10);domain=0..1023;native-v9-v74-r1";
+    }
+
     std::array<std::string_view, 13> fields{};
     std::string_view remaining = configuration_identity;
     for (size_t index = 0U; index < fields.size(); ++index) {
@@ -653,24 +865,127 @@ shared::TerrainColumn makeColumn(
     double const elevation,
     FieldValues const& fields,
     bool const water_present,
-    generation::GlobalAtlas const& atlas
-) noexcept
+    generation::GlobalAtlas const& atlas,
+    double const source_l0_elevation_m = 0.0,
+    uint8_t const source_biome_id = NO_V9_BIOME,
+    bool const source_native_coast_adjacent = false,
+    bool const land_snow_present = false,
+    bool const land_glacier_present = false,
+    bool const source_native_ocean = false
+)
 {
     shared::TerrainColumn column;
     column.highest_solid_z = mappedHeight(elevation, atlas);
     column.water_height_z = mappedWaterHeight(fields.water_level, atlas);
     column.water_present = water_present;
     column.submerged = column.highest_solid_z < atlas.block_sea_level;
-    column.geological_elevation_km = elevation;
+    column.geological_elevation_km = atlas.configuration.model_tag == generation::TerrainModelTag::V9
+            || atlas.configuration.model_tag == generation::TerrainModelTag::V21
+            || atlas.configuration.model_tag == generation::TerrainModelTag::V10
+        ? elevation / 1'000.0
+        : elevation;
     column.temperature_celsius = fields.temperature;
     column.precipitation = fields.precipitation;
-    column.top_material = column.submerged
-        ? shared::Block::Dirt
-        : (fields.temperature <= -2.0 ? shared::Block::Snow : shared::Block::Grass);
+    column.source_l0_elevation_m = source_l0_elevation_m;
+    column.source_biome_id = source_biome_id;
+    column.source_native_coast_adjacent = source_native_coast_adjacent;
+    column.source_native_ocean = source_native_ocean;
+    bool const low_coast = source_native_coast_adjacent && source_l0_elevation_m > 0.0
+        && source_l0_elevation_m <= V9_COAST_SAND_MAX_ELEVATION_M;
+    bool const v10_shallow_ocean_sand = atlas.configuration.model_tag == generation::TerrainModelTag::V10
+        && water_present && source_native_ocean && source_native_coast_adjacent
+        && source_l0_elevation_m >= -V9_COAST_SAND_MAX_ELEVATION_M
+        && source_l0_elevation_m < 0.0;
+    bool const wet_positive_v10_bed = water_present
+        && atlas.configuration.model_tag == generation::TerrainModelTag::V10
+        && source_l0_elevation_m > 0.0;
+    if (v10_shallow_ocean_sand) {
+        column.top_material = shared::Block::Sand;
+    } else if (wet_positive_v10_bed) {
+        column.top_material = shared::Block::Dirt;
+    } else if (source_biome_id != NO_V9_BIOME) {
+        bool const exposed_dry_land = !column.submerged && !water_present;
+        bool const v21 = atlas.configuration.model_tag == generation::TerrainModelTag::V21
+            || atlas.configuration.model_tag == generation::TerrainModelTag::V10;
+        bool const snow_over_glacier = v21 && land_snow_present;
+        bool const v21_glacier_ice = v21 && land_glacier_present;
+        bool const cold_summit_snow_fallback =
+            atlas.configuration.model_tag != generation::TerrainModelTag::V10
+            && source_biome_id == V9_COLD_SUMMIT_BIOME && fields.temperature < 0.0;
+        column.top_material = exposed_dry_land && snow_over_glacier
+            ? shared::Block::Snow
+            : (exposed_dry_land && v21_glacier_ice
+                ? shared::Block::Ice
+                : (exposed_dry_land
+                    && (source_biome_id == V9_HOT_DESERT_BIOME || low_coast)
+                    ? shared::Block::Sand
+                    : (column.submerged
+                        ? shared::Block::Dirt
+                        : (exposed_dry_land && (land_glacier_present || land_snow_present
+                            || cold_summit_snow_fallback)
+                            ? (snow_over_glacier
+                            ? shared::Block::Snow
+                            : (land_glacier_present ? shared::Block::Ice : shared::Block::Snow))
+                            : shared::Block::Grass))));
+    } else {
+        column.top_material = column.submerged
+            ? shared::Block::Dirt
+            : (fields.temperature <= -2.0 ? shared::Block::Snow : shared::Block::Grass);
+    }
     column.ground_material = fields.temperature <= -2.0 ? shared::Block::Ice : shared::Block::Dirt;
     column.ground_first_z = groundFirst(column.highest_solid_z, atlas.block_sea_level, column.submerged);
-    column.ground_end_z = groundEnd(column.highest_solid_z, atlas.block_sea_level, column.submerged);
+    column.ground_end_z = groundEnd(
+        column.highest_solid_z,
+        atlas.block_sea_level,
+        column.submerged,
+        worldDepth(atlas)
+    );
     return column;
+}
+
+[[nodiscard]]
+shared::TerrainColumn v10Column(
+    generation::GlobalAtlas const& atlas, double const world_x, double const world_y,
+    generation::V10SurfaceSample const& source
+)
+{
+    FieldValues const fields{
+        .elevation = source.elevation_m,
+        .temperature = source.temperature_celsius,
+        .precipitation = source.precipitation_mm_year,
+        .water_level = source.water_level_m,
+        .lake_mask = source.lake ? 1.0 : 0.0,
+        .river_mask = source.river ? 1.0 : 0.0,
+    };
+    bool const dry_coast_band = source.elevation_m > 0.0
+        && source.elevation_m <= V9_COAST_SAND_MAX_ELEVATION_M;
+    bool const shallow_ocean_bed = source.ocean && source.water_level_m > source.elevation_m
+        && source.water_level_m - source.elevation_m <= V9_COAST_SAND_MAX_ELEVATION_M
+        && source.elevation_m >= -V9_COAST_SAND_MAX_ELEVATION_M && source.elevation_m < 0.0;
+    bool coastal = false;
+    if (dry_coast_band || shallow_ocean_bed) {
+        for (auto const& offset : std::array<std::array<double, 2>, 4>{{
+                 {{-1.0, 0.0}}, {{1.0, 0.0}}, {{0.0, -1.0}}, {{0.0, 1.0}}}}) {
+            auto const neighbor = generation::sampleV10AnnualMeanSurface(
+                atlas, world_x + offset[0], world_y + offset[1], 3U);
+            coastal = coastal || neighbor.ocean || neighbor.lake;
+        }
+    }
+    auto const cover = generation::classifyV10AnnualMeanSurfaceCover(source);
+    bool const water_present = source.ocean || source.lake || source.river;
+    return makeColumn(source.elevation_m, fields, water_present,
+        atlas, source.elevation_m, source.biome_id, coastal,
+        cover == generation::V10SurfaceCover::Snow,
+        cover == generation::V10SurfaceCover::GlacierIce, source.ocean);
+}
+
+[[nodiscard]]
+shared::TerrainColumn v10Column(
+    generation::GlobalAtlas const& atlas, double const world_x, double const world_y
+)
+{
+    auto const source = generation::sampleV10AnnualMeanSurface(atlas, world_x, world_y, 3U);
+    return v10Column(atlas, world_x, world_y, source);
 }
 
 } // namespace
@@ -684,6 +999,9 @@ Block TerrainColumn::materialAt(uint16_t const z, uint32_t const block_sea_level
     }
     if (z > highest_solid_z) {
         return Block::Air;
+    }
+    if (source_native_ocean && water_present && z == highest_solid_z && top_material == Block::Sand) {
+        return Block::Sand;
     }
     if (highest_solid_z >= block_sea_level && z == highest_solid_z) {
         return top_material;
@@ -704,7 +1022,12 @@ TerrainColumn const* SurfaceTile::columnAt(BlockCoordinate const block_coordinat
 
 bool isValidTerrainIdentity(TerrainIdentity const& identity) noexcept
 {
-    return identity.terrain_version == generation::TERRAIN_VERSION
+    return (identity.terrain_version == generation::terrainVersion(generation::TerrainModelTag::R6)
+            || identity.terrain_version == generation::terrainVersion(generation::TerrainModelTag::V9)
+            || identity.terrain_version == generation::terrainVersion(generation::TerrainModelTag::V21)
+            || identity.terrain_version == generation::terrainVersion(generation::TerrainModelTag::V10))
+        && ((identity.terrain_version == generation::terrainVersion(generation::TerrainModelTag::V10))
+            == identity.configuration_identity.starts_with(generation::V10_MODEL_IDENTITY))
         && identity.revision != 0U
         && identity.configuration_identity.size() <= TERRAIN_CONFIGURATION_IDENTITY_MAX_BYTES
         && !identity.configuration_identity.empty()
@@ -722,24 +1045,69 @@ bool isValidTerrainColumn(
     uint32_t const max_height
 ) noexcept
 {
-    if (block_sea_level >= generation::WORLD_DEPTH_BLOCKS
+    uint32_t const depth = max_height > generation::WORLD_DEPTH_BLOCKS - 1U
+        ? generation::V21_WORLD_DEPTH_BLOCKS
+        : generation::WORLD_DEPTH_BLOCKS;
+    bool const v21_column = depth == generation::V21_WORLD_DEPTH_BLOCKS;
+    bool const v10_column = block_sea_level == generation::V10_BLOCK_SEA_LEVEL
+        && max_height == generation::V10_MAX_HEIGHT;
+    if (block_sea_level >= depth
         || max_height == 0U
-        || max_height >= generation::WORLD_DEPTH_BLOCKS
-        || column.highest_solid_z == 0U
+        || max_height >= depth
+        || (column.highest_solid_z == 0U
+            && !(block_sea_level == generation::V10_BLOCK_SEA_LEVEL
+                && max_height == generation::V10_MAX_HEIGHT))
         || column.highest_solid_z > max_height
-        || column.water_height_z >= generation::WORLD_DEPTH_BLOCKS
+        || column.water_height_z >= depth
         || column.submerged != (column.highest_solid_z < block_sea_level)
         || !std::isfinite(column.geological_elevation_km)
         || !std::isfinite(column.temperature_celsius)
         || !std::isfinite(column.precipitation)
+        || (column.source_biome_id != NO_V9_BIOME
+            && (!std::isfinite(column.source_l0_elevation_m) || column.source_biome_id > 12U))
+        || (column.source_biome_id == NO_V9_BIOME
+            && (column.source_native_coast_adjacent || column.source_l0_elevation_m != 0.0
+                || column.source_native_ocean))
+        || (column.source_native_ocean && (!v10_column || !column.water_present))
         || !isSolidBlock(column.top_material)
         || !isSolidBlock(column.ground_material)) {
         return false;
     }
 
-    Block const expected_top = column.submerged
-        ? Block::Dirt
-        : (column.temperature_celsius <= -2.0 ? Block::Snow : Block::Grass);
+    bool const v9_source = column.source_biome_id != NO_V9_BIOME;
+    bool const exposed_dry_land = !column.submerged && !column.water_present;
+    bool const wet_positive_v10_bed = v10_column
+        && column.water_present
+        && column.source_l0_elevation_m > 0.0;
+    bool const cold_summit_snow_fallback = !v10_column
+        && column.source_biome_id == V9_COLD_SUMMIT_BIOME
+        && column.temperature_celsius < 0.0;
+    bool const coastal_sand = column.source_native_coast_adjacent
+        && column.source_l0_elevation_m > 0.0
+        && column.source_l0_elevation_m <= V9_COAST_SAND_MAX_ELEVATION_M;
+    bool const v10_shallow_ocean_sand = v10_column && column.water_present
+        && column.source_native_ocean && column.source_native_coast_adjacent
+        && column.source_l0_elevation_m >= -V9_COAST_SAND_MAX_ELEVATION_M
+        && column.source_l0_elevation_m < 0.0
+        && column.water_height_z > column.highest_solid_z
+        && column.water_height_z - column.highest_solid_z <= V9_COAST_SAND_MAX_ELEVATION_M;
+    Block expected_top = v10_shallow_ocean_sand
+        ? Block::Sand
+        : (column.submerged || wet_positive_v10_bed
+            ? Block::Dirt
+            : (v9_source
+                ? (exposed_dry_land
+                        && (column.source_biome_id == V9_HOT_DESERT_BIOME || coastal_sand)
+                    ? Block::Sand
+                    : (exposed_dry_land && cold_summit_snow_fallback
+                        ? Block::Snow
+                        : Block::Grass))
+                : (column.temperature_celsius <= -2.0 ? Block::Snow : Block::Grass)));
+    // V21 stock-driven snow/ice precedes both desert and low-coast sand in surface material priority.
+    if (v21_column && !column.submerged && exposed_dry_land && v9_source
+        && (column.top_material == Block::Snow || column.top_material == Block::Ice)) {
+        expected_top = column.top_material;
+    }
     Block const expected_ground = column.temperature_celsius <= -2.0 ? Block::Ice : Block::Dirt;
     return column.top_material == expected_top
         && column.ground_material == expected_ground
@@ -748,10 +1116,11 @@ bool isValidTerrainColumn(
             block_sea_level,
             column.submerged
         )
-        && column.ground_end_z == groundEnd(
+            && column.ground_end_z == groundEnd(
             column.highest_solid_z,
             block_sea_level,
-            column.submerged
+            column.submerged,
+            depth
         );
 }
 
@@ -763,12 +1132,30 @@ bool isValidSurfaceTile(SurfaceTile const& tile) noexcept
         || tile.coordinate.x >= static_cast<int32_t>(generation::WORLD_SIZE_BLOCKS / Chunk::SIDE_LENGTH)
         || tile.coordinate.y >= static_cast<int32_t>(generation::WORLD_SIZE_BLOCKS / Chunk::SIDE_LENGTH)
         || !isValidTerrainIdentity(tile.identity)
-        || tile.block_sea_level != generation::BLOCK_SEA_LEVEL
-        || tile.max_height != generation::MAX_HEIGHT) {
+        || tile.block_sea_level != (tile.identity.terrain_version == generation::terrainVersion(generation::TerrainModelTag::V9)
+                ? generation::V9_BLOCK_SEA_LEVEL
+                : (tile.identity.terrain_version == generation::terrainVersion(generation::TerrainModelTag::V10)
+                        ? generation::V10_BLOCK_SEA_LEVEL
+                        : tile.identity.terrain_version == generation::terrainVersion(generation::TerrainModelTag::V21)
+                        ? generation::V21_BLOCK_SEA_LEVEL : generation::BLOCK_SEA_LEVEL))
+        || tile.max_height != (tile.identity.terrain_version == generation::terrainVersion(generation::TerrainModelTag::V9)
+                ? generation::V9_MAX_HEIGHT
+                : (tile.identity.terrain_version == generation::terrainVersion(generation::TerrainModelTag::V10)
+                        ? generation::V10_MAX_HEIGHT
+                        : tile.identity.terrain_version == generation::terrainVersion(generation::TerrainModelTag::V21)
+                        ? generation::V21_MAX_HEIGHT : generation::MAX_HEIGHT))) {
         return false;
     }
-    return std::all_of(tile.columns.begin(), tile.columns.end(), [&tile](TerrainColumn const& column) {
-        return isValidTerrainColumn(column, tile.block_sea_level, tile.max_height);
+    bool const v9_identity = tile.identity.terrain_version == generation::terrainVersion(
+        generation::TerrainModelTag::V9
+    );
+    bool const v21_identity = tile.identity.terrain_version == generation::terrainVersion(
+        generation::TerrainModelTag::V21
+    );
+    return std::all_of(tile.columns.begin(), tile.columns.end(), [&tile, v9_identity, v21_identity](TerrainColumn const& column) {
+        return (column.source_biome_id != NO_V9_BIOME) == (v9_identity || v21_identity
+                || tile.identity.terrain_version == generation::terrainVersion(generation::TerrainModelTag::V10))
+            && isValidTerrainColumn(column, tile.block_sea_level, tile.max_height);
     });
 }
 
@@ -780,6 +1167,55 @@ RegionalArtifact::Node RegionalArtifact::evaluate(double world_x, double world_y
     }
     world_x = wrapCoordinate(world_x);
     world_y = wrapCoordinate(world_y);
+
+    if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V10) {
+        Node result;
+        static_cast<TerrainColumn&>(result.sample) = v10Column(*m_atlas, world_x, world_y);
+        result.base_elevation = result.sample.geological_elevation_km * 1'000.0;
+        result.sample.world_x = world_x;
+        result.sample.world_y = world_y;
+        return result;
+    }
+    if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V9
+        || m_atlas->configuration.model_tag == generation::TerrainModelTag::V21) {
+        bool const v21 = m_atlas->configuration.model_tag == generation::TerrainModelTag::V21;
+        generation::V9SurfaceSample const surface = v21
+            ? generation::sampleV21Surface(*m_atlas, world_x, world_y, std::min(m_level_index, 3U))
+            : generation::sampleV9Surface(*m_atlas, world_x, world_y, std::min(m_level_index, 3U));
+        FieldValues const fields{
+            .elevation = surface.elevation_m,
+            .temperature = surface.temperature_celsius,
+            .precipitation = surface.precipitation_mm_year,
+            .water_level = surface.water_level_m,
+            .lake_mask = surface.lake ? 1.0 : 0.0,
+            .river_mask = surface.river ? 1.0 : 0.0,
+        };
+        Node result;
+        result.base_elevation = surface.elevation_m;
+        static_cast<TerrainColumn&>(result.sample) = makeColumn(
+            surface.elevation_m,
+            fields,
+            surface.ocean || surface.lake || surface.river,
+            *m_atlas,
+            m_v9_l0_elevation.empty() ? 0.0 : m_v9_l0_elevation[v9NativeCellIndex(
+                static_cast<uint32_t>(world_x), static_cast<uint32_t>(world_y)
+            )],
+            surface.biome_id,
+            v9HasAdjacentOceanOrLake(
+                m_v9_ocean_mask,
+                m_v9_lake_mask,
+                static_cast<uint32_t>(world_x),
+                static_cast<uint32_t>(world_y)
+            ),
+            v21 ? surface.land_snow_water_equivalent_m >= 0.1
+                : surface.land_snow_water_equivalent_m > 0.0,
+            v21 ? surface.glacier_thickness_m >= 0.1
+                : surface.glacier_thickness_m > 0.0
+        );
+        result.sample.world_x = world_x;
+        result.sample.world_y = world_y;
+        return result;
+    }
 
     Node parent_node;
     FieldValues fields{};
@@ -899,8 +1335,20 @@ TerrainWorld::TerrainWorld(
         throw std::invalid_argument{ "terrain world requires one immutable global atlas" };
     }
     validateAtlas(*m_atlas);
+    if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V9
+        || m_atlas->configuration.model_tag == generation::TerrainModelTag::V21) {
+        std::vector<generation::V9RegisteredFieldView> const fields =
+            m_atlas->configuration.model_tag == generation::TerrainModelTag::V21
+            ? generation::v21RegisteredFields(*m_atlas)
+            : generation::v9RegisteredFields(*m_atlas);
+        m_v9_l0_elevation = v9RegisteredGridField<double>(
+            fields, "elevation", generation::V9FieldType::Float64
+        );
+        m_v9_ocean_mask = v9RegisteredGridField<uint8_t>(fields, "ocean", generation::V9FieldType::Bool);
+        m_v9_lake_mask = v9RegisteredGridField<uint8_t>(fields, "lake", generation::V9FieldType::Bool);
+    }
     m_identity = TerrainIdentity{
-        .terrain_version = generation::TERRAIN_VERSION,
+        .terrain_version = generation::terrainVersion(m_atlas->configuration.model_tag),
         .revision = revision,
         .seed = m_atlas->configuration.seed,
         .configuration_identity = generation::configurationIdentity(m_atlas->configuration),
@@ -916,6 +1364,21 @@ TerrainClimateSample TerrainWorld::sampleClimate(double const world_x, double co
     if (!std::isfinite(world_x) || !std::isfinite(world_y)) {
         throw std::invalid_argument{ "terrain climate sampling requires finite world XY" };
     }
+    if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V10) {
+        auto const source = generation::sampleV10AnnualMeanSurface(*m_atlas, world_x, world_y, 3U);
+        return {.temperature_celsius = source.temperature_celsius,
+            .precipitation = source.precipitation_mm_year};
+    }
+    if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V9
+        || m_atlas->configuration.model_tag == generation::TerrainModelTag::V21) {
+        generation::V9SurfaceSample const sample = m_atlas->configuration.model_tag == generation::TerrainModelTag::V21
+            ? generation::sampleV21Surface(*m_atlas, world_x, world_y, 3U)
+            : generation::sampleV9Surface(*m_atlas, world_x, world_y, 3U);
+        return {
+            .temperature_celsius = sample.temperature_celsius,
+            .precipitation = sample.precipitation_mm_year,
+        };
+    }
     FieldCoordinate const coordinate = fieldCoordinate(*m_atlas, world_x, world_y);
     uint32_t const resolution = m_atlas->configuration.resolution;
     return {
@@ -924,10 +1387,44 @@ TerrainClimateSample TerrainWorld::sampleClimate(double const world_x, double co
     };
 }
 
+Block TerrainWorld::sampleV10TopMaterial(uint32_t const world_x, uint32_t const world_y) const
+{
+    if (m_atlas->configuration.model_tag != generation::TerrainModelTag::V10) {
+        throw std::invalid_argument{"V10 material sampling requires a V10 terrain world"};
+    }
+    auto const column = v10Column(*m_atlas,
+        world_x % generation::WORLD_SIZE_BLOCKS, world_y % generation::WORLD_SIZE_BLOCKS);
+    return column.materialAt(column.highest_solid_z, m_atlas->block_sea_level);
+}
+
+Block TerrainWorld::sampleV10TopMaterial(
+    generation::GlobalAtlas const& atlas, uint32_t const world_x, uint32_t const world_y,
+    generation::V10SurfaceSample const& source
+)
+{
+    if (atlas.configuration.model_tag != generation::TerrainModelTag::V10) {
+        throw std::invalid_argument{"V10 material sampling requires a V10 terrain world"};
+    }
+    auto const column = v10Column(atlas,
+        world_x % generation::WORLD_SIZE_BLOCKS, world_y % generation::WORLD_SIZE_BLOCKS, source);
+    return column.materialAt(column.highest_solid_z, atlas.block_sea_level);
+}
+
 uint16_t TerrainWorld::sampleSurfaceHeight(uint32_t const world_x, uint32_t const world_y) const
 {
     double const sample_x = world_x % generation::WORLD_SIZE_BLOCKS;
     double const sample_y = world_y % generation::WORLD_SIZE_BLOCKS;
+    if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V10) {
+        return generation::mapV10ElevationToBlock(
+            generation::sampleV10AnnualMeanSurface(*m_atlas, sample_x, sample_y, 3U).elevation_m);
+    }
+    if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V9
+        || m_atlas->configuration.model_tag == generation::TerrainModelTag::V21) {
+        generation::V9SurfaceSample const sample = m_atlas->configuration.model_tag == generation::TerrainModelTag::V21
+            ? generation::sampleV21Surface(*m_atlas, sample_x, sample_y, 3U)
+            : generation::sampleV9Surface(*m_atlas, sample_x, sample_y, 3U);
+        return mappedHeight(sample.elevation_m, *m_atlas);
+    }
     FieldValues const fields = fieldsAt(*m_atlas, sample_x, sample_y);
     double accumulated_detail = 0.0;
     double previous_contribution = 0.0;
@@ -956,6 +1453,80 @@ uint16_t TerrainWorld::sampleSurfaceHeight(uint32_t const world_x, uint32_t cons
         }
     );
     return mappedHeight(elevation, *m_atlas);
+}
+
+double TerrainWorld::sourceV9L0ElevationAt(
+    uint32_t const world_x,
+    uint32_t const world_y
+) const noexcept
+{
+    if (m_v9_l0_elevation.empty()) {
+        return 0.0;
+    }
+    return m_v9_l0_elevation[v9NativeCellIndex(world_x, world_y)];
+}
+
+double TerrainWorld::sourceV21L0ElevationAt(
+    uint32_t const world_x,
+    uint32_t const world_y
+) const
+{
+    if (m_atlas->configuration.model_tag != generation::TerrainModelTag::V21)
+    {
+        throw std::logic_error{"V21 L0 elevation is only available for a V21 terrain world"};
+    }
+    return generation::v21L0ElevationAt(*m_atlas,
+        static_cast<double>(world_x % generation::WORLD_SIZE_BLOCKS),
+        static_cast<double>(world_y % generation::WORLD_SIZE_BLOCKS));
+}
+
+bool TerrainWorld::hasAdjacentV9OceanOrLake(
+    uint32_t const world_x,
+    uint32_t const world_y
+) const noexcept
+{
+    return v9HasAdjacentOceanOrLake(
+        m_v9_ocean_mask, m_v9_lake_mask, world_x, world_y
+    );
+}
+
+bool TerrainWorld::hasWaterPresenceThroughoutAtlasCell(
+    uint32_t const origin_x,
+    uint32_t const origin_y,
+    uint32_t const extent
+) const noexcept
+{
+    if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V9) {
+        return generation::v9WaterCoversIntegerBlockCell(*m_atlas, origin_x, origin_y, extent);
+    }
+    if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V21) {
+        return generation::v21WaterCoversIntegerBlockCell(*m_atlas, origin_x, origin_y, extent);
+    }
+    if (m_atlas->configuration.model_tag != generation::TerrainModelTag::R6
+        || generation::MODEL_REVISION != 6U) {
+        return false;
+    }
+
+    uint32_t const resolution = m_atlas->configuration.resolution;
+    if ((resolution != 256U && resolution != 512U)
+        || generation::WORLD_SIZE_BLOCKS % resolution != 0U) {
+        return false;
+    }
+    uint32_t const cell_extent = generation::WORLD_SIZE_BLOCKS / resolution;
+    if (extent != cell_extent
+        || origin_x >= generation::WORLD_SIZE_BLOCKS
+        || origin_y >= generation::WORLD_SIZE_BLOCKS
+        || origin_x % cell_extent != 0U
+        || origin_y % cell_extent != 0U) {
+        return false;
+    }
+
+    // R6 carries this categorical atlas pixel unchanged through every regional refinement.
+    size_t const atlas_index = static_cast<size_t>(origin_y / cell_extent) * resolution
+        + origin_x / cell_extent;
+    return m_atlas->ocean_mask[atlas_index] != 0U
+        || m_atlas->lake_mask[atlas_index] != 0U
+        || m_atlas->river_mask[atlas_index] != 0U;
 }
 
 std::shared_ptr<RegionalArtifact const> TerrainWorld::prepareRegion(
@@ -1072,6 +1643,17 @@ SurfaceTile TerrainWorld::sampleSurface(
     if (leaf.m_key.origin_x != expected_x || leaf.m_key.origin_y != expected_y) {
         throw std::invalid_argument{ "surface chunk does not belong to the provided 64-block leaf" };
     }
+    return sampleSurfaceColumns(&leaf, coordinate, cancellation);
+}
+
+SurfaceTile TerrainWorld::sampleSurfaceColumns(
+    RegionalArtifact const* const leaf,
+    ChunkCoordinate const coordinate,
+    std::stop_token const& cancellation
+) const
+{
+    uint32_t const world_x = static_cast<uint32_t>(coordinate.x) * Chunk::SIDE_LENGTH;
+    uint32_t const world_y = static_cast<uint32_t>(coordinate.y) * Chunk::SIDE_LENGTH;
     throwIfCancelled(cancellation);
 
     SurfaceTile tile;
@@ -1085,7 +1667,41 @@ SurfaceTile TerrainWorld::sampleSurface(
             uint32_t const index = static_cast<uint32_t>(y) * Chunk::SIDE_LENGTH + x;
             double const sample_x = static_cast<double>(world_x + x);
             double const sample_y = static_cast<double>(world_y + y);
-            RegionalArtifact::Node const node = leaf.evaluate(sample_x, sample_y);
+            if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V10) {
+                tile.columns[index] = v10Column(*m_atlas, sample_x, sample_y);
+                continue;
+            }
+            if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V9
+                || m_atlas->configuration.model_tag == generation::TerrainModelTag::V21) {
+                bool const v21 = m_atlas->configuration.model_tag == generation::TerrainModelTag::V21;
+                generation::V9SurfaceSample const surface = v21
+                    ? generation::sampleV21Surface(*m_atlas, sample_x, sample_y, 3U)
+                    : generation::sampleV9Surface(*m_atlas, sample_x, sample_y, 3U);
+                FieldValues const fields{
+                    .elevation = surface.elevation_m,
+                    .temperature = surface.temperature_celsius,
+                    .precipitation = surface.precipitation_mm_year,
+                    .water_level = surface.water_level_m,
+                    .lake_mask = surface.lake ? 1.0 : 0.0,
+                    .river_mask = surface.river ? 1.0 : 0.0,
+                };
+                tile.columns[index] = makeColumn(
+                    surface.elevation_m,
+                    fields,
+                    surface.ocean || surface.lake || surface.river,
+                    *m_atlas,
+                    v21 ? sourceV21L0ElevationAt(world_x + x, world_y + y)
+                        : sourceV9L0ElevationAt(world_x + x, world_y + y),
+                    surface.biome_id,
+                    hasAdjacentV9OceanOrLake(world_x + x, world_y + y),
+                    v21 ? surface.land_snow_water_equivalent_m >= 0.1
+                        : surface.land_snow_water_equivalent_m > 0.0,
+                    v21 ? surface.glacier_thickness_m >= 0.1
+                        : surface.glacier_thickness_m > 0.0
+                );
+                continue;
+            }
+            RegionalArtifact::Node const node = leaf->evaluate(sample_x, sample_y);
             FieldValues fields{
                 .elevation = node.base_elevation,
                 .temperature = node.sample.temperature_celsius,
@@ -1131,6 +1747,12 @@ SurfaceTile TerrainWorld::sampleSurface(
         || coordinate.y >= static_cast<int32_t>(generation::WORLD_SIZE_BLOCKS / Chunk::SIDE_LENGTH)) {
         throw std::invalid_argument{ "surface sampling requires a valid XY chunk coordinate" };
     }
+    if (m_atlas->configuration.model_tag == generation::TerrainModelTag::V9
+        || m_atlas->configuration.model_tag == generation::TerrainModelTag::V21
+        || m_atlas->configuration.model_tag == generation::TerrainModelTag::V10) {
+        // Native model samplers consume their completed immutable atlas, including local detail.
+        return sampleSurfaceColumns(nullptr, coordinate, cancellation);
+    }
     uint32_t const world_x = static_cast<uint32_t>(coordinate.x) * Chunk::SIDE_LENGTH;
     uint32_t const world_y = static_cast<uint32_t>(coordinate.y) * Chunk::SIDE_LENGTH;
     TerrainRegionKey const key{
@@ -1155,17 +1777,18 @@ Chunk TerrainWorld::materializeChunk(
         || coordinate.x != tile.coordinate.x
         || coordinate.y != tile.coordinate.y
         || coordinate.z < 0
-        || coordinate.z >= static_cast<int32_t>(generation::WORLD_DEPTH_BLOCKS / Chunk::SIDE_LENGTH)) {
+        || coordinate.z >= static_cast<int32_t>(WorldExtent::DEPTH / Chunk::SIDE_LENGTH)) {
         throw std::invalid_argument{ "chunk materialization requires a matching canonical surface tile and valid Z" };
     }
     throwIfCancelled(cancellation);
 
+    // Model depth bounds generated terrain. Higher logical sections have an air baseline.
     Chunk::Blocks blocks;
     uint32_t const first_world_z = static_cast<uint32_t>(coordinate.z) * Chunk::SIDE_LENGTH;
     uint32_t const last_world_z = first_world_z + Chunk::SIDE_LENGTH - 1U;
     bool is_uniform_air = true;
     bool is_uniform_stone = first_world_z > 0U
-        && last_world_z < generation::WORLD_DEPTH_BLOCKS;
+        && last_world_z < worldDepth(*m_atlas);
     for (uint32_t column_index = 0U;
         column_index < Chunk::FACE_BLOCK_COUNT && (is_uniform_air || is_uniform_stone);
         ++column_index) {
@@ -1205,7 +1828,7 @@ Chunk TerrainWorld::materializeChunk(
                 uint32_t const block_index = static_cast<uint32_t>(z) * Chunk::FACE_BLOCK_COUNT
                     + static_cast<uint32_t>(y) * Chunk::SIDE_LENGTH
                     + x;
-                blocks[block_index] = world_z >= generation::WORLD_DEPTH_BLOCKS
+                blocks[block_index] = world_z >= worldDepth(*m_atlas)
                     ? Block::Air
                     : tile.columns[column_index].materialAt(
                         static_cast<uint16_t>(world_z),
@@ -1232,6 +1855,9 @@ std::shared_ptr<RegionalArtifact const> TerrainWorld::buildRegion(
     region->m_identity = m_identity;
     region->m_atlas = m_atlas;
     region->m_parent = std::move(parent);
+    region->m_v9_l0_elevation = m_v9_l0_elevation;
+    region->m_v9_ocean_mask = m_v9_ocean_mask;
+    region->m_v9_lake_mask = m_v9_lake_mask;
     double const spacing = static_cast<double>(key.extent) / (TERRAIN_REGION_NODE_SIDE_LENGTH - 1U);
     for (uint32_t y = 0U; y < TERRAIN_REGION_NODE_SIDE_LENGTH; ++y) {
         throwIfCancelled(cancellation);

@@ -1,5 +1,9 @@
 add_subdirectory(generation)
 
+add_library(mc_generation_history STATIC client/GenerationMapHistory.cpp client/include/client/GenerationMapHistory.hpp)
+target_include_directories(mc_generation_history PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/client/include)
+mc_apply_target_defaults(mc_generation_history)
+
 add_library(mc_world_sampling STATIC
     shared/world/Chunk.cpp
     shared/world/TerrainWorld.cpp
@@ -20,7 +24,7 @@ add_library(mc STATIC android/AndroidInputState.cpp android/AndroidInputState.hp
 if(APPLE AND MC_BUILD_CLIENT)
     enable_language(OBJCXX)
 endif()
-target_link_libraries(mc PUBLIC mc_game_core)
+target_link_libraries(mc PUBLIC mc_game_core mc_generation_history)
 target_link_libraries(mc_game_core
     PUBLIC
         mc_world_sampling
@@ -40,16 +44,23 @@ target_include_directories(mc_game_core PUBLIC
 mc_apply_target_defaults(mc_game_core)
 if(MC_BUILD_CLIENT OR (MC_BUILD_COLUMN_MAP AND NOT ANDROID))
     target_include_directories(mc_game_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/client/include)
+    target_include_directories(mc_game_core SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/cdt/include)
     target_link_libraries(mc_game_core PRIVATE CoreCpp::RuntimeAudioOutput)
     target_sources(mc_game_core PRIVATE
         client/CameraController.cpp
         client/ClientAudio.cpp
         client/FrameScheduler.cpp
         client/GameClient.cpp
+        client/GenerationMapPresentation.cpp
+        client/S2MapPresentation.cpp
+        client/render/TextRenderer.cpp
         client/TerrainLodSource.cpp
         client/TerrainLodSource.hpp
         client/TerrainLodSelection.cpp
         client/TerrainLodPresentation.cpp
+        client/RiverBedMesh.cpp
+        client/include/client/RiverBedMesh.hpp
+        client/include/client/detail/RiverFanQuantization.hpp
         client/WorldLoading.cpp
         client/PreviewResidency.cpp
         client/PlayerPresentation.cpp

@@ -14,6 +14,10 @@ Use this guide as the entry point:
 - [Execution model](EXECUTION.md) defines loading, authority, ordering, and
   resource limits.
 - [Diagnostics](DIAGNOSTICS.md) lists stable failure codes.
+- [Entity permissions](POLICY.md) documents policy host calls, capability
+  resolution, and diagnostics.
+- [World generation](WORLD_GENERATION.md) defines load-time chunk and terrain
+  scripts, their limits, and their current execution boundary.
 - [Examples](../../scenarios/README.md) lists checked-in sources.
 
 The `minecraft` ruleset exposes typed calls for profiles, players, movement,
@@ -40,10 +44,14 @@ World generation is also a separate load-time CoreLang source. The packaged
 `publish` while building a private 16x16x16 candidate. A failed compile,
 runtime call, or incomplete publication leaves the live world unchanged.
 
-The packaged `height_tile.core` may declare `configure_generation()` at load time.
-Version 1 registers optional world pre-generation, refinement extents from
-16384, 4096, 1024, 256, and 64 blocks, ordered virtual-chunk stages, and a
-unique distance/view/movement priority order. An absent entrypoint uses direct
+The packaged `height_tile.core` may declare `configure_generation()` at load
+time. Version 1 registers optional pre-generation, refinement extents from
+16,384, 4,096, 1,024, 256, and 64 blocks, virtual chunk stages, and a unique
+Distance/View/Movement priority order. An absent entrypoint uses direct
 materialization. Invalid stages, extents, or duplicate priorities reject the
 plan before generation starts. Stage output is bounded and current revision
-results publish only after the final configured stage.
+results publish only after the final configured stage. Both load-time world
+script paths statically prove their entrypoint instruction bounds before
+execution. They have no runtime deadline or execution cancellation; see the
+[world-generation reference](WORLD_GENERATION.md) for exact limits and the
+remaining trust boundary.

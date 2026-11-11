@@ -168,8 +168,13 @@ void packText(
         float const local_x = column * advance * scale;
         float const local_y = line * line_advance * scale;
         TextGlyph glyph{
-            .character = static_cast<uint32_t>(sanitizeTextByte(character)),
+            .character = static_cast<uint32_t>(sanitizeTextByte(character))
+                | ((placement.space == TextSpace::Screen && placement.style != TextStyle::Fixed) ? 0x100U : 0U)
+                | ((placement.space == TextSpace::Screen && placement.style == TextStyle::ColoredAdaptive) ? 0x200U : 0U)
+                | ((placement.space == TextSpace::Screen && placement.style == TextStyle::AdaptiveHalo) ? 0x400U : 0U),
             .packed_color = colorAt(document, offset, { .value = fallback }),
+            .light_color = placement.light_color.packed(),
+            .dark_color = placement.dark_color.packed(),
         };
         if (placement.space == TextSpace::Screen) {
             glyph.width = glyph_width * scale;

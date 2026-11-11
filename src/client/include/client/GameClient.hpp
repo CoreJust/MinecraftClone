@@ -5,6 +5,7 @@
 #include "PreviewResidency.hpp"
 #include "WorldLoading.hpp"
 
+#include <client/PreparedTerrainWorld.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
@@ -22,6 +23,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -29,6 +31,7 @@
 
 namespace shared {
 
+class LocalPreparationSnapshots;
 class TerrainWorld;
 struct TerrainLodArtifact;
 
@@ -37,6 +40,7 @@ struct TerrainLodArtifact;
 namespace client {
 
 class TerrainLodSource;
+struct S2MapImage;
 
 struct GameClientLoopSample final {
     std::chrono::steady_clock::time_point started_at;
@@ -51,12 +55,23 @@ struct GameClientLoopSample final {
     bool presentation_succeeded = false;
 };
 
+struct BlockButtonSnapshot final {
+    bool left_held = false;
+    bool left_pressed = false;
+    bool right_held = false;
+    bool right_pressed = false;
+};
+
 struct GameClientBenchmarkHooks final {
+    bool isolate_platform_input = false;
     std::optional<std::chrono::steady_clock::time_point> deadline;
     std::function<bool()> should_stop;
     std::function<bool()> is_uncapped_phase;
     std::function<std::optional<shared::Direction>(uint64_t)> input_override;
     std::function<bool(uint64_t)> start_input_override;
+    // An optional sample owns only block input while platform input is isolated.
+    // Returning nullopt restores the ordinary focus/ownership release path.
+    std::function<std::optional<BlockButtonSnapshot>()> block_button_snapshot;
     std::function<void(GameClientLoopSample const&)> on_loop;
     std::function<void(shared::Player const&)> on_authoritative_player;
     std::function<void(
@@ -77,9 +92,18 @@ struct GameClientBenchmarkHooks final {
         WorldLoadingStatus const&,
         WorldLoadingStatus const&
     )> on_materialized_chunk_recorded = {};
+    // Collect timings without selecting the benchmark presentation/input mode.
+    bool collect_render_stage_diagnostics = false;
+};
+
+struct MaterializedInterestChunkAvailability final {
+    uint32_t resident_count = 0U;
+    uint32_t required_count = 0U;
 };
 
 class GameClient : public core::Client {
+    friend struct PlayerClientFocusTestAccess;
+
 public:
     static constexpr uint32_t MAX_PENDING_INPUTS = 64;
 
@@ -87,7 +111,9 @@ public:
         shared::WorldMode const mode = shared::WorldMode::Flat,
         shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration(),
         bool const wants_previews = true,
-        std::unique_ptr<ClientAudioOutput> audio_output = {}
+        std::unique_ptr<ClientAudioOutput> audio_output = {},
+        PreparedTerrainWorldProvider prepared_world_provider = {},
+        std::shared_ptr<shared::LocalPreparationSnapshots> local_preparation_snapshots = {}
     );
     ~GameClient() override;
 
@@ -97,7 +123,12 @@ public:
         GameClientBenchmarkHooks const* benchmark_hooks = nullptr,
         std::optional<std::chrono::steady_clock::time_point> request_accepted_at = std::nullopt
     );
+    [[nodiscard]] std::string_view serverAddress() const noexcept { return m_server_address; }
     [[nodiscard]] std::optional<uint32_t> renderDistance() const noexcept { return m_render_distance; }
+    [[nodiscard]] bool connectionAttemptStarted() const noexcept { return m_connection_attempt_started; }
+    [[nodiscard]] uint64_t worldLoadingJoinEpoch() const noexcept { return m_world_loading_identity.join_epoch; }
+    [[nodiscard]] std::optional<MaterializedInterestChunkAvailability>
+    currentMaterializedInterestChunkAvailability() const noexcept;
     [[nodiscard]] uint32_t requiredHeightTileCount() const noexcept
     {
         return m_render_distance ? shared::heightTileInterestCount(*m_render_distance) : 0U;
@@ -121,17 +152,50 @@ public:
     std::shared_ptr<shared::TerrainWorld const> terrainLodWorld() const noexcept;
     [[nodiscard]]
     std::shared_ptr<shared::TerrainLodArtifact const> terrainLodRoot() const noexcept;
+    [[nodiscard]]
+    std::shared_ptr<S2MapImage const> terrainLodMap() const noexcept;
+    [[nodiscard]] bool terrainLodMapUnavailable() const noexcept;
     [[nodiscard]] std::optional<uint64_t> activeCoverageEpoch() const noexcept;
     [[nodiscard]] std::optional<shared::PlayerPosition> activeCoverageCenter() const noexcept;
     [[nodiscard]] uint32_t requiredAuthoritativeColumnCount() const noexcept;
     [[nodiscard]] uint32_t residentAuthoritativeColumnCount() const noexcept;
     [[nodiscard]] bool activeCoverageContains(shared::ChunkCoordinate coordinate) const noexcept;
+    [[nodiscard]] bool submitBlockAction(
+        shared::BlockActionKind kind, shared::VoxelRay const& aim,
+        std::optional<shared::WorldCoordinate> target_hint, shared::Block selected,
+        shared::InteractionPerspective perspective = shared::InteractionPerspective::FirstPerson
+    );
+    [[nodiscard]] bool requestGameMode(shared::GameMode mode);
+    [[nodiscard]] std::optional<shared::ServerBlockActionResultMessage> consumeAcceptedBlockActionResult();
+    [[nodiscard]] uint64_t droppedAcceptedBlockActionResultCount() const noexcept;
+    [[nodiscard]] std::optional<shared::ServerBlockActionResultMessage> const& blockActionStatus() const noexcept
+    {
+        return m_block_action_status;
+    }
 protected:
     virtual void servicePlatformEvents() {}
     virtual void onInputSubmitted(shared::Direction const&) {}
     virtual shared::Direction input() = 0;
     virtual void render() = 0;
     [[nodiscard]] virtual bool presentationSucceeded() const { return false; }
+
+    [[nodiscard]] bool loadClientMusic(AudioAssetLoader const& loader) noexcept
+    {
+        return m_client_audio.loadMusic(loader);
+    }
+
+    void updateClientCreationAudio(CreationAudioStage stage, double now_seconds) noexcept
+    {
+        m_client_audio.updateCreationAudio(stage, now_seconds);
+    }
+    [[nodiscard]] bool playClientBlockSound(BlockSoundKind kind, shared::Block material) noexcept
+    {
+        return m_client_audio.playBlockSound(kind, material);
+    }
+    [[nodiscard]] bool playClientMapSound(bool opened) noexcept
+    {
+        return m_client_audio.playMapSound(opened);
+    }
 
     using LoadingTimePoint = WorldLoading::TimePoint;
     [[nodiscard]] bool beginLoadingRequest(LoadingTimePoint accepted_at);
@@ -154,6 +218,20 @@ protected:
         shared::ServerStartWorldAckMessage const& message,
         LoadingTimePoint acknowledged_at
     );
+    [[nodiscard]] bool applyEditSnapshot(
+        shared::ServerEditChunkSnapshotMessage const& message,
+        LoadingTimePoint received_at = std::chrono::steady_clock::now()
+    );
+    [[nodiscard]] bool applyBlockDelta(
+        shared::ServerBlockDeltaMessage const& message,
+        LoadingTimePoint received_at = std::chrono::steady_clock::now()
+    );
+    [[nodiscard]] bool applyEditManifest(
+        shared::ServerEditedColumnManifestMessage const& message,
+        LoadingTimePoint received_at = std::chrono::steady_clock::now()
+    );
+    [[nodiscard]] bool applyBlockActionResult(shared::ServerBlockActionResultMessage const& message);
+    void retryEditResync(LoadingTimePoint now);
     void markLoadingPromptRendered(LoadingTimePoint rendered_at);
     [[nodiscard]] LoadingInputResult acceptLoadingStartInput(LoadingTimePoint accepted_at);
 
@@ -173,6 +251,13 @@ protected:
         std::chrono::steady_clock::time_point received_at = std::chrono::steady_clock::now()
     );
     void applyServerRemoval(char character);
+    // Accepted positions are observed before a render can coalesce their contact transitions.
+    [[nodiscard]] std::optional<shared::Block> observeLandingTransition(
+        shared::Player const& player,
+        std::optional<shared::GameMode> game_mode
+    ) noexcept;
+    [[nodiscard]] std::optional<shared::Block> consumeLandingMaterial() noexcept;
+    void resetLandingTransitions() noexcept;
     [[nodiscard]] std::optional<shared::Player> predictedLocalPlayer() const noexcept;
     [[nodiscard]] std::optional<shared::PlayerPosition> forecastedLocalPlayerPosition() const noexcept;
     [[nodiscard]]
@@ -230,12 +315,14 @@ private:
     [[nodiscard]] bool isActiveCoverageKey(shared::ChunkCoordinate coordinate) const noexcept;
     [[nodiscard]] bool isActiveMaterializedInterestKey(shared::ChunkCoordinate coordinate) const noexcept;
     [[nodiscard]] bool validateSession(shared::TerrainSessionIdentity const& session) const noexcept;
+    [[nodiscard]] bool needsEditResync(shared::ChunkCoordinate coordinate) const;
     void clearActiveCoverage() noexcept;
     void clearResidentSurfaceMetadata();
     void removeResidentSurfaceMetadata(shared::ChunkCoordinate coordinate);
     void publishResidentSurfaceMetadata(shared::ChunkCoordinate coordinate);
 protected:
     shared::World m_world;
+    std::optional<shared::ServerBlockActionResultMessage> m_block_action_status;
     shared::World m_predicted_world;
     PlayerPresentation m_player_presentation;
     PreviewResidency m_height_tile_residency;
@@ -259,17 +346,27 @@ protected:
     uint64_t m_rejected_local_position_count = 0U;
     uint32_t m_last_accepted_input_ack = 0U;
     uint32_t m_last_accepted_position_revision = 0U;
+    std::optional<shared::Player> m_last_landing_player;
+    std::optional<shared::GameMode> m_last_landing_game_mode;
+    uint64_t m_last_landing_join_epoch = 0U;
+    uint32_t m_last_landing_position_revision = 0U;
+    // Multiple unpresented landings retain one relevant material, never an audio queue.
+    std::optional<shared::Block> m_pending_landing_material;
     std::chrono::steady_clock::time_point m_last_accepted_position_at{};
     uint32_t m_next_input_sequence = 1;
     char m_local_character = 0;
     bool m_running = true;
     bool m_accepted = false;
+    std::string m_server_address;
+    bool m_connection_attempt_started = false;
     uint32_t m_join_character_index = 0;
     GameClientBenchmarkHooks const* m_benchmark_hooks = nullptr;
     uint64_t m_benchmark_bytes_sent = 0U;
     uint64_t m_benchmark_bytes_received = 0U;
     WorldLoading m_world_loading;
     std::optional<shared::TerrainSessionIdentity> m_terrain_session;
+    std::shared_ptr<shared::LocalPreparationSnapshots> m_local_preparation_snapshots;
+    PreparedTerrainWorldProvider m_prepared_world_provider;
     std::unique_ptr<TerrainLodSource> m_terrain_lod_source;
     std::unique_ptr<shared::SparseWorld> m_authoritative_world;
     std::optional<uint64_t> m_active_coverage_epoch;
@@ -287,6 +384,15 @@ protected:
     ChunkKeySet m_resident_height_tile_keys;
     ChunkKeySet m_pending_materialized_keys;
     std::unordered_map<uint64_t, PendingMaterializedBatch> m_pending_materialized_batches;
+    std::unordered_map<shared::ChunkCoordinate, shared::ServerEditedColumnManifestMessage, ChunkCoordinateHash> m_edit_manifests;
+    std::deque<shared::ServerBlockDeltaMessage> m_future_edit_deltas;
+    ChunkKeySet m_pending_edit_resync;
+    LoadingTimePoint m_next_edit_resync_retry{};
+    uint32_t m_edit_resync_retry_cursor = 0U;
+    uint32_t m_next_block_action_sequence = 1U;
+    std::deque<shared::ServerBlockActionResultMessage> m_accepted_block_action_results;
+    std::deque<uint32_t> m_accepted_block_action_sequences;
+    uint64_t m_dropped_accepted_block_action_results = 0U;
     std::vector<PendingMaterializedChunk> m_pending_materialized_chunks;
     uint64_t m_last_world_preparation_sequence = 0U;
     uint64_t m_next_join_epoch = 1U;

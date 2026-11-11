@@ -1,0 +1,204 @@
+{
+  "coordinate_contract": {
+    "height_units": "game blocks; 1 block = 1 metre above sea zero",
+    "horizontal_units": "absolute world metres",
+    "period_m": [
+      65536.0,
+      65536.0
+    ],
+    "xy_m": [
+      46336.0,
+      9984.0
+    ]
+  },
+  "evidence": {
+    "direct_query_receipt": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python: PlatecWorldV10(seed=42).bed([[46336.0,9984.0]])",
+      "height_m": 723.3422696671546,
+      "prepare_and_query_s": 0.37599087500711903,
+      "source_identity_sha256": "f775213330028b165328885c6899ac0bf9c3c0c9a93ff6e0aca591554dec6e59"
+    },
+    "global_l0": {
+      "path": "measurements/platec-world-v10/global-l0.npz",
+      "sha256": "0e949ad30ba1c76e6204123865413d7555ecc78e9c47d21bc46e9b72a9d20934"
+    },
+    "native_height_vectors": {
+      "path": "handoff/native-v10-adoption-20261027/native/reference-input/reference.tsv",
+      "sha256": "4b8fd221afb951e1e8d8e65c1852043920e0bb5cf11eec68c32907e298caffeb"
+    },
+    "regional_lod_arrays": {
+      "L0": {
+        "path": "measurements/platec-world-v10/regions/mountain/L0.npz",
+        "sha256": "ca407ea7766e6f9c65f07884e6559b037ea395a24a48f5d961f871a2878070a2"
+      },
+      "L1": {
+        "path": "measurements/platec-world-v10/regions/mountain/L1.npz",
+        "sha256": "1029d381cb3eb66b5194cac9108783a50a63b3ac6117a52cb0a4daa325d2d0db"
+      },
+      "L2": {
+        "path": "measurements/platec-world-v10/regions/mountain/L2.npz",
+        "sha256": "90171274fe12b655054b5f592bd835da6dd1f0b523a0df4d87211ec45e47a0aa"
+      },
+      "L3": {
+        "path": "measurements/platec-world-v10/regions/mountain/L3.npz",
+        "sha256": "65eaec3bcafd0de263615b6dfa0cc3ca52b5adb37a69b21b85a38bab315cb586"
+      }
+    },
+    "water": {
+      "path": "measurements/platec-world-climate-v10/seed42-run1/water.npz",
+      "sha256": "7fcb96ab13b1537aa5b38e365bc7bcd57f912b48b78fd63f2d0b833f52404e8f"
+    }
+  },
+  "model_id": "v10-monotone-game-height-control",
+  "nearby_one_metre_peak": {
+    "height_m": 726.7044919785258,
+    "neighbours": {
+      "east": {
+        "height_m": 726.356863943137,
+        "xy_m": [
+          46358.0,
+          10018.0
+        ]
+      },
+      "north": {
+        "height_m": 726.4239373324607,
+        "xy_m": [
+          46357.0,
+          10019.0
+        ]
+      },
+      "south": {
+        "height_m": 726.4999076664142,
+        "xy_m": [
+          46357.0,
+          10017.0
+        ]
+      },
+      "west": {
+        "height_m": 726.4379273302267,
+        "xy_m": [
+          46356.0,
+          10018.0
+        ]
+      }
+    },
+    "reference_case": "spacing_1",
+    "xy_m": [
+      46357.0,
+      10018.0
+    ]
+  },
+  "saved_cross_lod_window_witness": {
+    "height_m_by_level_m": {
+      "L0": 21.085925803671902,
+      "L1": 21.085925803671902,
+      "L2": 21.085925803671902,
+      "L3": 21.085925803671902
+    },
+    "note": "These exact point values are present in the saved V10 mountain-region L0/L1/L2/L3 arrays. This is a distinct lower-relief point, not the summit.",
+    "xy_m": [
+      49408.0,
+      13056.0
+    ]
+  },
+  "schema": "native-v10-seed42-summit-witness/1",
+  "seasonal_fields": {
+    "glacier_thickness_m": [
+      33.32475280761719,
+      33.32475280761719,
+      33.32475280761719,
+      33.32475280761719,
+      33.32475280761719,
+      33.32475280761719,
+      33.32475280761719,
+      33.32475280761719
+    ],
+    "land_snow_water_equivalent_m": [
+      0.2573069632053375,
+      0.5493439435958862,
+      0.8224421739578247,
+      1.0375276803970337,
+      1.195245623588562,
+      1.311943769454956,
+      1.4336166381835938,
+      1.6083579063415527
+    ],
+    "model_year_days": 360.0,
+    "phase_count": 8,
+    "phase_duration_model_days": 45.0,
+    "precipitation_mm_year": [
+      2058.455810546875,
+      2336.2958984375,
+      2184.78564453125,
+      1720.6842041015625,
+      1261.7435302734375,
+      933.584716796875,
+      973.3834228515625,
+      1397.9298095703125
+    ],
+    "temperature_C": [
+      -39.741249084472656,
+      -36.72370529174805,
+      -39.982200622558594,
+      -46.99801254272461,
+      -53.51466751098633,
+      -55.98745346069336,
+      -53.13193893432617,
+      -46.59054183959961
+    ],
+    "time_semantics": "saved seasonal phase means, not a forecast or a daily history",
+    "units": {
+      "glacier_thickness_m": "m ice thickness",
+      "land_snow_water_equivalent_m": "m water equivalent",
+      "precipitation_mm_year": "mm per 360-day model year",
+      "temperature_C": "degC"
+    }
+  },
+  "seed": 42,
+  "source_identity_sha256": "f775213330028b165328885c6899ac0bf9c3c0c9a93ff6e0aca591554dec6e59",
+  "source_manifest_sha256": "7435543a11bfb684a6d918bbdba1d2b4f1d9490a31b7575c2ac8984972f4338f",
+  "summit_height": {
+    "alignment": "XY is aligned to 256,64,16,1m grids. The V10 canonical point API takes only absolute XY and has no LOD argument; one point function serves all levels.",
+    "by_level": {
+      "L0": {
+        "evidence": "saved global L0 array and spacing_256 reference vector",
+        "height_m": 723.3422696671546
+      },
+      "L1": {
+        "evidence": "direct canonical point query at an L1-aligned vertex; no saved L1 tile contains this exact point and no spacing_64 vector is recorded here",
+        "height_m": 723.3422696671546
+      },
+      "L2": {
+        "evidence": "spacing_16 reference vector",
+        "height_m": 723.3422696671546
+      },
+      "L3": {
+        "evidence": "spacing_1 reference vector",
+        "height_m": 723.3422696671546
+      }
+    },
+    "canonical_point_query_m": 723.3422696671546,
+    "climate_equivalent_metric": {
+      "application": "lapse-temperature conversion only",
+      "geometry_multiplier": null,
+      "m_per_game_block": 10.0
+    },
+    "lod_step_m": {
+      "L0": 256.0,
+      "L1": 64.0,
+      "L2": 16.0,
+      "L3": 1.0
+    }
+  },
+  "water_and_biome": {
+    "aridity_index": 16.08357810974121,
+    "biome_id": 0,
+    "biome_name": "permanent snow / glacier",
+    "equilibrium_hydraulic_bed_m": 723.3422696671546,
+    "equilibrium_water_depth_m": 0.0,
+    "equilibrium_water_level_m": 723.34228515625,
+    "lake": false,
+    "ocean": false,
+    "river": false
+  }
+}

@@ -476,6 +476,134 @@ class AiReleaseReportsTest(unittest.TestCase):
         self.assertLess(text.index("2. State of release"), text.index(first_overview))
         self.assertLess(text.index(last_overview), text.index("Terrain streaming [terrain]"))
 
+    @unittest.skipUnless(
+        all(importlib.util.find_spec(name) for name in ("reportlab", "pypdf")),
+        "bundled PDF libraries are required",
+    )
+    def test_overview_readback_supports_v2_implementing_first_and_v1(self) -> None:
+        from pypdf import PdfReader
+
+        revision = {
+            "revision": 1,
+            "effective_period_index": 0,
+            "features": FEATURES,
+            "addition_authority": None,
+        }
+        state = {"release_id": "S7", "prefix": PREFIX}
+        committed_detail = "Commit abcdef0123456789abcdef0123456789abcdef01; Windows acceptance remains open."
+
+        for progress_format in ("development-stages-v2", "development-stages-v1"):
+            with self.subTest(progress_format=progress_format):
+                report = draft_for(0)
+                report["progress_format"] = progress_format
+                report["overview"] = ["The report overview remains ahead of feature stages."]
+                report["feature_state"] = [
+                    {"id": "terrain", "status": "Implementing", "detail": "The terrain change is underway."},
+                    {"id": "render", "status": "Committed", "detail": committed_detail},
+                ]
+                ai_release_reports.validate_draft(report, FEATURES, "3h")
+                payload = ai_release_reports._payload(state, report, revision, "3h")
+                output_path = Path(self.temporary_directory.name) / f"overview-{progress_format}.pdf"
+                ai_release_reports.render_pdf(payload, output_path)
+                ai_release_reports.verify_pdf(output_path, payload)
+
+                text = " ".join(page.extract_text() or "" for page in PdfReader(str(output_path)).pages)
+                first_status = ai_release_reports._feature_status_line(
+                    FEATURES[0]["name"], report["feature_state"][0], progress_format
+                )
+                self.assertLess(text.index(report["overview"][0]), text.index(first_status))
+
+    def test_report_validation_rejects_missing_feature_stage_and_required_section(self) -> None:
+        missing_stage = draft_for(0)
+        missing_stage["feature_state"] = missing_stage["feature_state"][:1]
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "feature state must include every manifest feature"):
+            ai_release_reports.validate_draft(missing_stage, FEATURES, "3h")
+
+        missing_section = draft_for(0)
+        del missing_section["summary"]
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "draft fields do not match the required report format"):
+            ai_release_reports.validate_draft(missing_section, FEATURES, "3h")
+
+    @unittest.skipUnless(
+        all(importlib.util.find_spec(name) for name in ("reportlab", "pypdf")),
+        "bundled PDF libraries are required",
+    )
+    def test_pdf_readback_rejects_missing_required_section_or_feature_status(self) -> None:
+        from pypdf import PdfReader
+
+        report = draft_for(0)
+        report["progress_format"] = "development-stages-v2"
+        report["feature_state"] = [
+            {"id": "terrain", "status": "Implementing", "detail": "Terrain edits are underway."},
+            {"id": "render", "status": "Planned", "detail": ""},
+        ]
+        payload = ai_release_reports._payload(
+            {"release_id": "S7", "prefix": PREFIX},
+            report,
+            {"revision": 1, "features": FEATURES, "effective_period_index": 0, "addition_authority": None},
+            "3h",
+        )
+        output_path = Path(self.temporary_directory.name) / "missing-readback-text.pdf"
+        ai_release_reports.render_pdf(payload, output_path)
+        reader = PdfReader(str(output_path))
+        page_text = [page.extract_text() or "" for page in reader.pages]
+
+        for missing_text, message in (
+            ("Summary", "rendered PDF is missing report sections"),
+            (
+                ai_release_reports._feature_status_line("Terrain streaming", report["feature_state"][0], "development-stages-v2"),
+                "rendered PDF has an incorrect feature status",
+            ),
+        ):
+            with self.subTest(missing_text=missing_text):
+                pages = [
+                    mock.Mock(extract_text=mock.Mock(return_value=text.replace(missing_text, "")))
+                    for text in page_text
+                ]
+                patched_reader = mock.Mock(pages=pages, metadata=reader.metadata)
+                with mock.patch("pypdf.PdfReader", return_value=patched_reader):
+                    with self.assertRaisesRegex(ai_release_reports.ReportError, message):
+                        ai_release_reports.verify_pdf(output_path, payload)
+
+    @unittest.skipUnless(
+        all(importlib.util.find_spec(name) for name in ("reportlab", "pypdf")),
+        "bundled PDF libraries are required",
+    )
+    def test_pdf_readback_ignores_verified_footer_between_wrapped_status_text(self) -> None:
+        from pypdf import PdfReader
+
+        report = draft_for(0)
+        report["progress_format"] = "development-stages-v1"
+        report["feature_state"] = [
+            {"id": "terrain", "status": "Implementing", "detail": "Terrain edits are underway."},
+            {"id": "render", "status": "Planned", "detail": ""},
+        ]
+        payload = ai_release_reports._payload(
+            {"release_id": "S7", "prefix": PREFIX},
+            report,
+            {"revision": 1, "features": FEATURES, "effective_period_index": 0, "addition_authority": None},
+            "3h",
+        )
+        output_path = Path(self.temporary_directory.name) / "wrapped-status.pdf"
+        ai_release_reports.render_pdf(payload, output_path)
+        reader = PdfReader(str(output_path))
+        page_text = [page.extract_text() or "" for page in reader.pages]
+        status_line = ai_release_reports._feature_status_line(
+            "Terrain streaming", report["feature_state"][0], "development-stages-v1"
+        )
+        self.assertIn(status_line, " ".join(" ".join(text.split()) for text in page_text))
+
+        wrapped_page_text = []
+        for content in page_text:
+            if status_line in content:
+                split_at = status_line.index(":") + 1
+                content = content.replace(status_line, f"{status_line[:split_at]} Page 1 {status_line[split_at:]}")
+            wrapped_page_text.append(content)
+        pages = [mock.Mock(extract_text=mock.Mock(return_value=text)) for text in wrapped_page_text]
+        patched_reader = mock.Mock(pages=pages, metadata=reader.metadata)
+        with mock.patch("pypdf.PdfReader", return_value=patched_reader):
+            ai_release_reports.verify_pdf(output_path, payload)
+
     def test_rendered_status_and_time_share_labels_match_report_contract(self) -> None:
         self.assertEqual(ai_release_reports._feature_status_line("Terrain streaming", {"status": "Done"}), "Terrain streaming - Done")
         self.assertEqual(
@@ -489,6 +617,218 @@ class AiReleaseReportsTest(unittest.TestCase):
             "Diagnostics and tests - 1 h (33.3%, estimated)",
             "Unaccounted - 1 h (33.3%, unaccounted)",
         ])
+
+    def test_development_stages_require_actionable_details_and_a_commit_identity(self) -> None:
+        report = draft_for(0)
+        report["progress_format"] = "development-stages-v1"
+        report["feature_state"] = [
+            {"id": "terrain", "status": "Testing", "detail": "Linux: focused terrain suite, 42 tests."},
+            {"id": "render", "status": "Committed", "detail": "Commit abcdef0123456789abcdef0123456789abcdef01; Windows acceptance pending."},
+        ]
+        report["blockers"] = ["Windows runtime acceptance is unavailable until the playtest slot."]
+        ai_release_reports.validate_draft(report, FEATURES, "3h")
+
+        invalid_reports = []
+        missing_detail = dict(report)
+        missing_detail["feature_state"] = [
+            {"id": "terrain", "status": "Testing", "detail": ""},
+            report["feature_state"][1],
+        ]
+        invalid_reports.append((missing_detail, "needs a short detail"))
+
+        planned_with_detail = dict(report)
+        planned_with_detail["feature_state"] = [
+            {"id": "terrain", "status": "Planned", "detail": "Work is queued."},
+            report["feature_state"][1],
+        ]
+        invalid_reports.append((planned_with_detail, "must not include detail"))
+
+        missing_commit = dict(report)
+        missing_commit["feature_state"] = [
+            report["feature_state"][0],
+            {"id": "render", "status": "Committed", "detail": "Changes committed; Windows acceptance pending."},
+        ]
+        invalid_reports.append((missing_commit, "must include a full 40-character commit SHA"))
+
+        for invalid_report, message in invalid_reports:
+            with self.subTest(message=message), self.assertRaisesRegex(ai_release_reports.ReportError, message):
+                ai_release_reports.validate_draft(invalid_report, FEATURES, "3h")
+
+        legacy_report = draft_for(0)
+        legacy_report["feature_state"][0] = {"id": "terrain", "status": "Implementing", "detail": "Work continues."}
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "invalid status"):
+            ai_release_reports.validate_draft(legacy_report, FEATURES, "3h")
+
+        blocker_without_marker = draft_for(0)
+        blocker_without_marker["blockers"] = ["A blocker."]
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "require a development-stages progress_format"):
+            ai_release_reports.validate_draft(blocker_without_marker, FEATURES, "3h")
+
+    def test_development_stages_v2_requires_structured_test_evidence(self) -> None:
+        report = draft_for(0)
+        report["progress_format"] = "development-stages-v2"
+        report["feature_state"] = [
+            {
+                "id": "terrain",
+                "status": "Testing",
+                "detail": "The focused check is running.",
+                "test_evidence": {
+                    "platform": "Linux",
+                    "scope": "focused terrain suite (42 tests)",
+                    "result": "incomplete",
+                },
+            },
+            {
+                "id": "render",
+                "status": "Tested",
+                "detail": "The focused checks are complete.",
+                "test_evidence": {
+                    "platform": "Windows 11",
+                    "scope": "render contract suite (17 tests)",
+                    "result": "passed",
+                },
+            },
+        ]
+        ai_release_reports.validate_draft(report, FEATURES, "3h")
+
+    def test_development_stages_v2_rejects_test_status_without_evidence(self) -> None:
+        report = draft_for(0)
+        report["progress_format"] = "development-stages-v2"
+        report["feature_state"] = [
+            {"id": "terrain", "status": "Tested", "detail": "Linux suite passed."},
+            {"id": "render", "status": "Planned", "detail": ""},
+        ]
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "requires structured test_evidence"):
+            ai_release_reports.validate_draft(report, FEATURES, "3h")
+
+    def test_development_stages_v2_requires_platform_scope_and_result(self) -> None:
+        report = draft_for(0)
+        report["progress_format"] = "development-stages-v2"
+        report["feature_state"] = [
+            {
+                "id": "terrain",
+                "status": "Testing",
+                "detail": "The focused check is running.",
+                "test_evidence": {"scope": "focused terrain suite", "result": "incomplete"},
+            },
+            {"id": "render", "status": "Planned", "detail": ""},
+        ]
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "structured test_evidence"):
+            ai_release_reports.validate_draft(report, FEATURES, "3h")
+
+    def test_development_stages_v2_rejects_invalid_test_result(self) -> None:
+        report = draft_for(0)
+        report["progress_format"] = "development-stages-v2"
+        report["feature_state"] = [
+            {
+                "id": "terrain",
+                "status": "Testing",
+                "detail": "The focused check is running.",
+                "test_evidence": {
+                    "platform": "Linux",
+                    "scope": "focused terrain suite",
+                    "result": "probably passed",
+                },
+            },
+            {"id": "render", "status": "Planned", "detail": ""},
+        ]
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "result must be passed, failed, or incomplete"):
+            ai_release_reports.validate_draft(report, FEATURES, "3h")
+
+    @unittest.skipUnless(
+        all(importlib.util.find_spec(name) for name in ("reportlab", "pypdf")),
+        "bundled PDF libraries are required",
+    )
+    def test_development_stages_v2_render_structured_test_evidence(self) -> None:
+        from pypdf import PdfReader
+
+        report = draft_for(0)
+        report["progress_format"] = "development-stages-v2"
+        report["feature_state"] = [
+            {
+                "id": "terrain",
+                "status": "Testing",
+                "detail": "The focused check is running.",
+                "test_evidence": {
+                    "platform": "Linux",
+                    "scope": "focused terrain suite (42 tests)",
+                    "result": "incomplete",
+                },
+            },
+            {
+                "id": "render",
+                "status": "Tested",
+                "detail": "The focused checks are complete.",
+                "test_evidence": {
+                    "platform": "Windows 11",
+                    "scope": "render contract suite (17 tests)",
+                    "result": "passed",
+                },
+            },
+        ]
+        ai_release_reports.validate_draft(report, FEATURES, "3h")
+        payload = ai_release_reports._payload(
+            {"release_id": "S7", "prefix": PREFIX}, report, {
+                "revision": 1,
+                "effective_period_index": 0,
+                "features": FEATURES,
+                "addition_authority": None,
+            }, "3h"
+        )
+        output_path = Path(self.temporary_directory.name) / "development-stages-v2.pdf"
+        ai_release_reports.render_pdf(payload, output_path)
+        ai_release_reports.verify_pdf(output_path, payload)
+
+        text = " ".join(" ".join(page.extract_text().split()) for page in PdfReader(str(output_path)).pages)
+        self.assertIn("platform: Linux", text)
+        self.assertIn("scope: focused terrain suite (42 tests)", text)
+        self.assertIn("result: incomplete", text)
+        self.assertIn("platform: Windows 11", text)
+        self.assertIn("result: passed", text)
+
+    @unittest.skipUnless(
+        all(importlib.util.find_spec(name) for name in ("reportlab", "pypdf")),
+        "bundled PDF libraries are required",
+    )
+    def test_development_stages_render_in_lifecycle_order_with_separate_blockers(self) -> None:
+        from pypdf import PdfReader
+
+        features = [{"id": f"stage-{index}", "name": f"Stage feature {index}"} for index in range(6)]
+        report = draft_for(0, features)
+        report["progress_format"] = "development-stages-v1"
+        report["feature_state"] = [
+            {"id": "stage-0", "status": "Planned", "detail": ""},
+            {"id": "stage-1", "status": "Implementing", "detail": "Core edit is underway."},
+            {"id": "stage-2", "status": "Implemented", "detail": "Patch behavior is present."},
+            {"id": "stage-3", "status": "Testing", "detail": "Linux: focused terrain suite."},
+            {"id": "stage-4", "status": "Tested", "detail": "Linux: 42 focused terrain tests passed."},
+            {"id": "stage-5", "status": "Committed", "detail": "Commit abcdef0123456789abcdef0123456789abcdef01; Windows acceptance pending."},
+        ]
+        report["blockers"] = ["Windows runtime acceptance awaits the scheduled playtest."]
+        ai_release_reports.validate_draft(report, features, "3h")
+        revision = {
+            "revision": 1,
+            "effective_period_index": 0,
+            "features": features,
+            "addition_authority": None,
+        }
+        payload = ai_release_reports._payload(
+            {"release_id": "S7", "prefix": PREFIX}, report, revision, "3h"
+        )
+        output_path = Path(self.temporary_directory.name) / "development-stages.pdf"
+        ai_release_reports.render_pdf(payload, output_path)
+        ai_release_reports.verify_pdf(output_path, payload)
+
+        reader = PdfReader(str(output_path))
+        text = " ".join(" ".join(page.extract_text().split()) for page in reader.pages)
+        status_lines = [
+            ai_release_reports._feature_status_line(feature["name"], state, "development-stages-v1")
+            for feature, state in zip(features, report["feature_state"])
+        ]
+        positions = [text.index(line) for line in status_lines]
+        self.assertEqual(positions, sorted(positions))
+        self.assertLess(text.index("Blockers"), text.index(report["blockers"][0]))
+        self.assertIn("Windows runtime acceptance awaits the scheduled playtest.", text)
 
     def test_periods_must_be_timezone_aware_contiguous_and_exactly_three_hours(self) -> None:
         report = draft_for(0)

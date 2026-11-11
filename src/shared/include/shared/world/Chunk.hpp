@@ -14,12 +14,13 @@ enum class Block : uint8_t {
     Bedrock = 4,
     Snow = 5,
     Ice = 6,
+    Sand = 7,
 };
 
 [[nodiscard]]
 constexpr bool isValidBlock(Block const block) noexcept
 {
-    return static_cast<uint8_t>(block) <= static_cast<uint8_t>(Block::Ice);
+    return static_cast<uint8_t>(block) <= static_cast<uint8_t>(Block::Sand);
 }
 
 [[nodiscard]]

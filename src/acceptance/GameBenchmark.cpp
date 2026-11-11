@@ -32,6 +32,9 @@
 #include <acceptance/RendererBenchmark.hpp>
 #include <acceptance/ReplayInput.hpp>
 
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
 #endif
@@ -98,6 +101,18 @@ bool environmentVariableMatches(
 }
 
 using Clock = std::chrono::steady_clock;
+
+shared::TerrainIdentity const& s2NativeTerrainIdentity()
+{
+    // The profile identifies the approved model. A new model needs a new profile.
+    static shared::TerrainIdentity const selected{
+        .terrain_version = 10U,
+        .revision = 1U,
+        .seed = 42U,
+        .configuration_identity = std::string{ GAME_BENCHMARK_S2_NATIVE_CONFIGURATION_IDENTITY },
+    };
+    return selected;
+}
 
 struct PresentationRequestKey final {
     uint64_t swapchain_generation = 0U;
@@ -558,7 +573,7 @@ GameBenchmarkFrameSample::PlayableSphere playableSphereSample(
         .required_authoritative_columns = full_volume ? status.required_authoritative_columns : 0U,
         .resident_authoritative_columns = full_volume ? status.resident_authoritative_columns : 0U,
         .vertical_chunk_count = full_volume
-            ? (shared::World::FLIGHT_MAX_Z + 1U) / shared::Chunk::SIDE_LENGTH : 0U,
+            ? shared::WorldExtent::DEPTH / shared::Chunk::SIDE_LENGTH : 0U,
         .authoritative_columns_center = full_volume ? status.current_player_position : std::nullopt,
     };
     if (!full_volume && authoritative_world != nullptr) {
@@ -655,6 +670,219 @@ GameBenchmarkFrameSample::VisualLod gameBenchmarkVisualLodSample(
     return sample;
 }
 
+GameBenchmarkFrameSample::NativeTerrain gameBenchmarkNativeTerrainSample(
+    client::PlayerClient const& player,
+    client::WorldLoadingStatus const& status,
+    client::RendererRuntimeInfo const& renderer
+)
+{
+    GameBenchmarkFrameSample::NativeTerrain sample{
+        .renderer_submitted_frame_count = renderer.submitted_frame_count,
+        .required_actual_columns = client::terrainLodVisualColumnCount(),
+        .current_player_position = status.current_player_position,
+    };
+    auto const session = player.activeTerrainSession();
+    auto const coverage_epoch = player.activeCoverageEpoch();
+    if (!session) {
+        return sample;
+    }
+    uint32_t const v9_version = generation::terrainVersion(generation::TerrainModelTag::V9);
+    uint32_t const v10_version = generation::terrainVersion(generation::TerrainModelTag::V10);
+    uint32_t const v21_version = generation::terrainVersion(generation::TerrainModelTag::V21);
+    if (session->terrain.terrain_version != v9_version
+        && session->terrain.terrain_version != v10_version && session->terrain.terrain_version != v21_version) {
+        return sample;
+    }
+    sample.backend = session->terrain.terrain_version == v21_version ? "native-v21"
+        : session->terrain.terrain_version == v10_version ? "native-v10" : "native-v9";
+    sample.terrain_identity = session->terrain;
+    sample.session_join_epoch = session->join_epoch;
+    sample.coverage_epoch = coverage_epoch.value_or(0U);
+    sample.active_coverage_epoch = coverage_epoch;
+    std::shared_ptr<client::TerrainLodScene const> const scene = renderer.terrain_lod_scene;
+    shared::SparseWorld const* const world = player.authoritativeWorld();
+    if (!scene) {
+        return sample;
+    }
+    sample.scene_present = true;
+    sample.terrain_identity = scene->identity;
+    sample.session_join_epoch = scene->session_join_epoch;
+    sample.coverage_epoch = scene->coverage_epoch;
+    sample.scene_center_x = scene->center_x;
+    sample.scene_center_y = scene->center_y;
+    sample.actual_column_count = scene->actual_column_count;
+    sample.submitted_scene_face_count = static_cast<uint32_t>(client::terrainLodSceneFaceCount(*scene));
+    sample.session_matches = scene->identity == session->terrain
+        && scene->session_join_epoch == session->join_epoch;
+    sample.coverage_matches = coverage_epoch && scene->coverage_epoch == *coverage_epoch;
+    if (world == nullptr) {
+        return sample;
+    }
+
+    struct CachedScene final {
+        std::weak_ptr<client::TerrainLodScene const> scene;
+        shared::SparseWorld const* world = nullptr;
+        uint64_t change_cursor = 0U;
+        std::vector<uint64_t> actual_columns;
+        std::vector<uint64_t> authority_columns;
+        std::vector<uint64_t> source_columns;
+        std::optional<uint64_t> actual_disk_center;
+        uint32_t actual_disk_columns = 0U;
+        shared::AuthoritativeColumnChanges changes;
+        bool sources_current = false;
+    };
+    thread_local CachedScene cached;
+    bool const same_scene = cached.scene.lock() == scene;
+    if (!same_scene) {
+        cached.actual_columns.clear();
+        cached.authority_columns.clear();
+        cached.source_columns.clear();
+        cached.actual_disk_center.reset();
+        cached.actual_columns.reserve(scene->actual_column_count);
+        for (client::TerrainLodRegion const leaf : scene->leaves) {
+            if (leaf.level == shared::TerrainLodLevel::L3) {
+                cached.actual_columns.push_back((static_cast<uint64_t>(leaf.x) << 32U) | leaf.y);
+            }
+        }
+        cached.authority_columns.reserve(scene->authority_sources.size());
+        for (client::TerrainLodAuthoritySource const& source : scene->authority_sources) {
+            if (source.coordinate.x >= 0 && source.coordinate.y >= 0 && source.coordinate.z == 0
+                && source.identity == scene->identity) {
+                uint64_t const key = (static_cast<uint64_t>(static_cast<uint32_t>(source.coordinate.x)) << 32U)
+                    | static_cast<uint32_t>(source.coordinate.y);
+                cached.authority_columns.push_back(key);
+                cached.source_columns.push_back(key);
+            }
+        }
+        for (client::TerrainLodChunkSource const& source : scene->chunk_sources) {
+            if (source.coordinate.x >= 0 && source.coordinate.y >= 0) {
+                cached.source_columns.push_back(
+                    (static_cast<uint64_t>(static_cast<uint32_t>(source.coordinate.x)) << 32U)
+                    | static_cast<uint32_t>(source.coordinate.y)
+                );
+            }
+        }
+        for (client::TerrainLodEditSource const& source : scene->edit_sources) {
+            if (source.coordinate.x >= 0 && source.coordinate.y >= 0) {
+                cached.source_columns.push_back(
+                    (static_cast<uint64_t>(static_cast<uint32_t>(source.coordinate.x)) << 32U)
+                    | static_cast<uint32_t>(source.coordinate.y)
+                );
+            }
+        }
+        std::ranges::sort(cached.actual_columns);
+        std::ranges::sort(cached.authority_columns);
+        std::ranges::sort(cached.source_columns);
+        cached.actual_columns.erase(std::ranges::unique(cached.actual_columns).begin(), cached.actual_columns.end());
+        cached.authority_columns.erase(
+            std::ranges::unique(cached.authority_columns).begin(), cached.authority_columns.end()
+        );
+        cached.source_columns.erase(std::ranges::unique(cached.source_columns).begin(), cached.source_columns.end());
+        cached.scene = scene;
+        cached.world = world;
+        cached.change_cursor = 0U;
+    }
+    world->readAuthoritativeColumnChanges(cached.change_cursor, cached.changes);
+    bool const relevant_source_change = cached.changes.full_resync
+        || std::ranges::any_of(cached.changes.coordinates, [](shared::ChunkCoordinate coordinate) {
+            uint64_t const key = (static_cast<uint64_t>(static_cast<uint32_t>(coordinate.x)) << 32U)
+                | static_cast<uint32_t>(coordinate.y);
+            return std::ranges::binary_search(cached.source_columns, key);
+        });
+    if (!same_scene || cached.world != world || relevant_source_change) {
+        cached.sources_current = !scene->authority_sources.empty()
+            && client::terrainLodSourcesCurrent(*scene, *world);
+        cached.world = world;
+    }
+    cached.change_cursor = cached.changes.cursor;
+    sample.sources_current = cached.sources_current;
+    if (sample.current_player_position) {
+        uint32_t constexpr COLUMN_COUNT = shared::WorldExtent::WIDTH / shared::Chunk::SIDE_LENGTH;
+        uint32_t const x = shared::WorldBounds::wrapHorizontal(sample.current_player_position->x)
+            / shared::Chunk::SIDE_LENGTH;
+        uint32_t const y = shared::WorldBounds::wrapHorizontal(sample.current_player_position->y)
+            / shared::Chunk::SIDE_LENGTH;
+        uint64_t const key = (static_cast<uint64_t>(x % COLUMN_COUNT) << 32U) | (y % COLUMN_COUNT);
+        sample.underfoot_actual_column_present = std::ranges::binary_search(cached.actual_columns, key);
+        sample.underfoot_authority_source_present = std::ranges::binary_search(cached.authority_columns, key);
+        if (cached.actual_disk_center != key) {
+            cached.actual_disk_columns = gameBenchmarkNativePresentedCurrentColumnCount(
+                *scene, *sample.current_player_position
+            );
+            cached.actual_disk_center = key;
+        }
+        sample.presented_current_actual_columns = cached.actual_disk_columns;
+    }
+    return sample;
+}
+
+GameBenchmarkFrameSample::TerrainLodUpdate gameBenchmarkTerrainLodUpdateSample(
+    client::TerrainLodUpdateDiagnostics const& diagnostics)
+{
+    auto const& source_index = diagnostics.source_index;
+    return {
+        .source_index = {
+            .change_read_duration_ns = positiveNanoseconds(source_index.change_read_duration),
+            .resident_snapshot_duration_ns = positiveNanoseconds(source_index.resident_snapshot_duration),
+            .resident_diff_duration_ns = positiveNanoseconds(source_index.resident_diff_duration),
+            .dependency_selection_duration_ns = positiveNanoseconds(source_index.dependency_selection_duration),
+            .selection_count = source_index.selection_count,
+            .authoritative_change_count = source_index.authoritative_change_count,
+            .resident_snapshot_count = source_index.resident_snapshot_count,
+            .resident_chunk_count = source_index.resident_chunk_count,
+            .resident_diff_change_count = source_index.resident_diff_change_count,
+            .affected_column_count = source_index.affected_column_count,
+            .selected_column_count = source_index.selected_column_count,
+            .discovery_candidate_count = source_index.discovery_candidate_count,
+            .full_resync_count = source_index.full_resync_count,
+        },
+        .enabled = diagnostics.enabled,
+        .report_duration_ns = positiveNanoseconds(diagnostics.report_duration),
+        .world_reset_duration_ns = positiveNanoseconds(diagnostics.world_reset_duration),
+        .interest_prune_duration_ns = positiveNanoseconds(diagnostics.interest_prune_duration),
+        .worker_handoff_duration_ns = positiveNanoseconds(diagnostics.worker_handoff_duration),
+        .worker_future_get_duration_ns = positiveNanoseconds(diagnostics.worker_future_get_duration),
+        .worker_candidate_adopt_duration_ns = positiveNanoseconds(diagnostics.worker_candidate_adopt_duration),
+        .worker_columns_copy_duration_ns = positiveNanoseconds(diagnostics.worker_columns_copy_duration),
+        .edit_lane_duration_ns = positiveNanoseconds(diagnostics.edit_lane_duration),
+        .pending_validation_duration_ns = positiveNanoseconds(diagnostics.pending_validation_duration),
+        .renderer_upsert_duration_ns = positiveNanoseconds(diagnostics.renderer_upsert_duration),
+        .renderer_plan_duration_ns = positiveNanoseconds(diagnostics.renderer_plan_duration),
+        .renderer_buffer_update_duration_ns = positiveNanoseconds(diagnostics.renderer_buffer_update_duration),
+        .renderer_publish_duration_ns = positiveNanoseconds(diagnostics.renderer_publish_duration),
+        .renderer_uploaded_face_count = diagnostics.renderer_uploaded_face_count,
+        .prepared_draw_index_publish_count = diagnostics.prepared_draw_index_publish_count,
+        .render_thread_draw_index_build_count = diagnostics.render_thread_draw_index_build_count,
+        .scene_handoff_duration_ns = positiveNanoseconds(diagnostics.scene_handoff_duration),
+        .scene_activation_log_duration_ns = positiveNanoseconds(diagnostics.scene_activation_log_duration),
+        .scene_plan_presented_duration_ns = positiveNanoseconds(diagnostics.scene_plan_presented_duration),
+        .scene_column_selection_duration_ns = positiveNanoseconds(diagnostics.scene_column_selection_duration),
+        .scene_pending_release_duration_ns = positiveNanoseconds(diagnostics.scene_pending_release_duration),
+        .source_refresh_duration_ns = positiveNanoseconds(diagnostics.source_refresh_duration),
+        .source_validation_duration_ns = positiveNanoseconds(diagnostics.source_validation_duration),
+        .discovery_capture_duration_ns = positiveNanoseconds(diagnostics.discovery_capture_duration),
+        .dispatch_preparation_duration_ns = positiveNanoseconds(diagnostics.dispatch_preparation_duration),
+        .source_refresh_count = diagnostics.source_refresh_count,
+        .source_validation_count = diagnostics.source_validation_count,
+        .validated_column_count = diagnostics.validated_column_count,
+        .stale_column_count = diagnostics.stale_column_count,
+        .completed_job_count = diagnostics.completed_job_count,
+        .edit_lane_call_count = diagnostics.edit_lane_call_count,
+        .pending_validation_count = diagnostics.pending_validation_count,
+        .pending_actual_column_count = diagnostics.pending_actual_column_count,
+        .pending_chunk_source_count = diagnostics.pending_chunk_source_count,
+        .pending_authority_source_count = diagnostics.pending_authority_source_count,
+        .source_rejection_count = diagnostics.source_rejection_count,
+        .plan_rejection_count = diagnostics.plan_rejection_count,
+        .scene_handoff_attempt_count = diagnostics.scene_handoff_attempt_count,
+        .scene_handoff_complete_count = diagnostics.scene_handoff_complete_count,
+        .discovery_capture_attempt_count = diagnostics.discovery_capture_attempt_count,
+        .discovery_capture_success_count = diagnostics.discovery_capture_success_count,
+        .dispatch_count = diagnostics.dispatch_count,
+        .dispatch_column_count = diagnostics.dispatch_column_count,
+    };
+}
+
 bool isX30MovementInput(shared::Direction const& direction) noexcept
 {
     return direction.accelerated && direction.speedup == 30U
@@ -712,7 +940,8 @@ GameBenchmarkFrameBudgetWindow fullRadiusFrameBudgetWindow(
     std::span<GameBenchmarkFrameCompletion const> completions,
     std::optional<Clock::time_point> const first_loop_at,
     std::optional<Clock::time_point> const movement_started_at,
-    bool const movement_window_complete
+    bool const movement_window_complete,
+    bool const fixed_movement_window
 )
 {
     GameBenchmarkFrameBudgetWindow window{};
@@ -729,6 +958,12 @@ GameBenchmarkFrameBudgetWindow fullRadiusFrameBudgetWindow(
     ));
     window.end_offset_ns = window.start_offset_ns + window.required_duration_ns;
     window.complete = movement_window_complete;
+    if (fixed_movement_window) {
+        window.completion_observation_tail_ns = positiveNanoseconds(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(shared::TICK)
+        );
+        return window;
+    }
     if (!window.complete) {
         window.end_offset_ns = window.start_offset_ns;
         for (GameBenchmarkFrameSample const& sample : frames) {
@@ -892,14 +1127,79 @@ std::optional<uint64_t> platformFrameDurationTarget(bool const qualification_pro
 std::shared_ptr<server::WorldPreparation> startBenchmarkTerrainPreparation(
     shared::WorldConfiguration const& world_configuration,
     Clock::time_point const request_accepted_at,
-    shared::corelang::Backend const backend
+    shared::corelang::Backend const backend,
+    generation::TerrainModelTag const terrain_model,
+    bool const use_v10_fine_terrain
 )
 {
     generation::GenerationConfiguration generation_configuration{};
     generation_configuration.seed = world_configuration.seed;
+    generation_configuration.model_tag = terrain_model;
+    generation_configuration.use_v10_fine_terrain = use_v10_fine_terrain;
     return std::make_shared<server::WorldPreparation>(
         generation_configuration, world_configuration.algorithm_version, request_accepted_at, backend
     );
+}
+
+client::PreparedTerrainWorldProvider benchmarkPreparedTerrainWorldProvider(
+    std::shared_ptr<server::WorldPreparation> preparation
+)
+{
+    auto next_terminal_check = Clock::time_point::min();
+    return [
+        preparation = std::move(preparation),
+        next_terminal_check
+    ](shared::TerrainSessionIdentity const& session) mutable {
+        if (preparation->configuration() != session.configuration) {
+            return client::PreparedTerrainWorldStatus{
+                .state = client::PreparedTerrainWorldState::Failed,
+                .error = "Loopback server terrain configuration does not match the client session.",
+            };
+        }
+        if (std::shared_ptr<shared::TerrainWorld const> world = preparation->readyWorld()) {
+            return client::PreparedTerrainWorldStatus{
+                .state = client::PreparedTerrainWorldState::Ready,
+                .world = std::move(world),
+            };
+        }
+
+        Clock::time_point const now = Clock::now();
+        if (now < next_terminal_check) {
+            return client::PreparedTerrainWorldStatus{};
+        }
+        next_terminal_check = now + std::chrono::milliseconds{ 100 };
+
+        server::WorldPreparationSnapshot const snapshot = preparation->latest();
+        switch (snapshot.state) {
+            case server::WorldPreparationState::Preparing:
+                return client::PreparedTerrainWorldStatus{};
+            case server::WorldPreparationState::Ready:
+                if (snapshot.ready_world) {
+                    return client::PreparedTerrainWorldStatus{
+                        .state = client::PreparedTerrainWorldState::Ready,
+                        .world = snapshot.ready_world,
+                    };
+                }
+                return client::PreparedTerrainWorldStatus{
+                    .state = client::PreparedTerrainWorldState::Failed,
+                    .error = "Loopback server marked terrain ready without publishing its world.",
+                };
+            case server::WorldPreparationState::Failed:
+                return client::PreparedTerrainWorldStatus{
+                    .state = client::PreparedTerrainWorldState::Failed,
+                    .error = snapshot.error,
+                };
+            case server::WorldPreparationState::Cancelled:
+                return client::PreparedTerrainWorldStatus{
+                    .state = client::PreparedTerrainWorldState::Cancelled,
+                    .error = snapshot.error,
+                };
+        }
+        return client::PreparedTerrainWorldStatus{
+            .state = client::PreparedTerrainWorldState::Failed,
+            .error = "Loopback server reported an unknown terrain preparation state.",
+        };
+    };
 }
 
 void awaitBenchmarkTerrainPreparation(std::shared_ptr<server::WorldPreparation> const& preparation)
@@ -1178,12 +1478,176 @@ bool s1TerrainPerformanceComplete(GameBenchmarkEvidence& benchmark) noexcept
 
 } // namespace
 
-uint32_t gameBenchmarkS1PresentedCurrentColumnCount(
+std::optional<shared::PlayerPosition> gameBenchmarkDiagnosticSpawnPosition(GameBenchmarkOptions const& options)
+{
+    if (options.diagnostic_capture_site) {
+        if (gameBenchmarkCaptureSiteError(options)) {
+            return std::nullopt;
+        }
+        return shared::PlayerPosition{
+            .x = options.diagnostic_capture_site->x,
+            .y = options.diagnostic_capture_site->y,
+            .z = options.diagnostic_capture_site->z,
+        };
+    }
+    if (!options.diagnostic_spawn_z || gameBenchmarkSpawnOverrideError(options)) {
+        return std::nullopt;
+    }
+    return shared::PlayerPosition{.x = 32'768, .y = 32'768, .z = *options.diagnostic_spawn_z};
+}
+
+std::optional<std::string> gameBenchmarkSpawnOverrideError(GameBenchmarkOptions const& options)
+{
+    if (!options.diagnostic_spawn_z) {
+        return std::nullopt;
+    }
+    if (!options.qualification_proof.empty()) {
+        return "benchmark spawn override cannot be used with a gameplay proof";
+    }
+    if (options.terrain_model != generation::TerrainModelTag::V10) {
+        return "benchmark spawn override requires the V10 terrain model";
+    }
+    // Leave room for the unchanged 1.8125-block player body inside the selected world.
+    if (*options.diagnostic_spawn_z < 1
+        || *options.diagnostic_spawn_z > static_cast<int32_t>(generation::V10_WORLD_DEPTH_BLOCKS) - 2) {
+        return "benchmark spawn height must be from 1 to 2046 for V10";
+    }
+    if (options.workload != GameBenchmarkWorkload::OrdinaryMovement
+        && options.workload != GameBenchmarkWorkload::Speed200Movement
+        && options.workload != GameBenchmarkWorkload::Speed200TurningMovement) {
+        return "benchmark spawn override requires an ordinary or speed-200 measurement workload";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> gameBenchmarkCaptureSiteError(GameBenchmarkOptions const& options)
+{
+    if (!options.diagnostic_capture_site) {
+        return std::nullopt;
+    }
+    if (options.diagnostic_spawn_z) {
+        return "benchmark capture site cannot be combined with --benchmark-spawn-z";
+    }
+    if (options.frame_capture_image.empty()) {
+        return "benchmark capture site requires --benchmark-frame-capture";
+    }
+    if (!options.qualification_proof.empty()) {
+        return "benchmark capture site cannot be used with a gameplay proof";
+    }
+    if (options.terrain_model != generation::TerrainModelTag::V10) {
+        return "benchmark capture site requires the V10 terrain model";
+    }
+    if (options.workload != GameBenchmarkWorkload::DiagnosticStationary) {
+        return "benchmark capture site requires the diagnostic-stationary workload";
+    }
+    if (options.frame_capture_phase != "playing") {
+        return "benchmark capture site requires playing frame capture";
+    }
+    shared::PlayerPosition const spawn{
+        .x = options.diagnostic_capture_site->x,
+        .y = options.diagnostic_capture_site->y,
+        .z = options.diagnostic_capture_site->z,
+    };
+    if (!shared::World::isFlightPositionInBounds(spawn)) {
+        return "benchmark capture site coordinates are outside the flight world";
+    }
+    if (spawn.z < 1 || spawn.z > static_cast<int32_t>(generation::V10_WORLD_DEPTH_BLOCKS) - 2) {
+        return "benchmark capture site height must be from 1 to 2046 for V10 body clearance";
+    }
+    if (!std::isfinite(options.diagnostic_capture_site->yaw_degrees)
+        || !std::isfinite(options.diagnostic_capture_site->pitch_degrees)) {
+        return "benchmark capture site yaw and pitch must be finite";
+    }
+    if (options.diagnostic_capture_site->pitch_degrees < client::Camera::MIN_PITCH_DEGREES
+        || options.diagnostic_capture_site->pitch_degrees > client::Camera::MAX_PITCH_DEGREES) {
+        return "benchmark capture site pitch must be from -89 to 89 degrees";
+    }
+    return std::nullopt;
+}
+
+std::function<std::optional<client::CameraAngles>(Clock::time_point)>
+gameBenchmarkDiagnosticCaptureCameraOverride(GameBenchmarkOptions const& options)
+{
+    if (!options.diagnostic_capture_site || gameBenchmarkCaptureSiteError(options)) {
+        return {};
+    }
+    client::CameraAngles const angles{
+        .yaw_degrees = options.diagnostic_capture_site->yaw_degrees,
+        .pitch_degrees = options.diagnostic_capture_site->pitch_degrees,
+    };
+    return [angles](Clock::time_point) -> std::optional<client::CameraAngles> { return angles; };
+}
+
+bool gameBenchmarkSourceStreamingWorkload(GameBenchmarkOptions const& options) noexcept
+{
+    return options.workload == GameBenchmarkWorkload::OrdinaryTurningMovement
+        || options.terrain_model == generation::TerrainModelTag::V9
+        || options.terrain_model == generation::TerrainModelTag::V10
+        || options.terrain_model == generation::TerrainModelTag::V21;
+}
+
+std::optional<GameBenchmarkNativeTerrainDiagnostics> gameBenchmarkNativeTerrainDiagnostics(
+    std::span<GameBenchmarkFrameSample const> const frames,
+    std::span<GameBenchmarkFrameCompletion const> const completions
+)
+{
+    GameBenchmarkNativeTerrainDiagnostics native_terrain_diagnostics;
+    bool native_terrain_observed = false;
+    for (GameBenchmarkFrameSample const& frame : frames) {
+        if (!frame.native_terrain) {
+            continue;
+        }
+        native_terrain_observed = true;
+        GameBenchmarkFrameSample::NativeTerrain const& native = *frame.native_terrain;
+        std::string const backend = native.terrain_identity
+            && ((native.backend == "native-v9" && native.terrain_identity->terrain_version
+                    == generation::terrainVersion(generation::TerrainModelTag::V9))
+                || (native.backend == "native-v10" && native.terrain_identity->terrain_version
+                    == generation::terrainVersion(generation::TerrainModelTag::V10))
+                || (native.backend == "native-v21" && native.terrain_identity->terrain_version
+                    == generation::terrainVersion(generation::TerrainModelTag::V21)))
+            ? native.backend : "invalid-native-terrain";
+        if (native_terrain_diagnostics.sample_count == 0U) {
+            native_terrain_diagnostics.backend = backend;
+            native_terrain_diagnostics.terrain_identity = native.terrain_identity;
+        } else if (native_terrain_diagnostics.backend != backend) {
+            native_terrain_diagnostics.backend = "mixed-native-terrain";
+        }
+        if (backend == "invalid-native-terrain"
+            || native_terrain_diagnostics.terrain_identity != native.terrain_identity) {
+            native_terrain_diagnostics.terrain_identity.reset();
+        }
+        ++native_terrain_diagnostics.sample_count;
+        native_terrain_diagnostics.session_match_count += native.session_matches ? 1U : 0U;
+        native_terrain_diagnostics.coverage_match_count += native.coverage_matches ? 1U : 0U;
+        native_terrain_diagnostics.source_current_count += native.sources_current ? 1U : 0U;
+        native_terrain_diagnostics.underfoot_actual_column_count += native.underfoot_actual_column_present ? 1U : 0U;
+        native_terrain_diagnostics.underfoot_authority_source_count +=
+            native.underfoot_authority_source_present ? 1U : 0U;
+        if (frame.presentation_succeeded && frame.submitted_frame_sequence_id
+            && *frame.submitted_frame_sequence_id == native.submitted_frame_sequence_id) {
+            ++native_terrain_diagnostics.submitted_frame_count;
+        }
+        native_terrain_diagnostics.fence_confirmed_frame_count +=
+            gameBenchmarkNativeTerrainFrameFenceConfirmed(frame, completions) ? 1U : 0U;
+    }
+    if (native_terrain_diagnostics.backend == "native-v10"
+        && native_terrain_diagnostics.terrain_identity == s2NativeTerrainIdentity()) {
+        native_terrain_diagnostics.qualification_profile = "mc.s2-native-v10-fine.v1";
+    }
+    return native_terrain_observed ? std::optional{std::move(native_terrain_diagnostics)} : std::nullopt;
+}
+
+namespace {
+
+template <bool NATIVE_DISK>
+uint32_t presentedCurrentColumnCount(
     client::TerrainLodScene const& scene,
     shared::PlayerPosition const center
 )
 {
-    constexpr uint32_t DIAMETER = 81U;
+    constexpr uint32_t RADIUS = NATIVE_DISK ? shared::FULL_DETAIL_RADIUS_CHUNKS : 40U;
+    constexpr uint32_t DIAMETER = 2U * RADIUS + 1U;
     constexpr uint32_t PERIOD = shared::WorldExtent::WIDTH / shared::Chunk::SIDE_LENGTH;
     uint32_t const center_x = shared::WorldBounds::wrapHorizontal(center.x) / shared::Chunk::SIDE_LENGTH;
     uint32_t const center_y = shared::WorldBounds::wrapHorizontal(center.y) / shared::Chunk::SIDE_LENGTH;
@@ -1195,8 +1659,8 @@ uint32_t gameBenchmarkS1PresentedCurrentColumnCount(
             || static_cast<uint32_t>(source.coordinate.y) >= PERIOD || source.coordinate.z != 0) {
             continue;
         }
-        uint32_t const x = (static_cast<uint32_t>(source.coordinate.x) + PERIOD - center_x + 40U) % PERIOD;
-        uint32_t const y = (static_cast<uint32_t>(source.coordinate.y) + PERIOD - center_y + 40U) % PERIOD;
+        uint32_t const x = (static_cast<uint32_t>(source.coordinate.x) + PERIOD - center_x + RADIUS) % PERIOD;
+        uint32_t const y = (static_cast<uint32_t>(source.coordinate.y) + PERIOD - center_y + RADIUS) % PERIOD;
         if (x < DIAMETER && y < DIAMETER) {
             backed.set(y * DIAMETER + x);
         }
@@ -1205,13 +1669,36 @@ uint32_t gameBenchmarkS1PresentedCurrentColumnCount(
         if (leaf.level != shared::TerrainLodLevel::L3 || leaf.x >= PERIOD || leaf.y >= PERIOD) {
             continue;
         }
-        uint32_t const x = (leaf.x + PERIOD - center_x + 40U) % PERIOD;
-        uint32_t const y = (leaf.y + PERIOD - center_y + 40U) % PERIOD;
+        if constexpr (NATIVE_DISK) {
+            if (!client::terrainLodVisualColumn(leaf.x, leaf.y, center_x, center_y)) {
+                continue;
+            }
+        }
+        uint32_t const x = (leaf.x + PERIOD - center_x + RADIUS) % PERIOD;
+        uint32_t const y = (leaf.y + PERIOD - center_y + RADIUS) % PERIOD;
         if (x < DIAMETER && y < DIAMETER) {
             included.set(y * DIAMETER + x);
         }
     }
     return static_cast<uint32_t>((included & backed).count());
+}
+
+} // namespace
+
+uint32_t gameBenchmarkS1PresentedCurrentColumnCount(
+    client::TerrainLodScene const& scene,
+    shared::PlayerPosition const center
+)
+{
+    return presentedCurrentColumnCount<false>(scene, center);
+}
+
+uint32_t gameBenchmarkNativePresentedCurrentColumnCount(
+    client::TerrainLodScene const& scene,
+    shared::PlayerPosition const center
+)
+{
+    return presentedCurrentColumnCount<true>(scene, center);
 }
 
 bool gameBenchmarkS1RenderedCameraTrajectoryComplete(
@@ -1353,6 +1840,133 @@ bool gameBenchmarkS1VisualLodSampleReady(
         && sample->coverage_center && sample->sources_current;
 }
 
+bool gameBenchmarkNativeTerrainSampleCurrent(
+    GameBenchmarkFrameSample::NativeTerrain const& sample,
+    shared::TerrainIdentity const& session_identity,
+    uint64_t const session_join_epoch,
+    uint64_t const coverage_epoch
+) noexcept
+{
+    bool const model_matches_backend = sample.terrain_identity
+        && ((sample.backend == "native-v9"
+                && sample.terrain_identity->terrain_version
+                    == generation::terrainVersion(generation::TerrainModelTag::V9))
+            || (sample.backend == "native-v10"
+                && sample.terrain_identity->terrain_version
+                    == generation::terrainVersion(generation::TerrainModelTag::V10))
+            || (sample.backend == "native-v21"
+                && sample.terrain_identity->terrain_version
+                    == generation::terrainVersion(generation::TerrainModelTag::V21)));
+    return model_matches_backend && sample.submitted_frame_sequence_id != 0U
+        && sample.scene_present
+        && *sample.terrain_identity == session_identity
+        && sample.session_join_epoch == session_join_epoch && sample.session_matches
+        && sample.coverage_epoch == coverage_epoch && sample.coverage_matches
+        && sample.sources_current && sample.underfoot_actual_column_present
+        && sample.underfoot_authority_source_present;
+}
+
+bool gameBenchmarkNativeTerrainFrameFenceConfirmed(
+    GameBenchmarkFrameSample const& sample,
+    std::span<GameBenchmarkFrameCompletion const> const completions
+) noexcept
+{
+    if (!sample.native_terrain || !sample.presentation_succeeded
+        || !sample.submitted_frame_sequence_id || !sample.swapchain_generation || !sample.submitted_frame_slot
+        || sample.native_terrain->submitted_frame_sequence_id != *sample.submitted_frame_sequence_id) {
+        return false;
+    }
+    return std::ranges::any_of(completions, [&sample](GameBenchmarkFrameCompletion const& completion) {
+        return completion.sequence_id == *sample.submitted_frame_sequence_id
+            && completion.swapchain_generation == *sample.swapchain_generation
+            && completion.frame_slot == *sample.submitted_frame_slot
+            && completion.submitted_offset_ns == sample.submitted_frame_offset_ns
+            && completion.application_present_id == sample.application_present_id;
+    });
+}
+
+namespace {
+
+bool s2NativeFullDiskCurrent(
+    GameBenchmarkFrameSample::NativeTerrain const& terrain,
+    uint64_t const session_join_epoch,
+    uint64_t const coverage_epoch
+)
+{
+    constexpr uint32_t REQUIRED_COLUMNS = client::terrainLodVisualColumnCount();
+    return session_join_epoch != 0U && coverage_epoch != 0U
+        && terrain.active_coverage_epoch == coverage_epoch
+        && gameBenchmarkNativeTerrainSampleCurrent(terrain, s2NativeTerrainIdentity(), session_join_epoch, coverage_epoch)
+        && terrain.current_player_position
+        && terrain.required_actual_columns == REQUIRED_COLUMNS
+        && terrain.presented_current_actual_columns == REQUIRED_COLUMNS
+        && terrain.actual_column_count >= REQUIRED_COLUMNS && terrain.submitted_scene_face_count != 0U;
+}
+
+} // namespace
+
+bool gameBenchmarkS2NativeTurningAnchorReady(
+    GameBenchmarkFrameSample const& frame,
+    GameBenchmarkFrameCompletion const& completion,
+    shared::TerrainSessionIdentity const& session,
+    uint64_t const coverage_epoch,
+    shared::PlayerPosition const& player_position
+)
+{
+    if (!frame.native_terrain || session.terrain != s2NativeTerrainIdentity()) {
+        return false;
+    }
+    auto const& terrain = *frame.native_terrain;
+    return s2NativeFullDiskCurrent(terrain, session.join_epoch, coverage_epoch)
+        && samePlayerPosition(*terrain.current_player_position, player_position)
+        && gameBenchmarkNativeTerrainFrameFenceConfirmed(frame, std::span{ &completion, 1U });
+}
+
+bool gameBenchmarkS2NativeRecoveryBarrierReady(
+    GameBenchmarkFrameSample const& frame,
+    GameBenchmarkFrameCompletion const& completion,
+    shared::TerrainSessionIdentity const& session,
+    uint64_t const coverage_epoch,
+    shared::PlayerPosition const& player_position
+)
+{
+    return frame.playable_sphere && gameBenchmarkS1CurrentTerrainSampleReady(*frame.playable_sphere)
+        && frame.playable_sphere->active_coverage_epoch == coverage_epoch
+        && samePlayerPosition(*frame.playable_sphere->world_loading_center, player_position)
+        && samePlayerPosition(*frame.playable_sphere->authoritative_columns_center, player_position)
+        && gameBenchmarkS2NativeTurningAnchorReady(frame, completion, session, coverage_epoch, player_position);
+}
+
+GameBenchmarkNativeTurningCoverage gameBenchmarkS2NativeTurningCoverage(
+    std::span<GameBenchmarkFrameSample const> const frames,
+    GameBenchmarkFrameBudgetWindow const& window,
+    uint64_t const session_join_epoch
+)
+{
+    GameBenchmarkNativeTurningCoverage coverage{
+        .start_offset_ns = window.start_offset_ns,
+        .end_offset_ns = window.end_offset_ns,
+        .window_drained = window.complete,
+    };
+    for (auto const& frame : frames) {
+        bool const in_window = frame.submitted_frame_offset_ns >= window.start_offset_ns
+            && frame.submitted_frame_offset_ns < window.end_offset_ns;
+        bool const movement_phase = frame.submitted_frame_phase == window.phase;
+        if (!frame.presentation_succeeded || (!in_window && !movement_phase)) {
+            continue;
+        }
+        ++coverage.submitted_frames;
+        auto const& terrain = frame.native_terrain;
+        if (in_window && movement_phase && terrain
+            && frame.submitted_frame_sequence_id == terrain->submitted_frame_sequence_id
+            && terrain->active_coverage_epoch
+            && s2NativeFullDiskCurrent(*terrain, session_join_epoch, *terrain->active_coverage_epoch)) {
+            ++coverage.current_disk_frames;
+        }
+    }
+    return coverage;
+}
+
 bool gameBenchmarkS1ReadinessDeadlinesMet(
     std::optional<uint64_t> const ready_prompt_offset_ns,
     std::optional<uint64_t> const playable_ready_offset_ns
@@ -1423,7 +2037,7 @@ bool gameBenchmarkS1CurrentTerrainSampleReady(
 {
     constexpr uint32_t COLUMNS_PER_SIDE = 2U * shared::FULL_DETAIL_RADIUS_CHUNKS + 1U;
     constexpr uint32_t REQUIRED_COLUMNS = COLUMNS_PER_SIDE * COLUMNS_PER_SIDE;
-    constexpr uint32_t VERTICAL_CHUNKS = (shared::World::FLIGHT_MAX_Z + 1U) / shared::Chunk::SIDE_LENGTH;
+    constexpr uint32_t VERTICAL_CHUNKS = shared::WorldExtent::DEPTH / shared::Chunk::SIDE_LENGTH;
     return playableSphereSampleReady(sample, shared::ACTUAL_TERRAIN_RADIUS_BLOCKS)
         && sample.active_coverage_epoch.has_value()
         && *sample.active_coverage_epoch != 0U
@@ -1593,6 +2207,9 @@ void GameBenchmarkFullRadiusSequence::observe(
     }
     if (m_phase == GameBenchmarkFullRadiusPhase::Movement
         && m_defer_movement_window_until_input && !m_movement_window_started) {
+        if (sampled_at - m_phase_started_at >= m_warmup_timeout) {
+            transition(GameBenchmarkFullRadiusPhase::Failed, sampled_at);
+        }
         return;
     }
 
@@ -1720,8 +2337,11 @@ std::expected<std::chrono::seconds, std::string> gameBenchmarkFullRadiusWarmupTi
     return std::chrono::seconds{ seconds };
 }
 
-std::chrono::seconds gameBenchmarkDeadline(GameBenchmarkOptions const& options) noexcept
+std::chrono::seconds gameBenchmarkDeadline(GameBenchmarkOptions const& options)
 {
+    if (options.diagnostic_capture_site && !gameBenchmarkCaptureSiteError(options)) {
+        return std::chrono::seconds{ 90 };
+    }
     if (options.workload != GameBenchmarkWorkload::Speed200FullRadiusRecovery) {
         return options.deadline;
     }
@@ -2176,11 +2796,16 @@ std::pair<int32_t, int32_t> GameBenchmarkTerrainReadinessTracker::coordinates(
 bool gameBenchmarkDiagnosticOverridesPresent(bool const explicit_diagnostic_capture) noexcept
 {
     return explicit_diagnostic_capture
+        || environmentVariableMatches("MC_DIAGNOSTIC_CARDINAL_X8", std::nullopt)
         || environmentVariableMatches("MC_DIAGNOSTIC_DIRECTIONAL_STONE_CULLING", std::nullopt)
         || environmentVariableMatches("MC_DIAGNOSTIC_DIRECT_STONE_DRAWS", std::nullopt)
+        || environmentVariableMatches("MC_DIAGNOSTIC_FRAME_FILMSTRIP", std::nullopt)
+        || environmentVariableMatches("MC_DIAGNOSTIC_GENERATION_MAP_TIMING", std::nullopt)
+        || environmentVariableMatches("MC_DIAGNOSTIC_GENERATION_WEATHER_STEPS", std::nullopt)
         || environmentVariableMatches("MC_DIAGNOSTIC_GPU_TIMESTAMPS", std::nullopt)
         || environmentVariableMatches("MC_DIAGNOSTIC_INDEXED_STONE_QUADS", std::nullopt)
         || environmentVariableMatches("MC_DIAGNOSTIC_PRESENTATION_STAGES", std::nullopt)
+        || environmentVariableMatches("MC_DIAGNOSTIC_STREAMING_TRACE", std::nullopt)
         || environmentVariableMatches("MC_DIAGNOSTIC_SPECIALIZED_STONE_SHADER", std::nullopt)
         || environmentVariableMatches("MC_DIAGNOSTIC_TERRAIN_SPATIAL_SCAN", std::nullopt)
         || environmentVariableMatches("MC_DIAGNOSTIC_TERRAIN_OCCLUSION", std::nullopt);
@@ -2210,13 +2835,56 @@ GameBenchmarkPhase gameBenchmarkPhaseAt(
 
 std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOptions const& options)
 {
+    if (auto const error = gameBenchmarkSpawnOverrideError(options)) {
+        return std::unexpected(*error);
+    }
+    if (auto const error = gameBenchmarkCaptureSiteError(options)) {
+        return std::unexpected(*error);
+    }
+    bool const frame_capture_requested = !options.frame_capture_image.empty();
+    bool const frame_filmstrip = frame_capture_requested
+        && environmentVariableMatches("MC_DIAGNOSTIC_FRAME_FILMSTRIP", "1");
+    if (options.frame_capture_delay < std::chrono::milliseconds::zero()
+        || options.frame_capture_delay > std::chrono::milliseconds{30'000}) {
+        return std::unexpected("benchmark frame capture delay must be between zero and 30 seconds");
+    }
+    if (frame_capture_requested && (options.frame_capture_phase != "playing" && options.frame_capture_phase != "generation")) {
+        return std::unexpected("benchmark frame capture phase must be generation or playing");
+    }
+    bool const stationary_capture_site = options.diagnostic_capture_site.has_value()
+        && options.workload == GameBenchmarkWorkload::DiagnosticStationary;
+    if (frame_capture_requested && (!options.qualification_proof.empty()
+        || (options.workload != GameBenchmarkWorkload::OrdinaryMovement && !stationary_capture_site))) {
+        return std::unexpected("benchmark frame capture requires ordinary workload without a qualification proof");
+    }
+    bool const streaming_trace = environmentVariableMatches("MC_DIAGNOSTIC_STREAMING_TRACE", "1");
+    bool const cardinal_x8 = environmentVariableMatches("MC_DIAGNOSTIC_CARDINAL_X8", "1");
+    if (cardinal_x8 && !streaming_trace) {
+        return std::unexpected("cardinal x8 diagnostic requires streaming trace");
+    }
+    if (cardinal_x8 && frame_capture_requested) {
+        return std::unexpected("cardinal x8 diagnostic cannot use early frame capture");
+    }
+    if (streaming_trace && (!options.qualification_proof.empty()
+        || options.workload != GameBenchmarkWorkload::OrdinaryMovement)) {
+        return std::unexpected("streaming trace requires diagnostic ordinary workload without qualification proof");
+    }
     bool const s1_terrain_workload = options.workload == GameBenchmarkWorkload::OrdinaryTurningMovement;
+    bool const s2_native_turning = s1_terrain_workload
+        && options.terrain_model == generation::TerrainModelTag::V10 && options.use_v10_fine_terrain;
     bool const full_radius_workload = options.workload == GameBenchmarkWorkload::Speed200FullRadiusRecovery;
+    bool const s2_native_full_radius = full_radius_workload
+        && options.terrain_model == generation::TerrainModelTag::V10 && options.use_v10_fine_terrain;
+    // Let native source-backed preview snapshots reach the client while its atlas is still preparing.
+    bool const source_streaming_workload = gameBenchmarkSourceStreamingWorkload(options);
     bool capture_presentation_history = options.qualification_proof == "performance";
 #if !defined(__APPLE__)
     capture_presentation_history = false;
 #endif
     if (!options.qualification_proof.empty()) {
+        if (options.terrain_model != generation::TerrainModelTag::R6) {
+            return std::unexpected("gameplay proof requires the R6 terrain model");
+        }
         bool const proof_workload_matches = options.qualification_proof == "performance"
             ? options.workload == GameBenchmarkWorkload::OrdinaryTurningMovement
             : options.workload == GameBenchmarkWorkload::Speed200FullRadiusRecovery;
@@ -2230,14 +2898,25 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             return std::unexpected("gameplay proof requires its fixed radius and production settings");
         }
     }
+    if (options.workload == GameBenchmarkWorkload::Speed200TurningMovement
+        && options.cold_duration + options.warm_duration + options.uncapped_duration < std::chrono::seconds{ 6 }) {
+        return std::unexpected("speed-200-turning requires at least six seconds of measurement");
+    }
     std::chrono::seconds const effective_deadline = gameBenchmarkDeadline(options);
     if (options.cold_duration <= std::chrono::seconds::zero()
         || options.warm_duration <= std::chrono::seconds::zero()
         || options.uncapped_duration <= std::chrono::seconds::zero()
         || (!full_radius_workload && options.deadline <= options.cold_duration + options.warm_duration + options.uncapped_duration
-            + (options.workload == GameBenchmarkWorkload::Speed200Movement
+            + ((options.workload == GameBenchmarkWorkload::Speed200Movement
+                || options.workload == GameBenchmarkWorkload::Speed200TurningMovement)
                 ? GAME_BENCHMARK_TERRAIN_READINESS_DEADLINE : std::chrono::milliseconds::zero()))) {
         return std::unexpected("game benchmark has invalid duration limits");
+    }
+    if (options.terrain_model != generation::TerrainModelTag::R6
+        && options.terrain_model != generation::TerrainModelTag::V9
+        && options.terrain_model != generation::TerrainModelTag::V10
+        && options.terrain_model != generation::TerrainModelTag::V21) {
+        return std::unexpected("game benchmark has an unsupported terrain model");
     }
     if (full_radius_workload
         && !gameBenchmarkFullRadiusWarmupTimeout(options.full_radius_warmup_timeout.count())) {
@@ -2255,9 +2934,11 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     auto const world_preparation = startBenchmarkTerrainPreparation(
         world_configuration,
         started_at,
-        options.backend
+        options.backend,
+        options.terrain_model,
+        options.use_v10_fine_terrain
     );
-    if (!s1_terrain_workload) {
+    if (!source_streaming_workload) {
         awaitBenchmarkTerrainPreparation(world_preparation);
     }
     server::WorldPreparationSnapshot const preparation_snapshot = world_preparation->latest();
@@ -2265,25 +2946,30 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     if (preparation_snapshot.terrain_plan) {
         terrain_backend_receipt = preparation_snapshot.terrain_plan->receipt;
     }
-    if (!s1_terrain_workload && !terrain_backend_receipt) {
+    if (!source_streaming_workload && !terrain_backend_receipt) {
         return std::unexpected("Terrain-v2 benchmark preparation omitted its CoreLang backend receipt");
     }
-    if (!s1_terrain_workload && terrain_backend_receipt
+    if (!source_streaming_workload && terrain_backend_receipt
         && (terrain_backend_receipt->requested_backend != options.backend
             || terrain_backend_receipt->actual_backend != options.backend)) {
         return std::unexpected("Terrain-v2 benchmark preparation reported a mismatched CoreLang backend");
     }
-    std::shared_ptr<shared::TerrainWorld const> const terrain_world = s1_terrain_workload
+    std::shared_ptr<shared::TerrainWorld const> const terrain_world = source_streaming_workload
         ? nullptr : world_preparation->readyWorld();
     std::vector<server::GameServer::SpawnPoint> spawn_points;
-    if (options.workload == GameBenchmarkWorkload::WrappedBorder) {
+    if (auto const spawn = gameBenchmarkDiagnosticSpawnPosition(options)) {
+        spawn_points.push_back({
+            .character = '@', .x = spawn->x, .y = spawn->y,
+            .z = spawn->z, .derive_surface_z = false,
+        });
+    } else if (options.workload == GameBenchmarkWorkload::WrappedBorder) {
         spawn_points.push_back({
             .character = '@',
             .x = shared::World::FLIGHT_MAX_CELL - 2,
             .y = shared::World::FLIGHT_SPAWN.y,
             .z = shared::World::FLIGHT_SPAWN.z,
         });
-    } else if (!s1_terrain_workload) {
+    } else if (!source_streaming_workload) {
         static constexpr int32_t SPAWN_X = 32'768;
         static constexpr int32_t SPAWN_Y = 32'768;
         uint16_t const spawn_surface_height = terrain_world->sampleSurfaceHeight(SPAWN_X, SPAWN_Y);
@@ -2298,6 +2984,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         0U, spawn_points, shared::WorldMode::Flight,
         world_configuration, options.render_distance, terrain_world, world_preparation,
     };
+    uint32_t diagnostic_pose_samples = 0U;
     std::vector<ServerTickSample> raw_server_ticks;
     raw_server_ticks.reserve(512U);
     std::vector<GameBenchmarkServerStreamSample> raw_server_stream_samples;
@@ -2440,9 +3127,11 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     };
     ServerRunGuard server_run{ server, server_hooks };
     std::cout << "[benchmark-game] loopback server started\n" << std::flush;
-    GameBenchmarkFullRadiusSequence full_radius_sequence{ options.full_radius_warmup_timeout };
+    GameBenchmarkFullRadiusSequence full_radius_sequence{ options.full_radius_warmup_timeout, s2_native_full_radius };
+    GameBenchmarkNativeFullRadiusRecovery native_full_radius;
     std::optional<Clock::time_point> full_radius_movement_started_at;
     std::optional<Clock::time_point> movement_route_started_at;
+    std::optional<Clock::time_point> streaming_trace_neutral_started_at;
     GameBenchmarkS1MovementWindow s1_movement_window;
     std::optional<GameBenchmarkMovementRouteSample> pending_movement_route;
     std::unordered_set<uint32_t> movement_input_sequences;
@@ -2454,43 +3143,63 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     std::unordered_set<uint32_t> s1_post_window_input_sequences;
     s1_post_window_input_sequences.reserve(32U);
     bool s1_movement_window_drained = false;
-    auto const player_storage = std::make_unique<client::PlayerClient>(
-        shared::WorldMode::Flight,
-        std::nullopt,
-        client::PlayerClientBenchmarkOptions{
-            .require_immediate_present_mode = options.require_immediate_present_mode,
-            .freeze_camera = options.workload == GameBenchmarkWorkload::DiagnosticStationary
-                || full_radius_workload,
-            .show_debug_hud = full_radius_workload || s1_terrain_workload,
-            .enable_mesh_stage_diagnostics = options.diagnostic_full_radius_capture,
-            .enable_presentation_history = capture_presentation_history,
-            .capture_frame_completion = true,
-            .camera_angles_override = options.workload == GameBenchmarkWorkload::OrdinaryTurningMovement
-                ? std::function<std::optional<client::CameraAngles>(Clock::time_point)>{
-                    [&movement_route_started_at](Clock::time_point const sampled_at)
-                        -> std::optional<client::CameraAngles> {
-                        if (!movement_route_started_at) {
-                            return std::nullopt;
-                        }
-                        std::chrono::nanoseconds const elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                            sampled_at - *movement_route_started_at
-                        );
-                        GameBenchmarkMovementRouteSample const route = gameBenchmarkRepeatingMovementRouteAt(elapsed);
-                        return client::CameraAngles{
-                            .yaw_degrees = route.yaw_degrees,
-                            .pitch_degrees = route.pitch_degrees,
-                        };
-                    },
-                }
-                : std::function<std::optional<client::CameraAngles>(Clock::time_point)>{},
+    std::function<std::optional<client::CameraAngles>(Clock::time_point)> camera_angles_override =
+        gameBenchmarkDiagnosticCaptureCameraOverride(options);
+    if (!camera_angles_override
+        && (options.workload == GameBenchmarkWorkload::OrdinaryTurningMovement
+            || options.workload == GameBenchmarkWorkload::Speed200TurningMovement)) {
+        camera_angles_override = [&movement_route_started_at, &options](Clock::time_point const sampled_at)
+            -> std::optional<client::CameraAngles> {
+            bool const turning = options.workload == GameBenchmarkWorkload::Speed200TurningMovement;
+            auto const started_at = movement_route_started_at;
+            if (!started_at) {
+                return std::nullopt;
+            }
+            std::chrono::nanoseconds const elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                sampled_at - *started_at
+            );
+            GameBenchmarkMovementRouteSample const route = turning
+                ? gameBenchmarkSpeed200TurningRouteAt(elapsed) : gameBenchmarkRepeatingMovementRouteAt(elapsed);
+            return client::CameraAngles{
+                .yaw_degrees = route.yaw_degrees,
+                .pitch_degrees = route.pitch_degrees,
+            };
+        };
+    }
+    client::PlayerClientBenchmarkOptions player_options{
+        .require_immediate_present_mode = options.require_immediate_present_mode,
+        .freeze_camera = options.workload == GameBenchmarkWorkload::DiagnosticStationary
+            || full_radius_workload,
+        .show_debug_hud = options.enable_live_ui || frame_capture_requested || full_radius_workload || s1_terrain_workload,
+        .enable_mesh_stage_diagnostics = options.diagnostic_full_radius_capture,
+        .enable_presentation_history = capture_presentation_history,
+        .capture_frame_completion = true,
+        .camera_angles_override = std::move(camera_angles_override),
+        .enable_diagnostic_frame_capture = frame_capture_requested,
+        .enable_live_ui = options.enable_live_ui,
+    };
+    auto const player_storage = [&] {
+        if (glfwInit() != GLFW_TRUE) {
+            throw std::runtime_error("Cannot initialize the benchmark window");
         }
-    );
+        struct RestoreFocusHint final {
+            ~RestoreFocusHint() { glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE); }
+        } restore_focus_hint;
+        glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
+        return std::make_unique<client::PlayerClient>(
+            shared::WorldMode::Flight,
+            std::nullopt,
+            std::move(player_options),
+            benchmarkPreparedTerrainWorldProvider(world_preparation)
+        );
+    }();
     client::PlayerClient& player = *player_storage;
     std::cout << "[benchmark-game] player renderer ready; connecting\n" << std::flush;
 
     // Direct construction avoids a full-size aggregate temporary on this stack.
     std::unique_ptr<GameBenchmarkEvidence> benchmark_storage{ new GameBenchmarkEvidence{
         .workload = std::string{ gameBenchmarkWorkloadName(options.workload) },
+        .live_ui_enabled = options.enable_live_ui,
         .qualification_proof = options.qualification_proof,
         .movement_trajectory_contract = options.workload == GameBenchmarkWorkload::OrdinaryTurningMovement
             ? "mc.x30-authoritative-trajectory.v1" : "",
@@ -2504,7 +3213,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
 #else
         .build_mode = "debug",
 #endif
-        .qualification_settings_manifest = s1_terrain_workload
+        .qualification_settings_manifest = s1_terrain_workload && options.terrain_model == generation::TerrainModelTag::R6
             ? std::string{GAME_BENCHMARK_S1_QUALIFICATION_MANIFEST} : std::string{},
         .terrain_identity = std::nullopt,
         .diagnostic_overrides_present = gameBenchmarkDiagnosticOverridesPresent(
@@ -2526,7 +3235,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .permission_publish_timings = {},
         .frame_budget = std::nullopt,
         .terrain_readiness = std::nullopt,
-        .full_radius_terrain = full_radius_workload
+        .full_radius_terrain = full_radius_workload && !s2_native_full_radius
             ? std::optional<GameBenchmarkFullRadiusEvidence>{GameBenchmarkFullRadiusEvidence{
                 .render_distance = options.render_distance,
                 .expected_tile_count = shared::heightTileInterestCount(options.render_distance),
@@ -2561,6 +3270,27 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .raw_permission_publish_durations_ns = {},
     }};
     GameBenchmarkEvidence& benchmark = *benchmark_storage;
+    if (options.diagnostic_spawn_z) {
+        benchmark.diagnostic_overrides_present = true;
+        benchmark.diagnostic_spawn_z = options.diagnostic_spawn_z;
+    }
+    if (options.diagnostic_capture_site) {
+        benchmark.diagnostic_overrides_present = true;
+        benchmark.diagnostic_capture_site = GameBenchmarkEvidence::DiagnosticCaptureSite{
+            .x = options.diagnostic_capture_site->x,
+            .y = options.diagnostic_capture_site->y,
+            .z = options.diagnostic_capture_site->z,
+            .yaw_degrees = options.diagnostic_capture_site->yaw_degrees,
+            .pitch_degrees = options.diagnostic_capture_site->pitch_degrees,
+        };
+    }
+    if (frame_capture_requested) {
+        benchmark.diagnostic_frame_capture_path = options.frame_capture_image.string();
+        benchmark.diagnostic_frame_capture_phase = options.frame_capture_phase;
+        benchmark.diagnostic_frame_capture_delay_ms = static_cast<uint64_t>(options.frame_capture_delay.count());
+        benchmark.diagnostic_frame_capture_state = "not-requested";
+        benchmark.diagnostic_overrides_present = true;
+    }
     benchmark.raw_frames.reserve(20'000U);
     benchmark.raw_gameplay_inputs.reserve(2'000U);
     if (benchmark.presentation_timing) {
@@ -2597,7 +3327,74 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     std::optional<shared::Player> previous_authoritative_player;
     uint64_t authoritative_state_ordinal = 0U;
     std::optional<GameBenchmarkFullRadiusEvidence::AuthoritativePlayableSphereUpdate>
-        latest_s1_authoritative_state;
+        latest_benchmark_authoritative_state;
+    std::optional<uint64_t> native_turning_start_frame;
+    std::optional<uint64_t> native_warmup_submission;
+    std::optional<GameBenchmarkFrameCompletion> native_warmup_fence;
+    auto const recordFenceCompletion = [&](GameBenchmarkFrameCompletion completion) {
+        bool const warmup = completion.submission_phase == fullRadiusPhaseName(GameBenchmarkFullRadiusPhase::InitialWarmup)
+            || completion.submission_phase == fullRadiusPhaseName(GameBenchmarkFullRadiusPhase::RecoveryWarmup);
+        bool const awaiting_input = full_radius_sequence.phase() == GameBenchmarkFullRadiusPhase::Movement
+            && !full_radius_movement_started_at
+            && completion.submission_phase == fullRadiusPhaseName(GameBenchmarkFullRadiusPhase::BaselineStationary);
+        if (s2_native_full_radius && (warmup || awaiting_input)) {
+            if (native_warmup_submission != completion.sequence_id) {
+                return;
+            }
+            if (warmup) {
+                native_warmup_fence = completion;
+            }
+        }
+        benchmark.raw_fence_confirmed_frames.push_back(std::move(completion));
+    };
+    auto const nativeFenceAnchor = [&](
+        client::WorldLoadingStatus const& status,
+        std::string_view const expected_phase
+    ) -> std::optional<uint64_t> {
+        if (!playableSphereReady(status)
+            || !status.current_player_position || !latest_benchmark_authoritative_state
+            || !samePlayerPosition(latest_benchmark_authoritative_state->authoritative_position, *status.current_player_position)
+            || benchmark.raw_fence_confirmed_frames.empty()) {
+            return std::nullopt;
+        }
+        auto const session = player.activeTerrainSession();
+        auto const coverage_epoch = player.activeCoverageEpoch();
+        if (!session || !coverage_epoch) {
+            return std::nullopt;
+        }
+        bool const warmup = expected_phase == fullRadiusPhaseName(GameBenchmarkFullRadiusPhase::InitialWarmup)
+            || expected_phase == fullRadiusPhaseName(GameBenchmarkFullRadiusPhase::RecoveryWarmup);
+        if (warmup && !native_warmup_fence) {
+            return std::nullopt;
+        }
+        auto const& completion = warmup ? *native_warmup_fence : benchmark.raw_fence_confirmed_frames.back();
+        auto const frame = std::find_if(
+            benchmark.raw_frames.rbegin(), benchmark.raw_frames.rend(),
+            [&completion](GameBenchmarkFrameSample const& candidate) {
+                return candidate.submitted_frame_sequence_id
+                    && *candidate.submitted_frame_sequence_id <= completion.sequence_id;
+            }
+        );
+        if (frame == benchmark.raw_frames.rend() || frame->submitted_frame_sequence_id != completion.sequence_id) {
+            return std::nullopt;
+        }
+        if (expected_phase.empty()) {
+            return gameBenchmarkS2NativeTurningAnchorReady(
+                *frame, completion, *session, *coverage_epoch, *status.current_player_position
+            ) ? std::optional{completion.sequence_id} : std::nullopt;
+        }
+        return frame->submitted_frame_phase == expected_phase
+            && completion.submission_phase == expected_phase
+            && gameBenchmarkS2NativeRecoveryBarrierReady(
+                *frame, completion, *session, *coverage_epoch, *status.current_player_position
+            ) ? std::optional{completion.sequence_id} : std::nullopt;
+    };
+    auto const nativeTurningAnchor = [&](
+        client::WorldLoadingStatus const& status,
+        Clock::time_point const observed_at
+    ) -> std::optional<uint64_t> {
+        return observed_at < status.full_radius_deadline ? nativeFenceAnchor(status, {}) : std::nullopt;
+    };
     std::optional<Clock::time_point> full_radius_measurement_end_at;
     std::optional<Clock::time_point> presentation_drain_started_at;
     uint32_t presentation_drain_attempts = 0U;
@@ -2711,7 +3508,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             *observed_offset
         );
         if (completion) {
-            benchmark.raw_fence_confirmed_frames.push_back(std::move(completion).value());
+            recordFenceCompletion(std::move(*completion));
         }
     };
     auto const recordFrameSubmission = [&](
@@ -2961,9 +3758,21 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         ReusableHeapValue<GameBenchmarkFrameSample> frame_sample;
     };
     auto loop_scratch = std::make_unique<LoopScratch>();
+    std::optional<Clock::time_point> capture_phase_started_at;
+    std::optional<Clock::time_point> film_ready_at;
+    std::optional<Clock::time_point> film_last_capture_at;
+    uint32_t film_frame_index = 0U;
     client::GameClientBenchmarkHooks const client_hooks{
+        .isolate_platform_input = true,
         .deadline = started_at + effective_deadline,
         .should_stop = [&] {
+            if (frame_capture_requested) {
+                auto const state = player.diagnosticFrameCaptureState();
+                return state == client::PlayerClientDiagnosticFrameCaptureState::Failed
+                    || (!frame_filmstrip && state == client::PlayerClientDiagnosticFrameCaptureState::Succeeded)
+                    || (frame_filmstrip && film_ready_at && Clock::now() - *film_ready_at >= std::chrono::seconds{8}
+                        && state == client::PlayerClientDiagnosticFrameCaptureState::Succeeded);
+            }
             if (s1_terrain_workload && !s1_movement_window.startedAt()) {
                 Clock::time_point const now = Clock::now();
                 client::WorldLoadingStatus const status = player.worldLoadingStatus();
@@ -3035,12 +3844,16 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             Clock::time_point const measurement_end = *first_loop_at + options.cold_duration
                 + options.warm_duration + options.uncapped_duration;
             Clock::time_point const stop_at = measurement_end
-                + (options.workload == GameBenchmarkWorkload::Speed200Movement
+                + ((options.workload == GameBenchmarkWorkload::Speed200Movement
+                || options.workload == GameBenchmarkWorkload::Speed200TurningMovement)
                     ? GAME_BENCHMARK_TERRAIN_READINESS_DEADLINE
                     : std::chrono::steady_clock::duration::zero());
             return Clock::now() >= stop_at;
         },
         .is_uncapped_phase = [&] {
+            if (frame_capture_requested) {
+                return false;
+            }
             if (s1_terrain_workload) {
                 std::optional<Clock::time_point> const movement_started_at = s1_movement_window.startedAt();
                 return movement_started_at
@@ -3059,15 +3872,23 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             &options,
             &first_loop_at,
             &movement_route_started_at,
+            &streaming_trace_neutral_started_at,
             &s1_movement_window,
             &full_radius_sequence,
+            &full_radius_movement_started_at,
             &pending_movement_route,
             &previous_authoritative_player,
-            &latest_s1_authoritative_state,
+            &latest_benchmark_authoritative_state,
+            &nativeTurningAnchor,
+            &nativeFenceAnchor,
             &benchmark,
             &player,
             full_radius_workload,
-            s1_terrain_workload
+            s2_native_full_radius,
+            s1_terrain_workload,
+            s2_native_turning,
+            streaming_trace,
+            cardinal_x8
         ](
             uint64_t const ordinal
         )
@@ -3077,6 +3898,17 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 if (full_radius_sequence.phase() != GameBenchmarkFullRadiusPhase::Movement) {
                     return shared::Direction{};
                 }
+                if (s2_native_full_radius) {
+                    if (full_radius_movement_started_at) {
+                        if (Clock::now() >= *full_radius_movement_started_at + GAME_BENCHMARK_FULL_RADIUS_MOVEMENT) {
+                            return shared::Direction{};
+                        }
+                    } else if (!nativeFenceAnchor(
+                            player.worldLoadingStatus(), fullRadiusPhaseName(GameBenchmarkFullRadiusPhase::BaselineStationary)
+                    )) {
+                        return shared::Direction{};
+                    }
+                }
                 return gameBenchmarkDirection(options.workload, ordinal);
             }
             if (s1_terrain_workload) {
@@ -3084,16 +3916,18 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 client::WorldLoadingStatus const loading_status = player.worldLoadingStatus();
                 bool const playable_sphere_ready_observed = loading_status.playable_sphere_first_ready_at
                     && *loading_status.playable_sphere_first_ready_at <= now;
-                bool const current_sphere_ready = s1PlayableSphereReady(player, loading_status)
-                    && playable_sphere_ready_observed;
-                bool trajectory_anchor_ready = false;
+                bool const current_sphere_ready = playable_sphere_ready_observed
+                    && (s2_native_turning
+                        ? (s1_movement_window.startedAt() || nativeTurningAnchor(loading_status, now))
+                        : s1PlayableSphereReady(player, loading_status));
+                bool trajectory_anchor_ready = s2_native_turning && current_sphere_ready;
                 std::optional<Clock::time_point> const origin = first_loop_at
                     ? first_loop_at : loading_status.start_acknowledged_at;
                 std::optional<uint64_t> const sample_offset = benchmarkOffsetFromStart(origin, now);
-                if (current_sphere_ready && !s1_movement_window.startedAt()
-                    && latest_s1_authoritative_state && sample_offset) {
+                if (!s2_native_turning && current_sphere_ready && !s1_movement_window.startedAt()
+                    && latest_benchmark_authoritative_state && sample_offset) {
                     auto anchor = gameBenchmarkS1TrajectoryAnchorSample(
-                        *latest_s1_authoritative_state,
+                        *latest_benchmark_authoritative_state,
                         playableSphereSample(
                             loading_status, player.activeCoverageEpoch(), player.activeCoverageCenter(),
                             loading_status.actual_chunk_radius_blocks
@@ -3178,14 +4012,71 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 );
             }
             pending_movement_route.reset();
-            if (options.workload == GameBenchmarkWorkload::Speed200Movement && first_loop_at
+            if (options.workload == GameBenchmarkWorkload::Speed200TurningMovement) {
+                if (!first_loop_at) {
+                    return shared::Direction{};
+                }
+                if (!movement_route_started_at) {
+                    movement_route_started_at = Clock::now();
+                }
+                auto const elapsed = Clock::now() - *movement_route_started_at;
+                pending_movement_route = gameBenchmarkSpeed200TurningRouteAt(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed)
+                );
+                uint64_t const route_tick = static_cast<uint64_t>(elapsed / shared::TICK);
+                return gameBenchmarkDirection(options.workload, route_tick);
+            }
+            if ((options.workload == GameBenchmarkWorkload::Speed200Movement
+                || options.workload == GameBenchmarkWorkload::Speed200TurningMovement) && first_loop_at
                 && Clock::now() >= *first_loop_at + options.cold_duration
                     + options.warm_duration + options.uncapped_duration) {
                 return shared::Direction{};
             }
-            return gameBenchmarkDirection(options.workload, ordinal);
+            auto direction = gameBenchmarkDirection(options.workload, ordinal);
+            if (streaming_trace) {
+                if (player.worldLoadingStatus().state != client::WorldLoadingState::Playing) {
+                    return shared::Direction{};
+                }
+                if (!movement_route_started_at) {
+                    movement_route_started_at = Clock::now();
+                    std::cout << "stream_trace event=movement_start ns="
+                        << std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            movement_route_started_at->time_since_epoch()).count()
+                        << " speedup=8 expected_movement_seconds=20 expected_neutral_seconds=10\n";
+                    if (cardinal_x8) {
+                        std::cout << "stream_trace event=cardinal_x8 axis=positive_x\n";
+                    }
+                    if (cardinal_x8 && previous_authoritative_player) {
+                        std::cout << "stream_trace event=cardinal_authority_anchor x="
+                            << previous_authoritative_player->x
+                            << " y=" << previous_authoritative_player->y
+                            << " x_subcell=" << previous_authoritative_player->x_subcell
+                            << " y_subcell=" << previous_authoritative_player->y_subcell << '\n';
+                    }
+                }
+                if (Clock::now() - *movement_route_started_at >= std::chrono::seconds{20}) {
+                    if (!streaming_trace_neutral_started_at) {
+                        streaming_trace_neutral_started_at = Clock::now();
+                        auto const neutral_start_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            streaming_trace_neutral_started_at->time_since_epoch()).count();
+                        std::cout << "stream_trace event=neutral_start ns=" << neutral_start_ns << '\n';
+                    }
+                    return shared::Direction{};
+                }
+                if (cardinal_x8) {
+                    direction.x = 127U;
+                    direction.y = 0U;
+                    direction.z = 0U;
+                }
+                direction.accelerated = true;
+                direction.speedup = 8U;
+            }
+            return direction;
         },
         .start_input_override = [&](uint64_t const ordinal) {
+            if (frame_filmstrip) {
+                return false;
+            }
             GameBenchmarkStartActionEvidence& evidence = *benchmark.controlled_start;
             if (evidence.synthetic_input_override_invoked) {
                 return false;
@@ -3202,6 +4093,10 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             return true;
         },
         .on_loop = [&](client::GameClientLoopSample const& sample) {
+            if (streaming_trace && !first_loop_at
+                && sample.completed_at - started_at >= std::chrono::seconds{120}) {
+                throw std::runtime_error("streaming trace diagnostic startup exceeded 120 seconds");
+            }
             uint64_t const current_loop_ordinal = ++loop_ordinal;
             client::RendererRuntimeInfo const& runtime = loop_scratch->runtime.replaceFrom(
                 [&] { return player.benchmarkRuntimeInfo(); }
@@ -3218,7 +4113,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     retired.submission.swapchain_generation, retired.frame_slot, *observed_offset
                 );
                 if (completion) {
-                    benchmark.raw_fence_confirmed_frames.push_back(std::move(completion).value());
+                    recordFenceCompletion(std::move(*completion));
                 }
             }
             frame_completion_tracker.retireOtherGenerations(runtime.current_swapchain_generation);
@@ -3227,6 +4122,47 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             client::WorldLoadingStatus const& observed_loading_status = loop_scratch->loading_status.replaceFrom(
                 [&] { return player.worldLoadingStatus(); }
             );
+            if (frame_capture_requested) {
+                if (frame_filmstrip) {
+                    if (observed_loading_status.ready_prompt_frame_rendered_at && !film_ready_at) {
+                        film_ready_at = sample.completed_at;
+                    }
+                    auto const state = player.diagnosticFrameCaptureState();
+                    if ((state == client::PlayerClientDiagnosticFrameCaptureState::NotRequested
+                            || state == client::PlayerClientDiagnosticFrameCaptureState::Succeeded)
+                        && (!film_last_capture_at
+                            || sample.completed_at - *film_last_capture_at >= std::chrono::milliseconds{500})) {
+                        auto const image_path = options.frame_capture_image.parent_path()
+                            / (options.frame_capture_image.stem().string() + "-" + std::to_string(film_frame_index++) + ".ppm");
+                        std::cout << "[generation-film] frame=" << (film_frame_index - 1U)
+                            << " elapsed_ms="
+                            << std::chrono::duration_cast<std::chrono::milliseconds>(sample.completed_at - started_at).count()
+                            << " loading_state=" << worldLoadingStateName(observed_loading_status.state)
+                            << " ready_prompt=" << observed_loading_status.ready_prompt_frame_rendered_at.has_value()
+                            << " image=" << image_path.string() << '\n' << std::flush;
+                        film_last_capture_at = sample.completed_at;
+                        static_cast<void>(player.requestDiagnosticFrameCapture(image_path, true));
+                    }
+                    // Hold the ordinary ready screen for weather inspection; no performance claim.
+                    return;
+                }
+                if (player.diagnosticFrameCaptureState() == client::PlayerClientDiagnosticFrameCaptureState::NotRequested) {
+                    bool const phase_matches = options.frame_capture_phase == "playing"
+                        ? observed_loading_status.state == client::WorldLoadingState::Playing
+                        : observed_loading_status.state == client::WorldLoadingState::PreparingAtlas
+                            || observed_loading_status.state == client::WorldLoadingState::PreparingSpawn;
+                    if (phase_matches && !capture_phase_started_at) {
+                        capture_phase_started_at = sample.completed_at;
+                    }
+                    if (phase_matches && sample.completed_at - *capture_phase_started_at >= options.frame_capture_delay) {
+                        benchmark.diagnostic_frame_requested_loading_state = worldLoadingStateName(observed_loading_status.state);
+                        static_cast<void>(player.requestDiagnosticFrameCapture(options.frame_capture_image));
+                    }
+                }
+                observeControlledStart(observed_loading_status);
+                // Diagnostic readback never enters the cold/warm/uncapped performance windows.
+                return;
+            }
             observeControlledStart(observed_loading_status);
             observeS1LoadingStatus(observed_loading_status, sample.completed_at);
             if (!first_loop_at
@@ -3276,7 +4212,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     full_radius_sequence.start(*first_loop_at);
                     last_full_progress_at = *first_loop_at;
                     std::cout << "[benchmark-game] full-radius initial warmup started; timeout_ms="
-                        << benchmark.full_radius_terrain->warmup_timeout_ms << '\n' << std::flush;
+                        << std::chrono::duration_cast<std::chrono::milliseconds>(
+                            full_radius_sequence.warmupTimeout()
+                        ).count() << '\n' << std::flush;
                 }
                 measurement_end_ns.store(
                     std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -3358,7 +4296,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             client::WorldLoadingStatus const& world_loading_status = observed_loading_status;
             client::PlayerClientBenchmarkFullTerrainInfo& full_terrain_info =
                 loop_scratch->full_terrain_info.replaceFrom([&] {
-                    if (full_radius_workload) {
+                    if (benchmark.full_radius_terrain) {
                         return player.benchmarkFullTerrainStreamingInfo();
                     }
                     return client::PlayerClientBenchmarkFullTerrainInfo{};
@@ -3367,7 +4305,28 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 loop_scratch->full_radius_snapshot.replaceFrom([] {
                     return std::optional<GameBenchmarkFullTerrainSnapshot>{};
                 });
-            if (full_radius_workload) {
+            if (s2_native_full_radius) {
+                bool const warmup = full_phase == GameBenchmarkFullRadiusPhase::InitialWarmup
+                    || full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup;
+                auto const barrier = warmup
+                    ? nativeFenceAnchor(world_loading_status, fullRadiusPhaseName(full_phase)) : std::nullopt;
+                full_radius_sequence.observe(sample.completed_at, barrier.has_value(), playableSphereReady(world_loading_status));
+                auto const next_phase = full_radius_sequence.phase();
+                if (next_phase != full_phase) {
+                    std::cout << "[benchmark-game] native full-radius phase=" << fullRadiusPhaseName(next_phase)
+                        << '\n' << std::flush;
+                    if (next_phase == GameBenchmarkFullRadiusPhase::BaselineStationary) {
+                        native_full_radius.initial_frame_sequence_id = barrier;
+                    } else if (next_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup) {
+                        full_radius_movement_window_complete = true;
+                    } else if (next_phase == GameBenchmarkFullRadiusPhase::RecoveredStationary) {
+                        native_full_radius.recovery_frame_sequence_id = barrier;
+                    } else if (next_phase == GameBenchmarkFullRadiusPhase::Complete
+                        || next_phase == GameBenchmarkFullRadiusPhase::Failed) {
+                        full_radius_measurement_end_at = sample.completed_at;
+                    }
+                }
+            } else if (benchmark.full_radius_terrain) {
                 Clock::time_point observation_at = sample.completed_at;
                 Clock::duration elapsed = full_radius_sequence.phaseElapsed(observation_at);
                 uint64_t elapsed_ms = positiveNanoseconds(
@@ -3595,52 +4554,91 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 }
             }
             std::optional<GameBenchmarkFrameSample::TerrainNearSample> terrain_near_sample;
-            if (options.workload == GameBenchmarkWorkload::Speed200Movement
+            std::optional<GameBenchmarkFrameSample::NativeTerrain> native_terrain_sample;
+            bool const native_turning = s1_terrain_workload
+                && options.terrain_model != generation::TerrainModelTag::R6;
+            if (s2_native_full_radius || native_turning || cardinal_x8
+                || (options.workload == GameBenchmarkWorkload::Speed200Movement
+                || options.workload == GameBenchmarkWorkload::Speed200TurningMovement)
                 || (full_radius_workload && (full_phase == GameBenchmarkFullRadiusPhase::Movement
                     || full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup))) {
-                client::PlayerClientBenchmarkTerrainInfo const& terrain_info =
-                    loop_scratch->terrain_info.replaceFrom([&] { return player.benchmarkTerrainStreamingInfo(); });
-                GameBenchmarkTerrainObservation const observation =
-                    gameBenchmarkTerrainObservation(terrain_info);
-                terrain_readiness_tracker.observe(observation, sample.completed_at);
-                terrain_near_sample = gameBenchmarkTerrainFrameSample(
-                    terrain_info,
-                    terrain_info.accepted_near_admissions >= last_accepted_near_admissions
-                        ? terrain_info.accepted_near_admissions - last_accepted_near_admissions
-                        : terrain_info.accepted_near_admissions,
-                    terrain_info.accepted_far_admissions >= last_accepted_far_admissions
-                        ? terrain_info.accepted_far_admissions - last_accepted_far_admissions
-                        : terrain_info.accepted_far_admissions,
-                    terrain_info.far_admissions_while_near_pending >= last_far_admissions_while_near_pending
-                        ? terrain_info.far_admissions_while_near_pending - last_far_admissions_while_near_pending
-                        : terrain_info.far_admissions_while_near_pending
-                );
-                last_accepted_near_admissions = terrain_info.accepted_near_admissions;
-                last_accepted_far_admissions = terrain_info.accepted_far_admissions;
-                last_far_admissions_while_near_pending = terrain_info.far_admissions_while_near_pending;
+                auto const active_session = player.activeTerrainSession();
+                bool const native_terrain_session = active_session
+                    && (active_session->terrain.terrain_version
+                            == generation::terrainVersion(generation::TerrainModelTag::V9)
+                        || active_session->terrain.terrain_version
+                            == generation::terrainVersion(generation::TerrainModelTag::V10)
+                        || active_session->terrain.terrain_version
+                            == generation::terrainVersion(generation::TerrainModelTag::V21));
+                bool const legacy_r6_session = active_session && active_session->terrain.terrain_version
+                    == generation::terrainVersion(generation::TerrainModelTag::R6);
+                bool const legacy_backend_selected = legacy_r6_session
+                    || (!active_session && options.terrain_model == generation::TerrainModelTag::R6);
+                if (native_terrain_session) {
+                    native_terrain_sample = gameBenchmarkNativeTerrainSample(player, world_loading_status, runtime);
+                } else if (legacy_backend_selected) {
+                    client::PlayerClientBenchmarkTerrainInfo const& terrain_info =
+                        loop_scratch->terrain_info.replaceFrom([&] { return player.benchmarkTerrainStreamingInfo(); });
+                    GameBenchmarkTerrainObservation const observation =
+                        gameBenchmarkTerrainObservation(terrain_info);
+                    terrain_readiness_tracker.observe(observation, sample.completed_at);
+                    terrain_near_sample = gameBenchmarkTerrainFrameSample(
+                        terrain_info,
+                        terrain_info.accepted_near_admissions >= last_accepted_near_admissions
+                            ? terrain_info.accepted_near_admissions - last_accepted_near_admissions
+                            : terrain_info.accepted_near_admissions,
+                        terrain_info.accepted_far_admissions >= last_accepted_far_admissions
+                            ? terrain_info.accepted_far_admissions - last_accepted_far_admissions
+                            : terrain_info.accepted_far_admissions,
+                        terrain_info.far_admissions_while_near_pending >= last_far_admissions_while_near_pending
+                            ? terrain_info.far_admissions_while_near_pending - last_far_admissions_while_near_pending
+                            : terrain_info.far_admissions_while_near_pending
+                    );
+                    last_accepted_near_admissions = terrain_info.accepted_near_admissions;
+                    last_accepted_far_admissions = terrain_info.accepted_far_admissions;
+                    last_far_admissions_while_near_pending = terrain_info.far_admissions_while_near_pending;
+                }
             }
             bool record_raw_frame = !s1_terrain_workload
                 || s1FramePhaseAt(s1_movement_window, sample.completed_at) != "s1-post-window-tail";
-            if (full_radius_workload
+            bool const native_awaiting_first_send = s2_native_full_radius
+                && full_phase == GameBenchmarkFullRadiusPhase::Movement && !full_radius_movement_started_at;
+            if (native_awaiting_first_send || (full_radius_workload
                 && (full_phase == GameBenchmarkFullRadiusPhase::InitialWarmup
                     || (full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup
-                        && options.qualification_proof.empty()))) {
+                        && options.qualification_proof.empty())))) {
                 record_raw_frame = !last_full_warmup_raw_at
                     || sample.completed_at - *last_full_warmup_raw_at >= std::chrono::seconds{ 1 };
                 if (record_raw_frame) {
                     last_full_warmup_raw_at = sample.completed_at;
                 }
             }
+            GameBenchmarkFullRadiusPhase frame_full_phase = full_phase;
+            if (s2_native_full_radius && full_phase == GameBenchmarkFullRadiusPhase::Movement) {
+                if (!full_radius_movement_started_at) {
+                    frame_full_phase = GameBenchmarkFullRadiusPhase::BaselineStationary;
+                } else if (sample.completed_at >= *full_radius_movement_started_at + GAME_BENCHMARK_FULL_RADIUS_MOVEMENT) {
+                    frame_full_phase = GameBenchmarkFullRadiusPhase::RecoveryWarmup;
+                }
+            }
             std::string const frame_submission_phase = s1_terrain_workload
                 ? std::string{ s1FramePhaseAt(s1_movement_window, sample.completed_at) }
                 : full_radius_workload
-                    ? std::string{ fullRadiusPhaseName(full_phase) }
+                    ? std::string{ fullRadiusPhaseName(frame_full_phase) }
                     : std::string{};
             std::optional<uint64_t> const frame_submission_sequence_id = recordFrameSubmission(
                 sample,
                 runtime,
                 frame_submission_phase
             );
+            if (s2_native_full_radius && record_raw_frame && frame_submission_sequence_id
+                && (native_awaiting_first_send || frame_full_phase == GameBenchmarkFullRadiusPhase::InitialWarmup
+                    || frame_full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup)) {
+                native_warmup_submission = frame_submission_sequence_id;
+            }
+            if (native_terrain_sample) {
+                native_terrain_sample->submitted_frame_sequence_id = frame_submission_sequence_id.value_or(0U);
+            }
             std::optional<uint32_t> const frame_submission_slot = runtime.diagnostic_presentation_acquire.captured
                 && runtime.diagnostic_presentation_acquire.frame_slot
                     < GameBenchmarkFrameCompletionTracker::FRAME_SLOT_COUNT
@@ -3658,7 +4656,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     : phase == GameBenchmarkPhase::Outside;
             std::optional<GameBenchmarkFrameSample::PlayableSphere> playable_sphere;
             if (full_radius_workload || s1_terrain_workload) {
-                uint32_t const radius_blocks = s1_terrain_workload
+                uint32_t const radius_blocks = (s1_terrain_workload || s2_native_full_radius)
                     ? world_loading_status.actual_chunk_radius_blocks
                     : shared::MAX_SPHERE_RADIUS_BLOCKS;
                 playable_sphere = playableSphereSample(
@@ -3677,7 +4675,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 ? player.benchmarkPresentationInfo()
                 : std::nullopt;
             std::optional<GameBenchmarkFrameSample::QualificationSettings> qualification_settings;
-            if (s1_terrain_workload) {
+            if (s1_terrain_workload && options.terrain_model == generation::TerrainModelTag::R6) {
                 qualification_settings = GameBenchmarkFrameSample::QualificationSettings{
                     .framebuffer_width = runtime.width,
                     .framebuffer_height = runtime.height,
@@ -3737,7 +4735,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     .terrain_phase = s1_terrain_workload
                         ? frame_submission_phase
                         : full_radius_workload
-                            ? std::string{ fullRadiusPhaseName(full_phase) } : std::string{},
+                            ? frame_submission_phase : std::string{},
                     .terrain_center_valid = full_radius_workload && full_terrain_info.center.has_value(),
                     .terrain_center_x = full_radius_workload && full_terrain_info.center
                         ? full_terrain_info.center->x : 0,
@@ -3745,6 +4743,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                         ? full_terrain_info.center->y : 0,
                     .playable_sphere = std::move(playable_sphere),
                     .visual_lod = std::move(visual_lod),
+                    .native_terrain = std::move(native_terrain_sample),
                     .qualification_settings = std::move(qualification_settings),
                     .presented_player = presented_player,
                     .terrain_near = terrain_near_sample,
@@ -3775,6 +4774,16 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     .diagnostic_presentation_recreation_attempted = runtime.presentation_recreation_attempted,
                     .diagnostic_presentation_recreation_deferred = runtime.presentation_recreation_deferred,
                     .diagnostic_cpu_command_record_duration_ns = positiveNanoseconds(runtime.cpu_command_record_duration),
+                    .diagnostic_cpu_presentation_prepare_duration_ns = positiveNanoseconds(
+                        runtime.cpu_presentation_prepare_duration
+                    ),
+                    .diagnostic_cpu_pipeline_bind_duration_ns = positiveNanoseconds(runtime.cpu_pipeline_bind_duration),
+                    .diagnostic_cpu_context_complete_call_duration_ns = positiveNanoseconds(
+                        runtime.cpu_context_complete_call_duration
+                    ),
+                    .diagnostic_cpu_stone_face_growth_duration_ns = positiveNanoseconds(
+                        runtime.cpu_stone_face_growth_duration
+                    ),
                     .diagnostic_cpu_visible_range_collection_duration_ns = positiveNanoseconds(
                         runtime.cpu_visible_range_collection_duration
                     ),
@@ -3859,6 +4868,18 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     .diagnostic_client_render_after_resize_duration_ns = positiveNanoseconds(
                         client_render.after_resize_duration
                     ),
+                    .diagnostic_client_after_resize_data_hud_duration_ns = positiveNanoseconds(
+                        client_render.after_resize_data_hud_duration
+                    ),
+                    .diagnostic_client_after_resize_map_block_duration_ns = positiveNanoseconds(
+                        client_render.after_resize_map_block_duration
+                    ),
+                    .diagnostic_client_after_resize_terrain_lod_duration_ns = positiveNanoseconds(
+                        client_render.after_resize_terrain_lod_duration
+                    ),
+                    .diagnostic_client_after_resize_post_lod_duration_ns = positiveNanoseconds(
+                        client_render.after_resize_post_lod_duration
+                    ),
                     .diagnostic_renderer_call_duration_ns = positiveNanoseconds(client_render.renderer_call_duration),
                     .diagnostic_client_render_after_renderer_duration_ns = positiveNanoseconds(
                         client_render.after_renderer_duration
@@ -3884,6 +4905,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                         runtime.diagnostic_terrain_occlusion_removed_range_count,
                     .diagnostic_terrain_occlusion_removed_command_count =
                         runtime.diagnostic_terrain_occlusion_removed_command_count,
+                    .diagnostic_terrain_lod_update = gameBenchmarkTerrainLodUpdateSample(
+                        client_render.terrain_lod_update
+                    ),
                 };
             });
             if (record_raw_frame) {
@@ -3913,6 +4937,62 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             Clock::time_point const sent_at,
             Clock::time_point const scheduled_at
         ) {
+            if (s2_native_full_radius) {
+                auto const offset = benchmarkOffsetFromStart(first_loop_at, sent_at);
+                auto const scheduled_offset = signedBenchmarkOffsetFromStart(first_loop_at, scheduled_at);
+                bool const x200 = sent_input.direction.accelerated && sent_input.direction.speedup == 200U
+                    && sent_input.direction.x == 127U && sent_input.direction.y == 0U && sent_input.direction.z == 0U;
+                if (!offset || !scheduled_offset || !x200
+                    || full_radius_sequence.phase() != GameBenchmarkFullRadiusPhase::Movement) {
+                    return;
+                }
+                if (!full_radius_movement_started_at) {
+                    auto const status = player.worldLoadingStatus();
+                    native_full_radius.movement_start_frame_sequence_id = nativeFenceAnchor(
+                        status, fullRadiusPhaseName(GameBenchmarkFullRadiusPhase::BaselineStationary)
+                    );
+                    native_full_radius.movement_anchor = latest_benchmark_authoritative_state;
+                    if (native_full_radius.movement_anchor) {
+                        native_full_radius.movement_anchor->playable_sphere = playableSphereSample(
+                            status, player.activeCoverageEpoch(), player.activeCoverageCenter(),
+                            shared::ACTUAL_TERRAIN_RADIUS_BLOCKS
+                        );
+                    }
+                    native_full_radius.movement_start_offset_ns = offset;
+                    native_full_radius.movement_end_offset_ns = *offset + positiveNanoseconds(
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(GAME_BENCHMARK_FULL_RADIUS_MOVEMENT)
+                    );
+                    full_radius_movement_started_at = sent_at;
+                    full_radius_sequence.beginMovementWindow(sent_at);
+                }
+                if (*offset < *native_full_radius.movement_end_offset_ns
+                    && movement_input_sequences.insert(sent_input.sequence).second) {
+                    benchmark.raw_gameplay_inputs.push_back(GameBenchmarkRawInputEvidence{
+                        .input_ordinal = static_cast<uint64_t>(benchmark.raw_gameplay_inputs.size()) + 1U,
+                        .sequence = sent_input.sequence,
+                        .sent_offset_ns = *offset,
+                        .scheduled_offset_ns = *scheduled_offset,
+                        .direction = sent_input.direction,
+                    });
+                }
+                return;
+            }
+            if (options.workload == GameBenchmarkWorkload::Speed200TurningMovement) {
+                auto const offset = benchmarkOffsetFromStart(first_loop_at, sent_at);
+                auto const scheduled_offset = signedBenchmarkOffsetFromStart(first_loop_at, scheduled_at);
+                if (offset && scheduled_offset && pending_movement_route) {
+                    benchmark.raw_gameplay_inputs.push_back(GameBenchmarkRawInputEvidence{
+                        .input_ordinal = static_cast<uint64_t>(benchmark.raw_gameplay_inputs.size()) + 1U,
+                        .sequence = sent_input.sequence,
+                        .sent_offset_ns = *offset,
+                        .scheduled_offset_ns = *scheduled_offset,
+                        .movement_intent = *pending_movement_route,
+                        .direction = sent_input.direction,
+                    });
+                }
+                pending_movement_route.reset();
+                return;
+            }
             if (!s1_terrain_workload) {
                 pending_movement_route.reset();
                 return;
@@ -3947,16 +5027,31 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 movement_route_started_at = sent_at;
             }
             observeS1LoadingStatus(status, sent_at);
-            bool const current_sphere_ready = s1PlayableSphereReady(player, status)
-                && status.playable_sphere_first_ready_at
-                && *status.playable_sphere_first_ready_at <= sent_at;
+            auto const native_anchor = s2_native_turning && !s1_movement_window.startedAt()
+                ? nativeTurningAnchor(status, sent_at) : std::nullopt;
+            bool const current_sphere_ready = status.playable_sphere_first_ready_at
+                && *status.playable_sphere_first_ready_at <= sent_at
+                && (s2_native_turning
+                    ? (s1_movement_window.startedAt() || native_anchor)
+                    : s1PlayableSphereReady(player, status));
             if (movement_input && !current_sphere_ready) {
                 benchmark.s1_terrain_performance->movement_input_during_fill = true;
             }
             bool const measurement_started = x30_route_input
                 && s1_movement_window.observeSuccessfulInput(sent_at, current_sphere_ready);
             if (measurement_started) {
+                native_turning_start_frame = native_anchor;
                 GameBenchmarkS1TerrainPerformanceEvidence& evidence = *benchmark.s1_terrain_performance;
+                if (native_anchor && latest_benchmark_authoritative_state) {
+                    auto anchor = *latest_benchmark_authoritative_state;
+                    anchor.playable_sphere = playableSphereSample(
+                        status, player.activeCoverageEpoch(), player.activeCoverageCenter(),
+                        shared::ACTUAL_TERRAIN_RADIUS_BLOCKS
+                    );
+                    evidence.movement_trajectory_anchor = std::move(anchor);
+                    evidence.movement_trajectory_anchor_sphere_sample_offset_ns =
+                        benchmarkOffsetFromStart(benchmark_origin, sent_at);
+                }
                 evidence.movement_started_after_current_sphere_ready = true;
                 evidence.movement_start_offset_ns = offsetFromRequestAccepted(sent_at).value_or(0U);
                 evidence.movement_end_offset_ns = evidence.movement_start_offset_ns
@@ -3995,6 +5090,20 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             shared::Player const& authoritative_player,
             Clock::time_point const observed_at
         ) {
+            if (((options.diagnostic_spawn_z || options.diagnostic_capture_site)
+                    && diagnostic_pose_samples++ < 256U)
+                || (cardinal_x8 && movement_route_started_at)) {
+                std::cout << "[benchmark-diagnostic-authority] route_offset_ns="
+                    << benchmarkOffsetFromStart(movement_route_started_at, observed_at).value_or(0U)
+                    << " ack=" << server_position.acknowledged_input_sequence
+                    << " x=" << authoritative_player.x << " y=" << authoritative_player.y
+                    << " z=" << authoritative_player.z
+                    << " x_subcell=" << authoritative_player.x_subcell
+                    << " y_subcell=" << authoritative_player.y_subcell
+                    << " z_subcell=" << authoritative_player.z_subcell
+                    << " movement_capabilities=" << static_cast<unsigned>(authoritative_player.movement_capabilities.bits)
+                    << '\n';
+            }
             if (full_radius_workload
                 && full_radius_measurement_end_at && observed_at >= *full_radius_measurement_end_at) {
                 return;
@@ -4012,17 +5121,31 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     observed_at,
                     s1_terrain_workload && !first_loop_at
                         ? std::optional<Clock::time_point>{ observed_at } : first_loop_at,
-                    s1_terrain_workload
+                    (s1_terrain_workload || s2_native_full_radius)
                         ? shared::ACTUAL_TERRAIN_RADIUS_BLOCKS
                         : shared::MAX_SPHERE_RADIUS_BLOCKS
                 );
+            if (s2_native_full_radius) {
+                if (update) {
+                    latest_benchmark_authoritative_state = *update;
+                    if (full_radius_movement_started_at
+                        && observed_at < *full_radius_movement_started_at + GAME_BENCHMARK_FULL_RADIUS_MOVEMENT
+                            + shared::TICK
+                        && movement_input_sequences.contains(server_position.acknowledged_input_sequence)) {
+                        native_full_radius.movement_updates.push_back(std::move(*update));
+                    }
+                }
+                return;
+            }
             if (s1_terrain_workload && update) {
-                latest_s1_authoritative_state = *update;
-                update->visual_lod = gameBenchmarkVisualLodSample(
-                    player,
-                    player.worldLoadingStatus(),
-                    player.benchmarkRuntimeInfo()
-                );
+                latest_benchmark_authoritative_state = *update;
+                if (!s2_native_turning) {
+                    update->visual_lod = gameBenchmarkVisualLodSample(
+                        player,
+                        player.worldLoadingStatus(),
+                        player.benchmarkRuntimeInfo()
+                    );
+                }
             }
             if (!update) {
                 if (s1_terrain_workload) {
@@ -4103,11 +5226,11 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         ? std::optional<Clock::time_point>{ full_radius_measurement_end_at.value_or(Clock::now()) }
         : std::nullopt;
     GameBenchmarkFullRadiusPhase const stopped_phase = full_radius_sequence.phase();
-    bool const missing_initial_snapshot = full_radius_workload
+    bool const missing_initial_snapshot = benchmark.full_radius_terrain
         && !benchmark.full_radius_terrain->initial_barrier.scan_performed
         && (stopped_phase == GameBenchmarkFullRadiusPhase::InitialWarmup
             || stopped_phase == GameBenchmarkFullRadiusPhase::Failed);
-    bool const missing_recovery_snapshot = full_radius_workload
+    bool const missing_recovery_snapshot = benchmark.full_radius_terrain
         && !benchmark.full_radius_terrain->recovery_barrier.scan_performed
         && (stopped_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup
             || (stopped_phase == GameBenchmarkFullRadiusPhase::Failed
@@ -4134,7 +5257,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     }
     server_run.stopAndJoin();
 
-    if (s1_terrain_workload) {
+    if (s1_terrain_workload || s2_native_full_radius) {
         server::WorldPreparationSnapshot const final_preparation = world_preparation->latest();
         if (final_preparation.terrain_plan) {
             terrain_backend_receipt = final_preparation.terrain_plan->receipt;
@@ -4195,8 +5318,26 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     benchmark.server_tick_timings = summarizeFrameTimings(server_tick_durations);
     benchmark.permission_publish_timings = summarizeFrameTimings(raw_permission_publish_durations);
     benchmark.permission_publishes = permission_publish_count;
-    if (options.workload == GameBenchmarkWorkload::Speed200Movement || full_radius_workload) {
-        benchmark.terrain_readiness = terrain_readiness_tracker.evidence();
+    if ((options.workload == GameBenchmarkWorkload::Speed200Movement
+                || options.workload == GameBenchmarkWorkload::Speed200TurningMovement) || full_radius_workload) {
+        GameBenchmarkTerrainReadinessEvidence const terrain_readiness = terrain_readiness_tracker.evidence();
+        if (terrain_readiness.current_near_sample_count != 0U) {
+            benchmark.terrain_readiness = terrain_readiness;
+        }
+    }
+    benchmark.native_terrain_diagnostics = gameBenchmarkNativeTerrainDiagnostics(
+        benchmark.raw_frames, benchmark.raw_fence_confirmed_frames
+    );
+    if (benchmark.native_terrain_diagnostics) {
+        benchmark.native_terrain_diagnostics->turning_start_frame_sequence_id = native_turning_start_frame;
+    }
+    if (s2_native_full_radius) {
+        native_full_radius.terminal_phase = fullRadiusPhaseName(stopped_phase);
+        native_full_radius.movement_window_complete = full_radius_movement_window_complete;
+        if (!benchmark.native_terrain_diagnostics) {
+            benchmark.native_terrain_diagnostics.emplace().backend = "native-v10";
+        }
+        benchmark.native_terrain_diagnostics->full_radius_recovery = std::move(native_full_radius);
     }
     if (full_radius_workload && benchmark.full_radius_terrain) {
         GameBenchmarkFullRadiusEvidence& full_evidence = *benchmark.full_radius_terrain;
@@ -4304,8 +5445,16 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         benchmark.raw_permission_publish_durations_ns.push_back(positiveNanoseconds(duration));
     }
     benchmark.raw_server_stream_samples = std::move(raw_server_stream_samples);
+    auto const turning_window = s1FrameBudgetWindow(
+        first_loop_at, s1_movement_window.startedAt(), s1_movement_window_drained
+    );
+    if (native_turning_start_frame && benchmark.native_terrain_diagnostics) {
+        benchmark.native_terrain_diagnostics->turning_coverage = gameBenchmarkS2NativeTurningCoverage(
+            benchmark.raw_frames, turning_window, benchmark.session_join_epoch
+        );
+    }
     if (std::optional<uint64_t> const target_frame_duration = platformFrameDurationTarget(
-        !options.qualification_proof.empty()
+        s2_native_turning || s2_native_full_radius || !options.qualification_proof.empty()
     )) {
         GameBenchmarkFrameBudgetWindow const window = full_radius_workload
             ? fullRadiusFrameBudgetWindow(
@@ -4313,14 +5462,11 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 benchmark.raw_fence_confirmed_frames,
                 first_loop_at,
                 full_radius_movement_started_at,
-                full_radius_movement_window_complete
+                full_radius_movement_window_complete,
+                s2_native_full_radius
             )
             : s1_terrain_workload
-                ? s1FrameBudgetWindow(
-                    first_loop_at,
-                    s1_movement_window.startedAt(),
-                    s1_movement_window_drained
-                )
+                ? turning_window
                 : ordinaryFrameBudgetWindow(
                 benchmark.raw_frames,
                 benchmark.raw_fence_confirmed_frames,
@@ -4332,7 +5478,19 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             benchmark.raw_frames, benchmark.raw_fence_confirmed_frames, *target_frame_duration, window
         );
     }
-    if (s1_terrain_workload) {
+    if (s2_native_turning) {
+        if (native_turning_start_frame && benchmark.native_terrain_diagnostics) {
+            auto& authority = *benchmark.s1_terrain_performance;
+            benchmark.native_terrain_diagnostics->turning_authority = GameBenchmarkNativeTurningAuthority{
+                .trajectory_anchor = std::move(authority.movement_trajectory_anchor),
+                .anchor_coverage_offset_ns = authority.movement_trajectory_anchor_sphere_sample_offset_ns,
+                .boundary_capture_complete = authority.movement_boundary_authoritative_updates_complete,
+                .boundary_updates = std::move(authority.movement_boundary_authoritative_updates),
+                .movement_updates = std::move(authority.movement_authoritative_sphere_updates),
+            };
+        }
+        benchmark.s1_terrain_performance.reset();
+    } else if (s1_terrain_workload) {
         static_cast<void>(s1TerrainPerformanceComplete(benchmark));
     }
     const bool full_radius_workload_complete = !full_radius_workload
@@ -4372,10 +5530,12 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 && benchmark.s1_terrain_performance->movement_playable_sphere_complete
                 && benchmark.s1_terrain_performance->playable_sphere_first_ready_offset_ns
                 && !benchmark.s1_terrain_performance->playable_deadline_missed
-            : options.workload != GameBenchmarkWorkload::Speed200Movement
+            : (options.workload != GameBenchmarkWorkload::Speed200Movement
+                && options.workload != GameBenchmarkWorkload::Speed200TurningMovement)
                 || (benchmark.terrain_readiness && benchmark.terrain_readiness->complete);
 #if defined(_WIN32)
-    bool const frame_budget_required = options.qualification_proof != "terrain-coverage";
+    bool const frame_budget_required = !s2_native_turning && !s2_native_full_radius
+        && options.qualification_proof != "terrain-coverage";
 #else
     bool const frame_budget_required = options.qualification_proof == "performance";
 #endif
@@ -4417,13 +5577,40 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .replay_id = {},
         .elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started_at),
         .deadline = std::chrono::duration_cast<std::chrono::milliseconds>(effective_deadline),
-        .passed = workload_complete && readiness_complete && frame_budget_complete
+        .passed = !s2_native_full_radius && workload_complete && readiness_complete && frame_budget_complete
             && presentation_timing_complete,
         .game_benchmark = std::move(benchmark),
     }};
     RuntimeEvidence& result = *result_storage;
-    if (near_terrain_incomplete) {
+    if (frame_capture_requested) {
+        auto const state = player.diagnosticFrameCaptureState();
+        auto& capture = *result.game_benchmark;
+        bool const succeeded = state == client::PlayerClientDiagnosticFrameCaptureState::Succeeded;
+        capture.diagnostic_frame_capture_state = succeeded ? "succeeded"
+            : state == client::PlayerClientDiagnosticFrameCaptureState::Failed ? "failed" : "incomplete";
+        capture.diagnostic_frame_capture_error = std::string{player.diagnosticFrameCaptureError()};
+        result.mode = "benchmark-game-frame-capture";
+        result.passed = succeeded;
+        if (!succeeded) {
+            result.failure = capture.diagnostic_frame_capture_error.empty()
+                ? "ordinary frame capture did not complete within the benchmark deadline"
+                : capture.diagnostic_frame_capture_error;
+        }
+        if (capture.frame_budget) {
+            capture.frame_budget->required_for_benchmark_pass = false;
+        }
+        return std::move(result);
+    }
+    if (s2_native_full_radius) {
+        result.failure = stopped_phase == GameBenchmarkFullRadiusPhase::Complete
+            ? "native V10-fine x200 recovery diagnostics do not constitute gameplay qualification"
+            : "native V10-fine x200 recovery did not complete its current-terrain phases";
+    } else if (near_terrain_incomplete) {
         result.failure = "full-radius travel left missing meshes in the current near terrain window";
+    } else if (s2_native_turning) {
+        result.failure = native_turning_start_frame
+            ? "native V10-fine turning diagnostics do not constitute gameplay qualification"
+            : "native V10-fine x30 movement window did not start with a current fence-confirmed visual disk";
     } else if (s1_terrain_workload && !s1_movement_window.startedAt()) {
         result.failure = "S1 x30 movement window did not start before the playable-sphere deadline";
     } else if (!workload_complete) {
@@ -4433,7 +5620,13 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     } else if (!readiness_complete) {
         result.failure = s1_terrain_workload
             ? "S1 current 640-block horizontal full-volume terrain did not satisfy its deadline or movement coverage contract"
-            : "speed-200 current-near terrain readiness did not satisfy its evidence contract";
+            : options.terrain_model == generation::TerrainModelTag::V9
+                ? "Native V9 scene telemetry is diagnostic-only; the current-near acceptance contract is R6-specific"
+                : options.terrain_model == generation::TerrainModelTag::V10
+                    ? "Native V10 scene telemetry is diagnostic-only; the current-near acceptance contract is R6-specific"
+                : options.terrain_model == generation::TerrainModelTag::V21
+                    ? "Native V21 scene telemetry is diagnostic-only; the current-near acceptance contract is R6-specific"
+                : "speed-200 current-near terrain readiness did not satisfy its evidence contract";
     } else if (!frame_budget_complete) {
         result.failure = "game benchmark exceeded the 99% fresh-frame interval budget for the fixed movement window";
     } else if (!presentation_timing_complete) {

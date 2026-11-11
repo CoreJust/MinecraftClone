@@ -1,10 +1,13 @@
 #include <client/ClientAudio.hpp>
 #include <client/GameClient.hpp>
+#include <client/GenerationMapPresentation.hpp>
 #include <client/WorldLoading.hpp>
 #include <server/GameServer.hpp>
+#include <server/WorldPreparation.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/TerrainLod.hpp>
 #include <shared/world/TerrainWorld.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldCoverage.hpp>
@@ -88,6 +91,14 @@ public:
         return m_receipts;
     }
 
+    [[nodiscard]] bool waitForResyncs(shared::ChunkCoordinate const key, uint32_t const count)
+    {
+        std::unique_lock lock{m_mutex};
+        return m_changed.wait_for(lock, std::chrono::seconds{2}, [this, key, count] {
+            return std::ranges::count(m_resyncs, key) >= count;
+        });
+    }
+
 private:
     void onConnected(core::ServerConnectEvent) override {}
     void onDisconnected(core::ServerDisconnectEvent) override {}
@@ -108,6 +119,8 @@ private:
             m_receipts.emplace_back(*dense);
         } else if (auto const* profile = std::get_if<shared::ClientAuthoritativeTerrainAckMessage>(&*decoded)) {
             m_receipts.emplace_back(*profile);
+        } else if (auto const* resync = std::get_if<shared::ClientChunkResyncMessage>(&*decoded)) {
+            m_resyncs.push_back(resync->coordinate);
         } else {
             return;
         }
@@ -117,6 +130,7 @@ private:
     mutable std::mutex m_mutex;
     std::condition_variable m_changed;
     std::vector<Receipt> m_receipts;
+    std::vector<shared::ChunkCoordinate> m_resyncs;
 };
 
 class ServerPump final {
@@ -140,13 +154,57 @@ private:
     std::thread m_thread;
 };
 
+[[nodiscard]]
+std::shared_ptr<shared::TerrainWorld const> makePreparedTerrainWorld(
+    shared::TerrainSessionIdentity const& session
+)
+{
+    auto atlas = std::make_shared<generation::GlobalAtlas>();
+    atlas->configuration = session.configuration;
+    atlas->vertical_scale = 10.0;
+    uint32_t const count = session.configuration.resolution * session.configuration.resolution;
+    atlas->elevation.assign(count, 1.5F);
+    atlas->temperature.assign(count, 12.0F);
+    atlas->precipitation.assign(count, 0.3F);
+    atlas->water_level.assign(count, 0.0F);
+    atlas->ocean_mask.assign(count, 0U);
+    atlas->lake_mask.assign(count, 0U);
+    atlas->river_mask.assign(count, 0U);
+    return std::make_shared<shared::TerrainWorld const>(atlas, session.terrain.revision);
+}
+
 class CoverageClient final : public client::GameClient {
 public:
     using Clock = std::chrono::steady_clock;
+    using GameClient::applyWorldPreparation;
+    using GameClient::applyEditSnapshot;
+    using GameClient::applyBlockDelta;
+    using GameClient::applyEditManifest;
+    using GameClient::applyMaterializedChunkBatch;
+    using GameClient::applyBlockActionResult;
+    using GameClient::resetConnectionState;
+    using GameClient::retryEditResync;
 
-    CoverageClient()
-        : GameClient{ shared::WorldMode::Flat, shared::World::canonicalConfiguration(), false }
+    explicit CoverageClient(
+        client::PreparedTerrainWorldProvider prepared_world_provider = {},
+        shared::WorldMode mode = shared::WorldMode::Flat)
+        : GameClient{
+            mode,
+            shared::World::canonicalConfiguration(),
+            false,
+            {},
+            std::move(prepared_world_provider),
+        }
     { }
+
+    [[nodiscard]] bool initializePreparation(Clock::time_point const accepted_at)
+    {
+        if (!beginLoadingRequest(accepted_at)) {
+            return false;
+        }
+        m_accepted = true;
+        return true;
+    }
 
     [[nodiscard]] bool initialize(shared::PlayerPosition const spawn, Clock::time_point const accepted_at)
     {
@@ -239,6 +297,10 @@ public:
             .tiles = {},
         };
         for (auto const coordinate : coordinates) {
+            if (!wrong_session) {
+                static_cast<void>(applyEditManifest({.session = m_session, .column = coordinate,
+                    .watermark = token, .chunks = {}}, received_at));
+            }
             shared::AuthoritativeTerrainTile tile{
                 .coordinate = coordinate, .identity = m_session.terrain,
                 .block_sea_level = 64U, .max_height = 1'023U, .revision = 1U,
@@ -478,6 +540,150 @@ uint16_t unusedPort()
 
 } // namespace
 
+TEST(GameClientLifecycleTest, LocalPreparedWorldProviderSuppliesTheExactServerWorldToClientLod)
+{
+    std::atomic<uint32_t> server_atlas_builds{ 0U };
+    std::atomic<uint32_t> provider_calls{ 0U };
+    std::shared_ptr<shared::TerrainWorld const> prepared_world;
+    CoverageClient client{ [&](shared::TerrainSessionIdentity const& session) {
+        ++provider_calls;
+        if (!prepared_world) {
+            ++server_atlas_builds;
+            prepared_world = makePreparedTerrainWorld(session);
+        }
+        return client::PreparedTerrainWorldStatus{
+            .state = client::PreparedTerrainWorldState::Ready,
+            .world = prepared_world,
+        };
+    } };
+    auto const request_time = std::chrono::steady_clock::now();
+
+    ASSERT_TRUE(client.initialize({ .x = 32, .y = 32, .z = 32 }, request_time));
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
+    while (!client.terrainLodWorld() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{ 1 });
+    }
+
+    std::shared_ptr<shared::TerrainWorld const> const client_world = client.terrainLodWorld();
+    ASSERT_NE(client_world, nullptr);
+    ASSERT_NE(client.terrainLodRoot(), nullptr);
+    EXPECT_EQ(server_atlas_builds.load(), 1U);
+    EXPECT_EQ(provider_calls.load(), 1U);
+    EXPECT_EQ(client_world, prepared_world);
+    EXPECT_EQ(client_world->identity(), prepared_world->identity());
+    EXPECT_EQ(client_world->sampleSurfaceHeight(4'096U, 8'192U),
+        prepared_world->sampleSurfaceHeight(4'096U, 8'192U));
+    EXPECT_EQ(client.terrainLodRoot()->terrain_identity, prepared_world->identity());
+}
+
+TEST(GameClientLifecycleTest, LiveV21PreparationReachesLoadingAnimationBeforeReady)
+{
+    using Clock = std::chrono::steady_clock;
+    auto const started = Clock::now();
+    generation::GenerationConfiguration configuration{};
+    configuration.seed = 42U;
+    configuration.model_tag = generation::TerrainModelTag::V21;
+    configuration.resolution = 512U;
+    auto preparation = std::make_shared<server::WorldPreparation>(configuration, 45U, started);
+    auto const preparation_constructed = Clock::now();
+    auto const server_configuration = shared::World::canonicalConfiguration();
+    auto const server_construction_started = Clock::now();
+    server::GameServer server{
+        0U, {}, shared::WorldMode::Flight, server_configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, preparation, server::GameServer::BindMode::Loopback,
+    };
+    auto const constructed = Clock::now();
+    std::atomic_bool stop{false};
+    std::jthread server_thread{[&](std::stop_token cancellation) {
+        std::stop_callback on_stop{cancellation, [&] { stop.store(true); }};
+        server.run(stop);
+    }};
+    // The ordinary local provider avoids starting a second generation job in the client.
+    auto const client_construction_started = Clock::now();
+    CoverageClient game_client{[&](shared::TerrainSessionIdentity const&) {
+        return client::PreparedTerrainWorldStatus{};
+    }, shared::WorldMode::Flight};
+    auto const client_constructed = Clock::now();
+    client::GenerationMapAnimator animator;
+    std::shared_ptr<generation::GenerationSnapshot const> first_snapshot;
+    client::GenerationMapImageHandle first_image;
+    std::optional<Clock::time_point> producer_published;
+    std::optional<Clock::time_point> client_accepted;
+    std::optional<Clock::time_point> first_cpu_frame;
+    bool source_changed = false;
+    bool pixels_changed = false;
+    uint32_t completed = 0U;
+    auto const connected_at = Clock::now();
+    client::GameClientBenchmarkHooks hooks;
+    hooks.deadline = connected_at + std::chrono::seconds{10};
+    hooks.should_stop = [&] { return source_changed && pixels_changed; };
+    hooks.on_loop = [&](client::GameClientLoopSample const&) {
+        auto const published = preparation->latest();
+        if (!producer_published && published.latest_map_snapshot_observed_at) {
+            producer_published = published.latest_map_snapshot_observed_at;
+        }
+        auto const status = game_client.worldLoadingStatus();
+        if (!status.map_snapshot) {
+            return;
+        }
+        auto const accepted_at = Clock::now();
+        if (!client_accepted) {
+            client_accepted = accepted_at;
+        }
+        EXPECT_FALSE(status.atlas_ready);
+        EXPECT_EQ(status.atlas, nullptr);
+        EXPECT_NE(status.state, client::WorldLoadingState::ReadyForStart);
+        EXPECT_EQ(status.generation_stage, generation::GenerationStage::V21Platec);
+        EXPECT_GE(status.generation_completed, completed);
+        completed = status.generation_completed;
+        ASSERT_TRUE(status.map_snapshot->v21.has_value());
+        EXPECT_EQ(status.map_snapshot->resolution, 256U);
+        EXPECT_EQ(published.state, server::WorldPreparationState::Preparing);
+        EXPECT_EQ(preparation->readyWorld(), nullptr);
+        auto const identity = game_client.activeTerrainIdentity();
+        ASSERT_TRUE(identity.has_value());
+        EXPECT_EQ(identity->configuration_identity, generation::configurationIdentity(configuration));
+        auto const frame = animator.updateNative(status.map_snapshot, nullptr, nullptr, {
+            .visible_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(accepted_at - connected_at),
+            .ready = false,
+        });
+        ASSERT_NE(frame.image, nullptr);
+        if (!first_cpu_frame) {
+            first_cpu_frame = Clock::now();
+            first_snapshot = status.map_snapshot;
+            first_image = frame.image;
+        } else {
+            source_changed = source_changed || first_snapshot->v21->source_elevation_m
+                != status.map_snapshot->v21->source_elevation_m;
+            pixels_changed = pixels_changed || first_image->rgba != frame.image->rgba;
+        }
+    };
+    game_client.run(core::Address::localhost(server.port()), '@', &hooks);
+    server_thread.request_stop();
+    server_thread.join();
+    preparation->cancel();
+    auto const elapsed_us = [&](Clock::time_point time) {
+        return std::chrono::duration_cast<std::chrono::microseconds>(time - started).count();
+    };
+    RecordProperty("server_construction_microseconds", elapsed_us(constructed));
+    RecordProperty("preparation_construction_microseconds", elapsed_us(preparation_constructed));
+    RecordProperty("server_construction_started_microseconds", elapsed_us(server_construction_started));
+    RecordProperty("server_constructor_duration_microseconds",
+        std::chrono::duration_cast<std::chrono::microseconds>(constructed - server_construction_started).count());
+    RecordProperty("client_construction_started_microseconds", elapsed_us(client_construction_started));
+    RecordProperty("client_constructor_duration_microseconds",
+        std::chrono::duration_cast<std::chrono::microseconds>(client_constructed - client_construction_started).count());
+    RecordProperty("client_run_started_microseconds", elapsed_us(connected_at));
+    ASSERT_TRUE(producer_published.has_value());
+    ASSERT_TRUE(client_accepted.has_value());
+    ASSERT_TRUE(first_cpu_frame.has_value());
+    RecordProperty("producer_publication_microseconds", elapsed_us(*producer_published));
+    RecordProperty("client_accepted_microseconds", elapsed_us(*client_accepted));
+    RecordProperty("first_cpu_frame_microseconds", elapsed_us(*first_cpu_frame));
+    EXPECT_TRUE(source_changed) << "GameClient must accept evolving native progress before final readiness";
+    EXPECT_TRUE(pixels_changed) << "Accepted progress must drive changing CPU image pixels before readiness";
+}
+
 TEST(GameClientLifecycleTest, StopBeforeConnectionDoesNotSubmitGameplay)
 {
     static constexpr std::chrono::seconds DEADLINE{ 3 };
@@ -514,9 +720,11 @@ TEST(GameClientLifecycleTest, StopDuringPendingConnectionDoesNotSubmitGameplay)
     static constexpr std::chrono::milliseconds STOP_BOUND{ 250 };
     uint16_t const port = unusedPort();
     bool stop_processed = false;
+    bool connection_attempt_observed = false;
     auto const started = std::chrono::steady_clock::now();
     LifecycleClient game_client{ [&](LifecycleClient& client) {
         if (std::chrono::steady_clock::now() - started >= STOP_DELAY) {
+            connection_attempt_observed = client.connectionAttemptStarted();
             stop_processed = true;
             client.requestStop();
         }
@@ -535,6 +743,7 @@ TEST(GameClientLifecycleTest, StopDuringPendingConnectionDoesNotSubmitGameplay)
     game_client.run(core::Address::localhost(port), '@', &hooks);
 
     EXPECT_TRUE(stop_processed);
+    EXPECT_TRUE(connection_attempt_observed);
     EXPECT_FALSE(game_client.isConnected());
     EXPECT_FALSE(game_client.accepted());
     EXPECT_EQ(game_client.inputCalls(), 0U);
@@ -771,6 +980,353 @@ TEST(GameClientLifecycleTest, StopWhileAwaitingJoinDoesNotSubmitGameplay)
     EXPECT_EQ(game_client.inputCalls(), 0U);
 }
 
+TEST(GameClientLifecycleTest, AcceptedActionBurstSurvivesLatestStatusUpdatesAndDuplicates)
+{
+    UnjoinedServer server;
+    ServerPump server_pump{server};
+    CoverageClient game_client;
+    ASSERT_TRUE(game_client.connect(core::Address::localhost(server.port()), std::chrono::seconds{2}));
+    ASSERT_TRUE(game_client.initialize({.x = 32'768, .y = 32'768, .z = 128}, CoverageClient::Clock::now()));
+    shared::ServerBlockActionResultMessage accepted{
+        .session = game_client.session(), .sequence = 1U, .status = shared::BlockActionStatus::Accepted,
+        .server_tick = 10U, .target = {32'768, 32'768, 127}, .cell_version = 1U,
+    };
+    ASSERT_TRUE(game_client.applyBlockActionResult(accepted));
+    auto progress = accepted;
+    progress.sequence = 2U;
+    progress.status = shared::BlockActionStatus::Progress;
+    progress.server_tick = 11U;
+    ASSERT_TRUE(game_client.applyBlockActionResult(progress));
+    ASSERT_TRUE(game_client.blockActionStatus());
+    EXPECT_EQ(game_client.blockActionStatus()->sequence, 2U);
+    auto const completion = game_client.consumeAcceptedBlockActionResult();
+    ASSERT_TRUE(completion);
+    EXPECT_EQ(completion->sequence, 1U);
+    EXPECT_EQ(completion->status, shared::BlockActionStatus::Accepted);
+    EXPECT_EQ(completion->target, accepted.target);
+    EXPECT_EQ(completion->cell_version, 1U);
+    ASSERT_TRUE(game_client.applyBlockActionResult(accepted));
+    EXPECT_FALSE(game_client.consumeAcceptedBlockActionResult());
+    auto stale_session = accepted;
+    ++stale_session.session.server_nonce;
+    stale_session.sequence = 3U;
+    EXPECT_FALSE(game_client.applyBlockActionResult(stale_session));
+    EXPECT_FALSE(game_client.consumeAcceptedBlockActionResult());
+    accepted.sequence = 0U;
+    accepted.server_tick = 12U;
+    ASSERT_TRUE(game_client.applyBlockActionResult(accepted));
+    EXPECT_FALSE(game_client.consumeAcceptedBlockActionResult());
+}
+
+TEST(GameClientLifecycleTest, AcceptedActionQueueHasExplicitBoundedOverflowAndClearsOnSessionReset)
+{
+    UnjoinedServer server;
+    ServerPump server_pump{server};
+    CoverageClient game_client;
+    ASSERT_TRUE(game_client.connect(core::Address::localhost(server.port()), std::chrono::seconds{2}));
+    ASSERT_TRUE(game_client.initialize({.x = 32'768, .y = 32'768, .z = 128}, CoverageClient::Clock::now()));
+    for (uint32_t sequence = 1U; sequence <= 70U; ++sequence) {
+        ASSERT_TRUE(game_client.applyBlockActionResult({
+            .session = game_client.session(), .sequence = sequence,
+            .status = shared::BlockActionStatus::Accepted, .server_tick = sequence,
+        }));
+    }
+    EXPECT_EQ(game_client.droppedAcceptedBlockActionResultCount(), 6U);
+    for (uint32_t sequence = 7U; sequence <= 70U; ++sequence) {
+        auto const result = game_client.consumeAcceptedBlockActionResult();
+        ASSERT_TRUE(result);
+        EXPECT_EQ(result->sequence, sequence);
+    }
+    EXPECT_FALSE(game_client.consumeAcceptedBlockActionResult());
+    ASSERT_TRUE(game_client.applyBlockActionResult({
+        .session = game_client.session(), .sequence = 71U,
+        .status = shared::BlockActionStatus::Accepted, .server_tick = 71U,
+    }));
+    game_client.resetConnectionState();
+    EXPECT_FALSE(game_client.consumeAcceptedBlockActionResult());
+    EXPECT_EQ(game_client.droppedAcceptedBlockActionResultCount(), 0U);
+}
+
+TEST(GameClientLifecycleTest, CurrentEditSnapshotAndDeltaCannotRollBackResidentBlocks)
+{
+    UnjoinedServer server;
+    ServerPump server_pump{server};
+    CoverageClient game_client;
+    ASSERT_TRUE(game_client.connect(core::Address::localhost(server.port()), std::chrono::seconds{2}));
+    shared::PlayerPosition const center{.x = 32'768, .y = 32'768, .z = 128};
+    auto const now = CoverageClient::Clock::now();
+    ASSERT_TRUE(game_client.initialize(center, now));
+    ASSERT_TRUE(game_client.applyCoverage(center, now));
+    shared::ChunkCoordinate const key{2'048, 2'048, 8};
+    shared::Chunk::Blocks blocks{};
+    blocks.fill(shared::Block::Stone);
+    shared::Chunk const stone{key, blocks};
+    shared::ServerEditChunkSnapshotMessage snapshot{
+        .session = game_client.session(), .revision = 1U,
+        .chunk = {.coordinate = key, .content_hash = stone.contentIdentity().content_hash,
+            .data = shared::UniformChunkData{shared::Block::Stone}},
+        .edits = {{{0U, 0U, 0U}, shared::Block::Stone, 1U}},
+    };
+    ASSERT_TRUE(game_client.applyEditSnapshot(snapshot));
+    shared::WorldCoordinate const cell{32'768, 32'768, 128};
+    ASSERT_TRUE(game_client.authoritativeWorld());
+    EXPECT_EQ(game_client.authoritativeWorld()->blockAt(cell), shared::Block::Stone);
+    shared::ServerBlockDeltaMessage delta{
+        .session = game_client.session(), .coordinate = cell,
+        .from_revision = 1U, .to_revision = 2U, .cell_version = 2U,
+        .material = shared::Block::Air,
+    };
+    ASSERT_TRUE(game_client.applyBlockDelta(delta));
+    EXPECT_EQ(game_client.authoritativeWorld()->blockAt(cell), shared::Block::Air);
+    EXPECT_FALSE(game_client.applyEditSnapshot(snapshot));
+    EXPECT_FALSE(game_client.applyBlockDelta(delta));
+    EXPECT_EQ(game_client.authoritativeWorld()->blockAt(cell), shared::Block::Air);
+    delta.from_revision = 3U;
+    delta.to_revision = 4U;
+    delta.cell_version = 4U;
+    EXPECT_FALSE(game_client.applyBlockDelta(delta));
+    delta.from_revision = 2U;
+    delta.to_revision = 3U;
+    delta.cell_version = 3U;
+    delta.material = shared::Block::Stone;
+    ASSERT_TRUE(game_client.applyBlockDelta(delta));
+    EXPECT_EQ(game_client.authoritativeWorld()->blockAt(cell), shared::Block::Air);
+    EXPECT_EQ(game_client.authoritativeWorld()->editChunkRevision(key), 4U);
+    shared::PlayerPosition const distant{.x = 34'816, .y = 32'768, .z = 128};
+    ASSERT_TRUE(game_client.applyCoverage(distant, CoverageClient::Clock::now(), 2U));
+    ASSERT_TRUE(game_client.evictResidentForCoverageTest(key));
+    EXPECT_EQ(game_client.authoritativeWorld()->editChunkRevision(key), 4U);
+    ASSERT_TRUE(game_client.applyCoverage(center, CoverageClient::Clock::now(), 3U));
+    ASSERT_TRUE(game_client.applyMaterializedChunkBatch({
+        .session = game_client.session(), .coverage_epoch = 3U, .delivery_token = 1U,
+        .chunks = {{.coordinate = key, .content_hash = stone.contentIdentity().content_hash,
+            .data = shared::UniformChunkData{shared::Block::Stone}}},
+    }, CoverageClient::Clock::now()));
+    EXPECT_EQ(game_client.authoritativeWorld()->blockAt(cell), shared::Block::Air);
+    EXPECT_EQ(game_client.authoritativeWorld()->cellVersion(cell), 4U);
+}
+
+TEST(GameClientLifecycleTest, CurrentInterestAvailabilityTracksPartialDeliveryAndRetainedChunks)
+{
+    UnjoinedServer server;
+    ServerPump server_pump{server};
+    CoverageClient game_client;
+    EXPECT_FALSE(game_client.currentMaterializedInterestChunkAvailability());
+    ASSERT_TRUE(game_client.connect(core::Address::localhost(server.port()), std::chrono::seconds{2}));
+
+    using Clock = CoverageClient::Clock;
+    shared::PlayerPosition center{.x = 32'768, .y = 32'768, .z = 128};
+    Clock::time_point event_time = Clock::now();
+    ASSERT_TRUE(game_client.initialize(center, event_time));
+
+    auto availability = game_client.currentMaterializedInterestChunkAvailability();
+    ASSERT_TRUE(availability);
+    EXPECT_EQ(availability->resident_count, 0U);
+    EXPECT_EQ(availability->required_count, 0U);
+
+    event_time += std::chrono::milliseconds{1};
+    ASSERT_TRUE(game_client.applyCoverage(center, event_time));
+    std::vector<shared::ChunkCoordinate> const initial_interest = shared::materializedInterestChunkKeys(center);
+    ASSERT_GT(initial_interest.size(), 2U);
+    availability = game_client.currentMaterializedInterestChunkAvailability();
+    ASSERT_TRUE(availability);
+    EXPECT_EQ(availability->resident_count, 0U);
+    EXPECT_EQ(availability->required_count, initial_interest.size());
+
+    std::array<shared::ChunkCoordinate, 2U> const initial_delivery{
+        shared::ChunkCoordinate{2'048, 2'048, 8},
+        shared::ChunkCoordinate{2'049, 2'048, 8},
+    };
+    event_time += std::chrono::milliseconds{1};
+    ASSERT_TRUE(game_client.applyAirBatch(1U, initial_delivery, event_time));
+    availability = game_client.currentMaterializedInterestChunkAvailability();
+    ASSERT_TRUE(availability);
+    EXPECT_EQ(availability->resident_count, initial_delivery.size());
+    EXPECT_EQ(availability->required_count, initial_interest.size());
+
+    auto sort_by_distance_from = [](
+        std::vector<shared::ChunkCoordinate>& coordinates, shared::ChunkCoordinate const origin
+    ) {
+        auto const distance_key = [origin](shared::ChunkCoordinate const coordinate) {
+            auto const magnitude = [](int64_t const value) { return value < 0 ? -value : value; };
+            int64_t const distance = magnitude(static_cast<int64_t>(coordinate.x) - origin.x)
+                + magnitude(static_cast<int64_t>(coordinate.y) - origin.y)
+                + magnitude(static_cast<int64_t>(coordinate.z) - origin.z);
+            return std::tuple{distance, coordinate.z, coordinate.y, coordinate.x};
+        };
+        std::sort(coordinates.begin(), coordinates.end(), [&](auto const left, auto const right) {
+            return distance_key(left) < distance_key(right);
+        });
+    };
+    auto const center_chunk = [](shared::PlayerPosition const position) {
+        int32_t constexpr SIDE = static_cast<int32_t>(shared::Chunk::SIDE_LENGTH);
+        return shared::ChunkCoordinate{position.x / SIDE, position.y / SIDE, position.z / SIDE};
+    };
+    uint64_t delivery_token = 2U;
+    auto deliver = [&](std::span<shared::ChunkCoordinate const> coordinates) {
+        size_t offset = 0U;
+        while (offset < coordinates.size()) {
+            size_t const count = (std::min)(
+                static_cast<size_t>(shared::MATERIALIZED_CHUNK_BATCH_CAPACITY),
+                coordinates.size() - offset
+            );
+            event_time += std::chrono::milliseconds{1};
+            if (!game_client.applyAirBatch(
+                    delivery_token++, coordinates.subspan(offset, count), event_time
+                )) {
+                return false;
+            }
+            offset += count;
+        }
+        return true;
+    };
+
+    std::vector<shared::ChunkCoordinate> ordered_initial_interest = initial_interest;
+    sort_by_distance_from(ordered_initial_interest, center_chunk(center));
+    ASSERT_TRUE(deliver(ordered_initial_interest));
+    ASSERT_TRUE(game_client.authoritativeWorld());
+    EXPECT_EQ(game_client.authoritativeWorld()->residentChunkCount(), initial_interest.size());
+
+    auto advance_interest = [&] {
+        for (uint32_t step = 0U; step < 4U; ++step) {
+            center.x += 64;
+            event_time += std::chrono::milliseconds{1};
+            if (!game_client.applyCoverage(center, event_time)) {
+                return false;
+            }
+        }
+        return true;
+    };
+    ASSERT_TRUE(advance_interest());
+    std::vector<shared::ChunkCoordinate> moved_interest = shared::materializedInterestChunkKeys(center);
+    availability = game_client.currentMaterializedInterestChunkAvailability();
+    ASSERT_TRUE(availability);
+    EXPECT_EQ(availability->resident_count, 0U);
+    EXPECT_EQ(availability->required_count, moved_interest.size());
+    uint64_t const capacity = game_client.authoritativeWorld()->maxResidentChunks();
+    uint64_t const resident_before_moved_delivery = game_client.authoritativeWorld()->residentChunkCount();
+    ASSERT_LT(resident_before_moved_delivery, capacity);
+    std::vector<shared::ChunkCoordinate> unresident_moved_interest;
+    for (shared::ChunkCoordinate const coordinate : moved_interest) {
+        if (!game_client.hasResidentChunk(coordinate)) {
+            unresident_moved_interest.push_back(coordinate);
+        }
+    }
+    sort_by_distance_from(unresident_moved_interest, center_chunk(center));
+    uint64_t const needed_for_full_cache = capacity - resident_before_moved_delivery;
+    ASSERT_GE(unresident_moved_interest.size(), needed_for_full_cache);
+    unresident_moved_interest.resize(static_cast<size_t>(needed_for_full_cache));
+    ASSERT_TRUE(deliver(unresident_moved_interest));
+    EXPECT_EQ(game_client.authoritativeWorld()->residentChunkCount(), capacity);
+
+    ASSERT_TRUE(advance_interest());
+    std::vector<shared::ChunkCoordinate> const next_interest = shared::materializedInterestChunkKeys(center);
+    availability = game_client.currentMaterializedInterestChunkAvailability();
+    ASSERT_TRUE(availability);
+    EXPECT_EQ(availability->resident_count, 0U);
+    EXPECT_EQ(availability->required_count, next_interest.size());
+    EXPECT_EQ(game_client.authoritativeWorld()->residentChunkCount(), capacity);
+}
+
+TEST(GameClientLifecycleTest, EditedColumnWaitsForEveryVerticalSnapshotBeforeRestoringProfileAuthority)
+{
+    UnjoinedServer server;
+    ServerPump server_pump{server};
+    CoverageClient game_client;
+    ASSERT_TRUE(game_client.connect(core::Address::localhost(server.port()), std::chrono::seconds{2}));
+    shared::PlayerPosition const center{.x = 32'768, .y = 32'768, .z = 128};
+    auto const now = CoverageClient::Clock::now();
+    ASSERT_TRUE(game_client.initialize(center, now));
+    ASSERT_TRUE(game_client.applyCoverage(center, now));
+    shared::ChunkCoordinate const column{2'048, 2'048, 0};
+    ASSERT_TRUE(game_client.applyProfiles({column}, 1U, 1U, now));
+    ASSERT_TRUE(game_client.authoritativeWorld()->hasAuthoritativeSurface(column));
+    ASSERT_TRUE(game_client.applyEditManifest({
+        .session = game_client.session(), .column = column, .watermark = 2U,
+        .chunks = {{7U, 2U}, {8U, 1U}, {64U, 2U}, {127U, 1U}},
+    }, now));
+    EXPECT_FALSE(game_client.authoritativeWorld()->hasAuthoritativeSurface(column));
+    auto install = [&](uint8_t const z, uint64_t const revision) {
+        shared::ChunkCoordinate const key{column.x, column.y, z};
+        shared::Chunk::Blocks blocks{};
+        blocks.fill(shared::Block::Air);
+        uint8_t const local_z = z == 127U ? 15U : 0U;
+        blocks[shared::Chunk::SIDE_LENGTH * shared::Chunk::SIDE_LENGTH * local_z] = shared::Block::Stone;
+        shared::Chunk const effective{key, blocks};
+        return game_client.applyEditSnapshot({
+            .session = game_client.session(), .revision = revision,
+            .chunk = {.coordinate = key, .content_hash = effective.contentIdentity().content_hash,
+                .data = shared::DenseChunkData{.blocks = blocks}},
+            .edits = {{{0U, 0U, local_z}, shared::Block::Stone, revision}},
+        }, now);
+    };
+    ASSERT_TRUE(install(7U, 2U));
+    EXPECT_FALSE(game_client.authoritativeWorld()->hasAuthoritativeSurface(column));
+    ASSERT_TRUE(install(8U, 1U));
+    EXPECT_FALSE(game_client.authoritativeWorld()->hasAuthoritativeSurface(column));
+    ASSERT_TRUE(install(64U, 2U));
+    EXPECT_FALSE(game_client.authoritativeWorld()->hasAuthoritativeSurface(column));
+    ASSERT_TRUE(install(127U, 1U));
+    EXPECT_TRUE(game_client.authoritativeWorld()->hasAuthoritativeSurface(column));
+    EXPECT_EQ(game_client.authoritativeWorld()->blockAt({32'768, 32'768, 112}), shared::Block::Stone);
+    EXPECT_EQ(game_client.authoritativeWorld()->blockAt({32'768, 32'768, 128}), shared::Block::Stone);
+    EXPECT_EQ(game_client.authoritativeWorld()->blockAt({32'768, 32'768, 1'024}), shared::Block::Stone);
+    EXPECT_EQ(game_client.authoritativeWorld()->blockAt({32'768, 32'768, 2'047}), shared::Block::Stone);
+}
+
+namespace {
+
+void expectManifestResyncSurvivesPartialState(bool const stale_snapshot)
+{
+    TerrainReceiptServer server;
+    ServerPump server_pump{server};
+    CoverageClient game_client;
+    ASSERT_TRUE(game_client.connect(core::Address::localhost(server.port()), std::chrono::seconds{2}));
+    shared::PlayerPosition const center{.x = 32'768, .y = 32'768, .z = 128};
+    auto const now = CoverageClient::Clock::now();
+    ASSERT_TRUE(game_client.initialize(center, now));
+    ASSERT_TRUE(game_client.applyCoverage(center, now));
+    shared::ChunkCoordinate const key{2'048, 2'048, 8};
+    shared::Chunk const air{key};
+    shared::ServerEditChunkSnapshotMessage const snapshot{
+        .session = game_client.session(), .revision = 1U,
+        .chunk = {.coordinate = key, .content_hash = air.contentIdentity().content_hash,
+            .data = shared::UniformChunkData{shared::Block::Air}},
+        .edits = {{{0U, 0U, 0U}, shared::Block::Air, 1U}},
+    };
+    ASSERT_TRUE(game_client.applyEditSnapshot(snapshot, now));
+    ASSERT_TRUE(game_client.applyEditManifest({
+        .session = game_client.session(), .column = {key.x, key.y, 0}, .watermark = 1U,
+        .chunks = {{static_cast<uint8_t>(key.z), 3U}},
+    }, now));
+    game_client.flush();
+    ASSERT_TRUE(server.waitForResyncs(key, 1U));
+    if (stale_snapshot) {
+        EXPECT_FALSE(game_client.applyEditSnapshot(snapshot, now));
+    } else {
+        ASSERT_TRUE(game_client.applyBlockDelta({
+            .session = game_client.session(), .coordinate = {32'768, 32'768, 128},
+            .from_revision = 1U, .to_revision = 2U, .cell_version = 2U,
+            .material = shared::Block::Stone,
+        }, now));
+    }
+    game_client.retryEditResync(now + std::chrono::seconds{1});
+    game_client.flush();
+    EXPECT_TRUE(server.waitForResyncs(key, 2U));
+}
+
+}
+
+TEST(GameClientLifecycleTest, StaleSnapshotDoesNotCancelNewerManifestResync)
+{
+    expectManifestResyncSurvivesPartialState(true);
+}
+
+TEST(GameClientLifecycleTest, PartialDeltaDoesNotCancelNewerManifestResync)
+{
+    expectManifestResyncSurvivesPartialState(false);
+}
+
 TEST(GameClientLifecycleTest, SameEpochCoverageDropsChunksDisconnectedByAnEvictedBridge)
 {
     UnjoinedServer server;
@@ -937,7 +1493,8 @@ TEST(GameClientLifecycleTest, FullDetailUsesFortyChunksWhileDensePhysicsKeepsBou
     EXPECT_EQ(status.visual_lod_radius_blocks, 320U);
     EXPECT_EQ(
         status.playable_sphere_required_chunks,
-        shared::requiredTerrainColumns(CENTER).size() * 64U
+        shared::requiredTerrainColumns(CENTER).size()
+            * (shared::WorldExtent::DEPTH / shared::Chunk::SIDE_LENGTH)
     );
 
     std::vector<shared::ChunkCoordinate> const actual_keys = shared::requiredChunkKeys(
@@ -1119,4 +1676,222 @@ TEST(GameClientLifecycleTest, NewCoverageEpochRetiresEveryPendingDenseBatchBefor
     EXPECT_EQ(current.coverage_epoch, 2U);
     EXPECT_EQ(current.delivery_token, 73U);
     EXPECT_TRUE(current.not_resident_keys.empty());
+}
+
+TEST(GameClientLifecycleTest, DenseEpochTravelRetainsVerifiedOverlappingFullColumns)
+{
+    TerrainReceiptServer server;
+    ServerPump server_pump{server};
+    CoverageClient game_client;
+    ASSERT_TRUE(game_client.connect(core::Address::localhost(server.port()), std::chrono::seconds{2}));
+    auto event_time = CoverageClient::Clock::now();
+    shared::PlayerPosition const center{.x = 32'768, .y = 32'768, .z = 128};
+    std::vector<shared::ChunkCoordinate> const profiles{{2'048, 2'048, 0}, {2'049, 2'048, 0}};
+    ASSERT_TRUE(game_client.initialize(center, event_time));
+    event_time += std::chrono::milliseconds{1};
+    ASSERT_TRUE(game_client.applyCoverage(center, event_time, 1U));
+    ASSERT_TRUE(game_client.applyProfiles(profiles, 1U, 1U, event_time));
+    ASSERT_EQ(game_client.worldLoadingStatus().resident_authoritative_columns, 2U);
+    event_time += std::chrono::milliseconds{1};
+    ASSERT_TRUE(game_client.applyCoverage({33'048, 32'768, 128}, event_time, 2U));
+    EXPECT_EQ(game_client.residentAuthoritativeColumnCount(), 2U);
+    EXPECT_EQ(game_client.worldLoadingStatus().resident_authoritative_columns, 2U);
+    EXPECT_EQ(game_client.worldLoadingStatus().required_authoritative_columns, 6'561U);
+    EXPECT_FALSE(game_client.worldLoadingStatus().playable_sphere_ready);
+    EXPECT_FALSE(game_client.applyProfiles({{2'050, 2'048, 0}}, 2U, 1U, event_time));
+    EXPECT_EQ(game_client.residentAuthoritativeColumnCount(), 2U);
+    event_time += std::chrono::milliseconds{1};
+    ASSERT_TRUE(game_client.applyEditManifest({
+        .session = game_client.session(), .column = profiles.front(), .watermark = 2U,
+        .chunks = {{8U, 1U}},
+    }, event_time));
+    EXPECT_EQ(game_client.residentAuthoritativeColumnCount(), 1U);
+    EXPECT_EQ(game_client.worldLoadingStatus().resident_authoritative_columns, 1U);
+    EXPECT_FALSE(game_client.authoritativeWorld()->blockAt({32'768, 32'768, 128}).has_value());
+    event_time += std::chrono::milliseconds{1};
+    ASSERT_TRUE(game_client.applyCoverage({35'048, 32'768, 128}, event_time, 3U));
+    EXPECT_EQ(game_client.residentAuthoritativeColumnCount(), 0U);
+    EXPECT_EQ(game_client.worldLoadingStatus().resident_authoritative_columns, 0U);
+    EXPECT_FALSE(game_client.authoritativeWorld()->hasAuthoritativeSurface(profiles.front()));
+}
+
+TEST(GameClientLifecycleTest, V10WireProgressReachesTheNormalClientHandlerBeforeReady)
+{
+    using Clock = std::chrono::steady_clock;
+    auto const started = Clock::now();
+    CoverageClient game_client{[](shared::TerrainSessionIdentity const&) {
+        return client::PreparedTerrainWorldStatus{};
+    }, shared::WorldMode::Flight};
+    ASSERT_TRUE(game_client.initializePreparation(started));
+    generation::GenerationConfiguration configuration;
+    configuration.seed = shared::World::canonicalConfiguration().seed;
+    configuration.model_tag = generation::TerrainModelTag::V10;
+    configuration.resolution = 256U;
+    shared::TerrainSessionIdentity session{
+        .join_epoch = 1U,
+        .terrain = {
+            .terrain_version = 10U, .revision = 1U, .seed = configuration.seed,
+            .configuration_identity = generation::configurationIdentity(configuration),
+        },
+        .configuration = configuration,
+    };
+    auto snapshot = std::make_shared<generation::GenerationSnapshot>();
+    snapshot->stage = generation::GenerationStage::V10Platec;
+    snapshot->resolution = 256U;
+    auto& fields = snapshot->v10.emplace();
+    fields.height_raw.assign(65'536U, 1.25F);
+    fields.plate_ids.assign(65'536U, 0U);
+    fields.plate_directions = {{0U, 1.0F, 0.0F}};
+    fields.plate_directions_observed_after_native_step = 599U;
+    shared::ServerWorldPreparationMessage progress{
+        .session = session, .sequence = 1U, .stage = snapshot->stage,
+        .work_completed = 1U, .work_total = 4U, .latest_snapshot = snapshot,
+    };
+    auto const apply_wire = [&](shared::ServerWorldPreparationMessage const& message) {
+        auto decoded = shared::decodeMessage(shared::encodeMessage(shared::Message{message}));
+        if (!decoded) {
+            return false;
+        }
+        return game_client.applyWorldPreparation(
+            std::get<shared::ServerWorldPreparationMessage>(*decoded), started + std::chrono::milliseconds{1});
+    };
+    ASSERT_TRUE(apply_wire(progress));
+    auto const source_status = game_client.worldLoadingStatus();
+    ASSERT_NE(source_status.map_snapshot, nullptr);
+    EXPECT_EQ(source_status.map_snapshot->v10, snapshot->v10);
+    EXPECT_EQ(source_status.generation_stage, generation::GenerationStage::V10Platec);
+    EXPECT_FALSE(source_status.atlas_ready);
+    EXPECT_NE(source_status.state, client::WorldLoadingState::ReadyForStart);
+    EXPECT_EQ(game_client.activeTerrainIdentity(), std::optional{session.terrain});
+    auto climate = std::make_shared<generation::GenerationSnapshot>(*snapshot);
+    climate->stage = generation::GenerationStage::V10Climate;
+    auto& climate_fields = *climate->v10;
+    climate_fields.source_elevation_m.assign(65'536U, 12.0);
+    climate_fields.local_effective_celsius.assign(8U * 32U * 32U, 17.0);
+    climate_fields.ground_m.assign(32U * 32U, 12.0);
+    climate_fields.theta_celsius.assign(8U * 32U * 32U, 18.0);
+    climate_fields.phase_precipitation_mm_year.assign(8U * 65'536U, 123.0);
+    progress.latest_snapshot.reset();
+    progress.stage = climate->stage;
+    progress.sequence = 2U;
+    progress.work_completed = 1'000U;
+    progress.work_total = 3'000U;
+    ASSERT_TRUE(apply_wire(progress));
+    progress.latest_snapshot = climate;
+    progress.sequence = 3U;
+    progress.work_completed = 3'000U;
+    ASSERT_TRUE(apply_wire(progress));
+    EXPECT_EQ(game_client.worldLoadingStatus().map_snapshot->v10, climate->v10);
+    auto water = std::make_shared<generation::GenerationSnapshot>(*climate);
+    water->stage = generation::GenerationStage::V10Water;
+    auto& water_fields = *water->v10;
+    water_fields.water_level_m.assign(65'536U, 1.0F);
+    water_fields.ocean_mask.assign(65'536U, 0U);
+    water_fields.lake_mask.assign(65'536U, 0U);
+    water_fields.river_mask.assign(65'536U, 0U);
+    water_fields.sea_ice_thickness_m.assign(8U * 65'536U, 0.1F);
+    water_fields.land_snow_water_equivalent_m.assign(8U * 65'536U, 0.2F);
+    water_fields.glacier_thickness_m.assign(8U * 65'536U, 0.3F);
+    progress.latest_snapshot.reset();
+    progress.stage = water->stage;
+    progress.sequence = 4U;
+    progress.work_completed = 0U;
+    progress.work_total = 8U;
+    ASSERT_TRUE(apply_wire(progress));
+    progress.sequence = 5U;
+    progress.work_completed = 8U;
+    ASSERT_TRUE(apply_wire(progress));
+    progress.latest_snapshot = water;
+    progress.sequence = 6U;
+    ASSERT_TRUE(apply_wire(progress));
+    EXPECT_EQ(game_client.worldLoadingStatus().map_snapshot->v10, water->v10);
+    progress.latest_snapshot.reset();
+    progress.stage = static_cast<generation::GenerationStage>(20U);
+    progress.sequence = 7U;
+    EXPECT_FALSE(game_client.applyWorldPreparation(progress, started + std::chrono::milliseconds{1}));
+    EXPECT_FALSE(apply_wire(progress));
+    progress.stage = generation::GenerationStage::Complete;
+    progress.final_atlas_complete = true;
+    progress.work_completed = progress.work_total;
+    progress.refined_safe_spawn = shared::PlayerPosition{.x = 100, .y = 200, .z = 300};
+    ASSERT_TRUE(apply_wire(progress));
+    auto const completed = game_client.worldLoadingStatus();
+    EXPECT_EQ(completed.generation_stage, generation::GenerationStage::Complete);
+    EXPECT_TRUE(completed.atlas_ready);
+    ASSERT_NE(completed.map_snapshot, nullptr);
+    EXPECT_EQ(completed.map_snapshot->v10, water->v10);
+    EXPECT_EQ(completed.map_snapshot->stage, generation::GenerationStage::V10Water);
+    ASSERT_TRUE(completed.safe_spawn_position);
+    EXPECT_EQ(completed.safe_spawn_position->x, 100);
+    EXPECT_EQ(completed.safe_spawn_position->y, 200);
+    EXPECT_EQ(completed.safe_spawn_position->z, 300);
+    EXPECT_EQ(completed.state, client::WorldLoadingState::PreparingSpawn);
+    EXPECT_FALSE(apply_wire(progress));
+    ++progress.sequence;
+    ++progress.session.join_epoch;
+    EXPECT_FALSE(apply_wire(progress));
+}
+
+TEST(GameClientLifecycleTest, ActualV10ProgressRetainsWaterAfterSnapshotFreeReady)
+{
+    using Clock = std::chrono::steady_clock;
+    auto const started = Clock::now();
+    CoverageClient game_client{[](shared::TerrainSessionIdentity const&) {
+        return client::PreparedTerrainWorldStatus{};
+    }, shared::WorldMode::Flight};
+    ASSERT_TRUE(game_client.initializePreparation(started));
+    generation::GenerationConfiguration configuration;
+    configuration.model_tag = generation::TerrainModelTag::V10;
+    configuration.seed = 42U;
+    configuration.resolution = 256U;
+    shared::TerrainSessionIdentity const session{
+        .join_epoch = 1U,
+        .terrain = {.terrain_version = 10U, .revision = 1U, .seed = configuration.seed,
+            .configuration_identity = generation::configurationIdentity(configuration)},
+        .configuration = configuration,
+    };
+    uint64_t sequence = 0U;
+    bool all_applied = true;
+    std::shared_ptr<generation::GenerationSnapshot const> water_snapshot;
+    auto atlas = generation::prepareAtlas(configuration, {}, [&](generation::GenerationProgress const& update) {
+        if (update.stage != generation::GenerationStage::V10Climate
+            && update.stage != generation::GenerationStage::V10Water) {
+            return;
+        }
+        if (update.stage == generation::GenerationStage::V10Water && update.snapshot) {
+            water_snapshot = update.snapshot;
+        }
+        shared::ServerWorldPreparationMessage const message{
+            .session = session, .sequence = ++sequence, .stage = update.stage,
+            .work_completed = update.completed, .work_total = update.total, .latest_snapshot = update.snapshot,
+        };
+        auto const decoded = shared::decodeMessage(shared::encodeMessage(shared::Message{message}));
+        if (!decoded || !game_client.applyWorldPreparation(
+                std::get<shared::ServerWorldPreparationMessage>(*decoded), started + std::chrono::milliseconds{1})) {
+            all_applied = false;
+        }
+    });
+    ASSERT_TRUE(atlas);
+    ASSERT_TRUE(all_applied);
+    ASSERT_NE(water_snapshot, nullptr);
+    auto const before_ready = game_client.worldLoadingStatus();
+    ASSERT_NE(before_ready.map_snapshot, nullptr);
+    EXPECT_EQ(before_ready.map_snapshot->stage, generation::GenerationStage::V10Water);
+    EXPECT_EQ(before_ready.map_snapshot->v10, water_snapshot->v10);
+    shared::ServerWorldPreparationMessage const ready{
+        .session = session, .sequence = ++sequence, .stage = generation::GenerationStage::Complete,
+        .work_completed = 1U, .work_total = 1U, .final_atlas_complete = true,
+        .refined_safe_spawn = shared::PlayerPosition{.x = 100, .y = 200, .z = 300},
+    };
+    auto const decoded = shared::decodeMessage(shared::encodeMessage(shared::Message{ready}));
+    ASSERT_TRUE(decoded);
+    ASSERT_TRUE(game_client.applyWorldPreparation(
+        std::get<shared::ServerWorldPreparationMessage>(*decoded), started + std::chrono::milliseconds{1}));
+    auto const completed = game_client.worldLoadingStatus();
+    ASSERT_NE(completed.map_snapshot, nullptr);
+    EXPECT_EQ(completed.map_snapshot->stage, generation::GenerationStage::V10Water);
+    EXPECT_EQ(completed.map_snapshot->v10, water_snapshot->v10);
+    EXPECT_TRUE(completed.atlas_ready);
+    ASSERT_TRUE(completed.safe_spawn_position);
+    EXPECT_EQ(completed.safe_spawn_position->x, 100);
 }

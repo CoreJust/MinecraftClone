@@ -303,7 +303,8 @@ public:
 
     void setTerrainContext(std::shared_ptr<TerrainWorld const> terrain_world, uint64_t world_epoch);
 
-    // Adds the accepted leaf lease to a preview copy without changing its stream revision.
+    // Binds the exact prepared source: an R6 leaf lease or the completed native V9 atlas.
+    // The preview stream revision is preserved.
     [[nodiscard]]
     std::optional<GenerationJob> bindTerrainLeaf(GenerationJob job);
 

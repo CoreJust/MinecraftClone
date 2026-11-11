@@ -1,6 +1,8 @@
 #pragma once
 
 #include <server/HeightTileWorkerPool.hpp>
+#include <server/WorldPreparation.hpp>
+#include <shared/net/LocalPreparationSnapshots.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/policy/Policy.hpp>
 #include <shared/world/Chunk.hpp>
@@ -32,9 +34,9 @@
 
 namespace server {
 
-class WorldPreparation;
-
 class GameServer final : public core::Server {
+    friend struct GameServerInputTestAccess;
+
 public:
     using WorkerMetrics = HeightTileWorkerMetrics;
 
@@ -138,6 +140,7 @@ public:
         int32_t x;
         int32_t y;
         int32_t z = 0;
+        bool derive_surface_z = false;
     };
 
     explicit GameServer(
@@ -148,7 +151,8 @@ public:
         uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS,
         std::shared_ptr<shared::TerrainWorld const> terrain_world = nullptr,
         std::shared_ptr<WorldPreparation> world_preparation = nullptr,
-        BindMode bind_mode = BindMode::AnyHost
+        BindMode bind_mode = BindMode::AnyHost,
+        std::shared_ptr<shared::LocalPreparationSnapshots> local_preparation_snapshots = nullptr
     );
 
     ~GameServer() override;
@@ -181,8 +185,11 @@ public:
 private:
     static constexpr uint32_t MAX_TERRAIN_INFLIGHT_BYTES = 49'152U;
     static constexpr uint32_t MAX_PREPARED_STREAM_INFLIGHT_BYTES = 16'384U;
+    static constexpr uint32_t MAX_EDITED_CHUNKS_PER_COLUMN = 64U;
 
     struct PreviewStream;
+    // Background traffic preserves both reserves; snapshots and block edits consume only their own reserve.
+    enum class TerrainDeliveryPurpose : uint8_t { Background, EditSnapshot, BlockEdit };
     void populateNearWindowMetrics(PreviewStream const& stream, PreviewStreamMetrics& metrics) const;
 
     struct PlayerReplication final {
@@ -206,8 +213,32 @@ private:
         uint32_t acknowledged_input_sequence = 0;
         uint32_t state_revision = 1;
         std::deque<shared::ClientInputMessage> pending_inputs;
+        std::deque<shared::ClientBlockActionMessage> pending_block_actions;
+        std::deque<shared::ServerBlockActionResultMessage> block_action_results;
+        std::optional<uint32_t> last_block_action_sequence;
+        std::optional<uint64_t> last_block_action_tick;
+        shared::GameMode game_mode = shared::GameMode::Creative;
+        struct BreakHold final {
+            shared::ClientBlockActionMessage action;
+            shared::WorldCoordinate target{};
+            shared::Block material = shared::Block::Air;
+            uint64_t cell_version = 0U;
+            uint64_t started_tick = 0U;
+            uint64_t renewed_tick = 0U;
+            uint8_t effective_actions = 0U;
+            uint64_t policy_generation = 0U;
+        };
+        std::optional<BreakHold> break_hold;
+        ChunkKeySet pending_edit_snapshots;
+        std::unordered_map<uint64_t, uint32_t> edit_delivery_bytes;
+        uint64_t next_edit_delivery_token = 1U;
+        std::optional<uint64_t> inflight_edit_snapshot;
+        uint32_t maximum_edit_snapshot_bytes = 0U;
+        uint32_t maximum_block_edit_delivery_bytes = 0U;
         bool has_received_sequence = false;
         bool action_consumed_this_tick = false;
+        uint32_t stalled_input_tick_credits = 0U;
+        std::optional<uint64_t> deferred_input_tick;
         uint32_t materialization_admission_failures = 0U;
         uint32_t forecast_materialization_candidates_since_metrics = 0U;
         std::optional<shared::Direction> last_accepted_direction;
@@ -267,14 +298,33 @@ private:
         }
     };
 
+    struct DefaultSpawnSearchNode final {
+        uint32_t origin_x = 0U;
+        uint32_t origin_y = 0U;
+        uint32_t extent = 0U;
+        uint64_t distance_lower_bound_squared = 0U;
+        bool atlas_cell_refined = false;
+    };
+
+    struct DefaultSpawnCandidate final {
+        shared::PlayerPosition position;
+        uint64_t distance_squared = 0U;
+    };
+
     struct PendingTerrainJoin final {
         core::ClientId client_id = 0U;
         char character = '@';
         shared::TerrainSessionIdentity session;
         bool wants_previews = false;
         uint64_t last_progress_source_sequence = 0U;
+        uint32_t next_progress_milestone = 0U;
+        WorldPreparationProgressThrottle progress_throttle;
         uint64_t next_message_sequence = 1U;
-        uint32_t next_default_spawn_candidate = 0U;
+        bool default_spawn_search_initialized = false;
+        std::vector<DefaultSpawnSearchNode> default_spawn_frontier;
+        std::optional<DefaultSpawnSearchNode> active_default_spawn_tile;
+        uint32_t next_default_spawn_column = 0U;
+        std::optional<DefaultSpawnCandidate> best_default_spawn;
         std::optional<shared::HeightTileKey> requested_surface_key;
         std::optional<shared::HeightTileKey> surface_key;
         std::optional<shared::SurfaceTile> surface_tile;
@@ -286,9 +336,11 @@ private:
     void onReceived(core::ServerReceiveEvent event) override;
 
     void send(shared::Message message);
-    void sendTo(std::optional<core::ClientId> const client_id, shared::Message message);
+    bool sendTo(std::optional<core::ClientId> client_id, shared::Message message);
     [[nodiscard]]
-    uint32_t remainingTerrainDeliveryBytes(core::ClientId client_id) const noexcept;
+    uint32_t remainingTerrainDeliveryBytes(
+        core::ClientId client_id, TerrainDeliveryPurpose purpose = TerrainDeliveryPurpose::Background
+    ) const noexcept;
     void sendHeightTileTo(std::optional<core::ClientId> const client_id, shared::Message message);
     void startHeightTileStream(core::ClientId client_id);
     [[nodiscard]]
@@ -307,7 +359,7 @@ private:
     );
     void refreshHeightTileInterest(PreviewStream& stream, shared::Player const& player);
     void fillHeightTileQueue(PreviewStream& stream);
-    void processAuthoritativeTerrain();
+    void processAuthoritativeTerrain(bool started_worlds);
     bool publishAuthoritativeTerrainResult(HeightTileWorkerPool::Result const& result);
     void acknowledgeAuthoritativeTerrain(
         core::ClientId client_id, shared::ClientAuthoritativeTerrainAckMessage const& acknowledgement
@@ -328,7 +380,12 @@ private:
         shared::WorldGenerationPlan plan
     );
     void cancelPendingTerrainJoinWork(PendingTerrainJoin const& join) noexcept;
-    void publishWorldPreparation(
+    static bool replayPreparationMilestones(
+        std::vector<WorldPreparationProgressMilestone> const& milestones,
+        uint64_t& consumed_sequence,
+        std::function<bool(WorldPreparationProgressMilestone const&)> const& publish
+    );
+    bool publishWorldPreparation(
         PendingTerrainJoin& join,
         generation::GenerationProgress const* progress,
         std::shared_ptr<generation::GenerationSnapshot const> snapshot,
@@ -339,6 +396,8 @@ private:
     void refreshMaterializedCoverage();
     void fillMaterializedChunkQueue();
     void pumpMaterializedChunkDeliveries();
+    [[nodiscard]] uint32_t materializedDeliveryReserveBytes(PlayerReplication const& replication) const;
+    [[nodiscard]] uint32_t previewDeliveryReserveBytes(PlayerReplication const& replication) const;
     void acknowledgeMaterializedChunkDelivery(
         core::ClientId client_id,
         shared::ClientChunkDeliveryAckMessage const& acknowledgement
@@ -376,6 +435,21 @@ private:
         shared::ClientInputMessage input,
         bool acknowledge_input = true
     );
+    void processBlockActions(PlayerReplication& replication);
+    [[nodiscard]] shared::EffectiveInteractionRights interactionRights(
+        PlayerReplication const& replication, std::optional<shared::GameMode> mode = std::nullopt
+    ) const;
+    void publishBlockEdit(shared::WorldCoordinate coordinate, uint64_t from_revision);
+    [[nodiscard]] bool sendEditManifest(
+        PlayerReplication& replication, shared::ChunkCoordinate column,
+        TerrainDeliveryPurpose purpose = TerrainDeliveryPurpose::Background
+    );
+    [[nodiscard]] bool sendEditState(
+        PlayerReplication& replication, shared::Message message,
+        TerrainDeliveryPurpose purpose = TerrainDeliveryPurpose::Background
+    );
+    [[nodiscard]] bool canPublishBlockEdit(shared::WorldCoordinate coordinate) const;
+    void processEditSnapshots(PlayerReplication& replication);
     [[nodiscard]] std::vector<shared::PolicySubject> permissionSubjects() const;
     [[nodiscard]]
     bool canApplyPublishedPermissions(
@@ -423,8 +497,13 @@ private:
     shared::World m_world;
     std::shared_ptr<shared::TerrainWorld const> m_terrain_world;
     std::shared_ptr<WorldPreparation> m_world_preparation;
+    std::shared_ptr<shared::LocalPreparationSnapshots> m_local_preparation_snapshots = nullptr;
     std::unique_ptr<shared::SparseWorld> m_physics_world;
     bool m_prepared_world_initialized = false;
+    uint64_t m_authority_tick = 0U;
+    uint64_t m_edit_manifest_sequence = 0U;
+    uint64_t m_next_server_session_nonce = 1U;
+    bool m_local_mode_requests = false;
     shared::WorldGenerationCoordinator m_world_generation;
     std::shared_ptr<shared::TerrainGenerator const> m_terrain_generator;
     shared::WorldGenerationPlan m_generation_plan;
@@ -447,8 +526,8 @@ private:
         static constexpr uint32_t MAX_QUEUED_TILES = 128U;
         static constexpr uint32_t MAX_BUFFERED_TILES = 128U;
         static constexpr uint32_t MAX_INFLIGHT_DELIVERIES = shared::HEIGHT_TILE_DELIVERY_WINDOW;
-        // 13-byte batch framing plus the largest surface and 16-bit height-delta payload.
-        static constexpr uint32_t MAX_DELIVERY_BYTES = 10'118U;
+        // One maximum 16-bit tile record plus the 13-byte batch and 27-byte record headers.
+        static constexpr uint32_t MAX_DELIVERY_BYTES = 13U + 27U + shared::HEIGHT_TILE_PAYLOAD_BYTES;
         static constexpr uint32_t MAX_INFLIGHT_DELIVERY_BYTES = 34'356U;
         static constexpr uint32_t MAX_URGENT_CANDIDATES_PER_PUMP = 512U;
         static constexpr uint32_t MAX_PRIORITY_CANDIDATES_PER_PUMP = 256U;

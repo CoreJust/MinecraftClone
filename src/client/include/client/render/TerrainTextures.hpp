@@ -1,5 +1,7 @@
 #pragma once
 
+#include <shared/world/Chunk.hpp>
+
 #include <array>
 #include <cstdint>
 
@@ -8,11 +10,14 @@ namespace client::render::terrain_textures {
 inline constexpr uint32_t TILE_SIZE = 16U;
 inline constexpr uint32_t PIXELS_PER_TILE = TILE_SIZE * TILE_SIZE;
 inline constexpr uint32_t FACE_COUNT = 6U;
-inline constexpr uint32_t MATERIAL_COUNT = 7U;
+inline constexpr uint32_t MATERIAL_COUNT = static_cast<uint8_t>(shared::Block::Sand) + 1U;
 inline constexpr uint32_t TILE_COUNT = MATERIAL_COUNT * FACE_COUNT + 1U;
 inline constexpr uint32_t GRASS_SIDE_OVERLAY_TILE_INDEX = MATERIAL_COUNT * FACE_COUNT;
 inline constexpr uint32_t INVALID_TILE_INDEX = 0xffff'ffffU;
 inline constexpr uint32_t GRASS_TINT_RGBA8 = 0xFF59'BD91U;
+inline constexpr uint32_t BASE_MATERIAL_COUNT = static_cast<uint8_t>(shared::Block::Ice) + 1U;
+inline constexpr uint32_t BASE_OVERLAY_TILE_INDEX = BASE_MATERIAL_COUNT * FACE_COUNT;
+inline constexpr uint32_t BASE_TILE_COUNT = BASE_OVERLAY_TILE_INDEX + 1U;
 
 [[nodiscard]]
 constexpr uint32_t tileIndex(uint32_t const block_id, uint32_t const face_direction) noexcept
@@ -24,7 +29,8 @@ constexpr uint32_t tileIndex(uint32_t const block_id, uint32_t const face_direct
 }
 
 // Each pixel packs R in bits 0-7, G in 8-15, B in 16-23, and A in 24-31.
-inline constexpr std::array<uint32_t, static_cast<uint64_t>(TILE_COUNT) * PIXELS_PER_TILE> RGBA8{
+// The source atlas ends with the grass overlay; Sand is inserted before it below.
+inline constexpr std::array<uint32_t, static_cast<uint64_t>(BASE_TILE_COUNT) * PIXELS_PER_TILE> BASE_RGBA8{
     // Tile 0: Air / NegativeX.
     0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U,
     0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U,
@@ -1446,8 +1452,54 @@ inline constexpr std::array<uint32_t, static_cast<uint64_t>(TILE_COUNT) * PIXELS
     0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U, 0x0000'0000U
 };
 
-static_assert(TILE_COUNT == 43U);
+[[nodiscard]]
+constexpr uint32_t sandTexturePixel(uint32_t const x, uint32_t const y) noexcept
+{
+    constexpr std::array<uint32_t, 4U> SAND_COLORS{
+        0xFF92'C6D9U,
+        0xFFA2'D3E5U,
+        0xFF82'B8CDU,
+        0xFF9B'CCDEU,
+    };
+    uint32_t noise = x * 0x9E37'79B9U + y * 0x85EB'CA6BU + 0xC2B2'AE35U;
+    noise ^= noise >> 16U;
+    noise *= 0x7FEB'352DU;
+    noise ^= noise >> 15U;
+    return SAND_COLORS[noise & 3U];
+}
+
+[[nodiscard]]
+constexpr std::array<uint32_t, static_cast<uint64_t>(TILE_COUNT) * PIXELS_PER_TILE> makeRgba8() noexcept
+{
+    std::array<uint32_t, static_cast<uint64_t>(TILE_COUNT) * PIXELS_PER_TILE> result{};
+    for (uint32_t tile = 0U; tile < BASE_OVERLAY_TILE_INDEX; ++tile) {
+        for (uint32_t pixel = 0U; pixel < PIXELS_PER_TILE; ++pixel) {
+            result[static_cast<uint64_t>(tile) * PIXELS_PER_TILE + pixel]
+                = BASE_RGBA8[static_cast<uint64_t>(tile) * PIXELS_PER_TILE + pixel];
+        }
+    }
+    for (uint32_t face = 0U; face < FACE_COUNT; ++face) {
+        uint64_t const sand_start = static_cast<uint64_t>(tileIndex(
+            static_cast<uint8_t>(shared::Block::Sand), face)) * PIXELS_PER_TILE;
+        for (uint32_t pixel = 0U; pixel < PIXELS_PER_TILE; ++pixel) {
+            result[sand_start + pixel] = sandTexturePixel(pixel % TILE_SIZE, pixel / TILE_SIZE);
+        }
+    }
+    uint64_t const overlay_start = static_cast<uint64_t>(GRASS_SIDE_OVERLAY_TILE_INDEX) * PIXELS_PER_TILE;
+    uint64_t const base_overlay_start = static_cast<uint64_t>(BASE_OVERLAY_TILE_INDEX) * PIXELS_PER_TILE;
+    for (uint32_t pixel = 0U; pixel < PIXELS_PER_TILE; ++pixel) {
+        result[overlay_start + pixel] = BASE_RGBA8[base_overlay_start + pixel];
+    }
+    return result;
+}
+
+inline constexpr std::array<uint32_t, static_cast<uint64_t>(TILE_COUNT) * PIXELS_PER_TILE> RGBA8 = makeRgba8();
+
+static_assert(MATERIAL_COUNT == 8U);
+static_assert(BASE_TILE_COUNT == 43U);
+static_assert(TILE_COUNT == 49U);
 static_assert(tileIndex(2U, 5U) == 17U);
-static_assert(GRASS_SIDE_OVERLAY_TILE_INDEX == 42U);
+static_assert(tileIndex(static_cast<uint8_t>(shared::Block::Sand), 5U) == 47U);
+static_assert(GRASS_SIDE_OVERLAY_TILE_INDEX == 48U);
 
 } // namespace client::render::terrain_textures

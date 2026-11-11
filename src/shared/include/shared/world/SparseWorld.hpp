@@ -10,6 +10,7 @@
 #include <array>
 #include <bitset>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <memory>
 #include <optional>
@@ -29,10 +30,7 @@ struct WorldCoordinate final {
     constexpr bool operator==(WorldCoordinate const&) const noexcept = default;
 };
 
-struct WorldExtent final {
-    static constexpr uint32_t WIDTH = 65'536U;
-    static constexpr uint32_t DEPTH = 1'024U;
-};
+using DenseSectionMask = std::bitset<WorldExtent::DEPTH / Chunk::SIDE_LENGTH>;
 
 class WorldBounds final {
 public:
@@ -96,11 +94,14 @@ public:
 
 struct SparseWorldOptions final {
     static constexpr uint64_t DEFAULT_MAX_RESIDENT_CHUNKS = 128U;
+    // Sixteen full edit snapshots; empty revision-only chunks consume one unit.
+    static constexpr uint64_t DEFAULT_MAX_RETAINED_EDIT_CELLS = 65'536U;
 
     uint64_t seed = WorldConfiguration::SEED;
     uint64_t max_resident_chunks = DEFAULT_MAX_RESIDENT_CHUNKS;
     uint64_t revision = 1U;
     uint64_t max_authoritative_columns = MAX_FOUR_PLAYER_AUTHORITATIVE_COLUMNS;
+    uint64_t max_retained_edit_cells = DEFAULT_MAX_RETAINED_EDIT_CELLS;
 };
 
 inline constexpr uint32_t MAX_SURFACE_METADATA_TILES = 1'024U;
@@ -143,6 +144,38 @@ struct AuthoritativeTileIdentity final {
     TerrainIdentity identity;
     uint64_t revision = 0U;
     uint64_t content_hash = 0U;
+    uint64_t dense_content_hash = 0U;
+};
+
+struct AuthoritativeTileVersion final {
+    ChunkCoordinate coordinate{};
+    TerrainIdentity identity;
+    uint64_t revision = 0U;
+    uint64_t content_hash = 0U;
+    uint64_t dense_content_hash = 0U;
+    bool operator==(AuthoritativeTileVersion const&) const = default;
+};
+
+struct AuthoritativeTileVersionState final {
+    uint64_t revision = 0U;
+    uint64_t dense_content_hash = 0U;
+};
+
+struct EditedChunkRevision final {
+    ChunkCoordinate coordinate{};
+    uint64_t revision = 0U;
+};
+
+struct SparseEditCell final {
+    BlockCoordinate coordinate{};
+    Block material = Block::Air;
+    uint64_t cell_version = 0U;
+};
+
+struct SparseEditSnapshot final {
+    ChunkCoordinate coordinate{};
+    uint64_t revision = 0U;
+    std::vector<SparseEditCell> edits;
 };
 
 struct AuthoritativeTerrainColumn final {
@@ -156,15 +189,33 @@ struct AuthoritativeTerrainColumn final {
     TerrainIdentity identity;
     uint64_t revision = 0U;
     uint64_t content_hash = 0U;
-    uint64_t dense_section_mask = 0U;
+    DenseSectionMask dense_section_mask;
     std::shared_ptr<std::array<Block, WorldExtent::DEPTH> const> dense_blocks = nullptr;
 
     [[nodiscard]] Block materialAt(uint16_t z) const noexcept;
 };
 
+struct AuthoritativeColumnChanges final {
+    uint64_t cursor = 0U;
+    bool full_resync = false;
+    std::vector<ChunkCoordinate> coordinates;
+};
+
+struct ResidentChunkContent final {
+    ChunkCoordinate coordinate;
+    ChunkContentIdentity content;
+};
+
 class SparseWorld final {
 public:
     explicit SparseWorld(SparseWorldOptions options = {});
+
+    // Returns sorted, deduplicated column coordinates since the consumer's cursor.
+    // Reset, expired history, or a future cursor requires full_resync. output.cursor
+    // is the next consumer cursor, independent of authoritativeSurfaceRevision().
+    void readAuthoritativeColumnChanges(uint64_t after, AuthoritativeColumnChanges& output) const;
+    // Copies cached content identities in coordinate order without borrowing Chunk pointers.
+    void residentChunkContents(std::vector<ResidentChunkContent>& output) const;
     SparseWorld(SparseWorldOptions options, SparseWorldGenerationMode generation_mode);
     SparseWorld(SparseWorldOptions options, std::shared_ptr<TerrainWorld const> terrain_world);
 
@@ -214,12 +265,26 @@ public:
     [[nodiscard]] bool hasAuthoritativeChunk(ChunkCoordinate coordinate) const noexcept;
     [[nodiscard]] bool hasAuthoritativeSurface(ChunkCoordinate coordinate) const noexcept;
     [[nodiscard]] std::optional<AuthoritativeTileIdentity> authoritativeTileIdentity(ChunkCoordinate coordinate) const;
+    [[nodiscard]] std::optional<AuthoritativeTileVersionState>
+    currentAuthoritativeTileVersionState(ChunkCoordinate coordinate) const;
     [[nodiscard]]
     bool matchesAuthoritativeTileIdentity(
         ChunkCoordinate coordinate,
         TerrainIdentity const& identity,
         uint64_t revision,
         uint64_t content_hash
+    ) const;
+    [[nodiscard]]
+    bool matchesAuthoritativeTileVersion(
+        ChunkCoordinate coordinate,
+        TerrainIdentity const& identity,
+        uint64_t revision,
+        uint64_t dense_content_hash
+    ) const;
+    [[nodiscard]]
+    bool matchesAuthoritativeTileVersions(
+        TerrainIdentity const& identity,
+        std::span<AuthoritativeTileVersion const> versions
     ) const;
     [[nodiscard]] bool setProtectedAuthoritativeColumns(std::span<ChunkCoordinate const> coordinates);
     [[nodiscard]] bool removeAuthoritativeSurface(ChunkCoordinate coordinate) noexcept;
@@ -243,8 +308,33 @@ public:
 
     void setWorldIdentity(uint64_t revision, uint64_t seed) noexcept;
 
+    // This revision tracks SparseWorld-managed edits; direct Chunk mutation uses content identities.
+    [[nodiscard]] uint64_t sparseEditRevision() const noexcept { return m_sparse_edit_revision; }
+
     [[nodiscard]]
     bool setBlock(WorldCoordinate coordinate, Block block);
+
+    [[nodiscard]] uint64_t editChunkRevision(ChunkCoordinate coordinate) const noexcept;
+    [[nodiscard]] uint64_t cellVersion(WorldCoordinate coordinate) const noexcept;
+    [[nodiscard]] std::vector<EditedChunkRevision> editedChunks() const;
+    [[nodiscard]] std::optional<SparseEditSnapshot> editSnapshot(ChunkCoordinate coordinate) const;
+    [[nodiscard]] std::optional<Chunk> effectiveChunkSnapshot(ChunkCoordinate coordinate) const;
+
+    [[nodiscard]] bool installEditSnapshot(
+        SparseEditSnapshot const& snapshot,
+        Chunk const& effective_chunk
+    );
+    [[nodiscard]] bool applyEditDelta(
+        WorldCoordinate coordinate,
+        Block material,
+        uint64_t from_revision,
+        uint64_t to_revision,
+        uint64_t cell_version
+    );
+    [[nodiscard]] bool setEditedChunkRequirements(
+        ChunkCoordinate coordinate,
+        std::span<EditedChunkRevision const> requirements
+    );
 
     [[nodiscard]]
     Chunk const* residentChunk(ChunkCoordinate coordinate) const noexcept;
@@ -310,8 +400,23 @@ private:
         uint32_t max_height = WorldExtent::DEPTH - 1U;
         std::array<SurfaceMaterialProfile, Chunk::FACE_BLOCK_COUNT> columns{};
         uint64_t revision = 0U;
-        uint64_t dense_mask = 0U;
+        DenseSectionMask dense_mask;
         bool edited = false;
+    };
+
+    struct AuthoritativeTileHashes final {
+        uint64_t content_hash = 0U;
+        uint64_t dense_content_hash = 0U;
+    };
+
+    struct RetiredAuthoritativeVersionToken final {
+        ChunkCoordinate coordinate{};
+        uint64_t revision = 0U;
+    };
+
+    struct RetiredAuthoritativeVersion final {
+        AuthoritativeTileVersionState state;
+        DenseSectionMask dense_mask;
     };
 
     struct SurfaceMetadata final {
@@ -332,12 +437,48 @@ private:
         uint64_t seed;
     };
 
+    struct SparseEditValue final {
+        Block material = Block::Air;
+        Block base_material = Block::Air;
+        uint64_t cell_version = 0U;
+        bool has_override = true;
+    };
+
+    struct SparseChunkEdits final {
+        uint64_t revision = 0U;
+        std::unordered_map<uint32_t, SparseEditValue> cells;
+    };
+
     using PreviewChunks = std::unordered_map<ChunkCoordinate, Preview, ChunkCoordinateHash>;
+    using SparseChunkEditsMap = std::unordered_map<ChunkCoordinate, SparseChunkEdits, ChunkCoordinateHash>;
+    using EditedChunkRequirements = std::array<uint64_t, WorldExtent::DEPTH / Chunk::SIDE_LENGTH>;
+    using EditedChunkRequirementsMap = std::unordered_map<
+        ChunkCoordinate,
+        EditedChunkRequirements,
+        ChunkCoordinateHash
+    >;
 
     [[nodiscard]]
-    uint64_t authoritativeDenseSectionMask(ChunkCoordinate coordinate, AuthoritativeSurface const& tile) const;
+    DenseSectionMask authoritativeDenseSectionMask(
+        ChunkCoordinate coordinate,
+        AuthoritativeSurface const& tile,
+        uint8_t local_x,
+        uint8_t local_y
+    ) const;
     [[nodiscard]]
-    uint64_t authoritativeTileContentHash(ChunkCoordinate coordinate, AuthoritativeSurface const& tile) const;
+    AuthoritativeTileHashes authoritativeTileContentHashes(
+        ChunkCoordinate coordinate,
+        DenseSectionMask const& dense_mask,
+        bool include_sparse_edits
+    ) const;
+    [[nodiscard]] std::optional<Chunk> makeBaseChunk(ChunkCoordinate coordinate) const;
+    void applySparseEdits(Chunk& chunk) const;
+    [[nodiscard]] bool hasIncompleteEditRequirements(ChunkCoordinate coordinate) const noexcept;
+    [[nodiscard]] bool editChunkRequirementSatisfied(ChunkCoordinate coordinate) const noexcept;
+    [[nodiscard]] bool canAdmitResidentChunk() const noexcept;
+    void recordAuthoritativeColumnChange(ChunkCoordinate coordinate) noexcept;
+    void rememberRetiredAuthoritativeVersion(ChunkCoordinate coordinate, AuthoritativeSurface const& tile) noexcept;
+    void resetAuthoritativeColumnChanges() noexcept;
     void pinAuthoritativeSurface(ChunkCoordinate coordinate) noexcept;
     void advanceAccessClock() noexcept;
     void touch(ChunkCoordinate coordinate, ResidentChunk& resident) noexcept;
@@ -364,12 +505,25 @@ private:
     ResidentEvictionCandidates m_evictable_residents;
     mutable SurfaceMetadataTiles m_surface_metadata;
     std::unordered_map<ChunkCoordinate, AuthoritativeSurface, ChunkCoordinateHash> m_authoritative_surfaces;
+    std::unordered_map<ChunkCoordinate, RetiredAuthoritativeVersion, ChunkCoordinateHash>
+        m_retired_authoritative_versions;
+    std::deque<RetiredAuthoritativeVersionToken> m_retired_authoritative_version_order;
+    SparseChunkEditsMap m_sparse_edits;
+    uint64_t m_retained_edit_capacity_units = 0U;
+    uint64_t m_sparse_edit_revision = 0U;
+    EditedChunkRequirementsMap m_edited_chunk_requirements;
     std::map<uint64_t, ChunkCoordinate> m_evictable_authoritative_surfaces;
     ProtectedChunks m_protected_authoritative_columns;
     ProtectedChunks m_authoritative_dense_overrides;
     uint64_t m_authoritative_surface_revision = 0U;
     uint64_t m_access_clock = 0U;
     mutable uint64_t m_surface_metadata_clock = 0U;
+    static constexpr size_t AUTHORITATIVE_CHANGE_CAPACITY = 4096U;
+    // Fixed at construction: recording, including noexcept eviction, never resizes or allocates.
+    std::vector<ChunkCoordinate> m_authoritative_changes =
+        std::vector<ChunkCoordinate>(AUTHORITATIVE_CHANGE_CAPACITY);
+    uint64_t m_authoritative_change_cursor = 0U;
+    uint64_t m_authoritative_change_reset = 0U;
 };
 
 } // namespace shared

@@ -10,6 +10,7 @@ target_sources(mc_game_core
             net/Message.hpp
             policy/Policy.hpp
             scenario/Scenario.hpp
+            world/BlockInteraction.hpp
             world/CanonicalWorld.hpp
             world/ScriptedWorld.hpp
             world/Chunk.hpp

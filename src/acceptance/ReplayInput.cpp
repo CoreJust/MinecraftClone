@@ -31,8 +31,12 @@ constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'
 constexpr double FLIGHT_CLEARANCE_HOLD_HALF_BAND_BLOCKS =
     GAME_BENCHMARK_FLIGHT_CLEARANCE_HOLD_BAND_BLOCKS / 2.0;
 constexpr double FLIGHT_CLEARANCE_SAFE_CEILING =
-    static_cast<double>(shared::World::FLIGHT_MAX_Z)
+    static_cast<double>(shared::World::FLIGHT_ENTITY_MAX_Z)
     - GAME_BENCHMARK_UNKNOWN_TERRAIN_TARGET_BELOW_CEILING_BLOCKS;
+constexpr double UNKNOWN_TERRAIN_CLEARANCE_TARGET = std::min(
+    static_cast<double>(shared::WorldExtent::DEPTH) + GAME_BENCHMARK_FLIGHT_CLEARANCE_TARGET_BLOCKS,
+    FLIGHT_CLEARANCE_SAFE_CEILING
+);
 
 double interpolate(
     double const start,
@@ -63,10 +67,9 @@ int8_t gameBenchmarkFlightClearanceIntent(
                 + GAME_BENCHMARK_FLIGHT_CLEARANCE_TARGET_BLOCKS,
             FLIGHT_CLEARANCE_SAFE_CEILING
         )
-        : FLIGHT_CLEARANCE_SAFE_CEILING;
+        : UNKNOWN_TERRAIN_CLEARANCE_TARGET;
     if (*player_z < target_z - FLIGHT_CLEARANCE_HOLD_HALF_BAND_BLOCKS
-        && *player_z < static_cast<double>(shared::World::FLIGHT_MAX_Z)
-            - FLIGHT_CLEARANCE_HOLD_HALF_BAND_BLOCKS) {
+        && *player_z < FLIGHT_CLEARANCE_SAFE_CEILING - FLIGHT_CLEARANCE_HOLD_HALF_BAND_BLOCKS) {
         return 1;
     }
     if (*player_z > target_z + FLIGHT_CLEARANCE_HOLD_HALF_BAND_BLOCKS && *player_z > 0.0) {
@@ -207,6 +210,19 @@ GameBenchmarkMovementRouteSample gameBenchmarkMovementRouteAt(std::chrono::nanos
     };
 }
 
+GameBenchmarkMovementRouteSample gameBenchmarkSpeed200TurningRouteAt(
+    std::chrono::nanoseconds const elapsed
+) noexcept
+{
+    // Three two-second legs, then release movement for the readiness recovery window.
+    double const yaw = elapsed < std::chrono::seconds{ 2 } ? 90.0
+        : elapsed < std::chrono::seconds{ 4 } ? 0.0 : -90.0;
+    return {
+        .forward = elapsed < std::chrono::seconds{ 6 } ? int8_t{ 1 } : int8_t{ 0 },
+        .yaw_degrees = yaw,
+    };
+}
+
 GameBenchmarkMovementRouteSample gameBenchmarkRepeatingMovementRouteAt(
     std::chrono::nanoseconds const elapsed
 ) noexcept
@@ -284,6 +300,14 @@ shared::Direction gameBenchmarkDirection(
     if (workload == GameBenchmarkWorkload::DiagnosticStationary) {
         return {};
     }
+    if (workload == GameBenchmarkWorkload::Speed200TurningMovement) {
+        auto direction = gameBenchmarkDirection(gameBenchmarkSpeed200TurningRouteAt(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(shared::TICK)
+                * static_cast<int64_t>(std::min(ordinal, uint64_t{ 60 }))
+        ));
+        direction.speedup = 200U;
+        return direction;
+    }
     if (workload == GameBenchmarkWorkload::OrdinaryTurningMovement) {
         uint64_t const route_tick = std::min(ordinal, ROUTE_TICKS);
         GameBenchmarkMovementRouteSample route = gameBenchmarkMovementRouteAt(
@@ -315,6 +339,7 @@ std::string_view gameBenchmarkWorkloadName(GameBenchmarkWorkload const workload)
     switch (workload) {
         case GameBenchmarkWorkload::OrdinaryMovement: return "ordinary-movement-v2";
         case GameBenchmarkWorkload::OrdinaryTurningMovement: return "turning-x30-movement-v3";
+        case GameBenchmarkWorkload::Speed200TurningMovement: return "speed-200-turning-movement-v1";
         case GameBenchmarkWorkload::Speed200Movement: return "speed-200-movement-v2";
         case GameBenchmarkWorkload::WrappedBorder: return "wrapped-border-v1";
         case GameBenchmarkWorkload::PermissionCollisionChurn: return "permission-collision-churn-v2";

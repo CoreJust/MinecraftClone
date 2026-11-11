@@ -1,0 +1,12 @@
+{
+  "stone": {
+    "source": "stone01.ogg",
+    "frames": 7044,
+    "sha256": "0417029c9bea29c1c4fa84751bb7d17322ff297dbd979a1dc02d5ce155351138"
+  },
+  "dirt": {
+    "source": "mud02.ogg",
+    "frames": 6239,
+    "sha256": "f99c6f3548f2b52624845a984785afe67251f7bca2ba6c9d9652b63fd436810a"
+  }
+}

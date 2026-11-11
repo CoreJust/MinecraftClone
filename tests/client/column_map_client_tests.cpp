@@ -25,8 +25,8 @@ public:
 
 TEST(ColumnMapClientTest, TerrainV2PaletteMatchesFrozenReferencePixels)
 {
-    // The exact IDs and RGBA8 values are frozen in the Terrain-v2 fixture manifest.
-    static constexpr std::array<client::ColumnMapRgba8, 7> EXPECTED_COLORS{
+    // Preserve the Terrain-v2 colors and assign a stable RGBA8 color to Sand ID 7.
+    static constexpr std::array<client::ColumnMapRgba8, 8> EXPECTED_COLORS{
         client::ColumnMapRgba8{ 189U, 217U, 237U, 255U },
         client::ColumnMapRgba8{ 128U, 128U, 128U, 255U },
         client::ColumnMapRgba8{ 92U, 147U, 69U, 255U },
@@ -34,6 +34,7 @@ TEST(ColumnMapClientTest, TerrainV2PaletteMatchesFrozenReferencePixels)
         client::ColumnMapRgba8{ 42U, 40U, 49U, 255U },
         client::ColumnMapRgba8{ 244U, 247U, 250U, 255U },
         client::ColumnMapRgba8{ 128U, 201U, 214U, 255U },
+        client::ColumnMapRgba8{ 229U, 211U, 162U, 255U },
     };
 
     client::ColumnMapPalette const palette = client::canonicalColumnMapPalette();

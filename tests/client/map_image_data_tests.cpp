@@ -1,4 +1,5 @@
 #include <client/render/MapImageData.hpp>
+#include <client/render/MapImageDraw.hpp>
 
 #include <gtest/gtest.h>
 
@@ -99,4 +100,22 @@ TEST(MapImageDataTest, ClearInvalidatesOnlyAnExistingImage)
     uint64_t const cleared_revision = image.revision();
     image.clear();
     EXPECT_EQ(image.revision(), cleared_revision);
+}
+
+TEST(MapImageDataTest, MapDrawAcceptsCroppedDestinationsAndRejectsInvalidCommands)
+{
+    client::MapImageDraw draw{
+        .image = 1U, .source = { 0.25F, 0.0F, 0.5F, 1.0F },
+        .destination = { -16.0F, 12.0F, 96.0F, 64.0F },
+        .scissor = { 0U, 12U, 80U, 64U },
+    };
+    EXPECT_TRUE(client::validMapImageDraw(draw));
+    draw.image = 2U;
+    EXPECT_FALSE(client::validMapImageDraw(draw));
+    draw.image = 0U;
+    draw.source[2] = 1.0F;
+    EXPECT_FALSE(client::validMapImageDraw(draw));
+    draw.source[2] = 0.5F;
+    draw.destination[2] = 0.0F;
+    EXPECT_FALSE(client::validMapImageDraw(draw));
 }

@@ -7,6 +7,7 @@ target_sources(mc_game_core
         policy/CoreLangPolicy.cpp
         scenario/CoreLangScenario.cpp
         scenario/Scenario.cpp
+        world/BlockInteraction.cpp
         world/CanonicalWorld.cpp
         world/ScriptedWorld.cpp
         world/ChunkMesher.cpp

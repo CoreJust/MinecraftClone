@@ -33,9 +33,28 @@ struct alignas(16) StoneFaceInstance final {
     uint32_t v_extent = 1U;
     uint32_t material_id = 1U;
     uint32_t reserved_1 = 0U;
+    // Three upper-hemisphere octahedral snorm16x2 vertex normals and a validity word.
+    // Voxel faces and vertical/downward terrain skirts keep this payload zero.
+    std::array<uint32_t, 4> terrain_normals{};
 
     static constexpr uint32_t TERRAIN_TRIANGLE = 6U;
     static constexpr uint32_t TERRAIN_HEIGHT_SCALE = 32U;
+    static constexpr uint32_t TERRAIN_TRIANGLE_XY_Q5 = 1U << 6U;
+    // reserved_1 uses this bit for side quads only; triangles encode heights there.
+    static constexpr uint32_t VOXEL_GRASS_BANK = 1U;
+
+    // The low three direction bits identify the face; bits 3..5 carry each triangle Z bit 16.
+    [[nodiscard]] constexpr uint32_t faceDirection() const noexcept { return direction & 7U; }
+
+    // Triangle Z values are fixed point at 1/32 block, including the 2048-block world top.
+    [[nodiscard]] constexpr std::array<uint32_t, 3> terrainTriangleHeights() const noexcept
+    {
+        return {
+            (static_cast<uint32_t>(z) & 0xffffU) | (((direction >> 3U) & 1U) << 16U),
+            (static_cast<uint32_t>(z) >> 16U) | (((direction >> 4U) & 1U) << 16U),
+            (reserved_1 & 0xffffU) | (((direction >> 5U) & 1U) << 16U),
+        };
+    }
 
     // XY coordinates are blocks; Z coordinates are unsigned fixed point at 1/32 block.
     [[nodiscard]]
@@ -49,6 +68,22 @@ struct alignas(16) StoneFaceInstance final {
         std::array<int32_t, 3> const& temperatures
     );
 
+    // Three categorical surface materials use the original triangle material fields.
+    [[nodiscard]]
+    static StoneFaceInstance fromTerrainMaterialTriangle(
+        std::array<std::array<int32_t, 3>, 3> const& vertices,
+        std::array<shared::Block, 3> const& materials
+    );
+
+    // Metric XYZ is rounded to 1/32 block. XY origin is signed 32-bit Q5 and
+    // offsets are signed 16-bit Q5; Z remains in the 0..65536 Q5 domain.
+    // Non-finite or unrepresentable coordinates and invalid materials are rejected.
+    [[nodiscard]]
+    static StoneFaceInstance fromMetricTerrainMaterialTriangle(
+        std::array<std::array<double, 3>, 3> const& vertices,
+        std::array<shared::Block, 3> const& materials
+    );
+
     constexpr bool operator==(StoneFaceInstance const&) const noexcept = default;
 
     [[nodiscard]]
@@ -58,8 +93,9 @@ struct alignas(16) StoneFaceInstance final {
     static StoneFaceInstance fromHeightTileQuad(shared::HeightTileSurfaceQuad const& quad);
 };
 
-static_assert(sizeof(StoneFaceInstance) == 32U);
+static_assert(sizeof(StoneFaceInstance) == 48U);
 static_assert(offsetof(StoneFaceInstance, material_id) == 24U);
+static_assert(offsetof(StoneFaceInstance, terrain_normals) == 32U);
 
 class StoneIndirectDraws final {
 public:

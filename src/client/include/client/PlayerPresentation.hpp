@@ -2,6 +2,7 @@
 
 #include "Camera.hpp"
 
+#include <shared/world/BlockInteraction.hpp>
 #include <shared/world/World.hpp>
 
 #include <glm/ext/vector_double3.hpp>
@@ -23,11 +24,7 @@ struct PlayerPresentationPosition final {
     bool operator==(PlayerPresentationPosition const&) const noexcept = default;
 };
 
-enum class CameraPerspective : uint8_t {
-    FirstPerson,
-    ThirdPersonRear,
-    ThirdPersonFront,
-};
+using CameraPerspective = shared::InteractionPerspective;
 
 enum class PlayerPresentationUpdateKind : uint8_t {
     Reconciliation,
@@ -39,13 +36,13 @@ struct PlayerCameraView final {
     bool renders_local_body = false;
 };
 
-constexpr double MAX_LOCAL_PLAYER_CAMERA_DISTANCE = 6.0;
+constexpr double MAX_LOCAL_PLAYER_CAMERA_DISTANCE = shared::MAX_INTERACTION_CAMERA_DISTANCE;
 inline constexpr glm::vec3 PLAYER_BODY_DIMENSIONS{
     static_cast<float>(shared::World::PLAYER_WIDTH_SUBCELLS) / static_cast<float>(shared::SUBCELLS_PER_CELL),
     static_cast<float>(shared::World::PLAYER_WIDTH_SUBCELLS) / static_cast<float>(shared::SUBCELLS_PER_CELL),
     static_cast<float>(shared::World::PLAYER_HEIGHT_SUBCELLS) / static_cast<float>(shared::SUBCELLS_PER_CELL),
 };
-inline constexpr double PLAYER_EYE_HEIGHT = 1.625;
+inline constexpr double PLAYER_EYE_HEIGHT = shared::INTERACTION_PLAYER_EYE_HEIGHT;
 
 class PlayerPresentation final {
 public:

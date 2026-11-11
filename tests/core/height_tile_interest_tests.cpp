@@ -25,6 +25,63 @@ bool contains(shared::HeightTileInterest const& interest, int32_t const x, int32
     return std::ranges::find(interest.keys, shared::HeightTileKey{.x = x, .y = y}) != interest.keys.end();
 }
 
+TEST(HeightTileInterestTest, PreservesOriginalHeadingOrderFingerprints)
+{
+    struct Baseline final {
+        uint32_t radius;
+        std::array<uint64_t, 16U> hashes;
+    };
+    // Captured from the original full-sort implementation, including every offset and heading.
+    static constexpr std::array<Baseline, 3U> BASELINES{{
+        { 1U, {
+            11'254'520'555'852'257'826ULL, 13'943'013'371'091'943'897ULL,
+            9'819'753'738'694'386'157ULL, 11'618'431'828'640'474'297ULL,
+            12'109'331'379'025'100'178ULL, 1'382'562'719'028'028'956ULL, 9'047'317'337'558'893'130ULL, 2'802'696'263'903'018'868ULL,
+            16'421'506'190'942'674'335ULL, 2'306'065'568'160'379'841ULL,
+            12'377'034'909'211'740'949ULL, 13'443'844'748'545'663'561ULL,
+            12'860'148'461'067'592'127ULL, 5'535'012'338'154'235'204ULL, 4'466'505'788'483'797'498ULL, 5'202'862'089'297'621'636ULL,
+        } },
+        { 40U, {
+            16'824'413'909'184'029'722ULL, 9'466'763'224'643'782'545ULL, 858'423'624'978'917'781ULL, 15'337'253'388'917'477'745ULL,
+            11'476'221'976'382'764'826ULL, 6'674'339'148'622'736'660ULL,
+            13'452'472'826'443'356'514ULL, 3'156'001'089'244'112'220ULL,
+            1'709'428'795'340'881'927ULL, 5'555'376'622'236'698'793ULL,
+            14'982'447'306'852'398'061ULL, 15'898'250'816'453'927'121ULL,
+            7'340'667'474'648'203'351ULL, 6'081'006'544'832'207'260ULL, 15'942'579'914'775'977'986ULL, 3'211'697'760'548'871'564ULL,
+        } },
+        { 256U, {
+            7'446'899'933'587'136'746ULL, 2'188'743'064'180'132'225ULL, 17'674'738'516'632'895'749ULL, 1'156'214'908'620'347'809ULL,
+            13'953'874'988'558'914'906ULL, 13'964'594'077'771'873'308ULL,
+            12'970'211'630'275'343'050ULL, 15'810'096'822'904'410'708ULL,
+            16'298'183'092'229'547'703ULL, 16'337'045'997'911'316'609ULL,
+            18'435'645'009'032'071'629ULL, 2'066'199'828'783'967'185ULL,
+            13'817'243'481'765'727'687ULL, 4'644'262'339'430'638'260ULL,
+            10'464'263'245'499'507'434ULL, 2'488'582'886'254'504'844ULL,
+        } },
+    }};
+    for (auto const& baseline : BASELINES) {
+        SCOPED_TRACE(baseline.radius);
+        auto const orders = shared::prepareHeightTileInterestOrders(baseline.radius);
+        for (size_t index = 0U; index < orders->orders.size(); ++index) {
+            SCOPED_TRACE(index);
+            auto const& order = orders->orders[index];
+            uint64_t hash = 14'695'981'039'346'656'037ULL;
+            auto const append = [&](uint32_t const number) {
+                for (uint32_t shift = 0U; shift < 32U; shift += 8U) {
+                    hash = (hash ^ static_cast<uint8_t>(number >> shift)) * 1'099'511'628'211ULL;
+                }
+            };
+            append(static_cast<uint32_t>(order.heading_x));
+            append(static_cast<uint32_t>(order.heading_y));
+            for (shared::HeightTileKey const key : order.keys) {
+                append(static_cast<uint32_t>(key.x));
+                append(static_cast<uint32_t>(key.y));
+            }
+            EXPECT_EQ(hash, baseline.hashes[index]);
+        }
+    }
+}
+
 TEST(HeightTileInterestTest, BuildsCameraIndependentCircularResidency)
 {
     shared::HeightTileKey constexpr center{.x = 2'000, .y = 2'000};

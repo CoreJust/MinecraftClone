@@ -198,6 +198,228 @@ TEST(TerrainLodTest, SurfaceMaterialsMatchCanonicalLayersAtOwnHeightAndClimateBo
     }
 }
 
+TEST(TerrainLodTest, V9LodSurfaceMaterialsUseBoundedCoastDesertAndColdSummitSources)
+{
+    shared::TerrainLodArtifact artifact{
+        .terrain_identity = {
+            .terrain_version = generation::terrainVersion(generation::TerrainModelTag::V9),
+            .revision = 1U,
+            .seed = 42U,
+            .configuration_identity = generation::configurationIdentity({
+                .seed = 42U,
+                .model_tag = generation::TerrainModelTag::V9,
+            }),
+        },
+        .model_identity = shared::TERRAIN_LOD_MODEL_V9,
+        .level = shared::TerrainLodLevel::L3,
+        .spacing = 1U,
+        .origin_x = 0U,
+        .origin_y = 0U,
+        .extent = 1U,
+        .side = 2U,
+        .nodes = std::vector<shared::TerrainLodNode>(4U),
+    };
+    shared::TerrainLodSample source{
+        .height = 384.0,
+        .water_present = false,
+        .temperature = 12.0,
+        .source_l0_elevation_m = 20.0,
+        .source_biome_id = 4U,
+        .source_native_coast_adjacent = true,
+    };
+    for (shared::TerrainLodNode& node : artifact.nodes) {
+        node.sample = source;
+    }
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.0, 0.0).top_material, shared::Block::Sand);
+
+    source.source_l0_elevation_m = 20.001;
+    for (shared::TerrainLodNode& node : artifact.nodes) {
+        node.sample = source;
+    }
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.0, 0.0).top_material, shared::Block::Grass);
+
+    source.source_l0_elevation_m = 20.0;
+    source.source_native_coast_adjacent = false;
+    for (shared::TerrainLodNode& node : artifact.nodes) {
+        node.sample = source;
+    }
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.0, 0.0).top_material, shared::Block::Grass);
+
+    source.source_biome_id = 5U;
+    for (shared::TerrainLodNode& node : artifact.nodes) {
+        node.sample = source;
+    }
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.0, 0.0).top_material, shared::Block::Sand);
+
+    source.height = 383.0;
+    source.water_present = true;
+    for (shared::TerrainLodNode& node : artifact.nodes) {
+        node.sample = source;
+    }
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.0, 0.0).top_material, shared::Block::Dirt);
+
+    source.height = 400.0;
+    source.water_present = false;
+    source.source_biome_id = 0U;
+    source.source_l0_elevation_m = 1'000.0;
+    source.temperature = -0.001;
+    for (shared::TerrainLodNode& node : artifact.nodes) {
+        node.sample = source;
+    }
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.0, 0.0).top_material, shared::Block::Snow);
+
+    source.temperature = 0.0;
+    for (shared::TerrainLodNode& node : artifact.nodes) {
+        node.sample = source;
+    }
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.0, 0.0).top_material, shared::Block::Grass);
+
+    source.temperature = -1.0;
+    source.source_biome_id = 4U;
+    for (shared::TerrainLodNode& node : artifact.nodes) {
+        node.sample = source;
+    }
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.0, 0.0).top_material, shared::Block::Grass);
+}
+
+TEST(TerrainLodTest, V21StockSnowAndGlacierIcePrecedeBiomeMaterials)
+{
+    shared::TerrainLodSample sample{
+        .height = 500.0,
+        .temperature = -0.001,
+        .source_l0_elevation_m = 10.0,
+        .source_biome_id = 5U,
+        .source_native_coast_adjacent = true,
+        .v21_surface = true,
+        .land_snow_water_equivalent_m = 0.1,
+        .glacier_thickness_m = 2.0,
+    };
+    EXPECT_EQ(shared::terrainLodSurfaceMaterial(sample, generation::V21_BLOCK_SEA_LEVEL), shared::Block::Snow);
+
+    sample.land_snow_water_equivalent_m = 0.0;
+    EXPECT_EQ(shared::terrainLodSurfaceMaterial(sample, generation::V21_BLOCK_SEA_LEVEL), shared::Block::Ice);
+
+    sample.land_snow_water_equivalent_m = 0.099;
+    sample.glacier_thickness_m = 0.1;
+    EXPECT_EQ(shared::terrainLodSurfaceMaterial(sample, generation::V21_BLOCK_SEA_LEVEL), shared::Block::Ice);
+
+    sample.glacier_thickness_m = 0.099;
+    EXPECT_EQ(shared::terrainLodSurfaceMaterial(sample, generation::V21_BLOCK_SEA_LEVEL), shared::Block::Sand);
+
+    sample.v21_surface = false;
+    sample.land_snow_water_equivalent_m = 1.0;
+    sample.glacier_thickness_m = 2.0;
+    EXPECT_EQ(shared::terrainLodSurfaceMaterial(sample, generation::V9_BLOCK_SEA_LEVEL), shared::Block::Sand);
+
+    sample.v21_surface = true;
+    sample.water_present = true;
+    EXPECT_EQ(shared::terrainLodSurfaceMaterial(sample, generation::V21_BLOCK_SEA_LEVEL), shared::Block::Grass);
+
+    sample.water_present = false;
+    sample.land_snow_water_equivalent_m = 0.0;
+    sample.glacier_thickness_m = 0.0;
+    sample.source_biome_id = 0U;
+    sample.source_native_coast_adjacent = false;
+    sample.temperature = -0.001;
+    EXPECT_EQ(shared::terrainLodSurfaceMaterial(sample, generation::V21_BLOCK_SEA_LEVEL), shared::Block::Snow);
+}
+
+TEST(TerrainLodTest, V10ShallowOceanSandRequiresWetCoastalDepth)
+{
+    shared::TerrainLodSample sample{
+        .height = 499.0,
+        .water_height = generation::V10_BLOCK_SEA_LEVEL,
+        .water_present = true,
+        .temperature = 12.0,
+        .source_l0_elevation_m = -12.5,
+        .source_biome_id = 4U,
+        .source_native_coast_adjacent = true,
+        .source_native_ocean = true,
+        .v10_surface = true,
+    };
+    EXPECT_GT(sample.water_height, sample.height);
+    EXPECT_LE(sample.water_height - sample.height, 20.0);
+    EXPECT_EQ(shared::terrainLodSurfaceMaterial(sample, generation::V10_BLOCK_SEA_LEVEL), shared::Block::Sand);
+    auto invalid = sample;
+    invalid.v10_surface = false;
+    EXPECT_THROW(shared::terrainLodSurfaceMaterial(invalid, generation::V10_BLOCK_SEA_LEVEL),
+        std::invalid_argument);
+
+    sample.source_l0_elevation_m = 12.5;
+    sample.height = 524.0;
+    sample.water_height = generation::V10_BLOCK_SEA_LEVEL;
+    EXPECT_LE(sample.water_height, sample.height);
+    EXPECT_EQ(shared::terrainLodSurfaceMaterial(sample, generation::V10_BLOCK_SEA_LEVEL), shared::Block::Dirt);
+
+    sample.source_native_ocean = false;
+    EXPECT_EQ(shared::terrainLodSurfaceMaterial(sample, generation::V10_BLOCK_SEA_LEVEL), shared::Block::Dirt);
+
+    sample.source_native_ocean = true;
+    sample.source_l0_elevation_m = -20.1;
+    sample.height = 491.0;
+    sample.water_height = generation::V10_BLOCK_SEA_LEVEL;
+    EXPECT_NE(shared::terrainLodSurfaceMaterial(sample, generation::V10_BLOCK_SEA_LEVEL), shared::Block::Sand);
+
+    sample.water_present = false;
+    sample.height = 524.0;
+    sample.temperature = 12.0;
+    sample.source_biome_id = 4U;
+    sample.source_l0_elevation_m = 12.5;
+    sample.source_native_coast_adjacent = false;
+    sample.source_native_ocean = false;
+    EXPECT_EQ(shared::terrainLodSurfaceMaterial(sample, generation::V10_BLOCK_SEA_LEVEL), shared::Block::Grass);
+}
+
+TEST(TerrainLodTest, V21L3InterpolationPreservesNearestCanonicalMaterial)
+{
+    static constexpr std::array<shared::Block, 4U> MATERIALS{
+        shared::Block::Snow, shared::Block::Ice, shared::Block::Sand, shared::Block::Grass,
+    };
+    shared::TerrainLodArtifact artifact{
+        .terrain_identity = {.terrain_version = generation::terrainVersion(generation::TerrainModelTag::V21)},
+        .model_identity = shared::TERRAIN_LOD_MODEL_V21,
+        .level = shared::TerrainLodLevel::L3,
+        .spacing = 1U,
+        .origin_x = 0U,
+        .origin_y = 0U,
+        .extent = 1U,
+        .side = 2U,
+        .nodes = std::vector<shared::TerrainLodNode>(4U),
+    };
+    for (size_t index = 0U; index < artifact.nodes.size(); ++index) {
+        auto& sample = artifact.nodes[index].sample;
+        sample.height = 500.0;
+        sample.top_material = MATERIALS[index];
+        sample.source_biome_id = 5U;
+        sample.v21_surface = true;
+    }
+
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.25, 0.25).top_material, shared::Block::Snow);
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.75, 0.25).top_material, shared::Block::Ice);
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.25, 0.75).top_material, shared::Block::Sand);
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.75, 0.75).top_material, shared::Block::Grass);
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.5, 0.25).top_material, shared::Block::Ice);
+}
+
+TEST(TerrainLodTest, V9L3InterpolationRetainsLegacyMaterialReclassification)
+{
+    shared::TerrainLodArtifact artifact{
+        .terrain_identity = {.terrain_version = generation::terrainVersion(generation::TerrainModelTag::V9)},
+        .model_identity = shared::TERRAIN_LOD_MODEL_V9,
+        .level = shared::TerrainLodLevel::L3,
+        .spacing = 1U,
+        .extent = 1U,
+        .side = 2U,
+        .nodes = std::vector<shared::TerrainLodNode>(4U),
+    };
+    for (auto& node : artifact.nodes) {
+        node.sample.height = 500.0;
+        node.sample.top_material = shared::Block::Snow;
+        node.sample.source_biome_id = 5U;
+    }
+    EXPECT_EQ(shared::sampleTerrainLod(artifact, 0.25, 0.25).top_material, shared::Block::Sand);
+}
+
 TEST(TerrainLodTest, InterpolatedClimateAndMaterialMatchCanonicalBoundaryAtEveryCoarseLevel)
 {
     for (uint32_t const resolution : {256U, 512U}) {

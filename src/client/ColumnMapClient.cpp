@@ -28,6 +28,7 @@ ColumnMapPalette canonicalColumnMapPalette() noexcept
     palette.colors[static_cast<uint8_t>(shared::Block::Bedrock)] = { 42U, 40U, 49U, 255U };
     palette.colors[static_cast<uint8_t>(shared::Block::Snow)] = { 244U, 247U, 250U, 255U };
     palette.colors[static_cast<uint8_t>(shared::Block::Ice)] = { 128U, 201U, 214U, 255U };
+    palette.colors[static_cast<uint8_t>(shared::Block::Sand)] = { 229U, 211U, 162U, 255U };
     return palette;
 }
 

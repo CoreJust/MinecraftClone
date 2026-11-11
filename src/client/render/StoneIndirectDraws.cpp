@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
@@ -33,20 +34,24 @@ StoneFaceInstance StoneFaceInstance::fromTerrainTriangle(
             | (static_cast<uint32_t>(static_cast<uint16_t>(dy)) << 16U);
     };
     for (auto const& vertex : vertices) {
-        if (vertex[2] < 0 || vertex[2] > 65'535) {
-            throw std::invalid_argument("terrain triangle height exceeds unsigned 16-bit range");
+        if (vertex[2] < 0 || vertex[2] > 65'536) {
+            throw std::invalid_argument("terrain triangle height exceeds the 2048-block world domain");
         }
     }
-    uint32_t const heights = static_cast<uint32_t>(vertices[0][2]) | (static_cast<uint32_t>(vertices[1][2]) << 16U);
+    uint32_t const heights = (static_cast<uint32_t>(vertices[0][2]) & 0xffffU)
+        | ((static_cast<uint32_t>(vertices[1][2]) & 0xffffU) << 16U);
+    uint32_t const height_carries = ((static_cast<uint32_t>(vertices[0][2]) >> 16U) << 3U)
+        | ((static_cast<uint32_t>(vertices[1][2]) >> 16U) << 4U)
+        | ((static_cast<uint32_t>(vertices[2][2]) >> 16U) << 5U);
     return {
         .x = vertices[0][0],
         .y = vertices[0][1],
         .z = std::bit_cast<int32_t>(heights),
-        .direction = TERRAIN_TRIANGLE,
+        .direction = TERRAIN_TRIANGLE | height_carries,
         .u_extent = offset(1U),
         .v_extent = offset(2U),
         .material_id = static_cast<uint32_t>(material),
-        .reserved_1 = static_cast<uint32_t>(vertices[2][2]),
+        .reserved_1 = static_cast<uint32_t>(vertices[2][2]) & 0xffffU,
     };
 }
 
@@ -64,6 +69,53 @@ StoneFaceInstance StoneFaceInstance::fromTerrainSurfaceTriangle(
     face.reserved_1 |= 0x8000'0000U | ((static_cast<uint32_t>(temperatures[0]) & 0x7fffU) << 16U);
     face.material_id = static_cast<uint32_t>(static_cast<uint16_t>(temperatures[1]))
         | (static_cast<uint32_t>(static_cast<uint16_t>(temperatures[2])) << 16U);
+    return face;
+}
+
+StoneFaceInstance StoneFaceInstance::fromTerrainMaterialTriangle(
+    std::array<std::array<int32_t, 3>, 3> const& vertices,
+    std::array<shared::Block, 3> const& materials
+)
+{
+    for (shared::Block const material : materials) {
+        if (!shared::isSolidBlock(material)) {
+            throw std::invalid_argument("terrain triangle contains an invalid surface material");
+        }
+    }
+    StoneFaceInstance face = fromTerrainTriangle(vertices, materials[0]);
+    // Climate triangles own bit31; bit30 is a separate format only while bit31 is clear.
+    face.reserved_1 |= 0x4000'0000U;
+    face.material_id = static_cast<uint32_t>(materials[0])
+        | (static_cast<uint32_t>(materials[1]) << 8U)
+        | (static_cast<uint32_t>(materials[2]) << 16U);
+    return face;
+}
+
+StoneFaceInstance StoneFaceInstance::fromMetricTerrainMaterialTriangle(
+    std::array<std::array<double, 3>, 3> const& vertices,
+    std::array<shared::Block, 3> const& materials
+)
+{
+    std::array<std::array<int32_t, 3>, 3> fixed{};
+    for (size_t vertex = 0; vertex < vertices.size(); ++vertex) {
+        for (size_t axis = 0; axis < 3; ++axis) {
+            if (axis == 2 && (vertices[vertex][axis] < 0.0 || vertices[vertex][axis] > 2048.0)) {
+                throw std::invalid_argument("terrain triangle height exceeds the 2048-block world domain");
+            }
+            double const scaled = vertices[vertex][axis] * 32.0;
+            if (!std::isfinite(scaled)) {
+                throw std::invalid_argument("terrain triangle coordinate is not finite");
+            }
+            double const rounded = std::round(scaled);
+            if (rounded < static_cast<double>(std::numeric_limits<int32_t>::min())
+                || rounded > static_cast<double>(std::numeric_limits<int32_t>::max())) {
+                throw std::invalid_argument("terrain triangle coordinate exceeds signed 32-bit Q5 range");
+            }
+            fixed[vertex][axis] = static_cast<int32_t>(rounded);
+        }
+    }
+    StoneFaceInstance face = fromTerrainMaterialTriangle(fixed, materials);
+    face.direction |= TERRAIN_TRIANGLE_XY_Q5;
     return face;
 }
 

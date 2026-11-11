@@ -1131,40 +1131,93 @@ bool World::moveFlightPlayer(
         struct HorizontalCandidate final {
             int64_t x;
             int64_t y;
+            int64_t z;
+        };
+        // Defer terrain-only descent collisions while retaining player checks at the sampled height.
+        auto const canDeferDescendingTerrainCollision = [&](int64_t const sample_x,
+            int64_t const sample_y,
+            int64_t const sample_z) {
+            if (delta_z >= 0) {
+                return false;
+            }
+            PlayerPosition const sample = positionFromSubcells(
+                static_cast<int32_t>(sample_x),
+                static_cast<int32_t>(sample_y),
+                static_cast<int32_t>(sample_z)
+            );
+            PlayerPosition normalized = sample;
+            normalized.x = wrapFlightCell(normalized.x);
+            normalized.y = wrapFlightCell(normalized.y);
+            return isFlightPositionInBounds(normalized)
+                && canPlayerBeAt(
+                    static_cast<uint32_t>(normalized.x * SUBCELLS_PER_CELL + normalized.x_subcell),
+                    static_cast<uint32_t>(normalized.y * SUBCELLS_PER_CELL + normalized.y_subcell),
+                    sample_z,
+                    player.id
+                )
+                && canFlightPlayerBeAt(player, sample_x, sample_y, start_z);
         };
         auto const resolveHorizontal = [&](int64_t const delta, bool const on_x_axis) {
-            HorizontalCandidate candidate{ .x = start_x, .y = start_y };
+            HorizontalCandidate candidate{ .x = start_x, .y = start_y, .z = start_z };
             if (delta == 0) {
                 return candidate;
             }
             int64_t const axis_steps = std::max<int64_t>(
                 1,
-                (absolute(delta) + SWEEP_STRIDE - 1) / SWEEP_STRIDE
+                (std::max(absolute(delta), absolute(delta_z)) + SWEEP_STRIDE - 1) / SWEEP_STRIDE
             );
             for (int64_t step = 1; step <= axis_steps; ++step) {
                 int64_t const sample_x = on_x_axis
                     ? start_x + delta * step / axis_steps : start_x;
                 int64_t const sample_y = on_x_axis
                     ? start_y : start_y + delta * step / axis_steps;
-                int64_t const sample_z = start_z + delta_z * step / axis_steps;
+                int64_t sample_z = start_z + delta_z * step / axis_steps;
                 if (!canFlightPlayerBeAt(player, sample_x, sample_y, sample_z)) {
-                    break;
+                    if (!canDeferDescendingTerrainCollision(sample_x, sample_y, sample_z)) {
+                        break;
+                    }
+                    sample_z = start_z;
                 }
                 candidate.x = sample_x;
                 candidate.y = sample_y;
+                candidate.z = sample_z;
             }
             return candidate;
         };
 
-        if (!direct_path_clear) {
+        bool ground_slide_clear = !direct_path_clear && delta_z < 0;
+        if (ground_slide_clear) {
+            int64_t const steps = std::max<int64_t>(1,
+                (std::max({absolute(delta_x), absolute(delta_y), absolute(delta_z)})
+                    + SWEEP_STRIDE - 1) / SWEEP_STRIDE);
+            for (int64_t step = 1; step <= steps; ++step) {
+                int64_t const x = start_x + delta_x * step / steps;
+                int64_t const y = start_y + delta_y * step / steps;
+                int64_t const z = start_z + delta_z * step / steps;
+                // Ground can cancel descent, but neither a wall nor another body
+                // may turn a blocked diagonal into an unchecked horizontal path.
+                if (!canFlightPlayerBeAt(player, x, y, start_z)
+                    || (!canFlightPlayerBeAt(player, x, y, z)
+                        && !canDeferDescendingTerrainCollision(x, y, z))) {
+                    ground_slide_clear = false;
+                    break;
+                }
+            }
+            if (ground_slide_clear) {
+                resolved_z = start_z;
+            }
+        }
+        if (!direct_path_clear && !ground_slide_clear) {
             HorizontalCandidate const x_candidate = resolveHorizontal(delta_x, true);
             HorizontalCandidate const y_candidate = resolveHorizontal(delta_y, false);
             if (delta_x == 0) {
                 resolved_x = y_candidate.x;
                 resolved_y = y_candidate.y;
+                resolved_z = y_candidate.z;
             } else if (delta_y == 0) {
                 resolved_x = x_candidate.x;
                 resolved_y = x_candidate.y;
+                resolved_z = x_candidate.z;
             } else {
                 // Never compose two independently clear axis paths after the
                 // combined diagonal was blocked: that L-shaped fallback can
@@ -1176,23 +1229,25 @@ bool World::moveFlightPlayer(
                     ? x_candidate : y_candidate;
                 resolved_x = selected.x;
                 resolved_y = selected.y;
+                resolved_z = selected.z;
             }
         }
 
-        if (!direct_path_clear && delta_z != 0) {
+        int64_t const remaining_delta_z = target_z - resolved_z;
+        if (!direct_path_clear && remaining_delta_z != 0) {
             int64_t const starting_surface = m_collision_world == nullptr
                 ? terrainSurfaceUnderPlayer(resolved_x, resolved_y) : 0;
             int64_t const vertical_steps = std::max<int64_t>(
                 1,
-                (absolute(delta_z) + SWEEP_STRIDE - 1) / SWEEP_STRIDE
+                (absolute(remaining_delta_z) + SWEEP_STRIDE - 1) / SWEEP_STRIDE
             );
-            int64_t last_z = start_z;
+            int64_t last_z = resolved_z;
             for (int64_t step = 1; step <= vertical_steps; ++step) {
-                int64_t sample_z = start_z + delta_z * step / vertical_steps;
+                int64_t sample_z = resolved_z + remaining_delta_z * step / vertical_steps;
                 int64_t const surface = m_collision_world == nullptr
                     ? terrainSurfaceUnderPlayer(resolved_x, resolved_y) : 0;
                 if (sample_z < surface) {
-                    if (delta_z > 0) {
+                    if (remaining_delta_z > 0) {
                         // The player may have advanced onto a higher terrain
                         // column during the horizontal sweep. Keep ascending
                         // until the body clears that column instead of freezing

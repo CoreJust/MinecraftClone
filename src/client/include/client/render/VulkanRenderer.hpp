@@ -1,7 +1,10 @@
 #pragma once
 
 #include <client/Camera.hpp>
+#include <client/render/BlockInteractionEffects.hpp>
 #include <client/render/DebugHud.hpp>
+#include <client/render/GuiVector.hpp>
+#include <client/render/MapImageDraw.hpp>
 #include <client/render/PresentationFrameProgress.hpp>
 #include <client/render/ShaderAssets.hpp>
 #include <client/render/StoneFaceCapacity.hpp>
@@ -40,6 +43,16 @@ struct HeightTileSurfaceMesh;
 namespace client {
 
 struct TerrainLodScene;
+
+// Optional per-call timings for benchmark attribution; a null sink avoids clock reads.
+struct TerrainLodRendererDiagnostics final {
+    std::chrono::nanoseconds plan_duration{0};
+    std::chrono::nanoseconds buffer_update_duration{0};
+    std::chrono::nanoseconds publish_duration{0};
+    uint64_t uploaded_face_count = 0U;
+    uint64_t prepared_draw_index_publish_count = 0U;
+    uint64_t render_thread_draw_index_build_count = 0U;
+};
 
 struct PlayerRenderData final {
     float x = 0.0F;
@@ -138,6 +151,10 @@ struct RendererRuntimeInfo final {
     bool presentation_recreation_attempted = false;
     bool presentation_recreation_deferred = false;
     std::chrono::nanoseconds cpu_command_record_duration{ 0 };
+    std::chrono::nanoseconds cpu_presentation_prepare_duration{ 0 };
+    std::chrono::nanoseconds cpu_pipeline_bind_duration{ 0 };
+    std::chrono::nanoseconds cpu_context_complete_call_duration{ 0 };
+    std::chrono::nanoseconds cpu_stone_face_growth_duration{ 0 };
     std::chrono::nanoseconds cpu_visible_range_collection_duration{ 0 };
     std::chrono::nanoseconds cpu_height_tile_group_and_tile_traversal_duration{ 0 };
     std::chrono::nanoseconds cpu_height_tile_pending_range_order_duration{ 0 };
@@ -203,6 +220,8 @@ struct RendererFrameCapture final {
     // Describes the captured pixel transfer, independent of the render-target format.
     bool srgb_encoded = false;
     std::vector<uint8_t> rgba8;
+    // Known only when completion tracking identified this exact submitted readback.
+    std::optional<RendererFrameIdentity> frame_identity;
 };
 
 class VulkanRenderer final : core::NonCopyable, core::NonMovable {
@@ -244,6 +263,9 @@ public:
     void setGuiText(std::string_view text, TextColor color = {});
     void addGuiText(std::string_view text, TextPlacement placement, TextColor color = {});
     void clearGuiText() noexcept;
+    // Replaces one framebuffer-pixel triangle batch; empty clears. Invalid/nonfinite
+    // vertices, non-triangle counts or counts above 65536 preserve the prior batch.
+    [[nodiscard]] bool setGuiVectorTriangles(std::span<GuiVectorVertex const> vertices);
     // On the renderer's owning thread, copies one opaque row-major RGBA8 image
     // up to 512-by-512 pixels; render() uploads changes, not identical images.
     [[nodiscard]]
@@ -252,24 +274,43 @@ public:
         uint32_t height,
         std::span<std::array<uint8_t, 4> const> rgba8
     );
+    [[nodiscard]] bool setMapImage(uint32_t image, uint32_t width, uint32_t height,
+        std::span<std::array<uint8_t, 4> const> rgba8);
+    void clearMapImage(uint32_t image) noexcept;
+    // At most eight bounded draws over two independent images. An empty list hides both.
+    [[nodiscard]] bool setMapDraws(std::span<MapImageDraw const> draws);
     void clearMapImage() noexcept;
-    // Completion tracking is opt-in for loading screens. Toggling clears the
-    // progress snapshot; while enabled, IDs advance after successful submits.
-    void setFrameCompletionTracking(bool enabled) noexcept;
+    // Completion tracking is opt-in for UI and diagnostics. Toggling clears
+    // progress; submitted IDs advance on submit, completed IDs on observed fences.
+    void setFrameCompletionTracking(bool enabled, bool retainRetiredHistory = false) noexcept;
     // Fence-confirmed progress, identified by renderer sequence and swapchain
     // generation. A false render() result leaves the submitted ID unchanged.
     [[nodiscard]] RendererFrameProgress frameProgress() const noexcept;
     void setWorldText(std::string_view text, TextPlacement placement, TextColor color = {});
     void addWorldText(std::string_view text, TextPlacement placement, TextColor color = {});
     void clearWorldText() noexcept;
+    void setBlockInteractionTarget(std::optional<shared::BlockTarget> target, float server_progress,
+        BlockInteractionEffects::Clock::time_point now = BlockInteractionEffects::Clock::now()) noexcept;
+    [[nodiscard]] bool addAcceptedBlockBreak(BlockBreakEventIdentity identity, shared::WorldCoordinate cell,
+        shared::Block material, std::chrono::steady_clock::time_point observed_at);
+    void clearBlockInteractionEffects() noexcept;
     void setCamera(CameraPose pose) noexcept;
     void setCamera(CameraPose pose, CameraProjection projection) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
     void setChunkMeshes(std::span<shared::ChunkMesh const> meshes);
+    // Benchmark timings are optional; a null diagnostics sink performs no clock reads.
     [[nodiscard]]
     bool upsertTerrainLodScene(
         std::shared_ptr<TerrainLodScene const> scene,
-        std::chrono::steady_clock::time_point deadline
+        std::chrono::steady_clock::time_point deadline,
+        TerrainLodRendererDiagnostics* diagnostics = nullptr
+    );
+    // Replace existing exact groups atomically; return the published immutable scene after upload completes.
+    [[nodiscard]]
+    std::shared_ptr<TerrainLodScene const> replaceTerrainLodGroups(
+        std::shared_ptr<TerrainLodScene const> patch,
+        std::chrono::steady_clock::time_point deadline,
+        TerrainLodRendererDiagnostics* diagnostics = nullptr
     );
     void clearTerrainLodScene();
     [[nodiscard]]
@@ -321,6 +362,13 @@ public:
         std::span<PlayerRenderData const> players,
         std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
     );
+    void addGuiText(std::string_view text, TextPlacement placement, TextColor color = {});
+    void clearGuiText() noexcept;
+    // Replaces one framebuffer-pixel triangle batch; empty clears. Invalid/nonfinite
+    // vertices, non-triangle counts or counts above 65536 preserve the prior batch.
+    [[nodiscard]] bool setGuiVectorTriangles(std::span<GuiVectorVertex const> vertices);
+    [[nodiscard]] bool setMapImage(uint32_t width, uint32_t height,
+        std::span<std::array<uint8_t, 4> const> rgba8);
     void setCamera(CameraPose pose) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
     void setTerrainLodScene(std::shared_ptr<TerrainLodScene const> scene);

@@ -25,7 +25,14 @@ TEST(CoreLangTerrainPlanTest, BackendsReturnTheSameFrozenConfigurationAndPlan)
     };
     generation::GenerationConfiguration const configuration{
         .seed = 42U,
-        .resolution = 256U,
+        .resolution = 512U,
+        .epochs = 10U,
+        .erosion_steps = 2U,
+        .initial_climate_iterations = 12U,
+        .climate_iterations = 63U,
+        .currents = false,
+        .wind_sign = -1,
+        .coastal_elaboration = false,
     };
     std::string const expected_identity = generation::configurationIdentity(configuration);
     std::optional<shared::corelang::BackendReceipt> first_receipt;

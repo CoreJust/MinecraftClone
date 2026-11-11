@@ -44,6 +44,11 @@
 build.*
 build/
 third_party/
+!third_party/
+!third_party/platec/
+!third_party/platec/**
+!third_party/structural/
+!third_party/structural/**
 .vscode/
 .PVS-Studio/
 .vcpkg/

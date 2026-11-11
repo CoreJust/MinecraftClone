@@ -7,6 +7,7 @@
 #include <client/PlayerPresentation.hpp>
 #include <client/PreviewResidency.hpp>
 #include <client/WorldLoading.hpp>
+#include <shared/net/LocalPreparationSnapshots.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
@@ -28,6 +29,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <compare>
 #include <cstdlib>
 #include <exception>
@@ -216,7 +218,7 @@ bool nearCoverageRemainsConnected(
 [[nodiscard]]
 bool isValidTerrainSession(shared::TerrainSessionIdentity const& session) noexcept
 {
-    if (session.join_epoch == 0U
+    if (session.join_epoch == 0U || session.server_nonce == 0U
         || !shared::isValidTerrainIdentity(session.terrain)
         || session.terrain.seed != session.configuration.seed
         || (session.configuration.resolution != 256U && session.configuration.resolution != 512U)) {
@@ -274,13 +276,52 @@ bool isHeightTileValidForWorld(
     return true;
 }
 
+std::optional<shared::Block> groundedMaterialForPlayer(
+    shared::SparseWorld const* const world,
+    shared::WorldMode const mode,
+    shared::Player const& player
+) noexcept
+{
+    if (world == nullptr || mode != shared::WorldMode::Flight
+        || player.movement_capabilities.allows(shared::MovementCapability::Flight)
+        || player.movement_capabilities.allows(shared::MovementCapability::CollisionBypass)
+        || player.vertical_velocity_subcells != 0 || player.z <= 0 || player.z_subcell != 0U) {
+        return std::nullopt;
+    }
+    int64_t const x_subcells = static_cast<int64_t>(player.x) * shared::SUBCELLS_PER_CELL + player.x_subcell;
+    int64_t const y_subcells = static_cast<int64_t>(player.y) * shared::SUBCELLS_PER_CELL + player.y_subcell;
+    int64_t const first_x = x_subcells / shared::SUBCELLS_PER_CELL;
+    int64_t const first_y = y_subcells / shared::SUBCELLS_PER_CELL;
+    int64_t const last_x = (x_subcells + shared::World::PLAYER_WIDTH_SUBCELLS - 1U)
+        / shared::SUBCELLS_PER_CELL;
+    int64_t const last_y = (y_subcells + shared::World::PLAYER_WIDTH_SUBCELLS - 1U)
+        / shared::SUBCELLS_PER_CELL;
+    for (int64_t y = first_y; y <= last_y; ++y) {
+        for (int64_t x = first_x; x <= last_x; ++x) {
+            shared::SparseBlockQuery const query = world->queryBlock({
+                .x = x,
+                .y = y,
+                .z = static_cast<int64_t>(player.z) - 1,
+            });
+            if (query.state == shared::GenerationState::Materialized && query.block
+                && shared::isSolidBlock(*query.block)) {
+                return query.block;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+
 } // namespace
 
 GameClient::GameClient(
     shared::WorldMode const mode,
     shared::WorldConfiguration const configuration,
     bool const wants_previews,
-    std::unique_ptr<ClientAudioOutput> audio_output
+    std::unique_ptr<ClientAudioOutput> audio_output,
+    PreparedTerrainWorldProvider prepared_world_provider,
+    std::shared_ptr<shared::LocalPreparationSnapshots> local_preparation_snapshots
 )
     : core::Client{ 2 }
     , m_world{ mode, configuration }
@@ -293,6 +334,8 @@ GameClient::GameClient(
 #else
     , m_world_loading{ WorldLoadingPlatform::Mac }
 #endif
+    , m_local_preparation_snapshots{ std::move(local_preparation_snapshots) }
+    , m_prepared_world_provider{ std::move(prepared_world_provider) }
 {
 }
 
@@ -306,6 +349,22 @@ WorldLoadingStatus GameClient::worldLoadingStatus() const
 shared::SparseWorld const* GameClient::authoritativeWorld() const noexcept
 {
     return m_authoritative_world.get();
+}
+
+std::optional<MaterializedInterestChunkAvailability>
+GameClient::currentMaterializedInterestChunkAvailability() const noexcept
+{
+    if (!m_authoritative_world) {
+        return std::nullopt;
+    }
+    MaterializedInterestChunkAvailability availability;
+    availability.required_count = static_cast<uint32_t>(m_active_materialized_interest_set.size());
+    for (shared::ChunkCoordinate const coordinate : m_active_materialized_interest_set) {
+        if (m_authoritative_world->residentChunk(coordinate) != nullptr) {
+            ++availability.resident_count;
+        }
+    }
+    return availability;
 }
 
 std::optional<shared::TerrainIdentity> GameClient::activeTerrainIdentity() const
@@ -330,6 +389,19 @@ std::shared_ptr<shared::TerrainLodArtifact const> GameClient::terrainLodRoot() c
         return nullptr;
     }
     return m_terrain_lod_source->rootFor(*m_terrain_session);
+}
+
+std::shared_ptr<S2MapImage const> GameClient::terrainLodMap() const noexcept
+{
+    if (!m_terrain_session || !m_terrain_lod_source) {
+        return nullptr;
+    }
+    return m_terrain_lod_source->mapFor(*m_terrain_session);
+}
+
+bool GameClient::terrainLodMapUnavailable() const noexcept
+{
+    return m_terrain_session && m_terrain_lod_source && m_terrain_lod_source->mapUnavailableFor(*m_terrain_session);
 }
 
 std::optional<uint64_t> GameClient::activeCoverageEpoch() const noexcept
@@ -361,6 +433,7 @@ uint64_t GameClient::ChunkCoordinateHash::operator()(
 
 bool GameClient::beginLoadingRequest(LoadingTimePoint const accepted_at)
 {
+    m_connection_attempt_started = false;
     generation::GenerationConfiguration configuration;
     configuration.seed = m_world.configuration().seed;
     WorldLoadingIdentity identity{
@@ -379,6 +452,13 @@ bool GameClient::beginLoadingRequest(LoadingTimePoint const accepted_at)
         m_next_join_epoch = 1U;
     }
     m_terrain_session.reset();
+    if (m_local_preparation_snapshots) {
+        m_local_preparation_snapshots->clear();
+    }
+    m_block_action_status.reset();
+    m_accepted_block_action_results.clear();
+    m_accepted_block_action_sequences.clear();
+    m_dropped_accepted_block_action_results = 0U;
     m_world.setCollisionWorld(nullptr);
     m_predicted_world.setCollisionWorld(nullptr);
     m_authoritative_world.reset();
@@ -404,6 +484,7 @@ void GameClient::run(
         CORE_ERROR("Could not initialize the loading state for this client request");
         return;
     }
+    m_server_address = fmt::format("{}", server_address);
     m_benchmark_hooks = benchmark_hooks;
     m_benchmark_bytes_sent = 0U;
     m_benchmark_bytes_received = 0U;
@@ -445,6 +526,7 @@ void GameClient::run(
             break;
         }
         if (!isConnected()) {
+            m_connection_attempt_started = true;
             if (!connect(server_address, CONNECTION_ATTEMPT_TIMEOUT, service_connection)) {
                 CORE_INFO("Waiting to connect to server {}", server_address);
                 auto const retry_deadline = std::chrono::steady_clock::now() + CONNECTION_RETRY_DELAY;
@@ -498,6 +580,7 @@ void GameClient::run(
             : std::chrono::steady_clock::time_point{};
         processPendingHeightTileDeliveries();
         processPendingMaterializedChunks(std::chrono::steady_clock::now());
+        retryEditResync(std::chrono::steady_clock::now());
         auto const height_tile_delivery_completed_at = benchmark_hooks
             ? std::chrono::steady_clock::now()
             : std::chrono::steady_clock::time_point{};
@@ -591,6 +674,7 @@ void GameClient::run(
 void GameClient::onDisconnected(core::DisconnectEvent const event) {
     CORE_INFO("Server disconnected: {}", event.peer.address());
     std::cout << "[SERVER DISCONNECTED] address " << fmt::format("{}", event.peer.address()) << '\n';
+    m_client_audio.stop();
     m_accepted = false;
     resetConnectionState();
 }
@@ -616,7 +700,18 @@ void GameClient::resetConnectionState()
     m_last_accepted_input_ack = 0U;
     m_last_accepted_position_revision = 0U;
     m_last_accepted_position_at = {};
+    resetLandingTransitions();
     m_next_input_sequence = 1U;
+    m_next_block_action_sequence = 1U;
+    m_block_action_status.reset();
+    m_accepted_block_action_results.clear();
+    m_accepted_block_action_sequences.clear();
+    m_dropped_accepted_block_action_results = 0U;
+    m_future_edit_deltas.clear();
+    m_pending_edit_resync.clear();
+    m_next_edit_resync_retry = {};
+    m_edit_resync_retry_cursor = 0U;
+    m_edit_manifests.clear();
     m_height_tile_residency = PreviewResidency{ { .generation = 0U, .revision = 0U } };
     m_height_tile_revision = { .generation = 0U, .revision = 0U };
     m_render_distance.reset();
@@ -627,6 +722,9 @@ void GameClient::resetConnectionState()
     m_resident_height_tile_keys.clear();
     m_authoritative_world.reset();
     m_terrain_session.reset();
+    if (m_local_preparation_snapshots) {
+        m_local_preparation_snapshots->clear();
+    }
     clearActiveCoverage();
     m_last_world_preparation_sequence = 0U;
     m_initial_chunk_credit_sent = false;
@@ -657,6 +755,37 @@ void GameClient::onReceived(core::ReceiveEvent event) {
     }
 
     shared::Message* msg_ptr = &*maybe_msg;
+    if (auto const* delta = std::get_if<shared::ServerBlockDeltaMessage>(msg_ptr)) {
+        static_cast<void>(applyBlockDelta(*delta));
+        if (validateSession(delta->session) && delta->delivery_token != 0U) {
+            static_cast<void>(send(shared::ClientEditDeliveryAckMessage{
+                .session = delta->session, .delivery_token = delta->delivery_token,
+            }));
+        }
+        return;
+    }
+    if (auto const* snapshot = std::get_if<shared::ServerEditChunkSnapshotMessage>(msg_ptr)) {
+        static_cast<void>(applyEditSnapshot(*snapshot));
+        if (validateSession(snapshot->session) && snapshot->delivery_token != 0U) {
+            static_cast<void>(send(shared::ClientEditDeliveryAckMessage{
+                .session = snapshot->session, .delivery_token = snapshot->delivery_token,
+            }));
+        }
+        return;
+    }
+    if (auto const* manifest = std::get_if<shared::ServerEditedColumnManifestMessage>(msg_ptr)) {
+        static_cast<void>(applyEditManifest(*manifest));
+        if (validateSession(manifest->session) && manifest->delivery_token != 0U) {
+            static_cast<void>(send(shared::ClientEditDeliveryAckMessage{
+                .session = manifest->session, .delivery_token = manifest->delivery_token,
+            }));
+        }
+        return;
+    }
+    if (auto const* result = std::get_if<shared::ServerBlockActionResultMessage>(msg_ptr)) {
+        static_cast<void>(applyBlockActionResult(*result));
+        return;
+    }
     if (event.channel_id == shared::HEIGHT_TILE_CHANNEL) {
         if (auto* authority = std::get_if<shared::ServerAuthoritativeTerrainBatchMessage>(msg_ptr)) {
             static_cast<void>(applyAuthoritativeTerrainBatch(*authority, std::chrono::steady_clock::now()));
@@ -741,19 +870,65 @@ void GameClient::onReceived(core::ReceiveEvent event) {
         applyServerRemoval(player_removal->ch);
     } else if (auto* world_preparation = std::get_if<shared::ServerWorldPreparationMessage>(msg_ptr)) {
         auto const apply_started_at = std::chrono::steady_clock::now();
+        bool const preparation_eligible = validateSession(world_preparation->session)
+            && world_preparation->sequence != 0U
+            && world_preparation->sequence > m_last_world_preparation_sequence
+            && world_preparation->work_completed <= world_preparation->work_total
+            && static_cast<uint8_t>(world_preparation->stage)
+                <= static_cast<uint8_t>(generation::GenerationStage::V10Water);
+        bool const has_wire_snapshot = world_preparation->latest_snapshot != nullptr;
+        bool used_local_snapshot = false;
+        if (preparation_eligible && !has_wire_snapshot && m_local_preparation_snapshots) {
+            world_preparation->latest_snapshot = m_local_preparation_snapshots->take(
+                world_preparation->session, world_preparation->sequence
+            );
+            used_local_snapshot = world_preparation->latest_snapshot != nullptr;
+        }
         bool const applied = applyWorldPreparation(*world_preparation, apply_started_at);
+        if (applied && preparation_eligible && world_preparation->failure.empty()
+            && m_local_preparation_snapshots) {
+            m_local_preparation_snapshots->bind(world_preparation->session);
+        }
         auto const apply_completed_at = std::chrono::steady_clock::now();
-        if (world_preparation->sequence <= 32U || world_preparation->final_atlas_complete) {
-            auto const* snapshot = world_preparation->latest_snapshot.get();
-            size_t const snapshot_payload_bytes = snapshot == nullptr ? 0U
-                : (snapshot->elevation.size() + snapshot->temperature.size()
-                    + snapshot->precipitation.size() + snapshot->water_level.size()) * sizeof(float)
-                    + snapshot->ocean_mask.size() + snapshot->lake_mask.size() + snapshot->river_mask.size();
-            CORE_INFO("startup-boundary preparation-client sequence={} receive_steady_ns={} packet_bytes={} "
-                "snapshot_payload_bytes={} decode_us={} apply_us={} applied={} final={}",
+        auto const* snapshot = world_preparation->latest_snapshot.get();
+        if (snapshot != nullptr || world_preparation->sequence <= 32U || world_preparation->final_atlas_complete) {
+            uint64_t snapshot_payload_bytes = 0U;
+            if (snapshot != nullptr && snapshot->v9) {
+                auto const& fields = *snapshot->v9;
+                snapshot_payload_bytes = static_cast<uint64_t>(fields.source_elevation_m.size()) * sizeof(float)
+                    + static_cast<uint64_t>(fields.temperature_celsius.size()) * sizeof(float)
+                    + static_cast<uint64_t>(fields.wind_u.size() + fields.wind_v.size()
+                        + fields.current_u.size() + fields.current_v.size()) * sizeof(float)
+                    + static_cast<uint64_t>(fields.precipitation_mm_year.size()) * sizeof(float)
+                    + static_cast<uint64_t>(fields.water_level_m.size()) * sizeof(float)
+                    + static_cast<uint64_t>(fields.ocean_mask.size()) * sizeof(uint8_t)
+                    + static_cast<uint64_t>(fields.lake_mask.size()) * sizeof(uint8_t)
+                    + static_cast<uint64_t>(fields.river_mask.size()) * sizeof(uint8_t)
+                    + static_cast<uint64_t>(fields.ice_surface_kind.size()) * sizeof(uint8_t)
+                    + static_cast<uint64_t>(fields.plate_ids.size()) * sizeof(uint32_t)
+                    + static_cast<uint64_t>(fields.plate_directions.size()) * sizeof(generation::GenerationPlateDirection);
+            } else if (snapshot != nullptr) {
+                snapshot_payload_bytes = static_cast<uint64_t>(
+                    snapshot->elevation.size() + snapshot->temperature.size()
+                    + snapshot->precipitation.size() + snapshot->water_level.size()
+                ) * sizeof(float)
+                    + static_cast<uint64_t>(snapshot->ocean_mask.size() + snapshot->lake_mask.size()
+                        + snapshot->river_mask.size()) * sizeof(uint8_t);
+            }
+            uint32_t const snapshot_stage = snapshot == nullptr
+                ? std::numeric_limits<uint32_t>::max()
+                : static_cast<uint32_t>(snapshot->stage);
+            char const* const snapshot_model = snapshot == nullptr ? "none"
+                : (snapshot->v9 ? "v9" : (snapshot->v21 ? "v21" : (snapshot->v10 ? "v10" : "r6")));
+            char const* const snapshot_source = snapshot == nullptr ? "none"
+                : (used_local_snapshot ? "local" : "wire");
+            CORE_INFO("startup-boundary preparation-client sequence={} stage_id={} receive_steady_ns={} "
+                "packet_bytes={} snapshot_source={} snapshot_model={} snapshot_stage_id={} snapshot_payload_bytes={} "
+                "decode_us={} apply_us={} applied={} final={}",
                 world_preparation->sequence,
+                static_cast<uint32_t>(world_preparation->stage),
                 std::chrono::duration_cast<std::chrono::nanoseconds>(diagnostic_receive_at.time_since_epoch()).count(),
-                event.data.size(), snapshot_payload_bytes,
+                event.data.size(), snapshot_source, snapshot_model, snapshot_stage, snapshot_payload_bytes,
                 std::chrono::duration_cast<std::chrono::microseconds>(apply_started_at - diagnostic_receive_at).count(),
                 std::chrono::duration_cast<std::chrono::microseconds>(apply_completed_at - apply_started_at).count(),
                 applied, world_preparation->final_atlas_complete);
@@ -792,7 +967,7 @@ bool GameClient::applyWorldPreparation(
         || message.sequence == 0U
         || message.sequence <= m_last_world_preparation_sequence
         || message.work_completed > message.work_total
-        || static_cast<uint8_t>(message.stage) > static_cast<uint8_t>(generation::GenerationStage::Complete)) {
+        || static_cast<uint8_t>(message.stage) > static_cast<uint8_t>(generation::GenerationStage::V10Water)) {
         return false;
     }
 
@@ -843,7 +1018,11 @@ bool GameClient::applyWorldPreparation(
         if (message.failure.empty()) {
             try {
                 if (!m_terrain_lod_source) {
-                    m_terrain_lod_source = std::make_unique<TerrainLodSource>();
+                    if (m_prepared_world_provider) {
+                        m_terrain_lod_source = std::make_unique<TerrainLodSource>(m_prepared_world_provider);
+                    } else {
+                        m_terrain_lod_source = std::make_unique<TerrainLodSource>();
+                    }
                 }
                 auto const request_started_at = std::chrono::steady_clock::now();
                 bool const requested = m_terrain_lod_source->request(message.session);
@@ -1001,12 +1180,11 @@ bool GameClient::applyChunkCoverage(
                 return false;
             }
         }
-        for (shared::ChunkCoordinate const coordinate : m_connected_authoritative_columns) {
-            static_cast<void>(m_world_loading.evictAuthoritativeColumn(
-                m_world_loading_identity, coordinate, received_at
-            ));
-        }
+        // A dense-body epoch can change after a fast step while verified full
+        // columns still overlap. Their identity and edit fences remain valid.
+        auto retained_authoritative_columns = std::move(m_connected_authoritative_columns);
         clearActiveCoverage();
+        m_connected_authoritative_columns = std::move(retained_authoritative_columns);
         m_initial_chunk_credit_sent = false;
         m_coverage_bfs_root = message.center;
         m_coverage_root_pending = true;
@@ -1140,6 +1318,16 @@ bool GameClient::applyChunkCoverage(
         return false;
     }
     m_authoritative_interest_columns = ChunkKeySet{ profile_interest.begin(), profile_interest.end() };
+    std::erase_if(m_edit_manifests, [this](auto const& entry) {
+        return !m_authoritative_interest_columns.contains(entry.first);
+    });
+    std::erase_if(m_pending_edit_resync, [this](auto const key) {
+        return !m_authoritative_interest_columns.contains({key.x, key.y, 0});
+    });
+    std::erase_if(m_future_edit_deltas, [this](auto const& delta) {
+        auto const key = shared::WorldBounds::chunkCoordinate(delta.coordinate);
+        return !m_authoritative_interest_columns.contains({key.x, key.y, 0});
+    });
     auto const profile_required = shared::requiredTerrainColumns(message.center);
     m_required_authoritative_columns = ChunkKeySet{ profile_required.begin(), profile_required.end() };
     for (shared::ChunkCoordinate const key : m_authoritative_world->availableAuthoritativeColumns()) {
@@ -1277,12 +1465,14 @@ bool GameClient::applyAuthoritativeTerrainBatch(
                 shared::ChunkCoordinate{ tile.coordinate.x, (tile.coordinate.y + 1) % 4'096, 0 },
             }, [this](auto const neighbor) { return m_connected_authoritative_columns.contains(neighbor); });
         if (tile.identity != message.session.terrain || !m_authoritative_interest_columns.contains(tile.coordinate)
+            || !m_edit_manifests.contains(tile.coordinate)
             || !connected || !m_authoritative_world->publishAuthoritativeSurface(tile)) {
             rejected.push_back(tile.coordinate);
             continue;
         }
         m_connected_authoritative_columns.insert(tile.coordinate);
-        if (!m_world_loading.publishAuthoritativeColumn(m_world_loading_identity, tile.coordinate, received_at)) {
+        if (m_authoritative_world->hasAuthoritativeSurface(tile.coordinate)
+            && !m_world_loading.publishAuthoritativeColumn(m_world_loading_identity, tile.coordinate, received_at)) {
             rejected.push_back(tile.coordinate);
         }
     }
@@ -1291,6 +1481,299 @@ bool GameClient::applyAuthoritativeTerrainBatch(
         .session = *m_terrain_session, .coverage_epoch = message.coverage_epoch,
         .delivery_token = message.delivery_token, .not_resident_keys = std::move(rejected),
     });
+}
+
+bool GameClient::submitBlockAction(
+    shared::BlockActionKind const kind, shared::VoxelRay const& aim,
+    std::optional<shared::WorldCoordinate> const target_hint, shared::Block const selected,
+    shared::InteractionPerspective const perspective
+)
+{
+    if (!m_terrain_session || !m_accepted || !m_authoritative_world
+        || worldLoadingStatus().state != WorldLoadingState::Playing) {
+        return false;
+    }
+    double const length = std::hypot(aim.direction_x, aim.direction_y, aim.direction_z);
+    bool const needs_aim = kind != shared::BlockActionKind::BreakRelease
+        && kind != shared::BlockActionKind::RequestMode;
+    if (needs_aim && (!std::isfinite(length) || length <= 0.0 || !target_hint)) {
+        return false;
+    }
+    auto quantize = [length](double const value) {
+        return static_cast<int16_t>(std::lround(value / length * 32'767.0));
+    };
+    shared::ClientBlockActionMessage const action{
+        .session = *m_terrain_session, .sequence = m_next_block_action_sequence++, .kind = kind,
+        .aim_x = needs_aim ? quantize(aim.direction_x) : int16_t{0},
+        .aim_y = needs_aim ? quantize(aim.direction_y) : int16_t{0},
+        .aim_z = needs_aim ? quantize(aim.direction_z) : int16_t{0},
+        .target_hint = target_hint.value_or(shared::WorldCoordinate{}), .material = selected,
+        .perspective = perspective,
+    };
+    if (m_next_block_action_sequence == 0U) {
+        m_next_block_action_sequence = 1U;
+    }
+    return send(action);
+}
+
+bool GameClient::requestGameMode(shared::GameMode const mode)
+{
+    if (!m_terrain_session || !m_accepted
+        || worldLoadingStatus().state != WorldLoadingState::Playing) {
+        return false;
+    }
+    shared::ClientBlockActionMessage const action{
+        .session = *m_terrain_session, .sequence = m_next_block_action_sequence++,
+        .kind = shared::BlockActionKind::RequestMode, .requested_mode = mode,
+    };
+    if (m_next_block_action_sequence == 0U) {
+        m_next_block_action_sequence = 1U;
+    }
+    return send(action);
+}
+
+std::optional<shared::ServerBlockActionResultMessage> GameClient::consumeAcceptedBlockActionResult()
+{
+    if (m_accepted_block_action_results.empty()) {
+        return std::nullopt;
+    }
+    auto result = std::move(m_accepted_block_action_results.front());
+    m_accepted_block_action_results.pop_front();
+    return result;
+}
+
+uint64_t GameClient::droppedAcceptedBlockActionResultCount() const noexcept
+{
+    return m_dropped_accepted_block_action_results;
+}
+
+bool GameClient::applyBlockActionResult(shared::ServerBlockActionResultMessage const& message)
+{
+    if (!m_terrain_session || !validateSession(message.session)) {
+        return false;
+    }
+    if (!m_block_action_status || message.server_tick > m_block_action_status->server_tick
+        || (message.server_tick == m_block_action_status->server_tick
+            && (message.sequence == 0U || shared::isNewerSequence(message.sequence, m_block_action_status->sequence)))) {
+        if (!m_block_action_status || m_block_action_status->mode != message.mode) {
+            resetLandingTransitions();
+        }
+        m_block_action_status = message;
+    }
+    if (message.sequence != 0U && message.status == shared::BlockActionStatus::Accepted
+        && std::ranges::find(m_accepted_block_action_sequences, message.sequence) == m_accepted_block_action_sequences.end()) {
+        if (m_accepted_block_action_sequences.size() == MAX_PENDING_INPUTS) {
+            m_accepted_block_action_sequences.pop_front();
+        }
+        m_accepted_block_action_sequences.push_back(message.sequence);
+        if (m_accepted_block_action_results.size() == MAX_PENDING_INPUTS) {
+            m_accepted_block_action_results.pop_front();
+            ++m_dropped_accepted_block_action_results;
+        }
+        m_accepted_block_action_results.push_back(message);
+    }
+    return true;
+}
+
+bool GameClient::applyEditSnapshot(
+    shared::ServerEditChunkSnapshotMessage const& message, LoadingTimePoint const received_at
+)
+{
+    if (!validateSession(message.session) || !m_authoritative_world
+        || (!isActiveMaterializedInterestKey(message.chunk.coordinate)
+            && !m_authoritative_interest_columns.contains({message.chunk.coordinate.x, message.chunk.coordinate.y, 0}))) {
+        return false;
+    }
+    if (message.revision <= m_authoritative_world->editChunkRevision(message.chunk.coordinate)
+        && m_authoritative_world->residentChunk(message.chunk.coordinate) != nullptr) {
+        if (!needsEditResync(message.chunk.coordinate)) {
+            m_pending_edit_resync.erase(message.chunk.coordinate);
+        }
+        return false;
+    }
+    auto const chunk = shared::materializeChunkPayload(message.chunk);
+    if (!chunk) {
+        return false;
+    }
+    shared::SparseEditSnapshot snapshot{
+        .coordinate = message.chunk.coordinate, .revision = message.revision, .edits = {},
+    };
+    snapshot.edits.reserve(message.edits.size());
+    for (auto const& edit : message.edits) {
+        snapshot.edits.push_back({edit.coordinate, edit.material, edit.cell_version});
+    }
+    if (!m_authoritative_world->installEditSnapshot(snapshot, *chunk)) {
+        return false;
+    }
+    m_pending_edit_resync.erase(message.chunk.coordinate);
+    shared::ChunkCoordinate const column{message.chunk.coordinate.x, message.chunk.coordinate.y, 0};
+    if (m_authoritative_world->hasAuthoritativeSurface(column)) {
+        static_cast<void>(m_world_loading.publishAuthoritativeColumn(
+            m_world_loading_identity, column, received_at));
+    }
+    std::vector<shared::ServerBlockDeltaMessage> pending;
+    std::erase_if(m_future_edit_deltas, [&](auto const& delta) {
+        if (shared::WorldBounds::chunkCoordinate(delta.coordinate) != message.chunk.coordinate) {
+            return false;
+        }
+        pending.push_back(delta);
+        return true;
+    });
+    std::ranges::sort(pending, {}, &shared::ServerBlockDeltaMessage::from_revision);
+    for (auto const& delta : pending) {
+        if (delta.to_revision > m_authoritative_world->editChunkRevision(message.chunk.coordinate)) {
+            static_cast<void>(applyBlockDelta(delta, received_at));
+        }
+    }
+    for (auto const& [column_key, manifest] : m_edit_manifests) {
+        for (auto const& required : manifest.chunks) {
+            shared::ChunkCoordinate const key{column_key.x, column_key.y, required.z};
+            if (m_authoritative_world->editChunkRevision(key) < required.revision
+                && m_pending_edit_resync.size() < MAX_PENDING_INPUTS
+                && m_pending_edit_resync.insert(key).second) {
+                static_cast<void>(send(shared::ClientChunkResyncMessage{.session = message.session, .coordinate = key}));
+            }
+        }
+    }
+    return true;
+}
+
+bool GameClient::applyBlockDelta(
+    shared::ServerBlockDeltaMessage const& message, LoadingTimePoint const received_at
+)
+{
+    if (!validateSession(message.session) || !m_authoritative_world) {
+        return false;
+    }
+    auto const normalized = shared::WorldBounds::normalize(message.coordinate);
+    if (!normalized || *normalized != message.coordinate) {
+        return false;
+    }
+    auto const key = shared::WorldBounds::chunkCoordinate(*normalized);
+    if (!isActiveMaterializedInterestKey(key) && !m_authoritative_interest_columns.contains({key.x, key.y, 0})) {
+        return false;
+    }
+    uint64_t const revision = m_authoritative_world->editChunkRevision(key);
+    if (message.to_revision <= revision) {
+        return false;
+    }
+    if (message.from_revision != revision) {
+        if (m_future_edit_deltas.size() < MAX_PENDING_INPUTS
+            && std::ranges::none_of(m_future_edit_deltas, [&message](auto const& delta) {
+                return delta.coordinate == message.coordinate && delta.to_revision == message.to_revision;
+            })) {
+            m_future_edit_deltas.push_back(message);
+        }
+        if (m_pending_edit_resync.size() < MAX_PENDING_INPUTS && m_pending_edit_resync.insert(key).second) {
+            static_cast<void>(send(shared::ClientChunkResyncMessage{.session = message.session, .coordinate = key}));
+        }
+        return false;
+    }
+    if (!m_authoritative_world->applyEditDelta(*normalized, message.material,
+            message.from_revision, message.to_revision, message.cell_version)) {
+        if (m_future_edit_deltas.size() < MAX_PENDING_INPUTS) {
+            m_future_edit_deltas.push_back(message);
+        }
+        if (m_pending_edit_resync.size() < MAX_PENDING_INPUTS && m_pending_edit_resync.insert(key).second) {
+            static_cast<void>(send(shared::ClientChunkResyncMessage{.session = message.session, .coordinate = key}));
+        }
+        return false;
+    }
+    for (;;) {
+        uint64_t const installed = m_authoritative_world->editChunkRevision(key);
+        auto const next = std::ranges::find_if(m_future_edit_deltas, [key, installed](auto const& pending) {
+            return shared::WorldBounds::chunkCoordinate(pending.coordinate) == key
+                && pending.from_revision == installed;
+        });
+        if (next == m_future_edit_deltas.end()) {
+            break;
+        }
+        auto const pending = *next;
+        m_future_edit_deltas.erase(next);
+        if (!m_authoritative_world->applyEditDelta(pending.coordinate, pending.material,
+                pending.from_revision, pending.to_revision, pending.cell_version)) {
+            break;
+        }
+    }
+    std::erase_if(m_future_edit_deltas, [this, key](auto const& pending) {
+        return shared::WorldBounds::chunkCoordinate(pending.coordinate) == key
+            && pending.to_revision <= m_authoritative_world->editChunkRevision(key);
+    });
+    if (!needsEditResync(key)) {
+        m_pending_edit_resync.erase(key);
+    }
+    shared::ChunkCoordinate const column{key.x, key.y, 0};
+    if (m_authoritative_world->hasAuthoritativeSurface(column)) {
+        static_cast<void>(m_world_loading.publishAuthoritativeColumn(m_world_loading_identity, column, received_at));
+    }
+    return true;
+}
+
+bool GameClient::needsEditResync(shared::ChunkCoordinate const coordinate) const
+{
+    uint64_t const revision = m_authoritative_world->editChunkRevision(coordinate);
+    if (std::ranges::any_of(m_future_edit_deltas, [coordinate, revision](auto const& pending) {
+            return shared::WorldBounds::chunkCoordinate(pending.coordinate) == coordinate
+                && pending.to_revision > revision;
+        })) {
+        return true;
+    }
+    auto const manifest = m_edit_manifests.find({coordinate.x, coordinate.y, 0});
+    return manifest != m_edit_manifests.end()
+        && std::ranges::any_of(manifest->second.chunks, [coordinate, revision](auto const& required) {
+            return required.z == coordinate.z && required.revision > revision;
+        });
+}
+
+void GameClient::retryEditResync(LoadingTimePoint const now)
+{
+    if (!m_terrain_session || m_pending_edit_resync.empty() || now < m_next_edit_resync_retry) {
+        return;
+    }
+    m_next_edit_resync_retry = now + CONNECTION_RETRY_DELAY;
+    uint32_t const requests = (std::min)(uint32_t{4U}, static_cast<uint32_t>(m_pending_edit_resync.size()));
+    for (uint32_t index = 0U; index < requests; ++index) {
+        auto key = m_pending_edit_resync.begin();
+        std::advance(key, m_edit_resync_retry_cursor++ % m_pending_edit_resync.size());
+        static_cast<void>(send(shared::ClientChunkResyncMessage{.session = *m_terrain_session, .coordinate = *key}));
+    }
+}
+
+bool GameClient::applyEditManifest(
+    shared::ServerEditedColumnManifestMessage const& message, LoadingTimePoint const received_at
+)
+{
+    if (!validateSession(message.session) || !m_authoritative_world
+        || !m_authoritative_interest_columns.contains(message.column) || message.chunks.size() > 64U) {
+        return false;
+    }
+    auto const existing = m_edit_manifests.find(message.column);
+    if (existing != m_edit_manifests.end() && message.watermark <= existing->second.watermark) {
+        return false;
+    }
+    std::vector<shared::EditedChunkRevision> required;
+    required.reserve(message.chunks.size());
+    for (auto const& chunk : message.chunks) {
+        required.push_back({{message.column.x, message.column.y, chunk.z}, chunk.revision});
+    }
+    if (!m_authoritative_world->setEditedChunkRequirements(message.column, required)) {
+        return false;
+    }
+    m_edit_manifests.insert_or_assign(message.column, message);
+    if (!m_authoritative_world->hasAuthoritativeSurface(message.column)) {
+        static_cast<void>(m_world_loading.evictAuthoritativeColumn(
+            m_world_loading_identity, message.column, received_at));
+    }
+    for (auto const& requirement : required) {
+        if (m_authoritative_world->editChunkRevision(requirement.coordinate) < requirement.revision
+            && m_pending_edit_resync.size() < MAX_PENDING_INPUTS
+            && m_pending_edit_resync.insert(requirement.coordinate).second) {
+            static_cast<void>(send(shared::ClientChunkResyncMessage{
+                .session = message.session, .coordinate = requirement.coordinate,
+            }));
+        }
+    }
+    return true;
 }
 
 bool GameClient::applyMaterializedChunkBatch(
@@ -1787,6 +2270,13 @@ bool GameClient::applyServerPosition(
         m_last_accepted_input_ack = message.acknowledged_input_sequence;
         m_last_accepted_position_revision = message.state_revision;
         m_last_accepted_position_at = received_at;
+        if (auto const updated_player = m_world.playerByCharacter(message.ch)) {
+            std::optional<shared::GameMode> const mode = m_block_action_status
+                ? std::optional{m_block_action_status->mode} : std::nullopt;
+            if (auto const material = observeLandingTransition(*updated_player, mode)) {
+                m_pending_landing_material = material;
+            }
+        }
     }
     m_state_revisions.insert_or_assign(message.ch, message.state_revision);
     if (message.ch == m_local_character) {
@@ -1831,6 +2321,50 @@ bool GameClient::applyServerPosition(
         }
     }
     return true;
+}
+
+std::optional<shared::Block> GameClient::observeLandingTransition(
+    shared::Player const& player,
+    std::optional<shared::GameMode> const game_mode
+) noexcept
+{
+    std::optional<shared::Block> const support = groundedMaterialForPlayer(
+        authoritativeWorld(), m_world.mode(), player
+    );
+    bool const same_context = m_last_landing_player
+        && m_last_landing_player->id == player.id
+        && m_last_landing_player->ch == player.ch
+        && m_last_landing_player->movement_capabilities == player.movement_capabilities
+        && m_last_landing_game_mode == game_mode
+        && m_last_landing_join_epoch == worldLoadingJoinEpoch();
+    if (!same_context) {
+        m_pending_landing_material.reset();
+    }
+    bool const fresh_position = same_context
+        && shared::isNewerSequence(m_last_accepted_position_revision, m_last_landing_position_revision);
+    bool const landed = fresh_position
+        && !groundedMaterialForPlayer(authoritativeWorld(), m_world.mode(), *m_last_landing_player)
+        && support
+        && (!game_mode || *game_mode != shared::GameMode::Spectator);
+    m_last_landing_player = player;
+    m_last_landing_game_mode = game_mode;
+    m_last_landing_join_epoch = worldLoadingJoinEpoch();
+    m_last_landing_position_revision = m_last_accepted_position_revision;
+    return landed ? support : std::nullopt;
+}
+
+std::optional<shared::Block> GameClient::consumeLandingMaterial() noexcept
+{
+    return std::exchange(m_pending_landing_material, std::nullopt);
+}
+
+void GameClient::resetLandingTransitions() noexcept
+{
+    m_last_landing_player.reset();
+    m_last_landing_game_mode.reset();
+    m_last_landing_join_epoch = 0U;
+    m_last_landing_position_revision = 0U;
+    m_pending_landing_material.reset();
 }
 
 std::optional<shared::Player> GameClient::predictedLocalPlayer() const noexcept

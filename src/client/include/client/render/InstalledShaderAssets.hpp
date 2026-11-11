@@ -2,9 +2,12 @@
 
 #include <client/render/ShaderAssets.hpp>
 
+#include <filesystem>
 #include <string_view>
 
 namespace client {
+
+[[nodiscard]] std::filesystem::path installedClientAssetPath(std::filesystem::path const& relative_path);
 
 class InstalledShaderAssets final : public ShaderAssets {
 public:

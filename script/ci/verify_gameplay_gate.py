@@ -55,6 +55,8 @@ PHASES = ("initial-full-radius-warmup", "baseline-stationary", "full-radius-move
           "full-radius-recovery-warmup", "recovered-stationary")
 S1_FILL_PHASE = "s1-fill-ramp"
 S1_MOVEMENT_PHASE = "s1-x30-movement"
+S2_NATIVE_TURNING_PROFILE = "mc.s2-native-v10-fine.v1"
+S2_NATIVE_DISK_COLUMNS = 5025
 S1_PERFORMANCE_CONTRACT = "mc.s1-lod-performance.v2"
 S1_OWNER_EXCEPTION_SCHEMA = "mc.s1-owner-accepted-gameplay-exception.v1"
 S1_OWNER_REQUEST_PATH = "~/.codex/task-evidence/mc-s1-20261023/owner-release-acceptance/request.md"
@@ -183,7 +185,6 @@ MOVEMENT_TRAJECTORY_SAMPLE_SCOPE = "per-movement-loop-and-every-in-window-moveme
 MOVEMENT_SUBCELLS_PER_TICK = 5_600
 SUBCELLS_PER_CELL = 10_000
 FLIGHT_HORIZONTAL_EXTENT = 65_536 * SUBCELLS_PER_CELL
-FLIGHT_MAX_Z = 1_023
 FLIGHT_SPEEDUP_PROFILES = frozenset((2, 3, 5, 8, 15, 30, 80, 200, 500))
 # Mirrors shared::TICK in src/shared/include/shared/world/World.hpp.
 SERVER_TICK_NS = 100_000_000
@@ -221,6 +222,16 @@ def qualification_settings_manifest() -> dict[str, Any]:
     return manifest
 
 
+def s2_native_terrain_identity() -> dict[str, Any]:
+    source = (SCRIPT_ROOT.parent / "src/acceptance/include/acceptance/GameBenchmark.hpp").read_text(encoding="utf-8")
+    literal = r'"(?:\\.|[^"\\])*"'
+    match = re.search(r'GAME_BENCHMARK_S2_NATIVE_CONFIGURATION_IDENTITY\s*=\s*('
+                      + r'(?:' + literal + r'\s*)+);', source)
+    require(match is not None, "selected S2 native terrain identity is absent")
+    return {"terrain_version": 10, "revision": 1, "seed": 42,
+            "configuration_identity": "".join(json.loads(piece) for piece in re.findall(literal, match[1]))}
+
+
 class GameplayError(ValueError):
     """Gameplay evidence is missing, stale, or does not satisfy its contract."""
 
@@ -229,6 +240,28 @@ def require(condition: bool, message: str) -> None:
     if not condition:
         raise GameplayError(message)
 
+
+
+def world_vertical_domain() -> tuple[int, int, int]:
+    headers = SCRIPT_ROOT.parent / "src/shared/include/shared/world"
+    world = (headers / "World.hpp").read_text(encoding="utf-8")
+    chunk = (headers / "Chunk.hpp").read_text(encoding="utf-8")
+
+    def literal(source: str, name: str) -> int:
+        match = re.search(r"\b" + name + r"\s*=\s*([0-9][0-9']*)[Uu]?\s*;", source)
+        require(match is not None, f"source world-domain constant {name} is absent or not a literal")
+        return int(match.group(1).replace("'", ""))
+
+    depth = literal(world, "DEPTH")
+    side = literal(chunk, "SIDE_LENGTH")
+    entity_max_z = literal(world, "FLIGHT_ENTITY_MAX_Z")
+    require(depth > 0 and side > 0 and depth % side == 0 and entity_max_z >= depth - 1,
+            "source world vertical domain is inconsistent")
+    return depth, side, entity_max_z
+
+
+WORLD_DEPTH, CHUNK_SIDE_LENGTH, FLIGHT_ENTITY_MAX_Z = world_vertical_domain()
+WORLD_VERTICAL_CHUNKS = WORLD_DEPTH // CHUNK_SIDE_LENGTH
 
 def integer(value: Any, field: str, minimum: int = 0) -> int:
     require(type(value) is int and value >= minimum, f"{field} must be an integer >= {minimum}")
@@ -1350,7 +1383,7 @@ def verify_fresh_frame_budget(value: Any, frames: list[dict[str, Any]], completi
                 "fresh-frame measurement window does not begin within one input tick of the movement boundary")
     else:
         require(start_ns == expected_start_ns,
-                "fresh-frame measurement window disagrees with the S1 first-send boundary")
+                "fresh-frame measurement window disagrees with the first-send boundary")
     required_end_ns = start_ns + required_duration_ns
     completion_tail_end_ns = required_end_ns + SERVER_TICK_NS
     complete_flag = value["measurement_window_complete"]
@@ -1467,6 +1500,464 @@ def verify_fresh_frame_budget(value: Any, frames: list[dict[str, Any]], completi
     return passed
 
 
+def s2_native_identity_matches(value: Any, identity: dict[str, Any]) -> bool:
+    return (isinstance(value, dict) and value == identity
+            and all(type(value[key]) is int for key in ("terrain_version", "revision", "seed")))
+
+
+def s2_native_position_valid(value: Any) -> bool:
+    extents = {"x": 65_536, "y": 65_536, "z": FLIGHT_ENTITY_MAX_Z + 1,
+               "x_subcell": SUBCELLS_PER_CELL, "y_subcell": SUBCELLS_PER_CELL, "z_subcell": SUBCELLS_PER_CELL}
+    return isinstance(value, dict) and set(value) == set(extents) and all(
+        type(value[key]) is int and 0 <= value[key] < extent for key, extent in extents.items()
+    )
+
+
+def s2_native_disk_current(frame: dict[str, Any], identity: dict[str, Any], join_epoch: int) -> bool:
+    native = frame.get("native_terrain")
+    if not isinstance(native, dict):
+        return False
+    sequence = frame.get("submitted_frame_sequence_id")
+    active_epoch = native.get("active_coverage_epoch")
+    actual = native.get("actual_column_count")
+    faces = native.get("submitted_scene_face_count")
+    return (
+        native.get("backend") == "native-v10" and s2_native_identity_matches(native.get("terrain_identity"), identity)
+        and type(sequence) is int and sequence > 0
+        and type(native.get("submitted_frame_sequence_id")) is int and native["submitted_frame_sequence_id"] == sequence
+        and type(native.get("session_join_epoch")) is int and native["session_join_epoch"] == join_epoch
+        and type(active_epoch) is int and active_epoch > 0
+        and type(native.get("coverage_epoch")) is int and native["coverage_epoch"] == active_epoch
+        and all(native.get(flag) is True for flag in ("scene_present", "session_matches", "coverage_matches",
+                    "sources_current", "underfoot_actual_column_present", "underfoot_authority_source_present"))
+        and s2_native_position_valid(native.get("current_player_position"))
+        and native.get("required_actual_columns") == S2_NATIVE_DISK_COLUMNS
+        and native.get("presented_current_actual_columns") == S2_NATIVE_DISK_COLUMNS
+        and type(actual) is int and actual >= S2_NATIVE_DISK_COLUMNS and type(faces) is int and faces > 0
+    )
+
+
+def inspect_s2_turning_report(report: dict[str, Any], platform: str) -> dict[str, Any]:
+    require(isinstance(report, dict), "native turning report must be an object")
+    game = report.get("game_benchmark")
+    require(report.get("schema_version") == "mc.runtime-evidence.v1"
+            and report.get("mode") == "benchmark-game" and report.get("passed") is False
+            and isinstance(game, dict) and game.get("workload") == WORKLOAD
+            and game.get("build_mode") == "release" and game.get("qualification_proof") == ""
+            and game.get("present_mode") == ("immediate" if platform == "windows" else "fifo")
+            and game.get("diagnostic_overrides_present") is False,
+            "requires a production-settings S2 native turning diagnostic")
+    identity = s2_native_terrain_identity()
+    diagnostics = game.get("native_terrain_diagnostics")
+    require(s2_native_identity_matches(game.get("terrain_identity"), identity) and isinstance(diagnostics, dict)
+            and s2_native_identity_matches(diagnostics.get("terrain_identity"), identity)
+            and diagnostics.get("qualification_profile") == S2_NATIVE_TURNING_PROFILE
+            and diagnostics.get("qualification_complete") is False, "selected S2 native profile identity does not match")
+    join_epoch = integer(game.get("session_join_epoch"), "native turning join epoch", 1)
+    coverage = diagnostics.get("turning_coverage")
+    require(isinstance(coverage, dict), "native turning coverage window is missing")
+    start = integer(coverage.get("start_offset_ns"), "native turning start")
+    end = integer(coverage.get("end_offset_ns"), "native turning end")
+    budget = game.get("frame_budget")
+    require(isinstance(budget, dict) and budget.get("measurement_window_end_offset_ns") == end,
+            "native coverage and frame-budget window bounds differ")
+    inputs = game.get("raw_gameplay_inputs")
+    require(isinstance(inputs, list), "native turning raw inputs are missing")
+    boundary = [entry for entry in inputs if isinstance(entry, dict) and entry.get("sent_offset_ns") == start]
+    require(len(boundary) == 1, "native turning window must begin at one sent input")
+    direction = boundary[0].get("direction")
+    require(isinstance(direction, dict) and direction.get("accelerated") is True and direction.get("speedup") == 30
+            and any(type(direction.get(axis)) is int and direction[axis] != 0 for axis in ("x", "y", "z")),
+            "native turning boundary input is not x30 movement")
+
+    frames, fences = game.get("raw_frames"), game.get("raw_fence_confirmed_frames")
+    require(isinstance(frames, list) and isinstance(fences, list), "native turning raw frames or fences are missing")
+    frame_budget_met = verify_fresh_frame_budget(
+        budget, frames, fences, game.get("frame_completion_source"), False, platform,
+        movement_phase=S1_MOVEMENT_PHASE, expected_start_ns=start,
+    )
+    sequence = integer(diagnostics.get("turning_start_frame_sequence_id"), "native turning start frame", 1)
+    anchor_frames = [frame for frame in frames if frame.get("submitted_frame_sequence_id") == sequence]
+    anchor_fences = [fence for fence in fences if fence["sequence_id"] == sequence]
+    require(len(anchor_frames) == 1 and len(anchor_fences) == 1, "native turning start frame or fence is ambiguous")
+    anchor, fence = anchor_frames[0], anchor_fences[0]
+    generation = integer(anchor.get("swapchain_generation"), "native anchor swapchain generation")
+    slot = integer(anchor.get("submitted_frame_slot"), "native anchor frame slot")
+    submitted_offset = integer(anchor.get("submitted_frame_offset_ns"), "native anchor submitted-frame offset")
+    present_id = anchor.get("application_present_id")
+    fence_present_id = fence["application_present_id"]
+    require(slot < 3 and integer(fence["sequence_id"], "native anchor fence sequence", 1) == sequence
+            and integer(fence["swapchain_generation"], "native anchor fence swapchain generation") == generation
+            and integer(fence["frame_slot"], "native anchor fence frame slot") == slot
+            and (present_id is None or integer(present_id, "native anchor present ID", 1) > 0)
+            and (fence_present_id is None or integer(fence_present_id, "native anchor fence present ID", 1) > 0)
+            and fence_present_id == present_id, "native turning anchor submission identity is malformed")
+    require(anchor.get("presentation_succeeded") is True and s2_native_disk_current(anchor, identity, join_epoch)
+            and fence["submission_phase"] == anchor["submitted_frame_phase"] == S1_FILL_PHASE
+            and integer(fence["submitted_offset_ns"], "native anchor submit") == submitted_offset
+            and submitted_offset <= integer(fence["completion_observed_offset_ns"], "native anchor fence") <= start,
+            "native turning start frame is stale, incomplete or lacks its exact pre-input fence")
+
+    submitted, current = 0, 0
+    for frame in frames:
+        if frame.get("presentation_succeeded") is not True:
+            continue
+        offset = integer(frame.get("submitted_frame_offset_ns"), "native turning submission offset")
+        in_window = start <= offset < end
+        movement = frame.get("submitted_frame_phase") == S1_MOVEMENT_PHASE
+        submitted += in_window or movement
+        current += in_window and movement and s2_native_disk_current(frame, identity, join_epoch)
+    require(integer(coverage.get("submitted_frames"), "native submitted frames") == submitted
+            and integer(coverage.get("current_disk_frames"), "native current disk frames") == current,
+            "native turning coverage summary disagrees with raw submissions")
+    drained = coverage.get("window_drained")
+    require(type(drained) is bool and drained == budget["measurement_window_complete"],
+            "native turning drain status disagrees with the fence budget")
+    authority = diagnostics.get("turning_authority")
+    authority_coverage_complete = False
+    if authority is not None:
+        authority_coverage_complete = inspect_s2_turning_authority(authority, anchor, game, frames, budget)
+    return {"status": "diagnostic", "profile": S2_NATIVE_TURNING_PROFILE, "platform": platform,
+            "submitted_frames": submitted, "current_disk_frames": current, "frame_budget_met": frame_budget_met,
+            "coverage_complete": drained and submitted > 0 and submitted == current,
+            "authority_trajectory_verified": authority is not None,
+            "authority_coverage_complete": authority_coverage_complete}
+
+
+def inspect_s2_turning_authority(authority: Any, frame: dict[str, Any], game: dict[str, Any],
+                                 frames: list[dict[str, Any]], budget: dict[str, Any]) -> bool:
+    require(isinstance(authority, dict) and set(authority) == {
+        "trajectory_anchor", "anchor_coverage_offset_ns", "boundary_capture_complete",
+        "boundary_updates", "movement_updates",
+    }, "native turning authority receipt is malformed")
+    anchor, boundary, movement = (authority[key] for key in ("trajectory_anchor", "boundary_updates", "movement_updates"))
+    require(isinstance(anchor, dict) and isinstance(boundary, list) and isinstance(movement, list),
+            "native turning authority anchor or updates are missing")
+    require(authority["anchor_coverage_offset_ns"] == budget["measurement_window_start_offset_ns"],
+            "native turning authority coverage was not refreshed at its start input")
+    update_fields = {"update_ordinal", "offset_ns", "state_revision", "acknowledged_input_sequence",
+                     "authoritative_position", "movement_capabilities", "vertical_velocity_subcells", "playable_sphere"}
+    sphere_fields = S1_FULL_VOLUME_FIELDS | {"radius_blocks", "active_coverage_epoch", "active_coverage_center",
+                                             "world_loading_center", "ready_chunks", "required_chunks", "ready"}
+    complete = True
+    for update in (anchor, *boundary, *movement):
+        require(isinstance(update, dict) and set(update) == update_fields,
+                "native turning authority update is malformed")
+        sphere, position = update["playable_sphere"], update["authoritative_position"]
+        require(isinstance(sphere, dict) and set(sphere) == sphere_fields
+                and integer(sphere["radius_blocks"], "native turning authority radius") == ACTUAL_TERRAIN_RADIUS_BLOCKS
+                and s2_native_position_valid(position)
+                and s2_native_position_valid(sphere["world_loading_center"])
+                and s2_native_position_valid(sphere["authoritative_columns_center"])
+                and s2_native_position_valid(sphere["active_coverage_center"])
+                and sphere["world_loading_center"] == sphere["authoritative_columns_center"] == position
+                and type(sphere["ready"]) is bool,
+                "native turning authority sample does not identify the exact current player and volume")
+        integer(sphere["ready_chunks"], "native turning ready chunk equivalents")
+        integer(sphere["required_chunks"], "native turning required chunk equivalents", 1)
+        verify_s1_full_volume_sample(sphere, "native turning authority", require_ready=False)
+        complete &= sphere["ready"] and sphere["resident_authoritative_columns"] == sphere["required_authoritative_columns"]
+    native = frame["native_terrain"]
+    require(anchor["authoritative_position"] == native["current_player_position"]
+            and anchor["playable_sphere"]["active_coverage_epoch"] == native["active_coverage_epoch"],
+            "native turning authority anchor differs from the fence-confirmed frame")
+    verify_x30_authoritative_trajectory(game, {
+        "movement_trajectory_anchor": anchor,
+        "movement_trajectory_anchor_sphere_sample_offset_ns": authority["anchor_coverage_offset_ns"],
+        "movement_boundary_authoritative_updates_complete": authority["boundary_capture_complete"],
+        "movement_boundary_authoritative_updates": boundary,
+        "movement_authoritative_sphere_updates": movement,
+        "movement_authoritative_update_count": len(movement),
+    }, frames, budget, movement_phase=S1_MOVEMENT_PHASE, native_turning=True)
+    return complete
+
+
+def s2_recovery_sphere_ready(value: Any, position: Any, context: str) -> bool:
+    require(isinstance(value, dict) and s2_native_position_valid(position)
+            and integer(value.get("radius_blocks"), f"{context} radius") == ACTUAL_TERRAIN_RADIUS_BLOCKS
+            and s2_native_position_valid(value.get("active_coverage_center"))
+            and s2_native_position_valid(value.get("world_loading_center"))
+            and s2_native_position_valid(value.get("authoritative_columns_center"))
+            and value["world_loading_center"] == value["authoritative_columns_center"] == position
+            and type(value.get("ready")) is bool,
+            f"{context}: full-volume evidence does not identify the current authority position")
+    integer(value.get("ready_chunks"), f"{context} ready chunk equivalents")
+    integer(value.get("required_chunks"), f"{context} required chunk equivalents", 1)
+    verify_s1_full_volume_sample(value, context, require_ready=False)
+    return value["ready"] and value["resident_authoritative_columns"] == value["required_authoritative_columns"]
+
+
+def s2_recovery_submission(frame: dict[str, Any], fence: dict[str, Any] | None) -> tuple[int, int | None]:
+    phase = frame.get("submitted_frame_phase")
+    sequence = integer(frame.get("submitted_frame_sequence_id"), "native recovery frame sequence", 1)
+    offset = integer(frame.get("submitted_frame_offset_ns"), "native recovery submission offset")
+    generation = integer(frame.get("swapchain_generation"), "native recovery swapchain generation")
+    slot = integer(frame.get("submitted_frame_slot"), "native recovery frame slot")
+    present_id = frame.get("application_present_id")
+    if present_id is not None:
+        integer(present_id, "native recovery application present ID", 1)
+    require(frame.get("presentation_succeeded") is True and frame.get("phase") == phase and slot < 3
+            and offset == integer(frame.get("started_offset_ns"), "native recovery loop start")
+                + integer(frame.get("loop_duration_ns"), "native recovery loop duration", 1),
+            "native recovery frame submission is malformed")
+    if fence is None:
+        return offset, None
+    observed = integer(fence.get("completion_observed_offset_ns"), "native recovery fence observation")
+    fence_present_id = fence.get("application_present_id")
+    if fence_present_id is not None:
+        integer(fence_present_id, "native recovery fence application present ID", 1)
+    require(integer(fence.get("sequence_id"), "native recovery fence sequence", 1) == sequence
+            and integer(fence.get("swapchain_generation"), "native recovery fence generation") == generation
+            and integer(fence.get("frame_slot"), "native recovery fence slot") == slot
+            and integer(fence.get("submitted_offset_ns"), "native recovery fence submit offset") == offset
+            and fence.get("submission_phase") == phase and fence_present_id == present_id and observed >= offset,
+            "native recovery fence does not match its exact submission")
+    return offset, observed
+
+
+def inspect_s2_recovery_movement(
+    inputs: list[Any], updates: list[Any], anchor: Any, start: int, end: int,
+) -> tuple[bool, int, int, dict[str, Any] | None]:
+    sent: dict[int, tuple[int, int]] = {}
+    schedule = []
+    contiguous_inputs = True
+    previous_offset = start
+    previous_sequence = 0
+    for ordinal, entry in enumerate(inputs, 1):
+        require(isinstance(entry, dict), "native recovery sent input is malformed")
+        sequence = integer(entry.get("sequence"), "native recovery input sequence", 1)
+        offset = integer(entry.get("sent_offset_ns"), "native recovery sent input offset")
+        scheduled = entry.get("scheduled_offset_ns")
+        require(integer(entry.get("input_ordinal"), "native recovery input ordinal", 1) == ordinal
+                and previous_sequence < sequence < (1 << 32)
+                and previous_offset <= offset < end and (ordinal != 1 or offset == start)
+                and type(scheduled) is int and -(1 << 63) <= scheduled <= offset,
+                "native recovery input ordering or first-send window boundary is invalid")
+        direction = entry.get("direction")
+        require(isinstance(direction, dict) and direction.get("accelerated") is True
+                and direction.get("cycle_movement_capabilities") is False
+                and all(type(direction.get(key)) is int and direction[key] == component
+                        for key, component in (("x", 127), ("y", 0), ("z", 0), ("speedup", 200)))
+                and all(type(direction.get(key)) is int and -127 <= direction[key] <= 127
+                        for key in ("view_x", "view_y")),
+                "native recovery input is not the production x200 +X direction")
+        sent[sequence] = (offset, ordinal)
+        schedule.append(scheduled)
+        contiguous_inputs &= ((ordinal == 1 or sequence == previous_sequence + 1)
+                              and offset < scheduled + SERVER_TICK_NS)
+        previous_offset, previous_sequence = offset, sequence
+
+    expected_steps = (end - start) // SERVER_TICK_NS
+    input_window_complete = (
+        contiguous_inputs and len(schedule) in (expected_steps, expected_steps + 1)
+        and start - SERVER_TICK_NS <= schedule[0] <= start
+        and end - 2 * SERVER_TICK_NS <= schedule[-1] < end
+        and all(current == previous + SERVER_TICK_NS for previous, current in zip(schedule, schedule[1:]))
+    )
+    if anchor is None:
+        require(not updates, "native recovery movement updates have no authority anchor")
+        return False, 0, 0, None
+
+    def authority_state(update: Any) -> tuple[int, int, int, int, dict[str, int]]:
+        require(isinstance(update, dict), "native recovery authority update is malformed")
+        ordinal = integer(update.get("update_ordinal"), "native recovery update ordinal", 1)
+        offset = integer(update.get("offset_ns"), "native recovery authority offset")
+        revision = integer(update.get("state_revision"), "native recovery authority state revision")
+        ack = integer(update.get("acknowledged_input_sequence"), "native recovery authority ACK")
+        position = update.get("authoritative_position")
+        require(revision < (1 << 32) and ack < (1 << 32) and s2_native_position_valid(position)
+                and integer(update.get("movement_capabilities"), "native recovery movement capabilities") == 3
+                and integer(update.get("vertical_velocity_subcells"), "native recovery vertical velocity") == 0,
+                "native recovery authority update lacks an unobstructed Flight position")
+        return ordinal, offset, revision, ack, position
+
+    previous = authority_state(anchor)
+    require(previous[1] <= start and (not sent or previous[3] < next(iter(sent))),
+            "native recovery authority anchor is not from before the first x200 input")
+    require(s2_recovery_sphere_ready(anchor.get("playable_sphere"), previous[4], "native recovery movement anchor"),
+            "native recovery movement anchor lacks full authority coverage")
+    ready_updates = 0
+    verified_steps = 0
+    timely_acknowledgements = True
+    input_ordinal = 0
+    for update in updates:
+        current = authority_state(update)
+        ordinal, offset, revision, ack, position = current
+        linked = sent.get(ack)
+        require(linked is not None and linked[0] <= offset < end + SERVER_TICK_NS
+                and ordinal > previous[0] and offset >= previous[1]
+                and revision > previous[2] and ack > previous[3],
+                "native recovery ACK is stale, duplicated or not linked to an in-window x200 input")
+        timely_acknowledgements &= offset <= linked[0] + SERVER_TICK_NS
+        ready_updates += s2_recovery_sphere_ready(update.get("playable_sphere"), position, "native recovery movement ACK")
+        if linked[1] == input_ordinal + 1:
+            expected = dict(previous[4])
+            x = (expected["x"] * SUBCELLS_PER_CELL + expected["x_subcell"]
+                 + MOVEMENT_SUBCELLS_PER_TICK * 200) % FLIGHT_HORIZONTAL_EXTENT
+            expected["x"], expected["x_subcell"] = divmod(x, SUBCELLS_PER_CELL)
+            require(position == expected, "native recovery ACK does not show the wrapped +112-block x200 step")
+            verified_steps += 1
+        previous, input_ordinal = current, linked[1]
+    complete = input_window_complete and timely_acknowledgements and verified_steps == len(sent)
+    return complete, ready_updates, verified_steps, previous[4]
+
+
+def inspect_s2_recovery_report(report: dict[str, Any], platform: str) -> dict[str, Any]:
+    require(isinstance(report, dict), "native recovery report must be an object")
+    game = report.get("game_benchmark")
+    require(report.get("schema_version") == "mc.runtime-evidence.v1"
+            and report.get("mode") == "benchmark-game" and report.get("passed") is False
+            and platform in TARGET_HZ and isinstance(game, dict) and game.get("workload") == COVERAGE_WORKLOAD
+            and game.get("build_mode") == "release" and game.get("qualification_proof") == ""
+            and game.get("present_mode") == ("immediate" if platform == "windows" else "fifo")
+            and game.get("diagnostic_overrides_present") is False and game.get("full_radius_terrain") is None,
+            "requires a production-settings S2 native x200 recovery diagnostic")
+    diagnostics = game.get("native_terrain_diagnostics")
+    require(isinstance(diagnostics, dict) and diagnostics.get("backend") == "native-v10"
+            and diagnostics.get("qualification_complete") is False,
+            "native x200 recovery diagnostics are absent or use the wrong backend")
+    recovery = diagnostics.get("full_radius_recovery")
+    require(isinstance(recovery, dict), "native x200 recovery evidence is missing")
+    terminal = recovery.get("terminal_phase")
+    complete = recovery.get("movement_window_complete")
+    start, end = recovery.get("movement_start_offset_ns"), recovery.get("movement_end_offset_ns")
+    require(terminal in (*PHASES, "complete", "failed") and type(complete) is bool,
+            "native x200 recovery terminal phase or movement status is invalid")
+    if start is None:
+        require(end is None and not complete, "native recovery has a movement end without its first send")
+    else:
+        start = integer(start, "native recovery movement start")
+        require(integer(end, "native recovery movement end") == start + PERFORMANCE_SAMPLE_MS * 1_000_000,
+                "native recovery requires a fixed 30-second movement window")
+
+    frames, fences = game.get("raw_frames"), game.get("raw_fence_confirmed_frames")
+    inputs, updates = game.get("raw_gameplay_inputs"), recovery.get("movement_updates")
+    require(all(isinstance(rows, list) and all(isinstance(row, dict) for row in rows)
+                for rows in (frames, fences, inputs, updates)),
+            "native recovery raw frames, fences, sent inputs or authority updates are missing")
+    identity = s2_native_terrain_identity()
+    observed_native = any(frame.get("native_terrain") is not None for frame in frames)
+    profile = diagnostics.get("qualification_profile")
+    require((s2_native_identity_matches(game.get("terrain_identity"), identity)
+             or not observed_native and game.get("terrain_identity") is None)
+            and ((profile == S2_NATIVE_TURNING_PROFILE
+                  and s2_native_identity_matches(diagnostics.get("terrain_identity"), identity))
+                 or not observed_native and profile is None and diagnostics.get("terrain_identity") is None),
+            "native x200 recovery selected terrain identity does not match")
+    join_epoch = integer(game.get("session_join_epoch"), "native recovery session join epoch", int(observed_native))
+    by_sequence = {}
+    for frame in frames:
+        sequence = frame.get("submitted_frame_sequence_id")
+        if sequence is not None:
+            sequence = integer(sequence, "native recovery submitted frame sequence", 1)
+            require(sequence not in by_sequence, "native recovery has duplicate frame submissions")
+            by_sequence[sequence] = frame
+    by_fence = {}
+    for fence in fences:
+        sequence = integer(fence.get("sequence_id"), "native recovery fence sequence", 1)
+        require(sequence not in by_fence, "native recovery has duplicate fence observations")
+        by_fence[sequence] = fence
+
+    verified_anchors = {}
+    last_sequence, last_observed = 0, 0
+    for field, phase in zip(("initial_frame_sequence_id", "movement_start_frame_sequence_id",
+                             "recovery_frame_sequence_id"), (PHASES[0], PHASES[1], PHASES[3])):
+        sequence = recovery.get(field)
+        if sequence is None:
+            continue
+        sequence = integer(sequence, field, 1)
+        frame, fence = by_sequence.get(sequence), by_fence.get(sequence)
+        require(frame is not None and fence is not None and frame.get("submitted_frame_phase") == phase,
+                f"{field}: native recovery anchor needs its exact phase, frame and fence")
+        submitted, observed = s2_recovery_submission(frame, fence)
+        require(sequence > last_sequence and submitted >= last_observed
+                and (start is None or phase == PHASES[3] or observed <= start)
+                and (phase != PHASES[3] or (complete and end is not None and submitted >= end)),
+                f"{field}: native recovery anchor is out of phase order")
+        require(s2_native_disk_current(frame, identity, join_epoch), f"{field}: native visual disk is incomplete or stale")
+        native, sphere = frame["native_terrain"], frame.get("playable_sphere")
+        require(s2_recovery_sphere_ready(sphere, native["current_player_position"], field)
+                and sphere["active_coverage_epoch"] == native["active_coverage_epoch"],
+                f"{field}: native full-volume authority coverage is incomplete or stale")
+        verified_anchors[field] = frame
+        last_sequence, last_observed = sequence, observed
+
+    movement_anchor = recovery.get("movement_anchor")
+    trajectory_verified, ready_updates, verified_steps, last_position = False, 0, 0, None
+    if start is None:
+        require(not inputs and not updates and movement_anchor is None
+                and recovery.get("movement_start_frame_sequence_id") is None,
+                "native recovery has movement records without a first-send window")
+    else:
+        trajectory_verified, ready_updates, verified_steps, last_position = inspect_s2_recovery_movement(
+            inputs, updates, movement_anchor, start, end,
+        )
+    baseline = verified_anchors.get("movement_start_frame_sequence_id")
+    if baseline is not None:
+        native = baseline["native_terrain"]
+        require(isinstance(movement_anchor, dict)
+                and native["current_player_position"] == movement_anchor["authoritative_position"]
+                and native["active_coverage_epoch"] == movement_anchor["playable_sphere"]["active_coverage_epoch"],
+                "native recovery baseline and first-send authority anchor disagree")
+    recovered = verified_anchors.get("recovery_frame_sequence_id")
+    if recovered is not None and inputs and verified_steps == len(inputs):
+        require(recovered["native_terrain"]["current_player_position"] == last_position,
+                "native recovery barrier does not identify the final x200 authority position")
+
+    submitted, visual_current = 0, 0
+    movement_frames = {}
+    for frame in frames:
+        if frame.get("presentation_succeeded") is not True:
+            continue
+        offset = integer(frame.get("submitted_frame_offset_ns"), "native recovery submission offset")
+        in_window = start is not None and start <= offset < end
+        require(in_window == (frame.get("submitted_frame_phase") == PHASES[2]),
+                "native recovery movement frame is mislabeled or out of window")
+        if in_window:
+            submitted += 1
+            visual_current += s2_native_disk_current(frame, identity, join_epoch)
+            s2_recovery_submission(frame, None)
+            movement_frames[frame["submitted_frame_sequence_id"]] = frame
+    observations = []
+    previous_sequence = 0
+    for sequence, fence in by_fence.items():
+        if fence.get("submission_phase") != PHASES[2]:
+            require(sequence not in movement_frames, "native recovery movement fence has the wrong phase")
+            continue
+        frame = movement_frames.get(sequence)
+        require(frame is not None, "native recovery movement fence has no in-window submission")
+        _, observed = s2_recovery_submission(frame, fence)
+        if observed <= end + SERVER_TICK_NS:
+            require(sequence > previous_sequence and (not observations or observed >= observations[-1]),
+                    "native recovery movement fences are out of order")
+            previous_sequence = sequence
+            observations.append(observed)
+    require(all(terminal != "complete" or field in verified_anchors for field in (
+        "initial_frame_sequence_id", "movement_start_frame_sequence_id", "recovery_frame_sequence_id",
+    )), "native recovery declared complete without all three verified anchors")
+    cadence_complete = complete and submitted > 0 and submitted == len(observations)
+    in_budget_ns = 0
+    if start is not None:
+        clipped = [start, *(min(offset, end) for offset in observations), end]
+        in_budget_ns = sum(b - a for a, b in zip(clipped, clipped[1:]) if b - a <= FRAME_BUDGET_TARGET_NS[platform])
+    return {
+        "status": "diagnostic", "profile": profile, "platform": platform, "terminal_phase": terminal,
+        "failure": report.get("failure"), "anchors": {
+            name: frame["submitted_frame_sequence_id"] for name, frame in verified_anchors.items()
+        },
+        "movement_window_complete": complete, "movement_start_offset_ns": start, "movement_end_offset_ns": end,
+        "sent_inputs": len(inputs), "acknowledged_inputs": len(updates), "verified_movement_steps": verified_steps,
+        "authority_trajectory_verified": complete and trajectory_verified,
+        "authority_coverage_complete": complete and trajectory_verified and ready_updates == len(updates),
+        "current_authority_updates": ready_updates, "submitted_frames": submitted,
+        "current_disk_frames": visual_current,
+        "visual_coverage_complete": complete and submitted > 0 and visual_current == submitted,
+        "fence_confirmed_movement_frames": len(observations), "frame_budget_complete": cadence_complete,
+        "frame_budget_met": cadence_complete
+            and in_budget_ns * 1_000 >= (end - start) * FRAME_BUDGET_REQUIRED_PERMILLE,
+    }
+
+
 def verify_s1_visual_lod_sample(value: Any, context: str, sphere: dict[str, Any] | None = None) -> None:
     fields = {"contract", "radius_blocks", "scene_active", "leaf_count", "actual_column_count",
               "terrain_identity", "session_join_epoch", "coverage_epoch", "submitted_frame_count",
@@ -1513,7 +2004,7 @@ def verify_s1_full_volume_sample(value: dict[str, Any], context: str, *, require
     resident = integer(value.get("resident_authoritative_columns"), f"{context} resident authoritative columns")
     vertical = integer(value.get("vertical_chunk_count"), f"{context} vertical chunk count", 1)
     require(value.get("coverage_scope") == "horizontal_full_volume"
-            and required == 81 * 81 and vertical == 64 and resident <= required
+            and required == 81 * 81 and vertical == WORLD_VERTICAL_CHUNKS and resident <= required
             and value["required_chunks"] == required * vertical
             and value["ready_chunks"] == resident * vertical,
             f"{context}: horizontal full-volume authoritative column evidence is inconsistent")
@@ -1665,7 +2156,7 @@ def verify_movement_playable_sphere(
 
 def verify_x30_authoritative_trajectory(
     game: dict[str, Any], full: dict[str, Any], frames: list[dict[str, Any]], budget: dict[str, Any],
-    *, movement_phase: str = PHASES[2],
+    *, movement_phase: str = PHASES[2], native_turning: bool = False,
 ) -> None:
     require(game.get("movement_trajectory_contract") == MOVEMENT_TRAJECTORY_CONTRACT,
             "x30 authoritative movement trajectory contract is absent or unsupported")
@@ -1707,6 +2198,7 @@ def verify_x30_authoritative_trajectory(
 
     anchor = full.get("movement_trajectory_anchor")
     is_s1_trajectory = full.get("contract") == S1_PERFORMANCE_CONTRACT
+    full_volume_trajectory = is_s1_trajectory or native_turning
     expected_anchor_fields = {
         "update_ordinal", "offset_ns", "state_revision", "acknowledged_input_sequence",
         "authoritative_position", "movement_capabilities", "vertical_velocity_subcells", "playable_sphere",
@@ -1727,7 +2219,7 @@ def verify_x30_authoritative_trajectory(
             "x30 authoritative movement trajectory anchor exceeds uint32")
     previous_position = world_position(anchor["authoritative_position"], "trajectory anchor")
     anchor_height = previous_position[2]
-    require(0 <= anchor_height < (FLIGHT_MAX_Z + 1) * SUBCELLS_PER_CELL,
+    require(0 <= anchor_height < (FLIGHT_ENTITY_MAX_Z + 1) * SUBCELLS_PER_CELL,
             "x30 trajectory anchor is outside the production Flight height bounds")
     require(integer(anchor["movement_capabilities"], "trajectory anchor capabilities") == 3
             and integer(anchor["vertical_velocity_subcells"], "trajectory anchor vertical velocity") == 0,
@@ -1735,7 +2227,7 @@ def verify_x30_authoritative_trajectory(
     anchor_sphere = anchor["playable_sphere"]
     sphere_fields = {"radius_blocks", "active_coverage_epoch", "active_coverage_center",
                      "world_loading_center", "ready_chunks", "required_chunks", "ready"}
-    if is_s1_trajectory:
+    if full_volume_trajectory:
         sphere_fields |= S1_FULL_VOLUME_FIELDS
     require(isinstance(anchor_sphere, dict) and set(anchor_sphere) == sphere_fields,
             "x30 trajectory anchor lacks a complete playable-sphere sample")
@@ -1743,7 +2235,7 @@ def verify_x30_authoritative_trajectory(
     anchor_required = integer(anchor_sphere["required_chunks"], "trajectory anchor required chunks", 1)
     integer(anchor_sphere["active_coverage_epoch"], "trajectory anchor coverage epoch", 1)
     world_position(anchor_sphere["active_coverage_center"], "trajectory anchor active coverage center")
-    expected_sphere_radius = ACTUAL_TERRAIN_RADIUS_BLOCKS if is_s1_trajectory else PLAYABLE_SPHERE_RADIUS_BLOCKS
+    expected_sphere_radius = ACTUAL_TERRAIN_RADIUS_BLOCKS if full_volume_trajectory else PLAYABLE_SPHERE_RADIUS_BLOCKS
     require(integer(anchor_sphere["radius_blocks"], "trajectory anchor sphere radius")
             == expected_sphere_radius and type(anchor_sphere["ready"]) is bool
             and anchor_sphere["ready"] is True and anchor_ready == anchor_required
@@ -1754,7 +2246,7 @@ def verify_x30_authoritative_trajectory(
         verify_s1_full_volume_sample(anchor_sphere, "trajectory anchor")
         verify_s1_visual_lod_sample(anchor.get("visual_lod"), "trajectory anchor", anchor_sphere)
     boundary_updates: list[dict[str, Any]] = []
-    if is_s1_trajectory:
+    if full_volume_trajectory:
         anchor_sample_offset = integer(
             full.get("movement_trajectory_anchor_sphere_sample_offset_ns"),
             "trajectory anchor sphere sample offset",
@@ -1869,6 +2361,8 @@ def verify_x30_authoritative_trajectory(
         require(ordinal > previous_ordinal and offset >= start and revision > previous_revision
                 and acknowledged > previous_ack and revision < (1 << 32) and acknowledged < (1 << 32),
                 "x30 trajectory boundary authority updates are missing, stale, or out of order")
+        if native_turning:
+            require(acknowledged == previous_ack + 1, "native turning authority omitted a pre-window acknowledgement")
         require(capabilities == 3 and vertical_velocity == 0,
                 "x30 trajectory boundary update lost unobstructed Flight capabilities")
         raw_input = all_input_by_sequence.get(acknowledged)
@@ -1903,7 +2397,7 @@ def verify_x30_authoritative_trajectory(
         if delta_y > FLIGHT_HORIZONTAL_EXTENT // 2:
             delta_y -= FLIGHT_HORIZONTAL_EXTENT
         actual_delta = (delta_x, delta_y, current_position[2] - previous_position[2])
-        require(0 <= current_position[2] < (FLIGHT_MAX_Z + 1) * SUBCELLS_PER_CELL
+        require(0 <= current_position[2] < (FLIGHT_ENTITY_MAX_Z + 1) * SUBCELLS_PER_CELL
                 and actual_delta == delta,
                 "x30 trajectory boundary position does not match the production movement step")
         sphere = update["playable_sphere"]
@@ -1943,6 +2437,8 @@ def verify_x30_authoritative_trajectory(
                 and revision > previous_revision and acknowledged > previous_ack
                 and revision < (1 << 32) and acknowledged < (1 << 32),
                 "x30 authoritative movement trajectory has a missing, stale, or out-of-window update")
+        if native_turning:
+            require(acknowledged == previous_ack + 1, "native turning authority omitted an acknowledgement")
         require(capabilities == 3 and vertical_velocity == 0,
                 "x30 authoritative movement update lost unobstructed Flight capabilities")
         raw_input = input_by_sequence.get(acknowledged)
@@ -2000,7 +2496,7 @@ def verify_x30_authoritative_trajectory(
         if delta_y > FLIGHT_HORIZONTAL_EXTENT // 2:
             delta_y -= FLIGHT_HORIZONTAL_EXTENT
         actual_delta = (delta_x, delta_y, current_position[2] - previous_position[2])
-        require(0 <= current_position[2] < (FLIGHT_MAX_Z + 1) * SUBCELLS_PER_CELL,
+        require(0 <= current_position[2] < (FLIGHT_ENTITY_MAX_Z + 1) * SUBCELLS_PER_CELL,
                 "x30 authoritative movement position is outside the production Flight height bounds")
         require(actual_delta == delta,
                 "x30 authoritative movement position does not match the production full-scale speed-30 step")
@@ -2086,9 +2582,13 @@ def verify_x30_authoritative_trajectory(
                         and all(type(value) in (float, int) and math.isfinite(value) for value in presented_body),
                         "rendered camera local-player presentation is malformed")
                 sample_offset = integer(presented["sampled_offset_ns"], "rendered camera sample offset")
+                submitted_count = integer(presented["submitted_frame_count"], "rendered camera submission", 1)
+                expected_count = frame["visual_lod"]["submitted_frame_count"] if not native_turning else None
+                if native_turning and isinstance(frame.get("native_terrain"), dict):
+                    expected_count = integer(frame["native_terrain"].get("renderer_submitted_frame_count"),
+                                             "native rendered camera submission", 1)
                 require(frame_start <= sample_offset <= frame_end
-                        and integer(presented["submitted_frame_count"], "rendered camera submission", 1)
-                            == frame["visual_lod"]["submitted_frame_count"],
+                        and (expected_count is None or submitted_count == expected_count),
                         "rendered camera local-player receipt is not bound to the sampled submission")
                 body_error = (wrapped_delta(body[0], presented_body[0]),
                               wrapped_delta(body[1], presented_body[1]), body[2] - presented_body[2])
@@ -2447,10 +2947,13 @@ def verify_report(report: dict[str, Any], platform: str, proof: str | None = Non
                   *, cadence_exception: dict[str, Any] | None = None) -> dict[str, Any]:
     if isinstance(report, dict):
         candidate_game = report.get("game_benchmark")
-        if isinstance(candidate_game, dict) and candidate_game.get("qualification_proof") == "performance":
-            return verify_s1_performance_report(
-                report, platform, proof=proof, cadence_exception=cadence_exception,
-            )
+        if isinstance(candidate_game, dict):
+            require(candidate_game.get("native_terrain_diagnostics") is None,
+                    "native terrain diagnostics cannot qualify an R6 gameplay proof")
+            if candidate_game.get("qualification_proof") == "performance":
+                return verify_s1_performance_report(
+                    report, platform, proof=proof, cadence_exception=cadence_exception,
+                )
     require(report["schema_version"] == "mc.runtime-evidence.v1" and report["mode"] == "benchmark-game"
             and report["passed"] is True and report["failure"] == "", "runtime workload did not pass")
     timing = report["timing"]
@@ -3583,6 +4086,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--receipt", type=Path, required=True)
+    inspection = parser.add_mutually_exclusive_group()
+    inspection.add_argument("--inspect-s2-turning", choices=tuple(TARGET_HZ),
+                        help="check a raw V10-fine x30 diagnostic without issuing a release proof")
+    inspection.add_argument("--inspect-s2-recovery", choices=tuple(TARGET_HZ),
+                            help="check a raw V10-fine x200 recovery diagnostic without issuing a release proof")
     parser.add_argument("--candidate-commit")
     parser.add_argument("--record", choices=tuple(TARGET_HZ))
     parser.add_argument("--merge", nargs="+", type=Path, metavar="PROOF_RECEIPT")
@@ -3608,6 +4116,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--warmup-seconds", type=int, default=180)
     args = parser.parse_args(argv)
     try:
+        if args.inspect_s2_turning or args.inspect_s2_recovery:
+            require(not any((args.record, args.merge, args.proof, args.candidate_commit,
+                             args.s1_owner_accepted, args.s7_windows_secondary, args.s7_cadence_exception,
+                             args.executable, args.desktop_package, args.desktop_package_manifest,
+                             args.desktop_task_id, args.macos_package, args.macos_package_manifest)),
+                    "S2 diagnostic inspection cannot be combined with release proof options")
+            if args.inspect_s2_recovery:
+                result = inspect_s2_recovery_report(read_json(args.receipt), args.inspect_s2_recovery)
+            else:
+                result = inspect_s2_turning_report(read_json(args.receipt), args.inspect_s2_turning)
+            print(json.dumps(result, sort_keys=True))
+            return 0
         root = args.root.resolve(strict=True)
         if args.candidate_commit:
             _MATRIX.commit_identity(root, args.candidate_commit)

@@ -1,4 +1,5 @@
 #include <client/render/InstalledShaderAssets.hpp>
+#include <client/render/TerrainTextureMipChain.hpp>
 #include <client/render/TerrainTextures.hpp>
 
 #include <core/common/Defer.hpp>
@@ -7,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -194,13 +196,23 @@ TEST(ShaderAssetsTest, StoneMaterialInterfaceLinksBothVertexPathsToBothFragments
     }
 }
 
-TEST(ShaderAssetsTest, TerrainTextureAtlasPreservesGrassFaceMappingAndOverlayAlpha)
+TEST(ShaderAssetsTest, TerrainTextureAtlasIncludesSandFacesAndPreservesGrassOverlayAlpha)
 {
     namespace terrain_textures = client::render::terrain_textures;
+    static constexpr std::array<uint32_t, 4U> SAND_COLORS{
+        0xFF92'C6D9U,
+        0xFFA2'D3E5U,
+        0xFF82'B8CDU,
+        0xFF9B'CCDEU,
+    };
 
     EXPECT_EQ(terrain_textures::tileIndex(2U, 4U), 16U);
     EXPECT_EQ(terrain_textures::tileIndex(2U, 5U), 17U);
-    EXPECT_EQ(terrain_textures::GRASS_SIDE_OVERLAY_TILE_INDEX, 42U);
+    for (uint32_t face = 0U; face < terrain_textures::FACE_COUNT; ++face) {
+        EXPECT_EQ(terrain_textures::tileIndex(static_cast<uint8_t>(shared::Block::Sand), face), 42U + face);
+    }
+    EXPECT_EQ(terrain_textures::TILE_COUNT, 49U);
+    EXPECT_EQ(terrain_textures::GRASS_SIDE_OVERLAY_TILE_INDEX, 48U);
     EXPECT_EQ(terrain_textures::GRASS_TINT_RGBA8, 0xFF59'BD91U);
     EXPECT_EQ(terrain_textures::tileIndex(terrain_textures::MATERIAL_COUNT, 0U),
         terrain_textures::INVALID_TILE_INDEX);
@@ -208,6 +220,27 @@ TEST(ShaderAssetsTest, TerrainTextureAtlasPreservesGrassFaceMappingAndOverlayAlp
         terrain_textures::INVALID_TILE_INDEX);
 
     EXPECT_EQ(terrain_textures::RGBA8[0U], 0U);
+    for (uint32_t face = 0U; face < terrain_textures::FACE_COUNT; ++face) {
+        uint64_t const sand_start = static_cast<uint64_t>(terrain_textures::tileIndex(
+            static_cast<uint8_t>(shared::Block::Sand), face)) * terrain_textures::PIXELS_PER_TILE;
+        uint32_t const first_sand_pixel = terrain_textures::RGBA8[sand_start];
+        bool has_texture_variation = false;
+        std::array<size_t, SAND_COLORS.size()> sand_color_counts{};
+        for (uint32_t pixel = 0U; pixel < terrain_textures::PIXELS_PER_TILE; ++pixel) {
+            uint32_t const value = terrain_textures::RGBA8[sand_start + pixel];
+            EXPECT_EQ(static_cast<uint8_t>(value >> 24U), 255U);
+            EXPECT_GT(static_cast<uint8_t>(value), static_cast<uint8_t>(value >> 16U));
+            auto const color = std::find(SAND_COLORS.begin(), SAND_COLORS.end(), value);
+            ASSERT_NE(color, SAND_COLORS.end()) << "face=" << face << " pixel=" << pixel;
+            ++sand_color_counts[static_cast<size_t>(color - SAND_COLORS.begin())];
+            has_texture_variation |= value != first_sand_pixel;
+        }
+        EXPECT_TRUE(std::all_of(sand_color_counts.begin(), sand_color_counts.end(), [](size_t count) {
+            return count > 0U;
+        })) << "face=" << face;
+        EXPECT_TRUE(has_texture_variation) << "face=" << face;
+    }
+
     uint32_t const overlay_first_pixel = terrain_textures::RGBA8[
         static_cast<uint64_t>(terrain_textures::GRASS_SIDE_OVERLAY_TILE_INDEX)
             * terrain_textures::PIXELS_PER_TILE
@@ -217,6 +250,75 @@ TEST(ShaderAssetsTest, TerrainTextureAtlasPreservesGrassFaceMappingAndOverlayAlp
     ];
     EXPECT_EQ(static_cast<uint8_t>(overlay_first_pixel >> 24U), 255U);
     EXPECT_EQ(static_cast<uint8_t>(overlay_transparent_pixel >> 24U), 0U);
+}
+
+TEST(ShaderAssetsTest, TerrainTextureMipChainFiltersInLinearLight)
+{
+    namespace terrain_textures = client::render::terrain_textures;
+    static constexpr uint32_t CHECKER_TILE = 0U;
+    static constexpr uint32_t BASE_TEXEL_COUNT = 16U * 16U;
+    std::array<uint32_t, terrain_textures::TILE_COUNT * BASE_TEXEL_COUNT> source{};
+    auto const pack_rgba = [](uint8_t const red, uint8_t const green, uint8_t const blue, uint8_t const alpha) {
+        return static_cast<uint32_t>(red) | (static_cast<uint32_t>(green) << 8U)
+            | (static_cast<uint32_t>(blue) << 16U) | (static_cast<uint32_t>(alpha) << 24U);
+    };
+    source[CHECKER_TILE * BASE_TEXEL_COUNT] = pack_rgba(255U, 255U, 255U, 255U);
+    source[CHECKER_TILE * BASE_TEXEL_COUNT + 1U] = pack_rgba(0U, 0U, 0U, 255U);
+    source[CHECKER_TILE * BASE_TEXEL_COUNT + 16U] = pack_rgba(0U, 0U, 0U, 255U);
+    source[CHECKER_TILE * BASE_TEXEL_COUNT + 17U] = pack_rgba(255U, 255U, 255U, 255U);
+
+    terrain_textures::MipChain const chain = terrain_textures::makeMipChain(source);
+
+    ASSERT_EQ(chain[1U].extent, 8U);
+    ASSERT_EQ(chain[1U].rgba8.size(), terrain_textures::TILE_COUNT * 8U * 8U * 4U);
+    EXPECT_EQ(chain[1U].rgba8[0U], 188U);
+    EXPECT_EQ(chain[1U].rgba8[1U], 188U);
+    EXPECT_EQ(chain[1U].rgba8[2U], 188U);
+    EXPECT_EQ(chain[1U].rgba8[3U], 255U);
+}
+
+TEST(ShaderAssetsTest, TerrainTextureMipChainKeepsAdjacentTilesIndependent)
+{
+    namespace terrain_textures = client::render::terrain_textures;
+    static constexpr uint32_t BASE_TEXEL_COUNT = 16U * 16U;
+    static constexpr uint32_t RED_TILE = 15U;
+    static constexpr uint32_t GREEN_TILE = 16U;
+    std::array<uint32_t, terrain_textures::TILE_COUNT * BASE_TEXEL_COUNT> source{};
+    auto const pack_rgba = [](uint8_t const red, uint8_t const green, uint8_t const blue, uint8_t const alpha) {
+        return static_cast<uint32_t>(red) | (static_cast<uint32_t>(green) << 8U)
+            | (static_cast<uint32_t>(blue) << 16U) | (static_cast<uint32_t>(alpha) << 24U);
+    };
+    std::fill_n(source.begin() + RED_TILE * BASE_TEXEL_COUNT, BASE_TEXEL_COUNT,
+        pack_rgba(255U, 0U, 0U, 255U));
+    std::fill_n(source.begin() + GREEN_TILE * BASE_TEXEL_COUNT, BASE_TEXEL_COUNT,
+        pack_rgba(0U, 255U, 0U, 255U));
+
+    terrain_textures::MipChain const chain = terrain_textures::makeMipChain(source);
+
+    ASSERT_EQ(chain[4U].extent, 1U);
+    size_t const red_pixel = static_cast<size_t>(RED_TILE) * 4U;
+    size_t const green_pixel = static_cast<size_t>(GREEN_TILE) * 4U;
+    EXPECT_EQ(chain[4U].rgba8[red_pixel], 255U);
+    EXPECT_EQ(chain[4U].rgba8[red_pixel + 1U], 0U);
+    EXPECT_EQ(chain[4U].rgba8[green_pixel], 0U);
+    EXPECT_EQ(chain[4U].rgba8[green_pixel + 1U], 255U);
+}
+
+TEST(ShaderAssetsTest, TerrainTextureMipChainPremultipliesGrassOverlayAlpha)
+{
+    namespace terrain_textures = client::render::terrain_textures;
+    static constexpr uint32_t BASE_TEXEL_COUNT = 16U * 16U;
+    static constexpr uint32_t OVERLAY_TILE = terrain_textures::GRASS_SIDE_OVERLAY_TILE_INDEX;
+    std::array<uint32_t, terrain_textures::TILE_COUNT * BASE_TEXEL_COUNT> source{};
+    source[OVERLAY_TILE * BASE_TEXEL_COUNT] = 0xFFFF'FFFFU;
+
+    terrain_textures::MipChain const chain = terrain_textures::makeMipChain(source);
+
+    size_t const overlay_pixel = static_cast<size_t>(OVERLAY_TILE) * 8U * 8U * 4U;
+    EXPECT_EQ(chain[1U].rgba8[overlay_pixel], 137U);
+    EXPECT_EQ(chain[1U].rgba8[overlay_pixel + 1U], 137U);
+    EXPECT_EQ(chain[1U].rgba8[overlay_pixel + 2U], 137U);
+    EXPECT_EQ(chain[1U].rgba8[overlay_pixel + 3U], 64U);
 }
 
 TEST(ShaderAssetsTest, PropagatesDeterministicKernelProgramDiagnostics)
@@ -246,4 +348,16 @@ TEST(ShaderAssetsTest, PropagatesDeterministicKernelProgramDiagnostics)
         graphicsProgramDiagnostic(programStage(grid, "missing"), programStage(fragment)),
         "Program stage entry point is missing from its SPIR-V module"
     );
+}
+
+TEST(ShaderAssetsTest, InstalledClientAssetPathsShareExecutableRootAndRejectTraversal)
+{
+    auto const shader = client::installedClientAssetPath("shaders/text.frag.spv");
+    auto const music = client::installedClientAssetPath("assets/audio/welcome.wav");
+    EXPECT_TRUE(music.is_absolute());
+    EXPECT_EQ(music.filename(), "welcome.wav");
+    EXPECT_EQ(shader.parent_path().parent_path(), music.parent_path().parent_path().parent_path());
+    EXPECT_THROW(static_cast<void>(client::installedClientAssetPath({})), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(client::installedClientAssetPath("assets/../welcome.wav")), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(client::installedClientAssetPath(music)), std::invalid_argument);
 }

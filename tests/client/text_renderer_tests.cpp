@@ -147,3 +147,39 @@ TEST(TextRendererTest, MapsScreenAndWorldBatchesToTheirShaderModes)
     EXPECT_EQ(static_cast<uint32_t>(client::TextShaderMode::Screen), 0U);
     EXPECT_EQ(static_cast<uint32_t>(client::TextShaderMode::World), 1U);
 }
+
+TEST(TextRendererTest, AdaptiveScreenStyleRetainsBothCandidatesAndFixedWorldText)
+{
+    client::TextDocument document;
+    ASSERT_TRUE(client::appendText(document, "A"));
+    client::TextPlacement placement{
+        .style = client::TextStyle::Adaptive,
+        .light_color = { 0.9F, 0.8F, 0.7F, 0.6F },
+        .dark_color = { 0.1F, 0.2F, 0.3F, 0.4F },
+    };
+    client::TextBatch batch;
+    client::packText(document, batch, placement);
+    ASSERT_EQ(batch.glyphs.size(), 1U);
+    EXPECT_NE(batch.glyphs[0].character & 0x100U, 0U);
+    EXPECT_EQ(batch.glyphs[0].light_color, placement.light_color.packed());
+    EXPECT_EQ(batch.glyphs[0].dark_color, placement.dark_color.packed());
+    placement.space = client::TextSpace::World;
+    client::packText(document, batch, placement);
+    EXPECT_EQ(batch.glyphs[0].character, static_cast<uint32_t>('A'));
+}
+
+TEST(TextRendererTest, ColoredContrastMarksScreenGlyphsAndPreservesCategoryColor)
+{
+    client::TextDocument document;
+    client::TextColor const blue{ 0.2F, 0.4F, 1.0F, 1.0F };
+    ASSERT_TRUE(client::appendText(document, "X", blue));
+    client::TextPlacement placement{ .style = client::TextStyle::ColoredAdaptive };
+    client::TextBatch batch;
+    client::packText(document, batch, placement, {}, blue);
+    ASSERT_EQ(batch.glyphs.size(), 1U);
+    EXPECT_EQ(batch.glyphs[0].character, static_cast<uint32_t>('X') | 0x300U);
+    EXPECT_EQ(batch.glyphs[0].packed_color, blue.packed());
+    placement.space = client::TextSpace::World;
+    client::packText(document, batch, placement, {}, blue);
+    EXPECT_EQ(batch.glyphs[0].character, static_cast<uint32_t>('X'));
+}

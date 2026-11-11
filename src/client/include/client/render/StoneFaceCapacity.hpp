@@ -57,6 +57,41 @@ struct StoneFaceGrowthDiagnostics final {
 
 namespace detail {
 
+struct PresentationResourceCompatibility final {
+    core::graphics::vulkan::PresentationInfo presentation_info;
+    core::graphics::vulkan::DeviceIdentity device_identity = 0U;
+    VkFormat depth_format = VK_FORMAT_UNDEFINED;
+};
+
+[[nodiscard]] inline bool canPreservePresentationResources(
+    PresentationResourceCompatibility const& previous,
+    PresentationResourceCompatibility const& current
+) noexcept
+{
+    core::graphics::vulkan::PresentationInfo const& previous_info = previous.presentation_info;
+    core::graphics::vulkan::PresentationInfo const& current_info = current.presentation_info;
+    return previous.device_identity != 0U
+        && previous.device_identity == current.device_identity
+        && previous.depth_format == current.depth_format
+        && previous_info.extent.width == current_info.extent.width
+        && previous_info.extent.height == current_info.extent.height
+        && previous_info.format == current_info.format
+        && previous_info.present_mode == current_info.present_mode
+        && previous_info.physical_device == current_info.physical_device
+        && previous_info.api_version == current_info.api_version
+        && previous_info.validation_enabled == current_info.validation_enabled
+        && previous_info.portability_enabled == current_info.portability_enabled
+        && previous_info.mesh_shaders_enabled == current_info.mesh_shaders_enabled
+        && previous_info.transfer_source_enabled == current_info.transfer_source_enabled
+        && previous_info.srgb == current_info.srgb
+        && previous_info.surface_transform.pre_transform == current_info.surface_transform.pre_transform
+        && previous_info.surface_transform.requires_client_orientation_compensation
+            == current_info.surface_transform.requires_client_orientation_compensation
+        && previous_info.multi_draw_indirect_enabled == current_info.multi_draw_indirect_enabled
+        && previous_info.draw_indirect_first_instance_enabled == current_info.draw_indirect_first_instance_enabled
+        && previous_info.presentation_history_enabled == current_info.presentation_history_enabled;
+}
+
 class StoneFaceRecreationDeferred final : public std::runtime_error {
 public:
     StoneFaceRecreationDeferred()

@@ -1,0 +1,785 @@
+--- upstream/cpp_src/bounds.cpp
++++ src/bounds.cpp
+@@ -19,6 +19,9 @@
+ 
+ #include "bounds.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ Bounds::Bounds(const WorldDimension& worldDimension, const FloatPoint& position,
+                const Dimension& dimension)
+     : _worldDimension(worldDimension),
+@@ -110,3 +113,5 @@
+     ASSERT(res != BAD_INDEX, "BAD map index found");
+     return res;
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/bounds.hpp
++++ src/bounds.hpp
+@@ -28,6 +28,9 @@
+ #include "segment_data.hpp"
+ #include "utils.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ /// Represent the bounds of a Plate.
+ class IBounds {
+ public:
+@@ -137,4 +140,6 @@
+     Dimension _dimension;
+ };
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/geometry.cpp
++++ src/geometry.cpp
+@@ -19,6 +19,9 @@
+ 
+ #include "geometry.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ //
+ // IntPoint
+ //
+@@ -179,3 +182,5 @@
+ {
+     return _width > _height ? _width : _height;
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/geometry.hpp
++++ src/geometry.hpp
+@@ -25,6 +25,9 @@
+ #include "utils.hpp"
+ #include "world_point.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ using namespace std;
+ 
+ class WorldDimension;
+@@ -189,4 +192,6 @@
+     uint32_t largerSize() const;
+ };
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/heightmap.cpp
++++ src/heightmap.cpp
+@@ -21,4 +21,9 @@
+ 
+ #include <stdexcept> // std::invalid_argument
+ 
++namespace mc_v10_platec_engine
++{
++
+ using namespace std;
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/heightmap.hpp
++++ src/heightmap.hpp
+@@ -27,6 +27,9 @@
+ #include "rectangle.hpp"
+ #include "world_point.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ using namespace std;
+ 
+ template <typename Value>
+@@ -139,4 +142,6 @@
+ typedef Matrix<uint32_t> AgeMap;
+ typedef Matrix<uint32_t> IndexMap;
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/lithosphere.cpp
++++ src/lithosphere.cpp
+@@ -18,6 +18,7 @@
+  *****************************************************************************/
+ 
+ #include "lithosphere.hpp"
++#include <cmath>
+ #include "plate.hpp"
+ #include "sqrdmd.hpp"
+ #include "simplexnoise.hpp"
+@@ -31,6 +32,9 @@
+ #include <cstring>
+ #include <iostream>
+ 
++namespace mc_v10_platec_engine
++{
++
+ #define BOOL_REGENERATE_CRUST   1
+ 
+ using namespace std;
+@@ -60,12 +64,12 @@
+ 
+ void lithosphere::createNoise(float* tmp, const WorldDimension& tmpDim, bool useSimplex)
+ {
+-    ::createNoise(tmp, tmpDim, _randsource, useSimplex);
++    ::mc_v10_platec_engine::createNoise(tmp, tmpDim, _randsource, useSimplex);
+ }
+ 
+ void lithosphere::createSlowNoise(float* tmp, const WorldDimension& tmpDim)
+ {
+-    ::createSlowNoise(tmp, tmpDim, _randsource);
++    ::mc_v10_platec_engine::createSlowNoise(tmp, tmpDim, _randsource);
+ }
+ 
+ lithosphere::lithosphere(long seed, uint32_t width, uint32_t height, float sea_level,
+@@ -734,8 +738,9 @@
+             crust_age = MAX_BUOYANCY_AGE - crust_age;
+             crust_age &= -(crust_age <= MAX_BUOYANCY_AGE);
+ 
+-            hmap[i] += (hmap[i] < CONTINENTAL_BASE) * BUOYANCY_BONUS_X *
+-                       OCEANIC_BASE * crust_age * MULINV_MAX_BUOYANCY_AGE;
++            float buoyancy = (hmap[i] < CONTINENTAL_BASE) * BUOYANCY_BONUS_X *
++                             OCEANIC_BASE * crust_age;
++            hmap[i] = std::fma(buoyancy, MULINV_MAX_BUOYANCY_AGE, hmap[i]);
+         }
+ 
+         ++iter_count;
+@@ -833,8 +838,9 @@
+             crust_age = MAX_BUOYANCY_AGE - crust_age;
+             crust_age &= -(crust_age <= MAX_BUOYANCY_AGE);
+ 
+-            hmap[i] += (hmap[i] < CONTINENTAL_BASE) * BUOYANCY_BONUS_X *
+-                       OCEANIC_BASE * crust_age * MULINV_MAX_BUOYANCY_AGE;
++            float buoyancy = (hmap[i] < CONTINENTAL_BASE) * BUOYANCY_BONUS_X *
++                             OCEANIC_BASE * crust_age;
++            hmap[i] = std::fma(buoyancy, MULINV_MAX_BUOYANCY_AGE, hmap[i]);
+         }
+     } catch (const exception& e) {
+         std::string msg = "Problem during restart: ";
+@@ -863,3 +869,5 @@
+     ASSERT(index < num_plates, "invalid plate index");
+     return plates[index];
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/lithosphere.hpp
++++ src/lithosphere.hpp
+@@ -31,6 +31,9 @@
+ #include "rectangle.hpp"
+ #include "simplerandom.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ using namespace std;
+ 
+ #define CONTINENTAL_BASE 1.0f
+@@ -195,4 +198,6 @@
+ };
+ 
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/mass.cpp
++++ src/mass.cpp
+@@ -19,6 +19,9 @@
+ 
+ #include "mass.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ // ----------------------------------------------
+ // MassBuilder
+ // ----------------------------------------------
+@@ -103,3 +106,5 @@
+     return mass <= 0;
+ }
+ 
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/mass.hpp
++++ src/mass.hpp
+@@ -30,6 +30,9 @@
+ #include "bounds.hpp"
+ #include "movement.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ class Mass;
+ 
+ class MassBuilder
+@@ -70,4 +73,6 @@
+     float cx, cy;         ///< X and Y components of the center of mass of plate.
+ };
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/movement.cpp
++++ src/movement.cpp
+@@ -20,10 +20,14 @@
+ #include "movement.hpp"
+ #include "plate.hpp"
+ #include "mass.hpp"
++#include <cmath>
+ 
++namespace mc_v10_platec_engine
++{
++
+ // Missing on Windows
+ #ifndef M_PI
+-#define M_PI 3.141592654
++#define M_PI 3.14159265358979323846
+ #endif
+ 
+ #if (defined(_MSC_VER) && defined(_M_X64)) || \
+@@ -66,7 +70,7 @@
+ 
+     // Force direction of plate to be unit vector.
+     // Update velocity so that the distance of movement doesn't change.
+-    float len = sqrt(vx*vx + vy*vy);
++    float len = sqrt(std::fma(vx, vx, vy*vy));
+     ASSERT(len > 0, "Velocity is zero!");
+     // MK: Calculating the inverse length and multiplying changes the output data for maps!
+     // I have held off on optimizations like these until the more important optimizations
+@@ -84,8 +88,8 @@
+     float alpha_vel = alpha * velocity;
+     float _cos = cos(alpha_vel);
+     float _sin = sin(alpha_vel);
+-    float _vx = vx * _cos - vy * _sin;
+-    float _vy = vy * _cos + vx * _sin;
++    float _vx = std::fma(vx, _cos, -vy * _sin);
++    float _vy = std::fma(vy, _cos, vx * _sin);
+     vx = _vx;
+     vy = _vy;
+ }
+@@ -203,3 +207,5 @@
+     // speed along X axis. However at the same time ball B continues its
+     // path upwards like it should. Seems correct right?
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/movement.hpp
++++ src/movement.hpp
+@@ -29,6 +29,9 @@
+ #include "utils.hpp"
+ #include "bounds.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ #define CONT_BASE 1.0 ///< Height limit that separates seas from dry land.
+ #define INITIAL_SPEED_X 1
+ #define DEFORMATION_WEIGHT 2
+@@ -105,4 +108,6 @@
+ };
+ 
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/noise.cpp
++++ src/noise.cpp
+@@ -19,11 +19,15 @@
+ 
+ #include <string>
+ #include <math.h>
++#include <cmath>
+ #include "noise.hpp"
+ #include "sqrdmd.hpp"
+ #include "simplexnoise.hpp"
+ #include "utils.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ #if (defined(_MSC_VER) && defined(_M_X64)) || \
+     (defined(__APPLE__) && defined(__clang__))
+ #define sinf(x) static_cast<float>(sin(static_cast<double>(x)))
+@@ -71,10 +75,10 @@
+                                              0.25f,
+                                              0.0f,
+                                              1.0f,
+-                                             ka+a*noiseScale,
+-                                             kb+b*noiseScale,
+-                                             kc+c*noiseScale,
+-                                             kd+d*noiseScale);
++                                             std::fma(a, noiseScale, ka),
++                                             std::fma(b, noiseScale, kb),
++                                             std::fma(c, noiseScale, kc),
++                                             std::fma(d, noiseScale, kd));
+             map[y * width + x] = v;
+         }
+     }
+@@ -147,3 +151,5 @@
+         throw runtime_error(msg.c_str());
+     }
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/noise.hpp
++++ src/noise.hpp
+@@ -26,7 +26,12 @@
+ #include "rectangle.hpp"
+ #include "simplerandom.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ void createNoise(float* tmp, const WorldDimension& tmpDim, SimpleRandom _randsource, bool useSimplex = false);
+ void createSlowNoise(float* tmp, const WorldDimension& tmpDim, SimpleRandom _randsource);
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/plate.cpp
++++ src/plate.cpp
+@@ -29,11 +29,15 @@
+ #include <assert.h>
+ 
+ #include "plate.hpp"
++#include <cmath>
+ #include "heightmap.hpp"
+ #include "rectangle.hpp"
+ #include "utils.hpp"
+ #include "plate_functions.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ using namespace std;
+ 
+ plate::plate(long seed, float* m, uint32_t w, uint32_t h, uint32_t _x, uint32_t _y,
+@@ -233,7 +237,7 @@
+                            float& w_crust, float& e_crust, float& n_crust, float& s_crust,
+                            uint32_t& w, uint32_t& e, uint32_t& n, uint32_t& s)
+ {
+-    ::calculateCrust(x, y, index, w_crust, e_crust, n_crust, s_crust,
++    ::mc_v10_platec_engine::calculateCrust(x, y, index, w_crust, e_crust, n_crust, s_crust,
+                      w, e, n, s,
+                      _worldDimension, map, _bounds->width(), _bounds->height());
+ }
+@@ -358,7 +362,7 @@
+     // Add random noise (10 %) to heightmap.
+     for (uint32_t i = 0; i < _bounds->area(); ++i) {
+         float alpha = 0.2f * static_cast<float>(_randsource.next_double());
+-        tmpHm[i] += 0.1f * tmpHm[i] - alpha * tmpHm[i];
++        tmpHm[i] += std::fma(0.1f, tmpHm[i], -alpha * tmpHm[i]);
+     }
+ 
+     map = tmpHm;
+@@ -623,7 +627,7 @@
+     // If no new crust is added, original time remains intact.
+     const uint32_t old_crust = -(map[index] > 0);
+     const uint32_t new_crust = -(z > 0);
+-    t = (t & ~old_crust) | ((uint32_t)((map[index] * age_map[index] + z * t) /
++    t = (t & ~old_crust) | ((uint32_t)(std::fma(map[index], static_cast<float>(age_map[index]), z * t) /
+                                        (map[index] + z)) & old_crust);
+     age_map[index] = (t & new_crust) | (age_map[index] & ~new_crust);
+ 
+@@ -657,3 +661,5 @@
+ {
+     return (*_segments)[_segments->getContinentAt(x, y)];
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/plate.hpp
++++ src/plate.hpp
+@@ -32,6 +32,9 @@
+ #include "mass.hpp"
+ #include "segments.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ class IPlate : public IMass, public IMovement
+ {
+ public:
+@@ -303,4 +306,6 @@
+     MySegmentCreator* _mySegmentCreator;
+ };
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/plate_functions.cpp
++++ src/plate_functions.cpp
+@@ -19,6 +19,9 @@
+ 
+ #include "plate_functions.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ void calculateCrust(
+     uint32_t x, uint32_t y,
+     uint32_t index,
+@@ -75,3 +78,5 @@
+         throw runtime_error(msg.c_str());
+     }
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/plate_functions.hpp
++++ src/plate_functions.hpp
+@@ -24,10 +24,15 @@
+ #include "rectangle.hpp"
+ #include "heightmap.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ void calculateCrust(uint32_t x, uint32_t y, uint32_t index,
+                     float& w_crust, float& e_crust, float& n_crust, float& s_crust,
+                     uint32_t& w, uint32_t& e, uint32_t& n, uint32_t& s,
+                     const WorldDimension& worldDimension, HeightMap& map,
+                     const uint32_t width, const uint32_t height);
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/rectangle.cpp
++++ src/rectangle.cpp
+@@ -21,6 +21,9 @@
+ #include "rectangle.hpp"
+ #include "utils.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ namespace Platec {
+ 
+ /// Return a valid index or BAD_INDEX
+@@ -83,4 +86,5 @@
+     }
+ }
+ 
+-}
+\ No newline at end of file
++}
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/rectangle.hpp
++++ src/rectangle.hpp
+@@ -25,6 +25,9 @@
+ #include "utils.hpp"
+ #include "geometry.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ using namespace std;
+ 
+ #define BAD_INDEX 0xFFFFFFFF
+@@ -125,4 +128,6 @@
+ };
+ 
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/segment_creator.cpp
++++ src/segment_creator.cpp
+@@ -22,6 +22,9 @@
+ #include "segments.hpp"
+ #include "bounds.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ uint32_t MySegmentCreator::calcDirection(uint32_t x, uint32_t y, const uint32_t origin_index, const uint32_t ID) const
+ {
+     uint32_t canGoLeft  = x > 0          && map[origin_index - 1]     >= CONT_BASE;
+@@ -269,3 +272,5 @@
+ 
+     return ID;
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/segment_creator.hpp
++++ src/segment_creator.hpp
+@@ -24,6 +24,9 @@
+ #include "utils.hpp"
+ #include "heightmap.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ typedef uint32_t ContinentId;
+ 
+ class IBounds;
+@@ -64,4 +67,6 @@
+     HeightMap& map;
+ };
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/segment_data.cpp
++++ src/segment_data.cpp
+@@ -19,6 +19,9 @@
+ 
+ #include "segment_data.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ SegmentData::SegmentData(const Platec::Rectangle& rectangle,
+                          uint32_t area) : _rectangle(rectangle),
+     _area(area), _coll_count(0) {};
+@@ -107,3 +110,5 @@
+ {
+     _area = 0;
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/segment_data.hpp
++++ src/segment_data.hpp
+@@ -23,6 +23,9 @@
+ #include "utils.hpp"
+ #include "rectangle.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ class ISegmentDataAccess
+ {
+ public:
+@@ -77,4 +80,6 @@
+     uint32_t _coll_count; ///< Number of collisions on this segment.
+ };
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/segments.cpp
++++ src/segments.cpp
+@@ -19,6 +19,9 @@
+ 
+ #include "segments.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ Segments::Segments(uint32_t plate_area)
+ {
+     _area = plate_area;
+@@ -105,3 +108,5 @@
+     ASSERT(seg < size(), "Could not create segment");
+     return seg;
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/segments.hpp
++++ src/segments.hpp
+@@ -32,6 +32,9 @@
+ #include "mass.hpp"
+ #include "segment_creator.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ typedef uint32_t ContinentId;
+ 
+ class ISegments
+@@ -93,4 +96,6 @@
+     IBounds* _bounds;
+ };
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/simplerandom.cpp
++++ src/simplerandom.cpp
+@@ -24,6 +24,9 @@
+ #include <stddef.h>
+ #include "utils.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ void simplerandom_cong_seed(SimpleRandomCong_t * p_cong, uint32_t seed);
+ void simplerandom_cong_mix(SimpleRandomCong_t * p_cong, const uint32_t * p_data, uint32_t num_data);
+ uint32_t simplerandom_cong_next(SimpleRandomCong_t * p_cong);
+@@ -137,3 +140,5 @@
+         }
+     }
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/simplerandom.hpp
++++ src/simplerandom.hpp
+@@ -25,6 +25,9 @@
+ 
+ #include "utils.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ typedef struct
+ {
+     uint32_t        cong;
+@@ -47,4 +50,6 @@
+     SimpleRandomCong_t* internal;
+ };
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/simplexnoise.cpp
++++ src/simplexnoise.cpp
+@@ -28,6 +28,9 @@
+ 
+ #include "simplexnoise.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ /* 2D, 3D and 4D Simplex Noise functions return 'random' values in (-1, 1).
+ 
+ This algorithm was originally designed by Ken Perlin, but my code has been
+@@ -570,3 +573,5 @@
+ 
+     return 0;
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/simplexnoise.hpp
++++ src/simplexnoise.hpp
+@@ -25,7 +25,10 @@
+ 
+ #include "utils.hpp"
+ 
++namespace mc_v10_platec_engine
++{
+ 
++
+ /* 2D, 3D and 4D Simplex Noise functions return 'random' values in (-1, 1).
+ 
+ This algorithm was originally designed by Ken Perlin, but my code has been
+@@ -200,4 +203,6 @@
+ };
+ 
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif /*SIMPLEX_H_*/
+--- upstream/cpp_src/sqrdmd.cpp
++++ src/sqrdmd.cpp
+@@ -33,6 +33,9 @@
+ 
+ #include "sqrdmd.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ using namespace std;
+ 
+ #define CALC_SUM(a, b, c, d, rnd)\
+@@ -226,3 +229,5 @@
+     }
+     return (0);
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/sqrdmd.hpp
++++ src/sqrdmd.hpp
+@@ -25,6 +25,9 @@
+ #ifndef SQRDMD_H
+ #define SQRDMD_H
+ 
++namespace mc_v10_platec_engine
++{
++
+ /**
+  * @brief Scales the values of the map between [0, 1[.
+  *
+@@ -49,4 +52,6 @@
+  */
+ int sqrdmd(long seed, float* map, const int size, float rgh);
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/utils.cpp
++++ src/utils.cpp
+@@ -20,6 +20,9 @@
+ #include "utils.hpp"
+ #include <sstream>
+ 
++namespace mc_v10_platec_engine
++{
++
+ namespace Platec {
+ 
+ std::string to_string(uint32_t value) {
+@@ -35,3 +38,5 @@
+ }
+ 
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/utils.hpp
++++ src/utils.hpp
+@@ -33,6 +33,9 @@
+ #include <stdint.h>
+ #endif
+ 
++
++namespace mc_v10_platec_engine
++{
+ #ifndef UINT32_C
+ #define UINT32_C(val) val##ui32
+ #endif
+@@ -69,4 +72,6 @@
+ #define ASSERT(condition, message)
+ #endif
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif
+--- upstream/cpp_src/world_point.cpp
++++ src/world_point.cpp
+@@ -20,6 +20,9 @@
+ #include "world_point.hpp"
+ #include "rectangle.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ WorldPoint::WorldPoint(uint32_t x, uint32_t y, const WorldDimension& dim)
+     : _x(x), _y(y)
+ {
+@@ -46,3 +49,5 @@
+     ASSERT(_x < dim.getWidth() && _y < dim.getHeight(), "Point outside of world!");
+     return _y * dim.getWidth() + _x;
+ }
++
++} // namespace mc_v10_platec_engine
+--- upstream/cpp_src/world_point.hpp
++++ src/world_point.hpp
+@@ -22,6 +22,9 @@
+ 
+ #include "utils.hpp"
+ 
++namespace mc_v10_platec_engine
++{
++
+ class WorldDimension;
+ 
+ /// Immutable point expressed in World coordinates
+@@ -38,4 +41,6 @@
+     const uint32_t _y;
+ };
+ 
++
++} // namespace mc_v10_platec_engine
+ #endif

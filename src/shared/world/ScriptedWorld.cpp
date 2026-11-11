@@ -1,5 +1,6 @@
 #include <shared/world/ScriptedWorld.hpp>
 
+#include <shared/corelang/Execution.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/World.hpp>
 
@@ -31,6 +32,8 @@ namespace core003 = core::lang;
 
 static constexpr uint64_t WORLD_RULESET_VERSION = 1U;
 static constexpr uint64_t WORLD_HOST_ABI_VERSION = 1U;
+static constexpr uint64_t MAX_BOUNDED_SOURCE_BYTES = uint64_t{64U} * 1'024U;
+static constexpr uint64_t MAX_BOUNDED_INSTRUCTIONS = 262'144U;
 static constexpr uint8_t AIR_BLOCK_ID = static_cast<uint8_t>(shared::Block::Air);
 static constexpr uint8_t STONE_BLOCK_ID = static_cast<uint8_t>(shared::Block::Stone);
 
@@ -384,15 +387,6 @@ std::expected<void, std::string> registerProviders(
 }
 
 [[nodiscard]]
-std::string firstDiagnostic(std::vector<core003::Diagnostic> const& diagnostics)
-{
-    if (diagnostics.empty()) {
-        return "CoreLang rejected the world script without a diagnostic";
-    }
-    return diagnostics.front().code + ": " + diagnostics.front().message;
-}
-
-[[nodiscard]]
 std::string outcomeMessage(core003::CallOutcome const& outcome)
 {
     if (auto const* const failure = std::get_if<core003::Failed>(&outcome)) {
@@ -428,23 +422,48 @@ std::expected<ScriptedWorld, ScriptedWorldError> ScriptedWorld::load(
             .message = "scripted worlds require positive bounds and exactly one 16 by 16 by 16 chunk",
         });
     }
-    if (source.size() > options.max_source_bytes) {
+    uint64_t const source_limit = options.max_source_bytes < MAX_BOUNDED_SOURCE_BYTES
+        ? options.max_source_bytes
+        : MAX_BOUNDED_SOURCE_BYTES;
+    if (source.size() > source_limit) {
         return std::unexpected(ScriptedWorldError{
             .code = ScriptedWorldErrorCode::SourceTooLarge,
-            .message = "world script exceeds its configured source bound",
+            .message = "world script exceeds its configured or bounded-bridge source limit",
         });
     }
 
     core003::CompilerRegistry const registry = worldCompilerRegistry();
-    auto const compiled = core003::compile(
+    corelang::ExecutionLimits limits{};
+    limits.max_source_bytes = source_limit;
+    limits.max_bytecode_bytes = MAX_BOUNDED_SOURCE_BYTES;
+    limits.max_instructions = MAX_BOUNDED_INSTRUCTIONS;
+    auto const compiled = corelang::compileBounded(
         {.id = "canonical_world", .text = std::string{source}},
         registry,
-        {}
+        limits
     );
     if (!compiled) {
+        bool const compilation_failed = compiled.error().code == corelang::BackendErrorCode::CompileFailed
+            || compiled.error().code == corelang::BackendErrorCode::SourceTooLarge;
+        ScriptedWorldErrorCode const code = compilation_failed
+            ? ScriptedWorldErrorCode::CompilationFailed
+            : ScriptedWorldErrorCode::RuntimeFailed;
         return std::unexpected(ScriptedWorldError{
-            .code = ScriptedWorldErrorCode::CompilationFailed,
-            .message = firstDiagnostic(compiled.error()),
+            .code = code,
+            .message = compiled.error().message,
+        });
+    }
+    auto const instruction_count = corelang::boundedInstructionCount(
+        *compiled,
+        "canonical_world",
+        "generate",
+        limits,
+        1U
+    );
+    if (!instruction_count) {
+        return std::unexpected(ScriptedWorldError{
+            .code = ScriptedWorldErrorCode::RuntimeFailed,
+            .message = "world script failed bounded instruction validation: " + instruction_count.error().message,
         });
     }
 
@@ -456,7 +475,7 @@ std::expected<ScriptedWorld, ScriptedWorldError> ScriptedWorld::load(
             .message = registered.error(),
         });
     }
-    auto const program = runtime.loadCompiled(*compiled);
+    auto const program = runtime.loadCompiled(compiled->compiled);
     if (!program) {
         return std::unexpected(ScriptedWorldError{
             .code = ScriptedWorldErrorCode::RuntimeFailed,

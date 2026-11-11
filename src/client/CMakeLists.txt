@@ -1,19 +1,23 @@
 target_sources(mc
     PRIVATE
+        BlockActionPresentation.cpp
         BotClient.cpp
         HeightTileInterestRegion.cpp
         PreviewMeshConnectivity.cpp
         TerrainLodRuntime.cpp
     Camera.cpp
     DepthFormat.cpp
-        GenerationMapPresentation.cpp
+        UiPresentation.cpp
         PlayerPreviewLod.cpp
+        render/CanonicalTerrainField.cpp
+        include/client/render/CanonicalTerrainField.hpp
+        render/BlockInteractionEffects.cpp
         render/DebugHud.cpp
         render/GuiRenderer.cpp
         render/HeightTileDrawIndex.cpp
+        include/client/render/TerrainLodDrawIndex.hpp
         render/ShaderAssets.cpp
         render/StoneIndirectDraws.cpp
-        render/TextRenderer.cpp
         render/PresentationRenderer.cpp
         render/VulkanFrustum.cpp
 )
@@ -21,6 +25,8 @@ if(NOT ANDROID)
     target_sources(mc
         PRIVATE
             PlayerClient.cpp
+            ScreenshotDibV5.cpp
+            include/client/detail/ScreenshotDibV5.hpp
             ScreenshotPng.cpp
             ScreenshotClipboard.cpp
             render/InstalledShaderAssets.cpp
@@ -30,6 +36,9 @@ if(APPLE)
     find_library(MC_APPKIT_FRAMEWORK AppKit REQUIRED)
     target_sources(mc PRIVATE ScreenshotClipboard.mm)
     target_link_libraries(mc PRIVATE ${MC_APPKIT_FRAMEWORK})
+endif()
+if(WIN32)
+    target_link_libraries(mc PRIVATE User32)
 endif()
 if(NOT ANDROID)
     mc_target_shaders(mc
@@ -47,8 +56,11 @@ if(NOT ANDROID)
         render/shaders/trivial.frag
         render/shaders/text.vert
         render/shaders/text.frag
+        render/shaders/adaptive_text.frag
         render/shaders/map.vert
         render/shaders/map.frag
+        render/shaders/gui_vector.vert
+        render/shaders/gui_vector.frag
     )
 
     add_custom_command(
@@ -69,11 +81,17 @@ if(NOT ANDROID)
     )
     foreach(curved_shader IN ITEMS
         stone.vert stone_indexed_block.vert stone.frag stone_solid.frag
-        player.vert player.mesh player.frag text.vert text.frag
+        player.vert player.mesh player.frag text.vert text.frag adaptive_text.frag
     )
         add_custom_command(
             OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${curved_shader}.spv" APPEND
             DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/world_curvature.glsl"
+        )
+    endforeach()
+    foreach(text_shader IN ITEMS text.frag adaptive_text.frag)
+        add_custom_command(
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${text_shader}.spv" APPEND
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/text_glyph.glsl"
         )
     endforeach()
     mc_copy_target_shaders(mc_main mc)

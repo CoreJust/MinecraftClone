@@ -1,11 +1,20 @@
+#include "../../src/client/TerrainLodSource.hpp"
+
+#include <client/LoadingBackdrop.hpp>
 #include <client/PlayerClient.hpp>
+#include <client/S2MapPresentation.hpp>
 #include <client/TerrainLodPresentation.hpp>
+#include <client/UiPresentation.hpp>
 #include <client/WorldLoading.hpp>
 #include <client/detail/ScreenshotPng.hpp>
+#include <server/GameServer.hpp>
+#include <server/WorldPreparation.hpp>
 
 #include <shared/world/TerrainWorld.hpp>
+#include <shared/world/World.hpp>
 
 #include <generation/Generation.hpp>
+#include <core/net/Address.hpp>
 
 #include <core/platform/glfw/GlfwWindow.hpp>
 
@@ -18,15 +27,25 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
+#include <fstream>
+#include <future>
+#include <iostream>
 #include <limits>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
+#include <sstream>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <utility>
@@ -35,9 +54,206 @@
 namespace client {
 
 struct PlayerClientFocusTestAccess final {
+    static void seedHudClimate(PlayerClient& player_client, shared::TerrainWorld const& world, uint64_t const join_epoch = 7U)
+    {
+        auto const configuration = world.atlas()->configuration;
+        player_client.m_accepted = true;
+        player_client.m_world_loading_identity = { .join_epoch = join_epoch, .configuration = configuration };
+        player_client.m_terrain_session = shared::TerrainSessionIdentity{
+            .join_epoch = join_epoch, .terrain = world.identity(), .configuration = configuration,
+        };
+        player_client.m_terrain_identity = world.identity();
+    }
+
+    static void setHudClimateQuery(PlayerClient& player_client, PlayerClient::HudClimateQuery query)
+    {
+        player_client.m_hud_climate_query = std::move(query);
+    }
+
+    static std::optional<float> hudColumnTemperature(
+        PlayerClient& player_client,
+        std::shared_ptr<shared::TerrainWorld const> world,
+        shared::Player const& player,
+        std::chrono::steady_clock::time_point const now)
+    {
+        return player_client.hudColumnTemperature(player, std::move(world), now);
+    }
+
+    static void clearHudSession(PlayerClient& player_client)
+    {
+        player_client.m_terrain_session.reset();
+    }
+
+    static void changeHudJoinEpoch(PlayerClient& player_client)
+    {
+        ++player_client.m_world_loading_identity.join_epoch;
+    }
+
+    static void setIsolationHooks(PlayerClient& client, GameClientBenchmarkHooks const* hooks)
+    {
+        client.m_benchmark_hooks = hooks;
+    }
+
+    static bool injectIsolatedInput(PlayerClient& client)
+    {
+        std::array const keys{GLFW_KEY_M, GLFW_KEY_W};
+        std::array const buttons{GLFW_MOUSE_BUTTON_1};
+        return client.updatePlatformInputSnapshot(keys, buttons, 120.0, 120.0, 2.0);
+    }
+
+    static std::optional<shared::Player> editLatencyPlayer(PlayerClient const& client)
+    {
+        return client.m_world.playerByCharacter(client.m_local_character);
+    }
+
+    static shared::SparseWorld const* editLatencyWorld(PlayerClient const& client)
+    {
+        return client.authoritativeWorld();
+    }
+
+    static std::shared_ptr<TerrainLodScene const> editLatencyScene(PlayerClient const& client)
+    {
+        return client.m_renderer.runtimeInfo().terrain_lod_scene;
+    }
+
+    static uint32_t editLatencyNextSequence(PlayerClient const& client)
+    {
+        return client.m_next_block_action_sequence;
+    }
+
+    static bool editLatencyAim(
+        PlayerClient& client, shared::VoxelRay& ray, shared::BlockTarget& target, std::ostream* diagnostics = nullptr)
+    {
+        auto const player = editLatencyPlayer(client);
+        auto const* world = editLatencyWorld(client);
+        if (!player || !world) {
+            return false;
+        }
+        // Scan real reachable top faces deterministically; fixed spawn slopes need not face +Y.
+        for (double const pitch : {-35.0, -45.0, -55.0, -70.0}) {
+            for (double const yaw : {0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0}) {
+                CameraAngles const angles{.yaw_degrees = yaw, .pitch_degrees = pitch};
+                auto const direction = shared::interactionLookDirection(yaw, pitch);
+                if (!direction) { continue; }
+                shared::VoxelRay const candidate{
+                    .origin_x = shared::playerPositionX(*player) + 0.3125,
+                    .origin_y = shared::playerPositionY(*player) + 0.3125,
+                    .origin_z = shared::playerPositionZ(*player) + shared::INTERACTION_PLAYER_EYE_HEIGHT,
+                    .direction_x = (*direction)[0], .direction_y = (*direction)[1], .direction_z = (*direction)[2]};
+                auto const resolved = shared::resolveInteractionTarget(
+                    *world, candidate, shared::InteractionPerspective::FirstPerson, true);
+                if (diagnostics) {
+                    *diagnostics << "{\"event\":\"target_scan_ray\",\"yaw\":" << yaw << ",\"pitch\":" << pitch
+                        << ",\"status\":" << static_cast<uint32_t>(resolved.status)
+                        << ",\"face\":" << (resolved.target ? static_cast<int>(resolved.target->entered_face) : -1)
+                        << "}\n";
+                }
+                if (resolved.status != shared::BlockTargetStatus::Hit || !resolved.target
+                    || resolved.target->entered_face != shared::BlockFace::PositiveZ) { continue; }
+                auto destination = resolved.target->cell;
+                ++destination.z;
+                if (world->queryBlock(destination).block != shared::Block::Air) { continue; }
+                double const dx = static_cast<double>(destination.x) - shared::playerPositionX(*player);
+                double const dy = static_cast<double>(destination.y) - shared::playerPositionY(*player);
+                bool const overlaps_xy = dx < 0.625 && dx + 1.0 > 0.0 && dy < 0.625 && dy + 1.0 > 0.0;
+                bool const overlaps_z = destination.z < shared::playerPositionZ(*player) + 1.8125
+                    && destination.z + 1 > shared::playerPositionZ(*player);
+                if (overlaps_xy && overlaps_z) { continue; }
+                client.m_camera_perspective = CameraPerspective::FirstPerson;
+                if (!client.m_look_camera.setAngles(angles)) { continue; }
+                ray = candidate;
+                target = *resolved.target;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static bool publishGeneration(PlayerClient& player_client, generation::GenerationProgress const& progress)
+    {
+        return player_client.m_world_loading.publishGenerationProgress(
+            player_client.m_world_loading_identity,
+            progress,
+            std::chrono::steady_clock::now()
+        );
+    }
+
+    static std::chrono::milliseconds generationVisibleElapsed(PlayerClient const& player_client)
+    {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+            player_client.m_generation_map_visible_elapsed);
+    }
+
+    static void setGenerationVisibleElapsed(PlayerClient& player_client, std::chrono::milliseconds const elapsed)
+    {
+        player_client.m_generation_map_visible_elapsed = elapsed;
+    }
+
+    static void restoreOrdinaryStartupAfterCaptureOptIn(PlayerClient& player_client)
+    {
+        player_client.m_benchmark.reset();
+        player_client.m_debug_hud_enabled = true;
+        player_client.m_renderer.setDebugHudEnabled(true);
+    }
+
+    static FrameCaptureState captureState(PlayerClient const& player_client)
+    {
+        return player_client.m_renderer.captureState();
+    }
+
+    static bool lastPresentationSucceeded(PlayerClient const& player_client)
+    {
+        return player_client.m_last_presentation_succeeded;
+    }
+
+    static void setHudTextStyle(PlayerClient& player_client, TextStyle const style) noexcept
+    {
+        player_client.m_hud_text_style = style;
+    }
+
+    static TextStyle hudTextStyle(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_hud_text_style;
+    }
+
+    static void requestFrameCapture(PlayerClient& player_client)
+    {
+        player_client.m_renderer.requestFrameCapture();
+    }
+
+    static std::optional<RendererFrameCapture> takeFrameCapture(PlayerClient& player_client)
+    {
+        return player_client.m_renderer.takeFrameCapture();
+    }
+
+    static void stop(PlayerClient& player_client) noexcept
+    {
+        player_client.m_running = false;
+    }
+
     static GLFWwindow* nativeWindow(PlayerClient const& player_client) noexcept
     {
         return player_client.m_window.nativeHandle();
+    }
+
+    static bool exitConfirmationPending(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_exit_confirmation.pending();
+    }
+
+    static bool running(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_running;
+    }
+
+    static bool windowShouldClose(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_window.shouldClose();
+    }
+
+    static void requestWindowClose(PlayerClient& player_client) noexcept
+    {
+        PlayerClient::onWindowCloseRequested(player_client.m_window.nativeHandle());
     }
 
     static void seedCursorSample(PlayerClient& player_client) noexcept
@@ -58,6 +274,11 @@ struct PlayerClientFocusTestAccess final {
     static void renderFrame(PlayerClient& player_client)
     {
         player_client.render();
+    }
+
+    static void renderUnavailableWindowFrame(PlayerClient& player_client)
+    {
+        player_client.renderWindowFrame(false, std::chrono::steady_clock::now());
     }
 
     static bool beginPlayingWorld(PlayerClient& player_client, bool const start = true)
@@ -114,8 +335,10 @@ struct PlayerClientFocusTestAccess final {
     {
         auto scene = std::make_shared<TerrainLodScene>();
         scene->identity = *player_client.activeTerrainIdentity();
-        scene->faces.push_back({ .x = 512, .y = 512, .z = 512 });
         scene->groups.push_back({ .range = { .first_instance = 0U, .instance_count = 1U }, .extent = 16U });
+        scene->groups.back().face_storage = std::make_shared<std::vector<StoneFaceInstance> const>(
+            std::vector<StoneFaceInstance>{{ .x = 512, .y = 512, .z = 512 }});
+        scene->logical_face_count = 1U;
         scene->leaves.resize(leaves);
         auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 5 };
         // Planning is asynchronous; retry the same candidate until it publishes.
@@ -197,6 +420,291 @@ struct PlayerClientFocusTestAccess final {
         return player_client.updateLoadingInputSnapshot(pressed_keys, pressed_mouse_buttons);
     }
 
+    static bool updatePlatformInputSnapshot(PlayerClient& player_client, std::span<int const> pressed_keys)
+    {
+        return player_client.updatePlatformInputSnapshot(pressed_keys, {}, 0.0, 0.0);
+    }
+
+    static bool injectInputSnapshot(
+        PlayerClient& player_client,
+        std::span<int const> pressed_keys,
+        std::span<int const> pressed_mouse_buttons
+    )
+    {
+        return player_client.updatePlatformInputSnapshot(pressed_keys, pressed_mouse_buttons, 64.0, 64.0);
+    }
+
+    static std::optional<shared::BlockTarget> interactionTarget(PlayerClient const& player_client)
+    {
+        return player_client.resolveInteractionTarget();
+    }
+
+    static std::optional<shared::ServerBlockActionResultMessage> blockActionStatus(PlayerClient const& player_client)
+    {
+        return player_client.blockActionStatus();
+    }
+
+    static shared::Block selectedBlock(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_selected_block;
+    }
+
+    static uint32_t nextBlockActionSequence(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_client_block_action_sequence;
+    }
+
+    static bool connectPlacementTest(PlayerClient& player, core::Address const address)
+    {
+        if (!player.beginLoadingRequest(std::chrono::steady_clock::now())) { return false; }
+        player.m_local_character = '@';
+        return player.connect(address, std::chrono::seconds{2}) && player.sendJoinRequest();
+    }
+
+    static void pumpPlacementTest(PlayerClient& player)
+    {
+        player.poll();
+        player.processPendingHeightTileDeliveries();
+        player.processPendingMaterializedChunks(std::chrono::steady_clock::now());
+        if (player.worldLoadingStatus().state != WorldLoadingState::Playing) {
+            player.render();
+            if (player.worldLoadingStatus().state == WorldLoadingState::ReadyForStart
+                && player.worldLoadingStatus().ready_prompt_frame_rendered_at) {
+                static_cast<void>(player.acceptLoadingStartInput(std::chrono::steady_clock::now()));
+            }
+        }
+        player.flush();
+    }
+
+    static bool sendPlacementTestMovement(PlayerClient& player, shared::Direction const direction,
+        std::chrono::steady_clock::time_point const now)
+    {
+        auto const input = player.predictInput(direction, now);
+        return input && player.send(*input);
+    }
+
+    static void sampleHeldPlacement(PlayerClient& player_client, bool const held, bool const fresh_press,
+        std::chrono::steady_clock::time_point const now)
+    {
+        player_client.updateBlockActionInput(false, false, held, held && !fresh_press,
+            false, false, false, false, now);
+    }
+
+    static void writeInputOwnership(PlayerClient const& player, std::ostream& output)
+    {
+        output << "{\"event\":\"input_ownership\",\"capture\":" << player.m_capture.has_value()
+            << ",\"benchmark\":" << player.m_benchmark.has_value()
+            << ",\"isolation\":" << (player.m_benchmark_hooks && player.m_benchmark_hooks->isolate_platform_input)
+            << ",\"synthetic_callback\":" << (player.m_benchmark_hooks
+                && static_cast<bool>(player.m_benchmark_hooks->block_button_snapshot)) << "}\n";
+    }
+
+    static void setPendingPlacementMode(PlayerClient& player, bool const pending)
+    {
+        player.m_pending_game_mode = pending
+            ? std::optional{std::pair{1U, shared::GameMode::Creative}} : std::nullopt;
+    }
+
+    static void clearPlacementSession(PlayerClient& player)
+    {
+        player.clearPendingBlockActions();
+    }
+
+    static std::string placementDiagnostic(PlayerClient const& player)
+    {
+        std::ostringstream stream;
+        auto const status = player.currentBlockActionStatus();
+        auto const target = player.resolveInteractionTarget();
+        stream << "loading=" << static_cast<int>(player.worldLoadingStatus().state)
+            << " status=" << (status ? static_cast<int>(status->status) : -1)
+            << " sequence=" << (status ? status->sequence : 0U)
+            << " rights=" << (status ? static_cast<int>(status->effective_actions) : -1)
+            << " target=" << target.has_value() << " active=" << player.m_block_place_input.active
+            << " next=" << player.m_client_block_action_sequence;
+        return stream.str();
+    }
+
+    static bool placementInputActive(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_block_place_input.active;
+    }
+
+    static bool breakInputActive(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_block_break_input.active;
+    }
+
+    static bool seedBlockEffects(PlayerClient& player_client)
+    {
+        shared::BlockTarget const target{.cell = {512, 514, 513}, .block = shared::Block::Stone};
+        player_client.m_renderer.clearBlockInteractionEffects();
+        player_client.m_interaction_target = target;
+        player_client.m_block_place_input.active = true;
+        player_client.m_block_break_input.active = true;
+        player_client.m_block_break_input.target = target.cell;
+        player_client.rememberBlockAction(7U, shared::BlockActionKind::BreakHold, target.cell, target.block);
+        player_client.m_renderer.setBlockInteractionTarget(target, 0.5F);
+        return player_client.m_renderer.addAcceptedBlockBreak({1U, 1U, 1U, 1U}, target.cell,
+            target.block, std::chrono::steady_clock::now());
+    }
+
+    static bool hasStoredBlockTarget(PlayerClient const& player_client)
+    {
+        return player_client.m_interaction_target.has_value();
+    }
+
+    static bool hasPendingBreakReceipt(PlayerClient const& player_client)
+    {
+        return std::any_of(player_client.m_pending_block_actions.begin(),
+            player_client.m_pending_block_actions.end(), [](auto const& pending) {
+                return pending.sequence != 0U && pending.kind == shared::BlockActionKind::BreakHold;
+            });
+    }
+
+    static bool acceptSeededParticleReceipt(PlayerClient& player_client)
+    {
+        return player_client.m_renderer.addAcceptedBlockBreak({1U, 1U, 1U, 1U}, {512, 514, 513},
+            shared::Block::Stone, std::chrono::steady_clock::now());
+    }
+
+    static void updateBlockEffects(PlayerClient& player_client)
+    {
+        player_client.updateBlockInteractionPresentation(std::chrono::steady_clock::now());
+    }
+
+    static std::optional<shared::Block> footstepMaterial(
+        shared::SparseWorld const* world,
+        shared::WorldMode mode,
+        shared::Player const& player,
+        std::optional<shared::PlayerPosition> const& previous_position)
+    {
+        return PlayerClient::footstepMaterialForGroundedDisplacement(
+            world, mode, player, previous_position);
+    }
+
+    static bool setWorldMapOpen(PlayerClient& player_client, bool const open)
+    {
+        return player_client.setWorldMapOpen(open, 512.0, 512.0);
+    }
+
+    static void resetWorldMapSource(PlayerClient& player_client)
+    {
+        player_client.resetWorldMapSource();
+    }
+
+    static shared::SparseWorld& authoritativeWorld(PlayerClient& player_client)
+    {
+        if (!player_client.m_authoritative_world) {
+            player_client.m_authoritative_world = std::make_unique<shared::SparseWorld>(
+                shared::SparseWorldOptions{ .seed = 42U },
+                shared::SparseWorldGenerationMode::MaterializedOnly
+            );
+            player_client.m_world.setCollisionWorld(player_client.m_authoritative_world.get());
+        }
+        return *player_client.m_authoritative_world;
+    }
+
+    static std::optional<shared::Block> observeLandingTransition(
+        PlayerClient& player_client,
+        shared::Player const& player,
+        shared::GameMode const game_mode,
+        uint32_t const position_revision
+    )
+    {
+        if (!player_client.m_world.applyReplicatedPlayerState(player)) {
+            return std::nullopt;
+        }
+        player_client.m_local_character = player.ch;
+        player_client.m_last_accepted_position_revision = position_revision;
+        player_client.m_block_action_status = shared::ServerBlockActionResultMessage{ .mode = game_mode };
+        return player_client.observeLandingTransition(player, game_mode);
+    }
+
+    static void advanceLandingJoinEpoch(PlayerClient& player_client)
+    {
+        ++player_client.m_world_loading_identity.join_epoch;
+    }
+
+    static S2WorldMapState worldMapState(PlayerClient const& player_client)
+    {
+        return player_client.m_s2_world_map_state;
+    }
+
+    static void pointerInput(PlayerClient& player_client, std::span<int const> buttons, double x, double y)
+    {
+        static_cast<void>(player_client.updatePlatformInputSnapshot({}, buttons, x, y));
+    }
+
+    static void synchronizeLook(PlayerClient& player_client)
+    {
+        player_client.synchronizeContinuousLook();
+    }
+
+    static bool worldMapOpen(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_s2_world_map_open;
+    }
+
+    static bool canonicalMinimapReady(PlayerClient const& player_client)
+    {
+        auto const world = player_client.terrainLodWorld();
+        return world && player_client.m_s2_minimap_image && player_client.m_s2_minimap_lod
+            && player_client.m_s2_map_join_epoch == player_client.worldLoadingJoinEpoch()
+            && player_client.m_s2_minimap_lod->terrain_identity == world->identity();
+    }
+
+    static std::optional<std::array<float, 4U>> minimapSourceCrop(
+        uint32_t const origin_x,
+        uint32_t const origin_y,
+        uint32_t const extent,
+        double const player_x,
+        double const player_y
+    ) noexcept
+    {
+        return PlayerClient::minimapSourceCrop(origin_x, origin_y, extent, player_x, player_y);
+    }
+
+    static bool worldMapReady(PlayerClient const& player_client)
+    {
+        return player_client.m_s2_world_map_open && player_client.m_s2_world_map_image
+            && !player_client.m_s2_world_map_dirty;
+    }
+
+    static void openWorldMap(PlayerClient& player_client)
+    {
+        auto const player = player_client.predictedLocalPlayer();
+        player_client.setWorldMapOpen(
+            true,
+            player ? shared::playerPositionX(*player) : 0.0,
+            player ? shared::playerPositionY(*player) : 0.0
+        );
+    }
+
+    static void closeWorldMap(PlayerClient& player_client)
+    {
+        auto const player = player_client.predictedLocalPlayer();
+        player_client.setWorldMapOpen(
+            false,
+            player ? shared::playerPositionX(*player) : 0.0,
+            player ? shared::playerPositionY(*player) : 0.0
+        );
+    }
+
+    static bool worldMapLayerEnabled(PlayerClient const& player_client, S2WorldMapLayer layer) noexcept
+    {
+        return player_client.m_s2_world_map_state.layers[static_cast<size_t>(layer)];
+    }
+
+    static shared::Direction gameplayInput(PlayerClient& player_client)
+    {
+        return player_client.input();
+    }
+
+    static bool hasStartTransitionInputs(PlayerClient const& player_client) noexcept
+    {
+        return player_client.hasStartTransitionInputs();
+    }
+
     static bool updateScreenshotCaptureKey(PlayerClient& player_client, bool const pressed) noexcept
     {
         return player_client.m_screenshot_capture_key_latch.update(pressed);
@@ -207,9 +715,88 @@ struct PlayerClientFocusTestAccess final {
         player_client.captureStartTransitionInputs();
     }
 
-    static bool hasStartTransitionInputs(PlayerClient const& player_client) noexcept
+    struct FirstNormalLoadingCapture final {
+        RendererFrameCapture frame;
+        RendererFrameIdentity first_submission;
+        std::chrono::milliseconds visible_elapsed{};
+        bool typed_source_at_first_frame = false;
+    };
+
+    static std::optional<FirstNormalLoadingCapture> captureFirstNormalLoadingFrame(PlayerClient& player_client)
     {
-        return player_client.hasStartTransitionInputs();
+        auto const previous = player_client.m_renderer.frameProgress().submitted;
+        player_client.m_renderer.requestFrameCapture();
+        player_client.render(); // The real wrapper polls the window and calls renderWindowFrame.
+        auto const first = player_client.m_renderer.frameProgress().submitted;
+        if (!player_client.m_last_presentation_succeeded || !first
+            || (previous && previous->swapchain_generation == first->swapchain_generation
+                && previous->sequence >= first->sequence)) {
+            ADD_FAILURE() << "the first ordinary startup frame did not submit successfully";
+            return std::nullopt;
+        }
+        auto const visible_elapsed = generationVisibleElapsed(player_client);
+        bool const typed_source = player_client.m_loading_final_native_map != nullptr;
+        auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+        for (uint32_t drain = 0U; drain < 24U && std::chrono::steady_clock::now() < deadline; ++drain) {
+            if (auto capture = player_client.m_renderer.takeFrameCapture()) {
+                if (!capture->frame_identity || capture->frame_identity->sequence != first->sequence
+                    || capture->frame_identity->swapchain_generation != first->swapchain_generation) {
+                    ADD_FAILURE() << "readback must identify the first submitted frame, not a later clean frame";
+                    return std::nullopt;
+                }
+                return FirstNormalLoadingCapture{std::move(*capture), *first, visible_elapsed, typed_source};
+            }
+            player_client.render(); // Drain readback through the same normal frame path.
+        }
+        ADD_FAILURE() << "first ordinary startup framebuffer readback timed out";
+        return std::nullopt;
+    }
+
+    static bool bindInitialLoadingModel(PlayerClient& player_client, generation::GenerationConfiguration configuration)
+    {
+        if (!player_client.m_world_loading.bindConfiguration(
+                player_client.m_world_loading_identity, configuration, std::chrono::steady_clock::now())) {
+            return false;
+        }
+        player_client.m_world_loading_identity.configuration = std::move(configuration);
+        return true;
+    }
+
+    static bool installPreparedLoadingSource(PlayerClient& player_client, TerrainLodProduct product)
+    {
+        if (!product.map && product.world && product.root) {
+            auto map = rasterizeS2WorldMap(*product.world, *product.root, S2WorldMapState{});
+            if (!map) {
+                return false;
+            }
+            product.map = std::make_shared<S2MapImage const>(std::move(*map));
+        }
+        auto const configuration = product.world->atlas()->configuration;
+        player_client.m_terrain_session = shared::TerrainSessionIdentity{
+            .join_epoch = player_client.worldLoadingJoinEpoch(),
+            .terrain = product.world->identity(), .configuration = configuration,
+        };
+        player_client.m_terrain_identity = product.world->identity();
+        player_client.m_accepted = true;
+        player_client.m_terrain_lod_source = std::make_unique<TerrainLodSource>(
+            [product = std::move(product)](shared::TerrainSessionIdentity const& session, std::stop_token const stop) {
+                if (stop.stop_requested() || session.terrain != product.world->identity()
+                    || session.configuration != product.world->atlas()->configuration) {
+                    return TerrainLodProduct{};
+                }
+                return product;
+            });
+        return player_client.m_terrain_lod_source->request(*player_client.m_terrain_session);
+    }
+
+    static bool ordinaryStartupRendering(PlayerClient const& player_client) noexcept
+    {
+        return !player_client.m_capture && !player_client.m_benchmark;
+    }
+
+    static bool retainedNativeLoadingSource(PlayerClient const& player_client) noexcept
+    {
+        return player_client.m_loading_final_native_map != nullptr;
     }
 
     static std::optional<RendererFrameCapture> captureLoadingPresentation(
@@ -337,6 +924,305 @@ struct PlayerClientFocusTestAccess final {
 } // namespace client
 
 namespace {
+
+uint64_t pixelHash(std::span<uint8_t const> bytes)
+{
+    uint64_t hash = 14'695'981'039'346'656'037ULL;
+    for (uint8_t const byte : bytes) {
+        hash = (hash ^ byte) * 1'099'511'628'211ULL;
+    }
+    return hash;
+}
+
+uint64_t snapshotContentHash(generation::GenerationSnapshot const& snapshot)
+{
+    uint64_t hash = static_cast<uint64_t>(snapshot.stage) ^ snapshot.resolution;
+    auto append = [&hash](auto const& field) {
+        hash = (hash ^ field.size()) * 1'099'511'628'211ULL;
+        for (std::byte const byte : std::as_bytes(std::span{field})) {
+            hash = (hash ^ std::to_integer<uint8_t>(byte)) * 1'099'511'628'211ULL;
+        }
+    };
+    append(snapshot.elevation);
+    append(snapshot.temperature);
+    append(snapshot.precipitation);
+    append(snapshot.water_level);
+    append(snapshot.ocean_mask);
+    append(snapshot.lake_mask);
+    append(snapshot.river_mask);
+    return hash;
+}
+
+float loadingContentScale(client::PlayerClient const& player_client)
+{
+    float x = 1.0F;
+    float y = 1.0F;
+    glfwGetWindowContentScale(client::PlayerClientFocusTestAccess::nativeWindow(player_client), &x, &y);
+    return std::max(x, y);
+}
+
+client::UiRect mapCaptureBounds(client::RendererFrameCapture const& frame, float const dpi_scale)
+{
+    client::UiLoadingLayout const layout = client::layoutUiLoading(
+        client::UiFrame{.screen = client::UiScreen::Generating}, frame.width, frame.height, dpi_scale);
+    auto const& viewport = layout.map_viewport;
+    return {.x = viewport.x + viewport.width * 0.1F, .y = viewport.y + viewport.height * 0.1F,
+        .width = viewport.width * 0.8F, .height = viewport.height * 0.8F};
+}
+
+client::RendererFrameCapture cropMapInterior(client::RendererFrameCapture const& frame, float const dpi_scale)
+{
+    uint32_t constexpr OUTPUT_SIDE = 256U;
+    auto const bounds = mapCaptureBounds(frame, dpi_scale);
+    uint32_t const left = static_cast<uint32_t>(std::max(0.0F, bounds.x));
+    uint32_t const top = static_cast<uint32_t>(std::max(0.0F, bounds.y));
+    uint32_t const crop_width = static_cast<uint32_t>(bounds.width);
+    uint32_t const crop_height = static_cast<uint32_t>(bounds.height);
+    client::RendererFrameCapture crop{
+        .width = OUTPUT_SIDE, .height = OUTPUT_SIDE, .srgb_encoded = frame.srgb_encoded,
+        .rgba8 = std::vector<uint8_t>(OUTPUT_SIDE * OUTPUT_SIDE * 4U),
+    };
+    if (crop_width == 0U || crop_height == 0U || left + crop_width > frame.width
+        || top + crop_height > frame.height
+        || frame.rgba8.size() != static_cast<uint64_t>(frame.width) * frame.height * 4U) {
+        return {};
+    }
+    for (uint32_t y = 0U; y < OUTPUT_SIDE; ++y) {
+        for (uint32_t x = 0U; x < OUTPUT_SIDE; ++x) {
+            uint32_t const source_x = left + x * crop_width / OUTPUT_SIDE;
+            uint32_t const source_y = top + y * crop_height / OUTPUT_SIDE;
+            size_t const source = (static_cast<size_t>(source_y) * frame.width + source_x) * 4U;
+            size_t const destination = (static_cast<size_t>(y) * OUTPUT_SIDE + x) * 4U;
+            std::copy_n(frame.rgba8.begin() + static_cast<ptrdiff_t>(source), 4U,
+                crop.rgba8.begin() + static_cast<ptrdiff_t>(destination));
+        }
+    }
+    return crop;
+}
+
+bool loadingCanvasVisible(client::RendererFrameCapture const& frame)
+{
+    if (frame.width == 0U || frame.height == 0U || frame.rgba8.empty()) {
+        return false;
+    }
+    // Outside the right map viewport: the accepted loading canvas is flat and dark,
+    // unlike the ordinary sky/terrain backdrop. Keep clear of footer labels.
+    size_t const top = (static_cast<size_t>(frame.height / 5U) * frame.width + frame.width * 97U / 100U) * 4U;
+    size_t const bottom = (static_cast<size_t>(frame.height * 4U / 5U) * frame.width
+        + frame.width * 97U / 100U) * 4U;
+    for (size_t channel = 0U; channel < 3U; ++channel) {
+        if (frame.rgba8[top + channel] > 120U
+            || std::abs(static_cast<int>(frame.rgba8[top + channel]) - frame.rgba8[bottom + channel]) > 2) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool loadingFrameMatchesSharedBackdrop(client::RendererFrameCapture const& frame)
+{
+    static constexpr std::array<float, 5U> SAMPLE_X{{ 0.72F, 0.78F, 0.84F, 0.90F, 0.96F }};
+    static constexpr std::array<float, 6U> SAMPLE_Y{{ 0.18F, 0.28F, 0.38F, 0.48F, 0.58F, 0.68F }};
+    static constexpr int CHANNEL_TOLERANCE = 3;
+
+    client::GenerationMapImageHandle const backdrop = client::loadingBackdropImage();
+    if (!backdrop || frame.width == 0U || frame.height == 0U
+        || backdrop->rgba.size() != static_cast<size_t>(backdrop->width) * backdrop->height
+        || frame.rgba8.size() != static_cast<size_t>(frame.width) * frame.height * 4U) {
+        return false;
+    }
+
+    float const scale = std::max(
+        static_cast<float>(frame.width) / static_cast<float>(backdrop->width),
+        static_cast<float>(frame.height) / static_cast<float>(backdrop->height)
+    );
+    float const crop_width = static_cast<float>(frame.width)
+        / (static_cast<float>(backdrop->width) * scale);
+    float const crop_height = static_cast<float>(frame.height)
+        / (static_cast<float>(backdrop->height) * scale);
+    float const crop_left = (1.0F - crop_width) * 0.5F;
+    float const crop_top = (1.0F - crop_height) * 0.5F;
+    auto const matchesSharedBackdrop = [&](bool const vertically_flipped) {
+        uint32_t matching_samples = 0U;
+        uint32_t sample_count = 0U;
+        for (float const relative_y : SAMPLE_Y) {
+            uint32_t const y = std::min(
+                static_cast<uint32_t>(relative_y * static_cast<float>(frame.height)),
+                frame.height - 1U
+            );
+            for (float const relative_x : SAMPLE_X) {
+                uint32_t const x = std::min(
+                    static_cast<uint32_t>(relative_x * static_cast<float>(frame.width)),
+                    frame.width - 1U
+                );
+                float const source_x = crop_left
+                    + (static_cast<float>(x) + 0.5F) / static_cast<float>(frame.width) * crop_width;
+                float screen_y = (static_cast<float>(y) + 0.5F) / static_cast<float>(frame.height);
+                if (vertically_flipped) {
+                    screen_y = 1.0F - screen_y;
+                }
+                float const source_y = crop_top + screen_y * crop_height;
+                uint32_t const backdrop_x = std::min(
+                    static_cast<uint32_t>(source_x * static_cast<float>(backdrop->width)),
+                    backdrop->width - 1U
+                );
+                uint32_t const backdrop_y = std::min(
+                    static_cast<uint32_t>(source_y * static_cast<float>(backdrop->height)),
+                    backdrop->height - 1U
+                );
+                client::GenerationMapRgba8 const& expected = backdrop->rgba[
+                    static_cast<size_t>(backdrop_y) * backdrop->width + backdrop_x
+                ];
+                uint64_t const actual_pixel = (static_cast<uint64_t>(y) * frame.width + x) * 4U;
+                bool matches = true;
+                for (size_t channel = 0U; channel < 3U; ++channel) {
+                    matches = matches
+                        && std::abs(static_cast<int>(frame.rgba8[actual_pixel + channel])
+                            - static_cast<int>(expected[channel])) <= CHANNEL_TOLERANCE;
+                }
+                matching_samples += matches ? 1U : 0U;
+                ++sample_count;
+            }
+        }
+        return std::pair{ matching_samples, sample_count };
+    };
+
+    auto const direct_matches = matchesSharedBackdrop(false);
+    auto const flipped_matches = matchesSharedBackdrop(true);
+    return std::max(direct_matches.first, flipped_matches.first) >= direct_matches.second - 2U;
+}
+
+bool loadingFrameHasWhiteSquare(client::RendererFrameCapture const& frame, float const dpi_scale)
+{
+    auto const bounds = mapCaptureBounds(frame, dpi_scale);
+    uint32_t const left = static_cast<uint32_t>(bounds.x);
+    uint32_t const top = static_cast<uint32_t>(bounds.y);
+    uint32_t const right = std::min(frame.width, left + static_cast<uint32_t>(bounds.width));
+    uint32_t const bottom = std::min(frame.height, top + static_cast<uint32_t>(bounds.height));
+    constexpr uint32_t SQUARE_SIDE = 8U;
+    auto const white = [&frame](uint32_t const x, uint32_t const y) {
+        size_t const index = (static_cast<size_t>(y) * frame.width + x) * 4U;
+        return frame.rgba8[index] >= 240U && frame.rgba8[index + 1U] >= 240U && frame.rgba8[index + 2U] >= 240U;
+    };
+    for (uint32_t y = top; y + SQUARE_SIDE <= bottom; ++y) {
+        for (uint32_t x = left; x + SQUARE_SIDE <= right; ++x) {
+            if (!white(x, y)) {
+                continue;
+            }
+            bool square = true;
+            for (uint32_t row = 0U; row < SQUARE_SIDE && square; ++row) {
+                for (uint32_t column = 0U; column < SQUARE_SIDE; ++column) {
+                    if (!white(x + column, y + row)) {
+                        square = false;
+                        break;
+                    }
+                }
+            }
+            if (square) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+struct MapSpatialVariation final {
+    size_t unique_rgb_colors = 0U;
+    uint32_t differing_horizontal_neighbors = 0U;
+
+    bool geographic() const noexcept
+    {
+        return unique_rgb_colors >= 8U && differing_horizontal_neighbors >= 128U;
+    }
+};
+
+MapSpatialVariation mapSpatialVariation(client::RendererFrameCapture const& crop)
+{
+    std::set<uint32_t> colors;
+    MapSpatialVariation result;
+    for (uint32_t y = 0U; y < crop.height; ++y) {
+        uint32_t previous = 0U;
+        for (uint32_t x = 0U; x < crop.width; ++x) {
+            size_t const index = (static_cast<size_t>(y) * crop.width + x) * 4U;
+            uint32_t const rgb = (static_cast<uint32_t>(crop.rgba8[index]) << 16U)
+                | (static_cast<uint32_t>(crop.rgba8[index + 1U]) << 8U) | crop.rgba8[index + 2U];
+            colors.insert(rgb);
+            result.differing_horizontal_neighbors += x != 0U && previous != rgb ? 1U : 0U;
+            previous = rgb;
+        }
+    }
+    result.unique_rgb_colors = colors.size();
+    return result;
+}
+
+std::optional<client::PlayerClientBenchmarkOptions> startupFrameCaptureOptions()
+{
+#if defined(__APPLE__) || defined(_WIN32)
+    return client::PlayerClientBenchmarkOptions{.enable_diagnostic_frame_capture = true};
+#else
+    return std::nullopt;
+#endif
+}
+
+std::filesystem::path startupEvidenceDirectory()
+{
+    char const* configured = std::getenv("MC_STARTUP_CAPTURE_DIR");
+    std::filesystem::path result;
+    if (configured != nullptr) {
+        result = configured;
+    } else {
+#if defined(_WIN32)
+        result = std::filesystem::current_path() / "minecraft-startup-reproduction";
+#else
+        result = std::filesystem::temp_directory_path() / "minecraft-startup-reproduction";
+#endif
+    }
+    std::filesystem::create_directories(result);
+    return result;
+}
+
+bool saveFullFrame(std::filesystem::path const& filename, client::RendererFrameCapture const& frame)
+{
+    std::string error;
+    auto const png = client::detail::encodeRgba8Png(frame.width, frame.height, frame.rgba8, error);
+    if (!png) {
+        ADD_FAILURE() << error;
+        return false;
+    }
+    std::ofstream image{filename, std::ios::binary};
+    image.write(reinterpret_cast<char const*>(png->data()), static_cast<std::streamsize>(png->size()));
+    return image.good();
+}
+
+bool saveMapCapture(std::filesystem::path const& prefix, client::RendererFrameCapture const& crop)
+{
+    std::string error;
+    auto const png = client::detail::encodeRgba8Png(crop.width, crop.height, crop.rgba8, error);
+    if (!png) {
+        ADD_FAILURE() << error;
+        return false;
+    }
+    std::ofstream image{prefix.string() + ".png", std::ios::binary};
+    image.write(reinterpret_cast<char const*>(png->data()), static_cast<std::streamsize>(png->size()));
+    std::ofstream rgba{prefix.string() + ".rgba", std::ios::binary};
+    rgba.write(reinterpret_cast<char const*>(crop.rgba8.data()), static_cast<std::streamsize>(crop.rgba8.size()));
+    return image.good() && rgba.good();
+}
+
+std::shared_ptr<generation::GenerationSnapshot const> controlledGenerationSnapshot()
+{
+    auto snapshot = std::make_shared<generation::GenerationSnapshot>();
+    snapshot->resolution = 256U;
+    snapshot->elevation.resize(256U * 256U);
+    for (uint32_t y = 0U; y < 256U; ++y) {
+        for (uint32_t x = 0U; x < 256U; ++x) {
+            snapshot->elevation[y * 256U + x] = x < 128U
+                ? -1'800.0F + static_cast<float>(x * 7U + y * 2U)
+                : 300.0F + static_cast<float>((x - 128U) * 17U + y * 3U);
+        }
+    }
+    return snapshot;
+}
 
 bool waitForFocusState(client::PlayerClient& player_client, bool const focused)
 {
@@ -473,7 +1359,242 @@ std::optional<DecodedTestPng> decodeStoredTestPng(std::span<uint8_t const> png, 
 }
 #endif
 
+} // namespace (anonymous)
+
+namespace {
+
+std::shared_ptr<shared::TerrainWorld const> hudClimateWorld()
+{
+    static auto const world = std::make_shared<shared::TerrainWorld const>(
+        generation::prepareAtlas(generation::GenerationConfiguration{}));
+    return world;
+}
+
+std::optional<float> waitForHudTemperature(
+    client::PlayerClient& player_client,
+    std::shared_ptr<shared::TerrainWorld const> const& world,
+    shared::Player const& player,
+    std::chrono::steady_clock::time_point const sample_time,
+    std::optional<float> const expected = std::nullopt)
+{
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    do {
+        auto const value = client::PlayerClientFocusTestAccess::hudColumnTemperature(
+            player_client, world, player, sample_time);
+        if (value && (!expected || value == expected)) {
+            return value;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    } while (std::chrono::steady_clock::now() < deadline);
+    return std::nullopt;
+}
+
 } // namespace
+
+TEST(PlayerClientFocusTest, HudTemperatureDoesNotWaitForExactQueryAndPublishesItsResult)
+{
+    auto const world = hudClimateWorld();
+    client::PlayerClient player_client{
+        shared::WorldMode::Flight, std::nullopt, client::PlayerClientBenchmarkOptions{},
+    };
+    client::PlayerClientFocusTestAccess::seedHudClimate(player_client, *world);
+    auto entered = std::make_shared<std::promise<void>>();
+    auto entered_future = entered->get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future().share();
+    auto sampled_x = std::make_shared<std::atomic<double>>(0.0);
+    client::PlayerClientFocusTestAccess::setHudClimateQuery(player_client,
+        [entered, release_future, sampled_x](shared::TerrainWorld const&, double const x, double const) {
+            sampled_x->store(x);
+            entered->set_value();
+            static_cast<void>(release_future.wait_for(std::chrono::seconds{2}));
+            return shared::TerrainClimateSample{ .temperature_celsius = -12.5 };
+        });
+    shared::Player player{};
+    player.x = -1;
+    player.y = 65'553;
+    player.x_subcell = 9'999U;
+    auto const now = std::chrono::steady_clock::now();
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::hudColumnTemperature(
+        player_client, world, player, now).has_value());
+    ASSERT_EQ(entered_future.wait_for(std::chrono::milliseconds{250}), std::future_status::ready);
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::hudColumnTemperature(
+        player_client, world, player, now).has_value());
+    release.set_value();
+    EXPECT_EQ(waitForHudTemperature(player_client, world, player, now), -12.5F);
+    EXPECT_EQ(sampled_x->load(), 65'535.0);
+}
+
+TEST(PlayerClientFocusTest, HudTemperatureCoalescesPositionsWithoutParallelQueries)
+{
+    auto const world = hudClimateWorld();
+    client::PlayerClient player_client{
+        shared::WorldMode::Flight, std::nullopt, client::PlayerClientBenchmarkOptions{},
+    };
+    client::PlayerClientFocusTestAccess::seedHudClimate(player_client, *world);
+    auto entered = std::make_shared<std::promise<void>>();
+    auto entered_future = entered->get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future().share();
+    auto calls = std::make_shared<std::atomic<uint32_t>>(0U);
+    client::PlayerClientFocusTestAccess::setHudClimateQuery(player_client,
+        [entered, release_future, calls](shared::TerrainWorld const&, double const x, double const) {
+            if (calls->fetch_add(1U) == 0U) {
+                entered->set_value();
+                static_cast<void>(release_future.wait_for(std::chrono::seconds{2}));
+            }
+            return shared::TerrainClimateSample{ .temperature_celsius = x };
+        });
+    shared::Player player{};
+    player.x = 1;
+    auto const now = std::chrono::steady_clock::now();
+    static_cast<void>(client::PlayerClientFocusTestAccess::hudColumnTemperature(player_client, world, player, now));
+    ASSERT_EQ(entered_future.wait_for(std::chrono::milliseconds{250}), std::future_status::ready);
+    for (int32_t x = 2; x <= 30; ++x) {
+        player.x = x;
+        EXPECT_FALSE(client::PlayerClientFocusTestAccess::hudColumnTemperature(
+            player_client, world, player, now).has_value());
+    }
+    EXPECT_EQ(calls->load(), 1U);
+    release.set_value();
+    EXPECT_EQ(waitForHudTemperature(player_client, world, player, now + std::chrono::milliseconds{300}, 30.0F), 30.0F);
+    EXPECT_EQ(calls->load(), 2U);
+}
+
+TEST(PlayerClientFocusTest, HudTemperatureRejectsCompletedPreviousSessionQuery)
+{
+    auto const world = hudClimateWorld();
+    client::PlayerClient player_client{
+        shared::WorldMode::Flight, std::nullopt, client::PlayerClientBenchmarkOptions{},
+    };
+    client::PlayerClientFocusTestAccess::seedHudClimate(player_client, *world);
+    auto entered = std::make_shared<std::promise<void>>();
+    auto entered_future = entered->get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future().share();
+    auto calls = std::make_shared<std::atomic<uint32_t>>(0U);
+    client::PlayerClientFocusTestAccess::setHudClimateQuery(player_client,
+        [entered, release_future, calls](shared::TerrainWorld const&, double const, double const) {
+            uint32_t const ordinal = calls->fetch_add(1U);
+            if (ordinal == 0U) {
+                entered->set_value();
+                static_cast<void>(release_future.wait_for(std::chrono::seconds{2}));
+            }
+            return shared::TerrainClimateSample{ .temperature_celsius = ordinal == 0U ? 10.0 : 20.0 };
+        });
+    shared::Player player{};
+    auto const now = std::chrono::steady_clock::now();
+    static_cast<void>(client::PlayerClientFocusTestAccess::hudColumnTemperature(player_client, world, player, now));
+    ASSERT_EQ(entered_future.wait_for(std::chrono::milliseconds{250}), std::future_status::ready);
+    client::PlayerClientFocusTestAccess::seedHudClimate(player_client, *world, 8U);
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::hudColumnTemperature(player_client, world, player, now).has_value());
+    release.set_value();
+    EXPECT_EQ(waitForHudTemperature(player_client, world, player, now, 20.0F), 20.0F);
+}
+
+TEST(PlayerClientFocusTest, HudTemperatureExpiresOldValueWhileRefreshIsPending)
+{
+    auto const world = hudClimateWorld();
+    client::PlayerClient player_client{
+        shared::WorldMode::Flight, std::nullopt, client::PlayerClientBenchmarkOptions{},
+    };
+    client::PlayerClientFocusTestAccess::seedHudClimate(player_client, *world);
+    auto second_entered = std::make_shared<std::promise<void>>();
+    auto entered_future = second_entered->get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future().share();
+    auto calls = std::make_shared<std::atomic<uint32_t>>(0U);
+    client::PlayerClientFocusTestAccess::setHudClimateQuery(player_client,
+        [second_entered, release_future, calls](shared::TerrainWorld const&, double const x, double const) {
+            if (calls->fetch_add(1U) == 1U) {
+                second_entered->set_value();
+                static_cast<void>(release_future.wait_for(std::chrono::seconds{2}));
+            }
+            return shared::TerrainClimateSample{ .temperature_celsius = x };
+        });
+    shared::Player player{};
+    player.x = 1;
+    auto const now = std::chrono::steady_clock::now();
+    EXPECT_EQ(waitForHudTemperature(player_client, world, player, now), 1.0F);
+    player.x = 2;
+    EXPECT_EQ(client::PlayerClientFocusTestAccess::hudColumnTemperature(
+        player_client, world, player, now + std::chrono::milliseconds{300}), 1.0F);
+    ASSERT_EQ(entered_future.wait_for(std::chrono::milliseconds{250}), std::future_status::ready);
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::hudColumnTemperature(
+        player_client, world, player, now + std::chrono::seconds{2}).has_value());
+    release.set_value();
+}
+
+TEST(PlayerClientFocusTest, HudTemperatureClearsValueWhenWorldOrSessionIsAbsent)
+{
+    auto const world = hudClimateWorld();
+    client::PlayerClient player_client{
+        shared::WorldMode::Flight, std::nullopt, client::PlayerClientBenchmarkOptions{},
+    };
+    client::PlayerClientFocusTestAccess::seedHudClimate(player_client, *world);
+    client::PlayerClientFocusTestAccess::setHudClimateQuery(player_client,
+        [](shared::TerrainWorld const&, double, double) {
+            return shared::TerrainClimateSample{ .temperature_celsius = 14.0 };
+        });
+    shared::Player player{};
+    auto const now = std::chrono::steady_clock::now();
+    EXPECT_EQ(waitForHudTemperature(player_client, world, player, now), 14.0F);
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::hudColumnTemperature(
+        player_client, nullptr, player, now).has_value());
+    client::PlayerClientFocusTestAccess::clearHudSession(player_client);
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::hudColumnTemperature(
+        player_client, world, player, now).has_value());
+}
+
+TEST(PlayerClientFocusTest, HudTemperatureDoesNotReuseValueForReplacementSourceInstance)
+{
+    auto const world = hudClimateWorld();
+    auto replacement = std::make_shared<shared::TerrainWorld const>(world->atlas());
+    client::PlayerClient player_client{
+        shared::WorldMode::Flight, std::nullopt, client::PlayerClientBenchmarkOptions{},
+    };
+    client::PlayerClientFocusTestAccess::seedHudClimate(player_client, *world);
+    auto calls = std::make_shared<std::atomic<uint32_t>>(0U);
+    client::PlayerClientFocusTestAccess::setHudClimateQuery(player_client,
+        [calls](shared::TerrainWorld const&, double, double) {
+            return shared::TerrainClimateSample{ .temperature_celsius = calls->fetch_add(1U) == 0U ? 14.0 : 24.0 };
+        });
+    shared::Player const player{};
+    auto const now = std::chrono::steady_clock::now();
+    EXPECT_EQ(waitForHudTemperature(player_client, world, player, now), 14.0F);
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::hudColumnTemperature(
+        player_client, replacement, player, now).has_value());
+    EXPECT_EQ(waitForHudTemperature(player_client, replacement, player, now), 24.0F);
+}
+
+TEST(PlayerClientFocusTest, HudTemperatureShutdownDoesNotWaitForRunningQuery)
+{
+    auto const world = hudClimateWorld();
+    auto entered = std::make_shared<std::promise<void>>();
+    auto entered_future = entered->get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future().share();
+    auto completed = std::make_shared<std::atomic<bool>>(false);
+    {
+        client::PlayerClient player_client{
+            shared::WorldMode::Flight, std::nullopt, client::PlayerClientBenchmarkOptions{},
+        };
+        client::PlayerClientFocusTestAccess::seedHudClimate(player_client, *world);
+        client::PlayerClientFocusTestAccess::setHudClimateQuery(player_client,
+            [entered, release_future, completed](shared::TerrainWorld const&, double, double) {
+                entered->set_value();
+                static_cast<void>(release_future.wait_for(std::chrono::seconds{2}));
+                completed->store(true);
+                return shared::TerrainClimateSample{ .temperature_celsius = 14.0 };
+            });
+        shared::Player const player{};
+        static_cast<void>(client::PlayerClientFocusTestAccess::hudColumnTemperature(
+            player_client, world, player, std::chrono::steady_clock::now()));
+        ASSERT_EQ(entered_future.wait_for(std::chrono::milliseconds{250}), std::future_status::ready);
+    }
+    EXPECT_FALSE(completed->load()) << "client destruction must not join a blocked climate query";
+    release.set_value();
+}
 
 TEST(PlayerClientFocusTest, CursorCaptureTracksFocusAndDropsStaleCursorSamples)
 {
@@ -577,6 +1698,572 @@ TEST(PlayerClientFocusTest, ContinuousLookRequiresPlayingAndWindowFocus)
         true,
         true
     ));
+}
+
+TEST(PlayerClientFocusTest, HeldPlacementRepeatsWithoutFreshEdgesAndNeverCatchesUpInBursts)
+{
+    using namespace std::chrono_literals;
+    client::detail::BlockPlaceInputState state;
+    auto const now = std::chrono::steady_clock::time_point{};
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, true, true, now));
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 199ms));
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 200ms));
+    // A changed target or receipt does not supply another physical press.
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 400ms));
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 5s));
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 5s));
+}
+
+TEST(PlayerClientFocusTest, HeldPlacementWaitsForValidTargetAndRequiresRearmingAfterOwnershipLoss)
+{
+    using namespace std::chrono_literals;
+    client::detail::BlockPlaceInputState state;
+    auto const now = std::chrono::steady_clock::time_point{};
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, false, true, now));
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, true, false, now));
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 200ms));
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, false, false, now + 400ms));
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 600ms));
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, false, false, true, now + 800ms));
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 1s));
+    EXPECT_TRUE(client::detail::updateBlockPlaceInput(state, true, true, true, now + 1s));
+    state = {}; // Focus/map/mode/session cancellation discards ownership.
+    EXPECT_FALSE(client::detail::updateBlockPlaceInput(state, true, false, true, now + 2s));
+}
+
+TEST(PlayerClientFocusTest, BlockBreakInputStartsRenewsAndReleasesOnlyOneAuthorizedHold)
+{
+    using Clock = std::chrono::steady_clock;
+    client::detail::BlockBreakInputState state;
+    shared::WorldCoordinate const target{ .x = 12, .y = 34, .z = 56 };
+    Clock::time_point const started_at{};
+
+    auto const started = client::detail::updateBlockBreakInput(state, {
+        .held = true,
+        .fresh_press = true,
+        .permitted = true,
+        .target = target,
+        .now = started_at,
+    });
+    EXPECT_TRUE(started.submit_hold);
+    EXPECT_FALSE(started.submit_release);
+    ASSERT_TRUE(state.active);
+    EXPECT_EQ(state.target, target);
+
+    auto const before_renewal = client::detail::updateBlockBreakInput(state, {
+        .held = true,
+        .fresh_press = false,
+        .permitted = true,
+        .target = target,
+        .now = started_at + std::chrono::milliseconds{99},
+    });
+    EXPECT_FALSE(before_renewal.submit_hold);
+    EXPECT_FALSE(before_renewal.submit_release);
+
+    auto const renewed = client::detail::updateBlockBreakInput(state, {
+        .held = true,
+        .fresh_press = false,
+        .permitted = true,
+        .target = target,
+        .now = started_at + std::chrono::milliseconds{100},
+    });
+    EXPECT_TRUE(renewed.submit_hold);
+    EXPECT_FALSE(renewed.submit_release);
+
+    auto const released = client::detail::updateBlockBreakInput(state, {
+        .held = false,
+        .fresh_press = false,
+        .permitted = false,
+        .now = started_at + std::chrono::milliseconds{110},
+    });
+    EXPECT_FALSE(released.submit_hold);
+    EXPECT_TRUE(released.submit_release);
+    EXPECT_FALSE(state.active);
+
+    auto const still_released = client::detail::updateBlockBreakInput(state, {
+        .held = false,
+        .fresh_press = false,
+        .permitted = false,
+        .now = started_at + std::chrono::milliseconds{120},
+    });
+    EXPECT_FALSE(still_released.submit_hold);
+    EXPECT_FALSE(still_released.submit_release);
+}
+
+TEST(PlayerClientFocusTest, BlockBreakInputRequiresFreshPressAndRestartsOnTargetChange)
+{
+    using Clock = std::chrono::steady_clock;
+    Clock::time_point const now{};
+    client::detail::BlockBreakInputState state;
+    shared::WorldCoordinate const first{ .x = 1, .y = 2, .z = 3 };
+    shared::WorldCoordinate const second{ .x = 4, .y = 5, .z = 6 };
+
+    auto const held_across_gate = client::detail::updateBlockBreakInput(state, {
+        .held = true,
+        .fresh_press = false,
+        .permitted = true,
+        .target = first,
+        .now = now,
+    });
+    EXPECT_FALSE(held_across_gate.submit_hold);
+    EXPECT_FALSE(state.active);
+
+    auto const started = client::detail::updateBlockBreakInput(state, {
+        .held = true,
+        .fresh_press = true,
+        .permitted = true,
+        .target = first,
+        .now = now,
+    });
+    ASSERT_TRUE(started.submit_hold);
+
+    auto const retargeted = client::detail::updateBlockBreakInput(state, {
+        .held = true,
+        .fresh_press = false,
+        .permitted = true,
+        .target = second,
+        .now = now + std::chrono::milliseconds{20},
+    });
+    EXPECT_TRUE(retargeted.submit_release);
+    EXPECT_TRUE(retargeted.submit_hold);
+    EXPECT_TRUE(state.active);
+    EXPECT_EQ(state.target, second);
+    EXPECT_EQ(state.next_renewal, now + std::chrono::milliseconds{120});
+}
+
+TEST(PlayerClientFocusTest, HeldBreakIntentResumesAfterRayTargetGapWithoutNewMouseEdge)
+{
+    using Clock = std::chrono::steady_clock;
+    client::PlayerClientInputState intent;
+    client::detail::BlockBreakInputState state;
+    shared::WorldCoordinate const target{ .x = 7, .y = 8, .z = 9 };
+    Clock::time_point const now{};
+    bool left_was_pressed = false;
+    auto const sample = [&](bool const left_pressed, bool const target_available, Clock::time_point const sampled_at) {
+        bool const resumed = intent.observeBreakTarget(left_pressed, target_available);
+        auto const actions = client::detail::updateBlockBreakInput(state, {
+            .held = left_pressed,
+            .fresh_press = left_pressed && (!left_was_pressed || resumed),
+            .permitted = target_available,
+            .target = target_available ? std::optional{target} : std::nullopt,
+            .now = sampled_at,
+        });
+        left_was_pressed = left_pressed;
+        return actions;
+    };
+
+    auto const started = sample(true, true, now);
+    EXPECT_TRUE(started.submit_hold);
+    EXPECT_FALSE(started.submit_release);
+
+    auto const missed = sample(true, false, now + std::chrono::milliseconds{50});
+    EXPECT_FALSE(missed.submit_hold);
+    EXPECT_TRUE(missed.submit_release);
+    EXPECT_FALSE(state.active);
+
+    auto const still_missed = sample(true, false, now + std::chrono::milliseconds{60});
+    EXPECT_FALSE(still_missed.submit_hold);
+    EXPECT_FALSE(still_missed.submit_release);
+
+    auto const reacquired = sample(true, true, now + std::chrono::milliseconds{80});
+    EXPECT_TRUE(reacquired.submit_hold);
+    EXPECT_FALSE(reacquired.submit_release);
+    EXPECT_TRUE(state.active);
+    EXPECT_EQ(state.target, target);
+    EXPECT_EQ(state.next_renewal, now + std::chrono::milliseconds{180});
+}
+
+TEST(PlayerClientFocusTest, PlacementMaterialCycleUsesOnlyServerAllowedSolids)
+{
+    constexpr uint8_t ALLOWED = static_cast<uint8_t>((1U << static_cast<uint8_t>(shared::Block::Dirt))
+        | (1U << static_cast<uint8_t>(shared::Block::Ice))
+        | (1U << static_cast<uint8_t>(shared::Block::Sand)));
+
+    EXPECT_EQ(client::detail::nextPlaceableBlock(ALLOWED, shared::Block::Dirt), shared::Block::Ice);
+    EXPECT_EQ(client::detail::nextPlaceableBlock(ALLOWED, shared::Block::Ice), shared::Block::Sand);
+    EXPECT_EQ(client::detail::nextPlaceableBlock(ALLOWED, shared::Block::Sand), shared::Block::Dirt);
+    EXPECT_EQ(client::detail::nextPlaceableBlock(ALLOWED, shared::Block::Stone), shared::Block::Dirt);
+    EXPECT_FALSE(client::detail::nextPlaceableBlock(0U, shared::Block::Stone).has_value());
+    EXPECT_FALSE(client::detail::nextPlaceableBlock(
+        static_cast<uint8_t>(1U << static_cast<uint8_t>(shared::Block::Air)),
+        shared::Block::Stone
+    ).has_value());
+}
+
+TEST(PlayerClientFocusTest, BreakProgressIsDerivedOnlyFromBoundedServerProgressResults)
+{
+    shared::ServerBlockActionResultMessage status{
+        .status = shared::BlockActionStatus::Progress,
+        .completed_intervals = 5U,
+        .required_intervals = 10U,
+    };
+    EXPECT_FLOAT_EQ(client::detail::authoritativeBreakProgress(status), 0.5F);
+
+    status.completed_intervals = 20U;
+    EXPECT_FLOAT_EQ(client::detail::authoritativeBreakProgress(status), 1.0F);
+    status.required_intervals = 0U;
+    EXPECT_FLOAT_EQ(client::detail::authoritativeBreakProgress(status), 0.0F);
+    status.status = shared::BlockActionStatus::Accepted;
+    status.required_intervals = 10U;
+    EXPECT_FLOAT_EQ(client::detail::authoritativeBreakProgress(status), 0.0F);
+}
+
+TEST(PlayerClientFocusTest, CustomModeLabelRequiresAnExtraGrantBeyondBasePreset)
+{
+    auto make_status = [](shared::GameMode const mode) {
+        shared::EffectiveInteractionRights const rights = shared::effectiveInteractionRights(mode);
+        shared::ServerBlockActionResultMessage status{ .mode = mode, .effective_actions = rights.actions.bits };
+        status.effective_actions |= static_cast<uint8_t>(
+            1U << static_cast<uint8_t>(shared::InteractionAction::ChangeMode)
+        );
+        for (shared::Block const material : {
+            shared::Block::Stone, shared::Block::Grass, shared::Block::Dirt,
+            shared::Block::Bedrock, shared::Block::Snow, shared::Block::Ice,
+        }) {
+            uint8_t const bit = static_cast<uint8_t>(1U << static_cast<uint8_t>(material));
+            if (rights.canBreak(material)) {
+                status.break_materials |= bit;
+            }
+            if (rights.canPlace(material)) {
+                status.place_materials |= bit;
+            }
+        }
+        return status;
+    };
+
+    shared::ServerBlockActionResultMessage survival = make_status(shared::GameMode::Survival);
+    EXPECT_FALSE(client::detail::hasCustomBlockActionGrants(survival));
+    survival.effective_actions |= static_cast<uint8_t>(
+        1U << static_cast<uint8_t>(shared::InteractionAction::Flight)
+    );
+    EXPECT_TRUE(client::detail::hasCustomBlockActionGrants(survival));
+
+    survival = make_status(shared::GameMode::Survival);
+    survival.break_materials |= static_cast<uint8_t>(1U << static_cast<uint8_t>(shared::Block::Bedrock));
+    EXPECT_TRUE(client::detail::hasCustomBlockActionGrants(survival));
+
+    survival = make_status(shared::GameMode::Survival);
+    survival.effective_actions &= static_cast<uint8_t>(~(
+        1U << static_cast<uint8_t>(shared::InteractionAction::Break)
+    ));
+    survival.break_materials = 0xffU;
+    EXPECT_FALSE(client::detail::hasCustomBlockActionGrants(survival));
+
+    EXPECT_FALSE(client::detail::hasCustomBlockActionGrants(make_status(shared::GameMode::Creative)));
+}
+
+TEST(PlayerClientFocusTest, WorldMapOwnsInputAndClosingWithHeldKeysRequiresFreshRelease)
+{
+    client::PlayerClient player_client;
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client));
+    GLFWwindow* const window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+
+    static constexpr std::array<int, 1U> MAP_KEY{GLFW_KEY_M};
+    static constexpr std::array<int, 3U> MAP_AND_W_KEYS{GLFW_KEY_M, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_W};
+    static constexpr std::array<int, 1U> W_KEY{GLFW_KEY_W};
+    static constexpr std::array<int, 0U> NO_KEYS{};
+
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, MAP_KEY));
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::worldMapOpen(player_client));
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::worldMapLayerEnabled(
+        player_client,
+        client::S2WorldMapLayer::Wind
+    ));
+
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, MAP_AND_W_KEYS));
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::worldMapLayerEnabled(
+        player_client,
+        client::S2WorldMapLayer::Wind
+    ));
+    shared::Direction const while_map_open =
+        client::PlayerClientFocusTestAccess::gameplayInput(player_client);
+    EXPECT_EQ(while_map_open.x, 0U);
+    EXPECT_EQ(while_map_open.y, 0U);
+    EXPECT_EQ(while_map_open.z, 0U);
+
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, W_KEY));
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, MAP_AND_W_KEYS));
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::worldMapOpen(player_client));
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::hasStartTransitionInputs(player_client));
+    shared::Direction const after_close_while_held =
+        client::PlayerClientFocusTestAccess::gameplayInput(player_client);
+    EXPECT_EQ(after_close_while_held.x, 0U);
+    EXPECT_EQ(after_close_while_held.y, 0U);
+    EXPECT_EQ(after_close_while_held.z, 0U);
+
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, W_KEY));
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::hasStartTransitionInputs(player_client));
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, NO_KEYS));
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::hasStartTransitionInputs(player_client));
+}
+
+TEST(PlayerClientFocusTest, WorldMapCueIsRequestedOnlyForActualStateEdges)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    client::PlayerClient player_client;
+    uint32_t cue_count = 0U;
+    auto const set_open = [&](bool const open) {
+        if (Access::setWorldMapOpen(player_client, open)) {
+            ++cue_count;
+        }
+    };
+
+    set_open(true);
+    set_open(true);
+    set_open(false);
+    set_open(false);
+    EXPECT_EQ(cue_count, 2U);
+
+    set_open(true);
+    Access::resetWorldMapSource(player_client);
+    EXPECT_FALSE(Access::worldMapOpen(player_client));
+    set_open(false);
+    EXPECT_EQ(cue_count, 3U);
+}
+
+TEST(PlayerClientFocusTest, MinimapCropTracksPlayerWithinOverscanAndWorldWrap)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    static constexpr uint32_t EXTENT = 16'384U;
+    auto const center = Access::minimapSourceCrop(1'000U, 2'000U, EXTENT, 9'192.0, 10'192.0);
+    ASSERT_TRUE(center.has_value());
+    EXPECT_EQ(*center, (std::array<float, 4U>{0.25F, 0.25F, 0.5F, 0.5F}));
+
+    auto const moved = Access::minimapSourceCrop(1'000U, 2'000U, EXTENT, 10'216.0, 12'240.0);
+    ASSERT_TRUE(moved.has_value());
+    EXPECT_EQ(*moved, (std::array<float, 4U>{0.3125F, 0.125F, 0.5F, 0.5F}));
+
+    auto const recentered = Access::minimapSourceCrop(2'024U, 4'048U, EXTENT, 10'216.0, 12'240.0);
+    ASSERT_TRUE(recentered.has_value());
+    EXPECT_EQ(*recentered, *center);
+
+    auto const wrapped = Access::minimapSourceCrop(57'444U, 0U, EXTENT, 100.0, 8'192.0);
+    ASSERT_TRUE(wrapped.has_value());
+    EXPECT_EQ(*wrapped, *center);
+    auto const east_edge = Access::minimapSourceCrop(0U, 0U, EXTENT, 12'288.0, 8'192.0);
+    ASSERT_TRUE(east_edge.has_value());
+    EXPECT_EQ(*east_edge, (std::array<float, 4U>{0.5F, 0.25F, 0.5F, 0.5F}));
+    EXPECT_FALSE(Access::minimapSourceCrop(0U, 0U, EXTENT, 12'289.0, 8'192.0).has_value());
+    EXPECT_FALSE(Access::minimapSourceCrop(0U, 0U, EXTENT - 1U, 8'192.0, 8'192.0).has_value());
+}
+
+TEST(PlayerClientFocusTest, EscapeClosesMapAndNormalExitRequiresConfirmation)
+{
+    client::PlayerClient player_client;
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client));
+    GLFWwindow* const window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+
+    static constexpr std::array<int, 1U> ESCAPE{GLFW_KEY_ESCAPE};
+    static constexpr std::array<int, 1U> CONFIRM{GLFW_KEY_ENTER};
+    static constexpr std::array<int, 0U> NO_KEYS{};
+
+    client::PlayerClientFocusTestAccess::setWorldMapOpen(player_client, true);
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, ESCAPE));
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::worldMapOpen(player_client));
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::exitConfirmationPending(player_client));
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::running(player_client));
+
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, NO_KEYS));
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, ESCAPE));
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::exitConfirmationPending(player_client));
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::running(player_client));
+    shared::Direction const while_confirmation_open =
+        client::PlayerClientFocusTestAccess::gameplayInput(player_client);
+    EXPECT_EQ(while_confirmation_open.x, 0U);
+    EXPECT_EQ(while_confirmation_open.y, 0U);
+    EXPECT_EQ(while_confirmation_open.z, 0U);
+
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, NO_KEYS));
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, ESCAPE));
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::exitConfirmationPending(player_client));
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::running(player_client));
+
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, NO_KEYS));
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, ESCAPE));
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::exitConfirmationPending(player_client));
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, NO_KEYS));
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, CONFIRM));
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::exitConfirmationPending(player_client));
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::running(player_client));
+}
+
+TEST(PlayerClientFocusTest, UnavailableWindowFrameKeepsLoopAliveAndNativeRenderingResumes)
+{
+    static constexpr uint32_t MAX_RENDER_ATTEMPTS = 24U;
+    static constexpr std::chrono::seconds RENDER_TIMEOUT{ 5 };
+    client::PlayerClient player_client;
+    uint64_t const submitted_before =
+        client::PlayerClientFocusTestAccess::runtimeInfo(player_client).submitted_frame_count;
+
+    // Inject nextFrame's zero-framebuffer result at the production render boundary.
+    for (uint32_t frame = 0U; frame < 3U; ++frame) {
+        client::PlayerClientFocusTestAccess::renderUnavailableWindowFrame(player_client);
+        ASSERT_TRUE(client::PlayerClientFocusTestAccess::running(player_client));
+        EXPECT_FALSE(client::PlayerClientFocusTestAccess::windowShouldClose(player_client));
+        EXPECT_EQ(client::PlayerClientFocusTestAccess::runtimeInfo(player_client).submitted_frame_count,
+            submitted_before);
+    }
+
+    GLFWwindow* const window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    int framebuffer_width = 0;
+    int framebuffer_height = 0;
+    glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
+    ASSERT_GT(framebuffer_width, 0);
+    ASSERT_GT(framebuffer_height, 0);
+    std::chrono::steady_clock::time_point const deadline = std::chrono::steady_clock::now() + RENDER_TIMEOUT;
+    for (uint32_t attempt = 0U;
+         attempt < MAX_RENDER_ATTEMPTS && std::chrono::steady_clock::now() < deadline;
+         ++attempt) {
+        // The restored path must use the real window and renderer, including nextFrame.
+        client::PlayerClientFocusTestAccess::renderFrame(player_client);
+        if (client::PlayerClientFocusTestAccess::runtimeInfo(player_client).submitted_frame_count
+            > submitted_before) {
+            break;
+        }
+    }
+    EXPECT_GT(client::PlayerClientFocusTestAccess::runtimeInfo(player_client).submitted_frame_count,
+        submitted_before);
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::running(player_client));
+}
+
+TEST(PlayerClientFocusTest, NativeWindowCloseStopsLoopWhenNoFrameIsAvailable)
+{
+    client::PlayerClient player_client;
+    uint64_t const submitted_before =
+        client::PlayerClientFocusTestAccess::runtimeInfo(player_client).submitted_frame_count;
+    glfwSetWindowShouldClose(client::PlayerClientFocusTestAccess::nativeWindow(player_client), GLFW_TRUE);
+
+    client::PlayerClientFocusTestAccess::renderFrame(player_client);
+
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::windowShouldClose(player_client));
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::running(player_client));
+    EXPECT_EQ(client::PlayerClientFocusTestAccess::runtimeInfo(player_client).submitted_frame_count,
+        submitted_before);
+}
+
+TEST(PlayerClientFocusTest, WindowCloseOpensConfirmationAndDoesNotSetShouldClose)
+{
+    client::PlayerClient player_client;
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client));
+    GLFWwindow* const window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+
+    client::PlayerClientFocusTestAccess::requestWindowClose(player_client);
+    EXPECT_FALSE(client::PlayerClientFocusTestAccess::windowShouldClose(player_client));
+    static constexpr std::array<int, 0U> NO_KEYS{};
+    static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, NO_KEYS));
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::exitConfirmationPending(player_client));
+    EXPECT_TRUE(client::PlayerClientFocusTestAccess::running(player_client));
+}
+
+TEST(PlayerClientFocusTest, WorldMapWasdAndArrowsPanWithoutSendingGameplayInput)
+{
+    client::PlayerClient player_client;
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client));
+    auto* window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+    client::PlayerClientFocusTestAccess::setWorldMapOpen(player_client, true);
+    for (int const key : {GLFW_KEY_W, GLFW_KEY_A, GLFW_KEY_S, GLFW_KEY_D,
+             GLFW_KEY_UP, GLFW_KEY_LEFT, GLFW_KEY_DOWN, GLFW_KEY_RIGHT}) {
+        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, {}));
+        auto const before = client::PlayerClientFocusTestAccess::worldMapState(player_client);
+        std::array<int, 1U> const keys{key};
+        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, keys));
+        auto const after = client::PlayerClientFocusTestAccess::worldMapState(player_client);
+        bool const horizontal = key == GLFW_KEY_A || key == GLFW_KEY_D || key == GLFW_KEY_LEFT || key == GLFW_KEY_RIGHT;
+        EXPECT_NE(horizontal ? after.center_x : after.center_y, horizontal ? before.center_x : before.center_y) << key;
+        EXPECT_EQ(after.layers, before.layers);
+        auto const input = client::PlayerClientFocusTestAccess::gameplayInput(player_client);
+        EXPECT_EQ(input.x, 0U);
+        EXPECT_EQ(input.y, 0U);
+        EXPECT_EQ(input.z, 0U);
+    }
+}
+
+TEST(PlayerClientFocusTest, WorldMapMouseDragMovesTheMapAndReleaseEndsDragging)
+{
+    client::PlayerClient player_client;
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client));
+    auto* window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+    client::PlayerClientFocusTestAccess::setWorldMapOpen(player_client, true);
+    std::array<int, 1U> const left{GLFW_MOUSE_BUTTON_LEFT};
+    client::PlayerClientFocusTestAccess::pointerInput(player_client, left, 100.0, 100.0);
+    auto const before = client::PlayerClientFocusTestAccess::worldMapState(player_client);
+    client::PlayerClientFocusTestAccess::pointerInput(player_client, left, 200.0, 150.0);
+    auto const after = client::PlayerClientFocusTestAccess::worldMapState(player_client);
+    EXPECT_NE(after.center_x, before.center_x);
+    EXPECT_NE(after.center_y, before.center_y);
+    client::PlayerClientFocusTestAccess::pointerInput(player_client, {}, 300.0, 200.0);
+    EXPECT_EQ(client::PlayerClientFocusTestAccess::worldMapState(player_client).center_x, after.center_x);
+    EXPECT_EQ(client::PlayerClientFocusTestAccess::worldMapState(player_client).center_y, after.center_y);
+}
+
+TEST(PlayerClientFocusTest, WorldMapScrollCallbackZoomsOnlyWhileTheMapOwnsInput)
+{
+    client::PlayerClient player_client;
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client));
+    auto* window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+    auto const callback = glfwSetScrollCallback(window, nullptr);
+    ASSERT_NE(callback, nullptr);
+    glfwSetScrollCallback(window, callback);
+    client::PlayerClientFocusTestAccess::setWorldMapOpen(player_client, true);
+    auto const scroll = [&](double const delta) {
+        callback(window, 0.0, delta);
+        client::PlayerClientFocusTestAccess::servicePlatformEvents(player_client);
+    };
+    double const before = client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom;
+    scroll(1.0);
+    double const enlarged = client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom;
+    EXPECT_GT(enlarged, before);
+    scroll(-1.0);
+    EXPECT_LT(client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom, enlarged);
+    int framebuffer_width = 0;
+    int framebuffer_height = 0;
+    glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
+    float const minimum_zoom = client::minimumS2WorldMapZoom(
+        static_cast<uint32_t>(framebuffer_width), static_cast<uint32_t>(framebuffer_height));
+    for (uint32_t index = 0U; index < 20U; ++index) {
+        scroll(-1.0);
+    }
+    EXPECT_NEAR(client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom, minimum_zoom, 1.0e-6);
+    scroll(1.0);
+    double const at_wider_zoom = client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom;
+    EXPECT_GT(at_wider_zoom, minimum_zoom);
+    client::PlayerClientFocusTestAccess::setWorldMapOpen(player_client, false);
+    scroll(1.0);
+    EXPECT_EQ(client::PlayerClientFocusTestAccess::worldMapState(player_client).zoom, at_wider_zoom);
+}
+
+TEST(PlayerClientFocusTest, HoldingEitherAltReleasesTheCursorAndBlocksGameplay)
+{
+    client::PlayerClient player_client;
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client));
+    auto* window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+    for (int const alt : {GLFW_KEY_LEFT_ALT, GLFW_KEY_RIGHT_ALT}) {
+        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, {}));
+        client::PlayerClientFocusTestAccess::synchronizeLook(player_client);
+        EXPECT_EQ(glfwGetInputMode(window, GLFW_CURSOR), GLFW_CURSOR_DISABLED);
+        std::array<int, 1U> const keys{alt};
+        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(player_client, keys));
+        client::PlayerClientFocusTestAccess::synchronizeLook(player_client);
+        EXPECT_EQ(glfwGetInputMode(window, GLFW_CURSOR), GLFW_CURSOR_NORMAL);
+        auto const input = client::PlayerClientFocusTestAccess::gameplayInput(player_client);
+        EXPECT_EQ(input.x, 0U);
+        EXPECT_EQ(input.y, 0U);
+        EXPECT_EQ(input.z, 0U);
+    }
 }
 
 TEST(PlayerClientFocusTest, ScreenshotPngEncoderWritesRgbaChunksWithValidChecksums)
@@ -738,6 +2425,75 @@ TEST(PlayerClientFocusTest, ScreenshotKeyIsOneShotAndDoesNotStartReadyWorld)
 }
 
 #if defined(__APPLE__)
+TEST(PlayerClientFocusTest, NormalMacPlayUsesBorderlessDesktopWorkareaWithoutMonitorAttachment)
+{
+    client::PlayerClient player_client;
+    GLFWwindow* const window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+    GLFWmonitor* const monitor = glfwGetPrimaryMonitor();
+    ASSERT_NE(monitor, nullptr);
+    int expected_x = 0;
+    int expected_y = 0;
+    int expected_width = 0;
+    int expected_height = 0;
+    glfwGetMonitorWorkarea(monitor, &expected_x, &expected_y, &expected_width, &expected_height);
+    ASSERT_GT(expected_width, 0);
+    ASSERT_GT(expected_height, 0);
+
+    EXPECT_EQ(glfwGetWindowMonitor(window), nullptr);
+    EXPECT_EQ(glfwGetWindowAttrib(window, GLFW_DECORATED), GLFW_FALSE);
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    glfwGetWindowPos(window, &x, &y);
+    glfwGetWindowSize(window, &width, &height);
+    EXPECT_EQ(x, expected_x);
+    EXPECT_EQ(y, expected_y);
+    EXPECT_EQ(width, expected_width);
+    EXPECT_EQ(height, expected_height);
+}
+#endif
+
+#if defined(__APPLE__) || defined(_WIN32)
+TEST(PlayerClientFocusTest, NormalPlayCapturesFramebufferWithoutDiagnosticOptIn)
+{
+    client::PlayerClient player_client;
+
+    std::optional<client::RendererFrameCapture> const capture =
+        client::PlayerClientFocusTestAccess::capturePlayerFrame(player_client);
+
+    ASSERT_TRUE(capture.has_value())
+        << "normal F2 capture must have framebuffer readback enabled without benchmark options";
+    EXPECT_GT(capture->width, 0U);
+    EXPECT_GT(capture->height, 0U);
+    EXPECT_EQ(capture->rgba8.size(), static_cast<size_t>(capture->width) * capture->height * 4U);
+}
+#endif
+
+TEST(PlayerClientFocusTest, BenchmarkFramebufferReadbackRequiresDiagnosticOptIn)
+{
+    {
+        client::PlayerClient player_client{
+            shared::WorldMode::Flight, std::nullopt, client::PlayerClientBenchmarkOptions{},
+        };
+        client::PlayerClientFocusTestAccess::requestFrameCapture(player_client);
+        EXPECT_EQ(client::PlayerClientFocusTestAccess::captureState(player_client),
+            client::FrameCaptureState::Disabled);
+    }
+    {
+        client::PlayerClient player_client{
+            shared::WorldMode::Flight, std::nullopt,
+            client::PlayerClientBenchmarkOptions{ .enable_diagnostic_frame_capture = true },
+        };
+        std::optional<client::RendererFrameCapture> const capture =
+            client::PlayerClientFocusTestAccess::capturePlayerFrame(player_client);
+        ASSERT_TRUE(capture.has_value());
+        EXPECT_GT(capture->width, 0U);
+        EXPECT_GT(capture->height, 0U);
+    }
+}
+
+#if defined(__APPLE__)
 TEST(PlayerClientFocusTest, CanRequestScreenshotAgainAfterConsumingCaptureWithoutRecreation)
 {
     client::PlayerClient player_client;
@@ -855,7 +2611,7 @@ TEST(PlayerClientFocusTest, BenchmarkRetainsFenceConfirmedFramesAfterPlayingTran
     EXPECT_GT(playing_progress.completed->sequence, last_loading_sequence);
 }
 
-TEST(PlayerClientFocusTest, NormalPlayingFramesDoNotCollectCompletionDiagnostics)
+TEST(PlayerClientFocusTest, NormalPlayingFramesObserveCompletionsWithoutRetainingHistory)
 {
     static constexpr uint32_t MAX_RENDER_ATTEMPTS = 8U;
     static constexpr std::chrono::seconds RENDER_TIMEOUT{ 5 };
@@ -877,10 +2633,14 @@ TEST(PlayerClientFocusTest, NormalPlayingFramesDoNotCollectCompletionDiagnostics
     }
 
     client::RendererRuntimeInfo const runtime = client::PlayerClientFocusTestAccess::runtimeInfo(player_client);
+    client::RendererFrameProgress const progress = client::PlayerClientFocusTestAccess::frameProgress(player_client);
     ASSERT_TRUE(presented);
     EXPECT_GT(runtime.submitted_frame_count, 0U);
-    EXPECT_FALSE(runtime.diagnostic_presentation_acquire.captured);
-    EXPECT_FALSE(client::PlayerClientFocusTestAccess::frameProgress(player_client).completed.has_value());
+    EXPECT_TRUE(runtime.diagnostic_presentation_acquire.captured);
+    ASSERT_TRUE(progress.completed.has_value());
+    EXPECT_TRUE(progress.completed_observed_at.has_value());
+    EXPECT_EQ(progress.completed->swapchain_generation, runtime.current_swapchain_generation);
+    EXPECT_TRUE(runtime.retired_frame_completions.empty());
 }
 
 TEST(PlayerClientFocusTest, OrdinaryPlayingFramesKeepPresentingAfterRepeatedScreenshotHints)
@@ -1016,6 +2776,745 @@ TEST(PlayerClientFocusTest, MouseOnlyStartPressCreatesAnEdgeAndIsConsumedUntilRe
     EXPECT_TRUE(client::PlayerClientFocusTestAccess::hasStartTransitionInputs(player_client));
 }
 
+TEST(PlayerClientFocusTest, NormalRenderShowsGenerationMapBeforeReady)
+{
+    client::PlayerClient player_client{shared::WorldMode::Flight, std::nullopt, startupFrameCaptureOptions()};
+    client::PlayerClientFocusTestAccess::restoreOrdinaryStartupAfterCaptureOptIn(player_client);
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginInitialLoading(player_client));
+    auto const backdrop = client::PlayerClientFocusTestAccess::capturePlayerFrame(player_client);
+    ASSERT_TRUE(backdrop);
+    auto const snapshot = controlledGenerationSnapshot();
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::publishGeneration(player_client, {
+        .stage = generation::GenerationStage::Tectonics, .completed = 1U, .total = 12U, .snapshot = snapshot,
+    }));
+    ASSERT_EQ(player_client.worldLoadingStatus().state, client::WorldLoadingState::PreparingAtlas);
+    auto const generation = client::PlayerClientFocusTestAccess::capturePlayerFrame(player_client);
+    ASSERT_TRUE(generation);
+    auto const backdrop_crop = cropMapInterior(*backdrop, loadingContentScale(player_client));
+    auto const generation_crop = cropMapInterior(*generation, loadingContentScale(player_client));
+    auto const directory = startupEvidenceDirectory();
+    EXPECT_TRUE(saveMapCapture(directory / "controlled-backdrop", backdrop_crop));
+    EXPECT_TRUE(saveMapCapture(directory / "controlled-pre-ready", generation_crop));
+    std::ofstream state{directory / "controlled-pre-ready.json"};
+    state << "{\"state\":" << static_cast<uint32_t>(player_client.worldLoadingStatus().state)
+        << ",\"backdrop_hash\":" << pixelHash(backdrop_crop.rgba8)
+        << ",\"generation_hash\":" << pixelHash(generation_crop.rgba8) << "}\n";
+    EXPECT_TRUE(loadingCanvasVisible(*generation)) << "loading canvas must replace the sky/terrain backdrop";
+    auto const variation = mapSpatialVariation(generation_crop);
+    EXPECT_TRUE(variation.geographic()) << "map-only ROI must contain geographic spatial variation: colors="
+        << variation.unique_rgb_colors << ", differing neighbors=" << variation.differing_horizontal_neighbors;
+    EXPECT_NE(pixelHash(generation_crop.rgba8), pixelHash(backdrop_crop.rgba8))
+        << "actual PlayerClient::render must draw the map before ReadyForStart, outside the text overlay";
+}
+
+TEST(PlayerClientFocusTest, RetainedGenerationSnapshotDoesNotRestartVisibleAnimationClock)
+{
+    client::PlayerClient player_client{shared::WorldMode::Flight, std::nullopt, startupFrameCaptureOptions()};
+    client::PlayerClientFocusTestAccess::restoreOrdinaryStartupAfterCaptureOptIn(player_client);
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginInitialLoading(player_client));
+    auto const snapshot = controlledGenerationSnapshot();
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::publishGeneration(player_client, {
+        .stage = generation::GenerationStage::Tectonics, .completed = 1U, .total = 12U, .snapshot = snapshot,
+    }));
+    client::PlayerClientFocusTestAccess::renderFrame(player_client);
+    std::this_thread::sleep_for(std::chrono::milliseconds{300});
+    client::PlayerClientFocusTestAccess::renderFrame(player_client);
+    auto const before = client::PlayerClientFocusTestAccess::generationVisibleElapsed(player_client);
+    ASSERT_GE(before, std::chrono::milliseconds{250});
+    auto const retained = std::make_shared<generation::GenerationSnapshot const>(*snapshot);
+    ASSERT_NE(retained.get(), snapshot.get());
+    ASSERT_EQ(snapshotContentHash(*retained), snapshotContentHash(*snapshot));
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::publishGeneration(player_client, {
+        .stage = generation::GenerationStage::Tectonics, .completed = 2U, .total = 12U, .snapshot = retained,
+    }));
+    client::PlayerClientFocusTestAccess::renderFrame(player_client);
+    auto const after = client::PlayerClientFocusTestAccess::generationVisibleElapsed(player_client);
+    std::ofstream state{startupEvidenceDirectory() / "retained-snapshot-clock.json"};
+    state << "{\"before_visible_ms\":" << before.count() << ",\"after_visible_ms\":" << after.count()
+        << ",\"content_hash\":" << snapshotContentHash(*snapshot) << ",\"source_before\":"
+        << reinterpret_cast<uintptr_t>(snapshot.get()) << ",\"source_after\":"
+        << reinterpret_cast<uintptr_t>(retained.get()) << "}\n";
+    EXPECT_GE(after, before) << "freshly decoded retained content must not restart the same animation";
+}
+
+static void runNormalLocalStartupEvidence(bool const capture_enabled, bool& owner_preview)
+{
+    using Clock = std::chrono::steady_clock;
+    static constexpr uint32_t MAXIMUM_CAPTURES = 180U;
+    static constexpr uint32_t FULL_FRAME_WIDTH = 640U;
+    static constexpr auto OWNER_PREVIEW_LIMIT = std::chrono::minutes{5};
+    char const* const owner_preview_value = std::getenv("MC_STARTUP_OWNER_PREVIEW");
+    owner_preview = capture_enabled && owner_preview_value != nullptr
+        && std::string{owner_preview_value} == "1";
+    uint32_t const capture_limit = owner_preview ? 1U : MAXIMUM_CAPTURES;
+    std::string const mode = owner_preview ? "owner-preview" : (capture_enabled ? "film" : "no-readback");
+    auto const accepted_at = Clock::now();
+    auto const owner_preview_deadline = accepted_at + OWNER_PREVIEW_LIMIT;
+    auto const wall_started_at = std::chrono::system_clock::now();
+    std::optional<client::PlayerClientBenchmarkOptions> const constructor_options =
+#if defined(__APPLE__)
+        startupFrameCaptureOptions();
+#else
+        capture_enabled ? startupFrameCaptureOptions() : std::nullopt;
+#endif
+    client::PlayerClient player_client{shared::WorldMode::Flight, std::nullopt, constructor_options};
+    client::PlayerClientFocusTestAccess::restoreOrdinaryStartupAfterCaptureOptIn(player_client);
+    auto const configuration = shared::World::canonicalConfiguration();
+    generation::GenerationConfiguration generation_configuration{};
+    generation_configuration.seed = configuration.seed;
+    generation_configuration.model_tag = generation::TerrainModelTag::V10;
+    auto preparation = std::make_shared<server::WorldPreparation>(
+        generation_configuration, configuration.algorithm_version, accepted_at);
+    server::GameServer server{0U, {}, shared::WorldMode::Flight, configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, preparation, server::GameServer::BindMode::Loopback};
+    ASSERT_TRUE(server.isValid());
+    std::exception_ptr server_error;
+    std::atomic_bool server_failed{false};
+    std::jthread server_thread{[&](std::stop_token const& cancellation) {
+        std::atomic_bool stop_requested{false};
+        std::stop_callback callback{cancellation, [&] { stop_requested.store(true); }};
+        try {
+            server.run(stop_requested);
+        } catch (...) {
+            server_error = std::current_exception();
+            server_failed.store(true);
+        }
+    }};
+    auto const directory = startupEvidenceDirectory() / (capture_enabled ? "normal-startup-v10" : "normal-startup-v10-no-readback");
+    std::filesystem::create_directories(directory);
+    std::ofstream events{directory / "frames.jsonl"};
+    events << "{\"event\":\"configuration\",\"seed\":" << generation_configuration.seed
+        << ",\"epochs\":" << generation_configuration.epochs
+        << ",\"model_tag\":\"V10\",\"model_tag_value\":" << static_cast<uint32_t>(generation_configuration.model_tag)
+        << ",\"resolution\":" << generation_configuration.resolution
+        << ",\"algorithm_version\":" << configuration.algorithm_version
+        << ",\"wall_start_unix_ms\":" << std::chrono::duration_cast<std::chrono::milliseconds>(
+            wall_started_at.time_since_epoch()).count()
+        << ",\"mode\":\"" << mode << "\",\"capture_hz\":" << (capture_enabled ? 2 : 0)
+        << ",\"owner_assessment_mode\":" << (owner_preview ? "true" : "false")
+        << ",\"owner_assessment_deadline_unix_ms\":"
+        << (owner_preview ? std::chrono::duration_cast<std::chrono::milliseconds>(
+            (wall_started_at + OWNER_PREVIEW_LIMIT).time_since_epoch()).count() : 0)
+        << ",\"capture_policy\":\""
+        << (owner_preview ? "first_generation_map_frame" : (capture_enabled ? "periodic_2hz" : "none")) << "\""
+        << ",\"full_frame_hz\":" << (capture_enabled ? 0.5 : 0.0)
+        << ",\"max_frames\":" << (capture_enabled ? capture_limit : 0U)
+        << ",\"full_frame_max_width\":" << (capture_enabled ? FULL_FRAME_WIDTH : 0U)
+        << ",\"roi_contract\":\""
+        << (capture_enabled ? "UiLoadingLayout.map_viewport inset 10 percent" : "none") << "\""
+        << ",\"png_encoding_phase\":\"" << (capture_enabled ? "after_run" : "none")
+        << "\",\"diagnostic_costs\":\""
+        << (capture_enabled ? "GPU readback, crop/downsample, hash, JSON logging" : "source hash and JSON logging only") << "\""
+        << ",\"performance_qualification\":false,\"memory_qualification\":false"
+        << ",\"diagnostic_capture_constructor_opt_in\":"
+        << (constructor_options.has_value() ? "true" : "false")
+        << ",\"gpu_frame_readback_enabled\":" << (capture_enabled ? "true" : "false")
+        << ",\"runtime_benchmark_mode\":false}\n";
+    struct FilmCapture final {
+        uint32_t index;
+        client::RendererFrameCapture map;
+        std::optional<client::RendererFrameCapture> full;
+    };
+    std::vector<FilmCapture> retained_frames;
+    retained_frames.reserve(capture_limit);
+    auto next_full_capture = Clock::now();
+    uint64_t retained_rgba_bytes = 0U;
+    bool identity_logged = false;
+    std::optional<Clock::time_point> producer_ready_at;
+    std::optional<Clock::time_point> final_source_at;
+    bool final_ready_frame_captured = false;
+    generation::GenerationSnapshot const* previous_producer_source = nullptr;
+    uint64_t producer_source_hash = 0U;
+    auto next_readiness_observation = Clock::now();
+    uint64_t last_producer_progress = 0U;
+    std::optional<client::WorldLoadingState> last_client_state;
+    std::optional<client::WorldLoadingState> capture_request_state;
+    std::optional<client::RendererFrameIdentity> capture_request_submitted;
+    int64_t capture_request_ms = 0;
+    uint32_t captures = 0U;
+    uint32_t pre_ready_captures = 0U;
+    uint32_t geographic_pre_ready_captures = 0U;
+    uint32_t retained_source_replacements = 0U;
+    uint32_t clock_regressions = 0U;
+    std::set<uint64_t> pre_ready_map_hashes;
+    generation::GenerationSnapshot const* previous_source = nullptr;
+    uint64_t source_hash = 0U;
+    std::chrono::milliseconds previous_visible{};
+    std::chrono::milliseconds maximum_pre_ready_visible{};
+    auto next_capture = Clock::now();
+    std::optional<Clock::time_point> ready_at;
+    struct RenderStateSummary final {
+        uint64_t loops = 0U;
+        uint64_t successful_presentations = 0U;
+        uint64_t new_submissions = 0U;
+        std::chrono::nanoseconds render_total{};
+        std::chrono::nanoseconds render_max{};
+    };
+    std::map<uint32_t, RenderStateSummary> render_states;
+    uint64_t previous_submitted_sequence = 0U;
+    client::GameClientBenchmarkHooks hooks{};
+    hooks.deadline = owner_preview ? owner_preview_deadline : accepted_at + std::chrono::seconds{91};
+    bool owner_preview_ended_by_user = false;
+    if (owner_preview) {
+        hooks.should_stop = [&] {
+            GLFWwindow* const window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+            bool const escape_pressed = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+            bool const close_requested = client::PlayerClientFocusTestAccess::exitConfirmationPending(player_client)
+                || client::PlayerClientFocusTestAccess::windowShouldClose(player_client);
+            if (!escape_pressed && !close_requested) {
+                return false;
+            }
+            owner_preview_ended_by_user = true;
+            char const* const reason = escape_pressed ? "escape"
+                : (client::PlayerClientFocusTestAccess::windowShouldClose(player_client)
+                    ? "window_close" : "exit_confirmation");
+            events << "{\"event\":\"owner_preview_stop\",\"reason\":\"" << reason
+                << "\",\"observed_request_ms\":"
+                << std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - accepted_at).count()
+                << "}\n";
+            events.flush();
+            return true;
+        };
+    }
+    hooks.on_loop = [&](client::GameClientLoopSample const& sample) {
+        auto const now = Clock::now();
+        auto const status = player_client.worldLoadingStatus();
+        auto const producer = preparation->latest();
+        if (producer.state == server::WorldPreparationState::Ready && !producer_ready_at) { producer_ready_at = now; }
+        if (producer.latest_map_snapshot.get() != previous_producer_source) {
+            previous_producer_source = producer.latest_map_snapshot.get();
+            producer_source_hash = producer.latest_map_snapshot ? snapshotContentHash(*producer.latest_map_snapshot) : 0U;
+        }
+        if (!identity_logged) {
+            if (auto const world = preparation->readyWorld()) {
+                auto const& identity = world->identity();
+                events << "{\"event\":\"terrain_identity\",\"terrain_version\":" << identity.terrain_version
+                    << ",\"revision\":" << identity.revision << ",\"seed\":" << identity.seed
+                    << ",\"configuration_identity\":\"" << identity.configuration_identity << "\"}\n";
+                identity_logged = true;
+            }
+        }
+        auto& render_state = render_states[static_cast<uint32_t>(status.state)];
+        ++render_state.loops;
+        render_state.successful_presentations += sample.presentation_succeeded ? 1U : 0U;
+        render_state.render_total += sample.render_duration;
+        render_state.render_max = std::max(render_state.render_max, sample.render_duration);
+        auto const submitted = client::PlayerClientFocusTestAccess::frameProgress(player_client).submitted;
+        if (submitted && submitted->sequence != previous_submitted_sequence) {
+            ++render_state.new_submissions;
+            previous_submitted_sequence = submitted->sequence;
+        }
+        auto const visible = client::PlayerClientFocusTestAccess::generationVisibleElapsed(player_client);
+        auto const request_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - accepted_at).count();
+        bool const pre_ready = status.state == client::WorldLoadingState::PreparingAtlas
+            || status.state == client::WorldLoadingState::PreparingSpawn;
+        auto write_observation = [&](char const* event) {
+            events << "{\"event\":\"" << event << "\",\"observed_request_ms\":" << request_ms
+                << ",\"state\":" << static_cast<uint32_t>(status.state)
+                << ",\"join_epoch\":" << player_client.worldLoadingJoinEpoch()
+                << ",\"progress_stage\":" << static_cast<uint32_t>(status.generation_stage)
+                << ",\"progress_completed\":" << status.generation_completed
+                << ",\"progress_total\":" << status.generation_total
+                << ",\"source_ptr\":" << reinterpret_cast<uintptr_t>(status.map_snapshot.get())
+                << ",\"source_hash\":" << source_hash
+                << ",\"snapshot_stage\":" << (status.map_snapshot ? static_cast<int>(status.map_snapshot->stage) : -1)
+                << ",\"visible_elapsed_ms\":" << visible.count()
+                << ",\"relief_phase\":" << std::fmod(static_cast<double>(visible.count()), 4'000.0) / 4'000.0;
+        };
+        if (status.map_snapshot.get() != previous_source) {
+            uint64_t const new_hash = status.map_snapshot ? snapshotContentHash(*status.map_snapshot) : 0U;
+            if (status.map_snapshot && previous_source != nullptr && new_hash == source_hash) {
+                ++retained_source_replacements;
+                if (visible < previous_visible) {
+                    ++clock_regressions;
+                }
+            }
+            previous_source = status.map_snapshot.get();
+            source_hash = new_hash;
+            write_observation("source");
+            events << "}\n";
+        }
+        bool const canonical_final_source = producer.state == server::WorldPreparationState::Ready
+            && producer.latest_progress && producer.latest_progress->progress.stage == generation::GenerationStage::Complete
+            && status.generation_stage == generation::GenerationStage::Complete && status.map_snapshot
+            && status.map_snapshot->stage == generation::GenerationStage::V10Water && status.map_snapshot->v10
+            && source_hash == producer_source_hash && identity_logged;
+        if (canonical_final_source && !final_source_at) { final_source_at = now; }
+        uint64_t const producer_sequence = producer.latest_progress ? producer.latest_progress->sequence : 0U;
+        if (now >= next_readiness_observation || producer_sequence != last_producer_progress
+            || last_client_state != status.state) {
+            write_observation("producer_client_readiness");
+            events << ",\"wall_unix_ms\":" << std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count()
+                << ",\"producer_state\":" << static_cast<uint32_t>(producer.state)
+                << ",\"producer_progress_sequence\":" << producer_sequence
+                << ",\"producer_stage\":" << (producer.latest_progress
+                    ? static_cast<int>(producer.latest_progress->progress.stage) : -1)
+                << ",\"producer_completed\":" << (producer.latest_progress ? producer.latest_progress->progress.completed : 0U)
+                << ",\"producer_total\":" << (producer.latest_progress ? producer.latest_progress->progress.total : 0U)
+                << ",\"producer_state_changed_ms\":" << std::chrono::duration_cast<std::chrono::milliseconds>(
+                    producer.state_changed_at - accepted_at).count()
+                << ",\"producer_progress_observed_ms\":" << (producer.latest_progress
+                    ? std::chrono::duration_cast<std::chrono::milliseconds>(
+                        producer.latest_progress->observed_at - accepted_at).count() : -1)
+                << ",\"producer_snapshot_stage\":" << (producer.latest_map_snapshot
+                    ? static_cast<int>(producer.latest_map_snapshot->stage) : -1)
+                << ",\"producer_source_hash\":" << producer_source_hash
+                << ",\"canonical_final_source\":" << canonical_final_source
+                << ",\"client_ready\":" << (status.state == client::WorldLoadingState::ReadyForStart) << "}\n";
+            events.flush();
+            next_readiness_observation = now + std::chrono::seconds{1};
+            last_producer_progress = producer_sequence;
+            last_client_state = status.state;
+        }
+        if (auto frame = capture_enabled
+                ? client::PlayerClientFocusTestAccess::takeFrameCapture(player_client) : std::nullopt; frame) {
+            auto crop = cropMapInterior(*frame, loadingContentScale(player_client));
+            uint64_t const hash = pixelHash(crop.rgba8);
+            std::optional<client::RendererFrameCapture> full;
+            if (now >= next_full_capture) {
+                uint32_t const width = std::min(frame->width, FULL_FRAME_WIDTH);
+                uint32_t const height = std::max(1U, frame->height * width / frame->width);
+                full = client::RendererFrameCapture{.width = width, .height = height,
+                    .srgb_encoded = frame->srgb_encoded, .rgba8 = std::vector<uint8_t>(width * height * 4U),
+                    .frame_identity = frame->frame_identity};
+                for (uint32_t y = 0U; y < height; ++y) {
+                    for (uint32_t x = 0U; x < width; ++x) {
+                        size_t const source = (static_cast<size_t>(y * frame->height / height) * frame->width
+                            + x * frame->width / width) * 4U;
+                        size_t const destination = (static_cast<size_t>(y) * width + x) * 4U;
+                        std::copy_n(frame->rgba8.begin() + static_cast<ptrdiff_t>(source), 4U,
+                            full->rgba8.begin() + static_cast<ptrdiff_t>(destination));
+                    }
+                }
+                next_full_capture = now + std::chrono::seconds{2};
+            }
+            write_observation("capture");
+            auto const bounds = mapCaptureBounds(*frame, loadingContentScale(player_client));
+            auto const variation = mapSpatialVariation(crop);
+            auto const progress = client::PlayerClientFocusTestAccess::frameProgress(player_client);
+            events << ",\"index\":" << captures << ",\"map_crop_hash\":" << hash
+                << ",\"request_state\":" << (capture_request_state ? static_cast<int>(*capture_request_state) : -1)
+                << ",\"request_ms\":" << capture_request_ms
+                << ",\"request_submitted_sequence\":"
+                << (capture_request_submitted ? capture_request_submitted->sequence : 0U)
+                << ",\"observed_completed_sequence\":" << (progress.completed ? progress.completed->sequence : 0U)
+                << ",\"observed_completed_swapchain\":"
+                << (progress.completed ? progress.completed->swapchain_generation : 0U)
+                << ",\"dpi_scale\":" << loadingContentScale(player_client)
+                << ",\"frame_width\":" << frame->width << ",\"frame_height\":" << frame->height
+                << ",\"crop_left\":" << bounds.x
+                << ",\"crop_top\":" << bounds.y
+                << ",\"crop_width\":" << bounds.width
+                << ",\"crop_height\":" << bounds.height
+                << ",\"loading_canvas_visible\":" << (loadingCanvasVisible(*frame) ? "true" : "false")
+                << ",\"unique_rgb_colors\":" << variation.unique_rgb_colors
+                << ",\"differing_horizontal_neighbors\":" << variation.differing_horizontal_neighbors
+                << ",\"saved_side\":256,\"full_frame_saved\":" << full.has_value()
+                << ",\"capture_frame_sequence\":" << (frame->frame_identity ? frame->frame_identity->sequence : 0U)
+                << ",\"capture_frame_swapchain\":"
+                << (frame->frame_identity ? frame->frame_identity->swapchain_generation : 0U)
+                << ",\"wall_unix_ms\":" << std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+            ++captures;
+            bool const requested_pre_ready = capture_request_state
+                && (*capture_request_state == client::WorldLoadingState::PreparingAtlas
+                    || *capture_request_state == client::WorldLoadingState::PreparingSpawn);
+            if (requested_pre_ready && pre_ready && status.map_snapshot) {
+                ++pre_ready_captures;
+                if (variation.geographic() && loadingCanvasVisible(*frame)) {
+                    ++geographic_pre_ready_captures;
+                    pre_ready_map_hashes.insert(hash);
+                }
+            }
+            if (canonical_final_source && capture_request_state == client::WorldLoadingState::ReadyForStart
+                && status.state == client::WorldLoadingState::ReadyForStart) { final_ready_frame_captured = true; }
+            retained_rgba_bytes += crop.rgba8.size() + (full ? full->rgba8.size() : 0U);
+            retained_frames.push_back({captures - 1U, std::move(crop), std::move(full)});
+            capture_request_state.reset();
+        }
+        if (pre_ready) {
+            maximum_pre_ready_visible = std::max(maximum_pre_ready_visible, visible);
+        }
+        if (status.state == client::WorldLoadingState::ReadyForStart && !ready_at) {
+            ready_at = now;
+        }
+        if (capture_enabled && (!owner_preview || status.map_snapshot) && !capture_request_state
+            && captures < capture_limit && now >= next_capture) {
+            capture_request_state = status.state;
+            capture_request_submitted = client::PlayerClientFocusTestAccess::frameProgress(player_client).submitted;
+            capture_request_ms = request_ms;
+            client::PlayerClientFocusTestAccess::requestFrameCapture(player_client);
+            next_capture = now + std::chrono::milliseconds{500};
+        }
+        previous_visible = visible;
+        bool const ready_tail_complete = ready_at && final_source_at
+            && now - std::max(*ready_at, *final_source_at) >= std::chrono::seconds{2};
+        if (server_failed.load() || (!owner_preview && now - accepted_at >= std::chrono::seconds{90})
+            || (!owner_preview && ready_tail_complete && (!capture_enabled
+                || (visible >= std::chrono::seconds{40} && final_ready_frame_captured)))) {
+            client::PlayerClientFocusTestAccess::stop(player_client);
+        }
+    };
+    player_client.run(core::Address::localhost(server.port()), '@', &hooks, accepted_at);
+    auto const run_ended_at = Clock::now();
+    server_thread.request_stop();
+    server_thread.join();
+    preparation->cancel();
+    bool const owner_preview_reached_deadline = owner_preview && run_ended_at >= owner_preview_deadline;
+    if (owner_preview && !owner_preview_ended_by_user && !owner_preview_reached_deadline
+        && !server_failed.load()
+        && (!client::PlayerClientFocusTestAccess::running(player_client)
+            || client::PlayerClientFocusTestAccess::windowShouldClose(player_client))) {
+        owner_preview_ended_by_user = true;
+        events << "{\"event\":\"owner_preview_stop\",\"reason\":\"window_close\",\"observed_request_ms\":"
+            << std::chrono::duration_cast<std::chrono::milliseconds>(run_ended_at - accepted_at).count() << "}\n";
+    }
+    for (auto const& frame : retained_frames) {
+        EXPECT_TRUE(saveFullFrame(directory / ("map-" + std::to_string(frame.index) + ".png"), frame.map));
+        if (frame.full) {
+            EXPECT_TRUE(saveFullFrame(directory / ("full-" + std::to_string(frame.index) + ".png"), *frame.full));
+        }
+    }
+    for (auto const& [state, render_state] : render_states) {
+        events << "{\"event\":\"render_state_summary\",\"state\":" << state
+            << ",\"loops\":" << render_state.loops
+            << ",\"successful_presentations\":" << render_state.successful_presentations
+            << ",\"new_submissions\":" << render_state.new_submissions
+            << ",\"render_total_ns\":" << render_state.render_total.count()
+            << ",\"render_max_ns\":" << render_state.render_max.count() << "}\n";
+    }
+    events << "{\"event\":\"summary\",\"captures\":" << captures
+        << ",\"pre_ready_captures\":" << pre_ready_captures
+        << ",\"geographic_pre_ready_captures\":" << geographic_pre_ready_captures
+        << ",\"pre_ready_unique_map_hashes\":" << pre_ready_map_hashes.size()
+        << ",\"retained_source_replacements\":" << retained_source_replacements
+        << ",\"clock_regressions\":" << clock_regressions
+        << ",\"maximum_pre_ready_visible_ms\":" << maximum_pre_ready_visible.count()
+        << ",\"ready_observed\":" << (ready_at ? "true" : "false")
+        << ",\"identity_logged\":" << identity_logged
+        << ",\"producer_ready_ms\":" << (producer_ready_at
+            ? std::chrono::duration_cast<std::chrono::milliseconds>(*producer_ready_at - accepted_at).count() : -1)
+        << ",\"client_ready_ms\":" << (ready_at
+            ? std::chrono::duration_cast<std::chrono::milliseconds>(*ready_at - accepted_at).count() : -1)
+        << ",\"final_source_ms\":" << (final_source_at
+            ? std::chrono::duration_cast<std::chrono::milliseconds>(*final_source_at - accepted_at).count() : -1)
+        << ",\"producer_ready_observed\":" << producer_ready_at.has_value()
+        << ",\"canonical_final_source_observed\":" << final_source_at.has_value()
+        << ",\"final_ready_frame_captured\":" << final_ready_frame_captured
+        << ",\"ended_snapshot_stage\":" << (previous_source ? static_cast<int>(previous_source->stage) : -1)
+        << ",\"ended_source_hash\":" << source_hash
+        << ",\"final_visible_elapsed_ms\":" << previous_visible.count()
+        << ",\"retained_rgba_bytes\":" << retained_rgba_bytes
+        << ",\"owner_assessment_mode\":" << (owner_preview ? "true" : "false")
+        << ",\"owner_assessment_deadline_unix_ms\":"
+        << (owner_preview ? std::chrono::duration_cast<std::chrono::milliseconds>(
+            (wall_started_at + OWNER_PREVIEW_LIMIT).time_since_epoch()).count() : 0)
+        << ",\"owner_preview_reached_deadline\":"
+        << (owner_preview_reached_deadline ? "true" : "false")
+        << ",\"owner_preview_ended_by_user\":" << (owner_preview_ended_by_user ? "true" : "false")
+        << ",\"owner_preview_elapsed_ms\":"
+        << (owner_preview ? std::chrono::duration_cast<std::chrono::milliseconds>(run_ended_at - accepted_at).count() : 0)
+        << ",\"automated_qualification\":" << (owner_preview ? "false" : "true")
+        << ",\"png_encoded_after_run\":true}\n";
+    if (owner_preview) {
+        return;
+    }
+    ASSERT_FALSE(server_failed.load());
+    EXPECT_LE(retained_frames.size(), capture_limit);
+    EXPECT_LT(retained_rgba_bytes, 100U * 1024U * 1024U);
+    EXPECT_TRUE(producer_ready_at) << "producer did not become Ready within 90 seconds";
+    EXPECT_TRUE(ready_at) << "real client ReadyForStart was not observed within 90 seconds";
+    EXPECT_TRUE(final_source_at) << "canonical completed V10 water snapshot/identity was not delivered";
+    if (capture_enabled) {
+        EXPECT_TRUE(final_ready_frame_captured) << "film requires a final native frame requested after real Ready";
+        EXPECT_GE(previous_visible, std::chrono::seconds{40}) << "full V10 visual endpoint was not observed";
+        EXPECT_GE(pre_ready_captures, 3U);
+        EXPECT_GE(geographic_pre_ready_captures, 3U);
+        EXPECT_GT(pre_ready_map_hashes.size(), 1U) << "map geometry crop must move before Ready, independently of text";
+    } else {
+        EXPECT_EQ(captures, 0U);
+    }
+    EXPECT_EQ(clock_regressions, 0U);
+    EXPECT_GE(maximum_pre_ready_visible, std::chrono::milliseconds{500});
+}
+
+TEST(PlayerClientFocusTest, NormalLocalStartupRecordsMovingGenerationMapBeforeReady)
+{
+    bool owner_preview = false;
+    runNormalLocalStartupEvidence(true, owner_preview);
+    if (owner_preview) {
+        GTEST_SKIP() << "owner preview is a manual assessment, not automated qualification";
+    }
+}
+
+TEST(PlayerClientFocusTest, NormalLocalStartupReadinessWithoutReadbacks)
+{
+    bool owner_preview = false;
+    runNormalLocalStartupEvidence(false, owner_preview);
+}
+
+TEST(PlayerClientFocusTest, ActualStartupCapturesLoadingReadyGameAndWorldMapAtTwoWindowSizes)
+{
+    using Clock = std::chrono::steady_clock;
+    char const* const selection_value = std::getenv("MC_UI_CAPTURE_VIEWPORT");
+    std::string const selection = selection_value != nullptr ? selection_value : "both";
+    ASSERT_TRUE(selection_value == nullptr || selection == "1280x676" || selection == "844x346")
+        << "MC_UI_CAPTURE_VIEWPORT accepts only 1280x676 or 844x346; unset selects both";
+    for (auto const dimensions : {std::pair{1280, 676}, std::pair{844, 346}}) {
+        std::string const viewport_name = std::to_string(dimensions.first) + "x" + std::to_string(dimensions.second);
+        if (selection != "both" && selection != viewport_name) {
+            continue;
+        }
+        SCOPED_TRACE(viewport_name);
+        auto const accepted_at = Clock::now();
+        client::PlayerClient player_client{
+            shared::WorldMode::Flight, std::nullopt, startupFrameCaptureOptions()};
+        client::PlayerClientFocusTestAccess::restoreOrdinaryStartupAfterCaptureOptIn(player_client);
+        auto* window = client::PlayerClientFocusTestAccess::nativeWindow(player_client);
+        glfwRestoreWindow(window);
+        glfwSetWindowSize(window, dimensions.first, dimensions.second);
+        glfwFocusWindow(window);
+        // Settle the real window/swapchain resize before requesting a startup readback.
+        client::PlayerClientFocusTestAccess::renderFrame(player_client);
+        auto const directory = startupEvidenceDirectory() / "approved-views"
+            / (std::to_string(dimensions.first) + "x" + std::to_string(dimensions.second));
+        std::filesystem::create_directories(directory);
+        std::ofstream events{directory / "frames.jsonl"};
+        events << "{\"event\":\"configuration\",\"runtime_benchmark_mode\":false,"
+            << "\"viewport_selection\":\"" << selection << "\",\"diagnostic_capture_constructor_opt_in\":"
+#if defined(__APPLE__) || defined(_WIN32)
+            << "true"
+#else
+            << "false"
+#endif
+            << ",\"deadline_seconds\":60}\n";
+        auto save = [&](char const* label, client::RendererFrameCapture const& frame) {
+            EXPECT_TRUE(saveFullFrame(directory / (std::string{label} + ".png"), frame));
+            auto const progress = client::PlayerClientFocusTestAccess::frameProgress(player_client);
+            auto const text_style = client::PlayerClientFocusTestAccess::hudTextStyle(player_client);
+            int logical_width = 0;
+            int logical_height = 0;
+            glfwGetWindowSize(window, &logical_width, &logical_height);
+            events << "{\"capture\":\"" << label << "\",\"completed_sequence\":"
+                << (progress.completed ? progress.completed->sequence : 0U)
+                << ",\"completed_swapchain_generation\":"
+                << (progress.completed ? progress.completed->swapchain_generation : 0U)
+                << ",\"state\":"
+                << static_cast<uint32_t>(player_client.worldLoadingStatus().state)
+                << ",\"join_epoch\":" << player_client.worldLoadingJoinEpoch()
+                << ",\"elapsed_ms\":"
+                << std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - accepted_at).count()
+                << ",\"width\":" << frame.width << ",\"height\":" << frame.height
+                << ",\"logical_width\":" << logical_width << ",\"logical_height\":" << logical_height
+                << ",\"window_maximized\":"
+                << (glfwGetWindowAttrib(window, GLFW_MAXIMIZED) == GLFW_TRUE ? "true" : "false")
+                << ",\"dpi_scale\":" << loadingContentScale(player_client)
+                << ",\"hud_text_style\":\""
+                << (text_style == client::TextStyle::Adaptive ? "adaptive" : "fixed") << "\""
+                << ",\"canonical_minimap_ready\":"
+                << (client::PlayerClientFocusTestAccess::canonicalMinimapReady(player_client) ? "true" : "false")
+                << ",\"world_map_open\":"
+                << (client::PlayerClientFocusTestAccess::worldMapOpen(player_client) ? "true" : "false") << "}\n";
+        };
+        auto const preparing = client::PlayerClientFocusTestAccess::capturePlayerFrame(player_client);
+        ASSERT_TRUE(preparing);
+        ASSERT_EQ(player_client.worldLoadingStatus().state, client::WorldLoadingState::Idle);
+        save("preparing-idle", *preparing);
+
+        auto const configuration = shared::World::canonicalConfiguration();
+        generation::GenerationConfiguration generation_configuration{};
+        generation_configuration.model_tag = generation::TerrainModelTag::V9;
+        ASSERT_EQ(generation_configuration.model_tag, generation::TerrainModelTag::V9);
+        generation_configuration.seed = configuration.seed;
+        auto preparation = std::make_shared<server::WorldPreparation>(
+            generation_configuration, configuration.algorithm_version, accepted_at);
+        server::GameServer server{0U, {}, shared::WorldMode::Flight, configuration,
+            shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, preparation, server::GameServer::BindMode::Loopback};
+        ASSERT_TRUE(server.isValid());
+        std::atomic_bool server_failed{false};
+        std::jthread server_thread{[&](std::stop_token const& cancellation) {
+            std::atomic_bool stop_requested{false};
+            std::stop_callback callback{cancellation, [&] { stop_requested.store(true); }};
+            try {
+                server.run(stop_requested);
+            } catch (...) {
+                server_failed.store(true);
+            }
+        }};
+        enum class View {
+            Generation, Ready, Game, AdaptiveGame, WorldMapBeforeVectors, WorldMapWithVectors,
+            WorldMapFit, MaximizedGame, Complete,
+        };
+        View wanted = View::Generation;
+        std::optional<View> pending;
+        bool start_sent = false;
+        bool maximized_game_captured = false;
+        auto const finish_world_map_capture = [&] {
+            if (dimensions.first == 1280) {
+                client::PlayerClientFocusTestAccess::closeWorldMap(player_client);
+                glfwMaximizeWindow(window);
+                events << "{\"input\":\"close_map_and_maximize_window\","
+                    << "\"synthetic_test_input\":true}\n";
+                wanted = View::MaximizedGame;
+            } else {
+                wanted = View::Complete;
+            }
+        };
+        auto next_pending_diagnostic = Clock::now();
+        std::chrono::nanoseconds pending_render_total{};
+        client::GameClientBenchmarkHooks hooks{};
+        hooks.deadline = accepted_at + std::chrono::seconds{60};
+        hooks.start_input_override = [&](uint64_t) {
+            auto const status = player_client.worldLoadingStatus();
+            if (wanted == View::Game && !start_sent
+                && status.state == client::WorldLoadingState::ReadyForStart
+                && status.ready_prompt_frame_rendered_at) {
+                start_sent = true;
+                events << "{\"input\":\"start_input_override\",\"synthetic_test_input\":true}\n";
+                return true;
+            }
+            return false;
+        };
+        hooks.on_loop = [&](client::GameClientLoopSample const& sample) {
+            auto const status = player_client.worldLoadingStatus();
+            if (pending) {
+                pending_render_total += sample.render_duration;
+                if (Clock::now() >= next_pending_diagnostic) {
+                    auto const progress = client::PlayerClientFocusTestAccess::frameProgress(player_client);
+                    auto const runtime = client::PlayerClientFocusTestAccess::runtimeInfo(player_client);
+                    events << "{\"event\":\"pending_readback\",\"view\":" << static_cast<uint32_t>(*pending)
+                        << ",\"state\":" << static_cast<uint32_t>(status.state)
+                        << ",\"capture_state\":" << static_cast<uint32_t>(
+                            client::PlayerClientFocusTestAccess::captureState(player_client))
+                        << ",\"runtime_submitted\":" << runtime.submitted_frame_count
+                        << ",\"submitted_sequence\":" << (progress.submitted ? progress.submitted->sequence : 0U)
+                        << ",\"completed_sequence\":" << (progress.completed ? progress.completed->sequence : 0U)
+                        << ",\"swapchain_generation\":" << runtime.current_swapchain_generation
+                        << ",\"last_presentation_succeeded\":"
+                        << (client::PlayerClientFocusTestAccess::lastPresentationSucceeded(player_client) ? "true" : "false")
+                        << ",\"pending_render_total_ns\":" << pending_render_total.count() << "}\n";
+                    events.flush();
+                    next_pending_diagnostic = Clock::now() + std::chrono::seconds{1};
+                }
+            }
+            bool const generating = (status.state == client::WorldLoadingState::PreparingAtlas
+                || status.state == client::WorldLoadingState::PreparingSpawn) && status.map_snapshot;
+            bool const ready = status.state == client::WorldLoadingState::ReadyForStart
+                && status.ready_prompt_frame_rendered_at.has_value();
+            bool const game = status.state == client::WorldLoadingState::Playing
+                && client::PlayerClientFocusTestAccess::canonicalMinimapReady(player_client);
+            bool const map = game && client::PlayerClientFocusTestAccess::worldMapReady(player_client);
+            int framebuffer_width = 0;
+            int framebuffer_height = 0;
+            glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
+            auto const runtime = client::PlayerClientFocusTestAccess::runtimeInfo(player_client);
+            bool const maximized_game = game && !client::PlayerClientFocusTestAccess::worldMapOpen(player_client)
+                && glfwGetWindowAttrib(window, GLFW_MAXIMIZED) == GLFW_TRUE
+                && framebuffer_width > 0 && framebuffer_height > 0
+                && runtime.width == static_cast<uint32_t>(framebuffer_width)
+                && runtime.height == static_cast<uint32_t>(framebuffer_height);
+            auto eligible = [&](View view) {
+                return (view == View::Generation && generating) || (view == View::Ready && ready)
+                    || ((view == View::Game || view == View::AdaptiveGame) && game
+                        && glfwGetWindowAttrib(window, GLFW_MAXIMIZED) == GLFW_FALSE)
+                    || ((view == View::WorldMapBeforeVectors || view == View::WorldMapWithVectors
+                            || view == View::WorldMapFit) && map)
+                    || (view == View::MaximizedGame && maximized_game);
+            };
+            if (auto frame = client::PlayerClientFocusTestAccess::takeFrameCapture(player_client); frame) {
+                bool const current_size = frame->width == static_cast<uint32_t>(framebuffer_width)
+                    && frame->height == static_cast<uint32_t>(framebuffer_height);
+                if (pending && eligible(*pending) && current_size) {
+                    switch (*pending) {
+                    case View::Generation: save("generation", *frame); wanted = View::Ready; break;
+                    case View::Ready: save("ready", *frame); wanted = View::Game; break;
+                    case View::Game:
+                        save("game-minimap", *frame);
+                        client::PlayerClientFocusTestAccess::setHudTextStyle(
+                            player_client, client::TextStyle::Adaptive);
+                        events << "{\"input\":\"set_hud_text_style\",\"style\":\"adaptive\","
+                            << "\"synthetic_test_input\":true}\n";
+                        wanted = View::AdaptiveGame;
+                        break;
+                    case View::AdaptiveGame:
+                        save("game-minimap-adaptive", *frame);
+                        client::PlayerClientFocusTestAccess::setHudTextStyle(
+                            player_client, client::TextStyle::Fixed);
+                        events << "{\"input\":\"set_hud_text_style\",\"style\":\"fixed\","
+                            << "\"synthetic_test_input\":true}\n";
+                        client::PlayerClientFocusTestAccess::openWorldMap(player_client);
+                        events << "{\"input\":\"setWorldMapOpen\",\"synthetic_test_input\":true}\n";
+                        wanted = View::WorldMapBeforeVectors;
+                        break;
+                    case View::WorldMapBeforeVectors: {
+                        save("world-map-before-vectors", *frame);
+                        std::array const vector_layers{
+                            GLFW_KEY_P, GLFW_KEY_C, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_W,
+                        };
+                        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(
+                            player_client, vector_layers));
+                        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(
+                            player_client, {}));
+                        events << "{\"input\":\"enable_plates_wind_currents\","
+                            << "\"synthetic_test_input\":true}\n";
+                        wanted = View::WorldMapWithVectors;
+                        break;
+                    }
+                    case View::WorldMapWithVectors: {
+                        save("world-map-arrows", *frame);
+                        std::array const overview_key{GLFW_KEY_0};
+                        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(
+                            player_client, overview_key));
+                        static_cast<void>(client::PlayerClientFocusTestAccess::updatePlatformInputSnapshot(
+                            player_client, {}));
+                        events << "{\"input\":\"world_map_overview\",\"synthetic_test_input\":true}\n";
+                        wanted = View::WorldMapFit;
+                        break;
+                    }
+                    case View::WorldMapFit:
+                        save("world-map-fit", *frame);
+                        finish_world_map_capture();
+                        break;
+                    case View::MaximizedGame:
+                        save("game-maximized-rich", *frame);
+                        maximized_game_captured = true;
+                        wanted = View::Complete;
+                        break;
+                    case View::Complete: break;
+                    }
+                }
+                pending.reset();
+            }
+            if (!pending && eligible(wanted)) {
+                pending = wanted;
+                pending_render_total = {};
+                next_pending_diagnostic = Clock::now();
+                auto const progress = client::PlayerClientFocusTestAccess::frameProgress(player_client);
+                events << "{\"event\":\"capture_request\",\"view\":" << static_cast<uint32_t>(wanted)
+                    << ",\"state\":" << static_cast<uint32_t>(status.state)
+                    << ",\"submitted_sequence\":" << (progress.submitted ? progress.submitted->sequence : 0U)
+                    << ",\"swapchain_generation\":"
+                    << (progress.submitted ? progress.submitted->swapchain_generation : 0U) << "}\n";
+                client::PlayerClientFocusTestAccess::requestFrameCapture(player_client);
+            }
+            if (wanted == View::Complete || server_failed.load()) {
+                client::PlayerClientFocusTestAccess::stop(player_client);
+            }
+        };
+        player_client.run(core::Address::localhost(server.port()), '@', &hooks, accepted_at);
+        server_thread.request_stop();
+        server_thread.join();
+        preparation->cancel();
+        EXPECT_FALSE(server_failed.load());
+        EXPECT_TRUE(start_sent);
+        if (dimensions.first == 1280) {
+            EXPECT_TRUE(maximized_game_captured) << "actual maximized rich HUD frame is required";
+        }
+        EXPECT_EQ(wanted, View::Complete) << "all real readiness-gated views must be captured within 60 seconds";
+    }
+}
+
 TEST(PlayerClientFocusTest, LoadingPresentationRendersActualStageAndReadyFrames)
 {
     using Clock = std::chrono::steady_clock;
@@ -1097,90 +3596,53 @@ TEST(PlayerClientFocusTest, LoadingPresentationRendersActualStageAndReadyFrames)
     ASSERT_TRUE(ready_status.initial_sphere_ready);
     ASSERT_NE(ready_status.map_snapshot, nullptr);
 
-    client::PlayerClient player_client{ shared::WorldMode::Flat };
+    client::PlayerClient player_client{shared::WorldMode::Flat, std::nullopt, startupFrameCaptureOptions()};
+    client::PlayerClientFocusTestAccess::restoreOrdinaryStartupAfterCaptureOptIn(player_client);
 
-    auto const verifyReadableFrame = [](client::RendererFrameCapture const& capture) {
+    auto const textPixelCount = [](client::RendererFrameCapture const& capture,
+        client::UiTextPlacement const& placement, size_t const text_length, bool const accent) {
+        uint32_t count = 0U;
+        uint32_t const left = static_cast<uint32_t>(std::max(0.0F, placement.x));
+        uint32_t const top = static_cast<uint32_t>(std::max(0.0F, placement.y));
+        uint32_t const right = std::min(capture.width,
+            left + static_cast<uint32_t>(static_cast<float>(text_length) * 16.0F * placement.scale));
+        uint32_t const bottom = std::min(capture.height,
+            top + static_cast<uint32_t>(32.0F * placement.scale));
+        for (uint32_t y = top; y < bottom; ++y) {
+            for (uint32_t x = left; x < right; ++x) {
+                size_t const pixel = (static_cast<size_t>(y) * capture.width + x) * 4U;
+                uint8_t const red = capture.rgba8[pixel];
+                uint8_t const green = capture.rgba8[pixel + 1U];
+                uint8_t const blue = capture.rgba8[pixel + 2U];
+                bool const readable = accent ? red > 180U && green > 120U && blue < 180U
+                    : red > 170U && green > 170U && blue > 130U;
+                count += readable ? 1U : 0U;
+            }
+        }
+        return count;
+    };
+    auto const verifyReadableFrame = [&](client::RendererFrameCapture const& capture,
+        client::WorldLoadingStatus const& status) {
         ASSERT_GT(capture.width, 0U);
         ASSERT_GT(capture.height, 0U);
         uint64_t const capture_width = capture.width;
         uint64_t const capture_height = capture.height;
         ASSERT_LE(capture_width, std::numeric_limits<uint64_t>::max() / capture_height / 4U);
-        uint64_t const expected_byte_count = capture_width * capture_height * 4U;
-        EXPECT_EQ(capture.rgba8.size(), expected_byte_count);
-
-        uint32_t accent_pixel_count = 0U;
-        uint32_t const roi_width = std::min(capture.width, 1'000U);
-        uint32_t const roi_height = std::min(capture.height, 120U);
-        for (uint32_t y = 0U; y < roi_height; ++y) {
-            for (uint32_t x = 0U; x < roi_width; ++x) {
-                uint64_t const pixel = (static_cast<uint64_t>(y) * capture.width + x) * 4U;
-                uint8_t const red = capture.rgba8[pixel];
-                uint8_t const green = capture.rgba8[pixel + 1U];
-                uint8_t const blue = capture.rgba8[pixel + 2U];
-                if (red > 190U && green > 125U && blue < 180U
-                    && static_cast<uint16_t>(red) > static_cast<uint16_t>(green) + 20U
-                    && static_cast<uint16_t>(green) > static_cast<uint16_t>(blue) + 25U) {
-                    ++accent_pixel_count;
-                }
-            }
-        }
-        EXPECT_GT(accent_pixel_count, 30U)
-            << "the loading title should leave visible high-contrast pixels in the title region";
+        EXPECT_EQ(capture.rgba8.size(), capture_width * capture_height * 4U);
+        auto const frame = client::buildUiFrame(1U, status, false, true);
+        auto const layout = client::layoutUiLoading(frame, capture.width, capture.height,
+            loadingContentScale(player_client));
+        EXPECT_GT(textPixelCount(capture, layout.title, frame.title.size(), false), 30U)
+            << "accepted cream loading title must be readable in its public layout region";
     };
-    auto const verifyCenteredReadyPrompt = [](client::RendererFrameCapture const& capture) {
-        uint32_t bright_pixel_count = 0U;
-        uint64_t pixel_x_sum = 0U;
-        uint64_t pixel_y_sum = 0U;
-        uint32_t title_pixel_count = 0U;
-        uint64_t title_pixel_x_sum = 0U;
-        uint64_t title_pixel_y_sum = 0U;
-        uint32_t min_x = capture.width;
-        uint32_t max_x = 0U;
-        uint32_t min_y = capture.height;
-        uint32_t max_y = 0U;
-        uint32_t const left = capture.width / 6U;
-        uint32_t const right = capture.width - left;
-        uint32_t const top = capture.height / 4U;
-        uint32_t const bottom = capture.height - top;
-        for (uint32_t y = top; y < bottom; ++y) {
-            for (uint32_t x = left; x < right; ++x) {
-                uint64_t const pixel = (static_cast<uint64_t>(y) * capture.width + x) * 4U;
-                uint8_t const red = capture.rgba8[pixel];
-                uint8_t const green = capture.rgba8[pixel + 1U];
-                uint8_t const blue = capture.rgba8[pixel + 2U];
-                if (red > 190U && green > 125U && blue < 180U
-                    && static_cast<uint16_t>(red) > static_cast<uint16_t>(green) + 20U
-                    && static_cast<uint16_t>(green) > static_cast<uint16_t>(blue) + 25U) {
-                    ++title_pixel_count;
-                    title_pixel_x_sum += x;
-                    title_pixel_y_sum += y;
-                }
-                if (red < 230U || green < 230U || blue < 230U) {
-                    continue;
-                }
-                ++bright_pixel_count;
-                pixel_x_sum += x;
-                pixel_y_sum += y;
-                min_x = std::min(min_x, x);
-                max_x = std::max(max_x, x);
-                min_y = std::min(min_y, y);
-                max_y = std::max(max_y, y);
-            }
-        }
-        ASSERT_GT(title_pixel_count, 30U)
-            << "the ready heading should use the same visible gold accent as the loading title";
-        ASSERT_GT(bright_pixel_count, 300U)
-            << "the ready prompt should use a bright, high-contrast face near the center";
-        double const title_center_x = static_cast<double>(title_pixel_x_sum) / title_pixel_count;
-        double const title_center_y = static_cast<double>(title_pixel_y_sum) / title_pixel_count;
-        EXPECT_NEAR(title_center_x, static_cast<double>(capture.width) / 2.0, capture.width * 0.1);
-        EXPECT_NEAR(title_center_y, static_cast<double>(capture.height) / 2.0, capture.height * 0.12);
-        double const center_x = static_cast<double>(pixel_x_sum) / bright_pixel_count;
-        double const center_y = static_cast<double>(pixel_y_sum) / bright_pixel_count;
-        EXPECT_NEAR(center_x, static_cast<double>(capture.width) / 2.0, capture.width * 0.1)
-            << "the ready prompt should be horizontally centered; bounds=" << min_x << ".." << max_x;
-        EXPECT_NEAR(center_y, static_cast<double>(capture.height) / 2.0, capture.height * 0.12)
-            << "the ready prompt should be vertically centered; bounds=" << min_y << ".." << max_y;
+    auto const verifyReadyPrompt = [&](client::RendererFrameCapture const& capture) {
+        verifyReadableFrame(capture, ready_status);
+        auto const frame = client::buildUiFrame(1U, ready_status, false, true);
+        ASSERT_TRUE(frame.show_start_prompt);
+        auto const layout = client::layoutUiLoading(frame, capture.width, capture.height,
+            loadingContentScale(player_client));
+        EXPECT_GT(textPixelCount(capture, layout.action, std::string_view{"Press any key to start"}.size(), true), 30U)
+            << "accepted gold start action must be readable in its public layout region";
     };
     auto const saveOptInCapture = [](client::RendererFrameCapture const& capture, std::string_view const label) {
         char const* const prefix = std::getenv("MC_LOADING_PRESENTATION_CAPTURE_PREFIX");
@@ -1207,12 +3669,15 @@ TEST(PlayerClientFocusTest, LoadingPresentationRendersActualStageAndReadyFrames)
     std::optional<client::RendererFrameCapture> const preparing_capture =
         client::PlayerClientFocusTestAccess::captureLoadingPresentation(player_client, preparing_status);
     ASSERT_TRUE(preparing_capture.has_value());
-    verifyReadableFrame(*preparing_capture);
+    verifyReadableFrame(*preparing_capture, preparing_status);
     if (std::optional<std::string> const error = saveOptInCapture(*preparing_capture, "preparing");
         error.has_value()) {
         FAIL() << *error;
     }
 
+    ASSERT_TRUE(client::PlayerClientFocusTestAccess::captureLoadingPresentation(player_client, ready_status));
+    // The fixture verifies ready rendering after formation, not the animation timeline.
+    client::PlayerClientFocusTestAccess::setGenerationVisibleElapsed(player_client, std::chrono::seconds{10});
     std::optional<client::RendererFrameCapture> const ready_capture =
         client::PlayerClientFocusTestAccess::captureLoadingPresentation(player_client, ready_status);
     ASSERT_TRUE(ready_capture.has_value());
@@ -1220,51 +3685,154 @@ TEST(PlayerClientFocusTest, LoadingPresentationRendersActualStageAndReadyFrames)
         error.has_value()) {
         FAIL() << *error;
     }
-    verifyCenteredReadyPrompt(*ready_capture);
+    verifyReadyPrompt(*ready_capture);
     EXPECT_EQ(client::PlayerClientFocusTestAccess::validationErrorCount(player_client), 0U)
         << "validation enabled=" << client::PlayerClientFocusTestAccess::runtimeInfo(player_client).validation_enabled;
 }
 
 TEST(PlayerClientFocusTest, InitialLoadingSuppressesFallbackGridBeforeMapSnapshot)
 {
-    static constexpr uint32_t ROI_LEFT_PERCENT = 60U;
-    static constexpr uint32_t ROI_TOP_PERCENT = 50U;
-    static constexpr uint8_t MAXIMUM_BACKDROP_CHANNEL = 175U;
-
-    client::PlayerClient player_client;
+    client::PlayerClient player_client{shared::WorldMode::Flat, std::nullopt, startupFrameCaptureOptions()};
+    client::PlayerClientFocusTestAccess::restoreOrdinaryStartupAfterCaptureOptIn(player_client);
     ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginInitialLoading(player_client));
-    client::WorldLoadingStatus const status = player_client.worldLoadingStatus();
+    auto const status = player_client.worldLoadingStatus();
     ASSERT_EQ(status.state, client::WorldLoadingState::Creating);
     ASSERT_EQ(status.map_snapshot, nullptr);
-
-    std::optional<client::RendererFrameCapture> const capture =
-        client::PlayerClientFocusTestAccess::captureLoadingPresentation(player_client, status);
+    auto const capture = client::PlayerClientFocusTestAccess::captureLoadingPresentation(player_client, status);
     ASSERT_TRUE(capture.has_value());
+    EXPECT_TRUE(loadingFrameMatchesSharedBackdrop(*capture));
+}
 
-    uint32_t const roi_left = capture->width * ROI_LEFT_PERCENT / 100U;
-    uint32_t const roi_top = capture->height * ROI_TOP_PERCENT / 100U;
-    uint32_t dark_scene_pixels = 0U;
-    for (uint32_t y = roi_top; y < capture->height; ++y) {
-        for (uint32_t x = roi_left; x < capture->width; ++x) {
-            uint64_t const pixel = (static_cast<uint64_t>(y) * capture->width + x) * 4U;
-            if (capture->rgba8[pixel] < MAXIMUM_BACKDROP_CHANNEL
-                && capture->rgba8[pixel + 1U] < MAXIMUM_BACKDROP_CHANNEL
-                && capture->rgba8[pixel + 2U] < MAXIMUM_BACKDROP_CHANNEL) {
-                ++dark_scene_pixels;
-            }
-        }
+#if defined(_WIN32)
+TEST(PlayerClientFocusTest, OrdinaryWindowRemainsHiddenUntilLoadingFrameCompletes)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    client::PlayerClient player_client{shared::WorldMode::Flight};
+    GLFWwindow* const window = Access::nativeWindow(player_client);
+    ASSERT_EQ(glfwGetWindowAttrib(window, GLFW_VISIBLE), GLFW_FALSE);
+    ASSERT_EQ(glfwGetWindowMonitor(window), nullptr); // No exclusive-mode transition exposes an empty frame.
+    {
+        core::platform::glfw::GlfwWindow next_window{core::platform::glfw::WindowDescriptor{
+            .width = 64U, .height = 64U, .title = "Startup hint restoration",
+        }};
+        EXPECT_EQ(glfwGetWindowAttrib(next_window.nativeHandle(), GLFW_VISIBLE), GLFW_TRUE);
     }
-    EXPECT_EQ(dark_scene_pixels, 0U)
-        << "the initial loading backdrop should not expose the fallback 3D grid or platform";
+    ASSERT_TRUE(Access::beginInitialLoading(player_client));
+    auto const first = Access::captureFirstNormalLoadingFrame(player_client);
+    ASSERT_TRUE(first);
+    EXPECT_TRUE(loadingFrameMatchesSharedBackdrop(first->frame));
+    EXPECT_FALSE(loadingFrameHasWhiteSquare(first->frame, loadingContentScale(player_client)));
+    EXPECT_EQ(glfwGetWindowAttrib(window, GLFW_VISIBLE), GLFW_TRUE);
+}
+#endif
+
+TEST(PlayerClientFocusTest, OrdinaryNativeStartupFirstFramesNeverShowFallbackGrid)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    using Clock = std::chrono::steady_clock;
+    generation::GenerationConfiguration configuration;
+    configuration.seed = shared::World::canonicalConfiguration().seed;
+    configuration.model_tag = generation::TerrainModelTag::V21;
+    auto const prepare_deadline = Clock::now() + std::chrono::seconds{30};
+    std::stop_source cancellation;
+    auto const atlas = generation::prepareAtlas(configuration, cancellation.get_token(),
+        [&](generation::GenerationProgress const& progress) {
+            std::cout << "[startup-fixture] native preparation stage=" << static_cast<unsigned>(progress.stage) << std::endl;
+            if (Clock::now() >= prepare_deadline) {
+                cancellation.request_stop();
+            }
+        });
+    ASSERT_NE(atlas, nullptr);
+    ASSERT_LT(Clock::now(), prepare_deadline);
+    auto const world = std::make_shared<shared::TerrainWorld const>(atlas);
+    auto const root = shared::buildTerrainLod(*world, shared::TerrainLodLevel::L0);
+    ASSERT_NE(root, nullptr);
+    ASSERT_LT(Clock::now(), prepare_deadline);
+
+    client::PlayerClient player_client{shared::WorldMode::Flight};
+    ASSERT_TRUE(Access::ordinaryStartupRendering(player_client));
+    ASSERT_TRUE(Access::beginInitialLoading(player_client));
+    ASSERT_TRUE(Access::bindInitialLoadingModel(player_client, configuration));
+    auto const first_join = player_client.worldLoadingJoinEpoch();
+    auto const directory = startupEvidenceDirectory();
+    std::ofstream evidence{directory / "ordinary-first-frames.jsonl"};
+    ASSERT_TRUE(evidence.good());
+    evidence << std::boolalpha;
+    auto verifyAndSave = [&](char const* phase, Access::FirstNormalLoadingCapture const& captured, bool const backdrop) {
+        auto const& frame = captured.frame;
+        ASSERT_GT(frame.width, 0U);
+        ASSERT_GT(frame.height, 0U);
+        ASSERT_EQ(frame.rgba8.size(), static_cast<size_t>(frame.width) * frame.height * 4U);
+        EXPECT_FALSE(loadingFrameHasWhiteSquare(frame, loadingContentScale(player_client))) << phase;
+        if (backdrop) {
+            EXPECT_TRUE(loadingFrameMatchesSharedBackdrop(frame)) << phase;
+        } else {
+            auto const crop = cropMapInterior(frame, loadingContentScale(player_client));
+            size_t warm = 0U;
+            for (size_t index = 0U; index < crop.rgba8.size(); index += 4U) {
+                warm += crop.rgba8[index] > crop.rgba8[index + 1U]
+                    && crop.rgba8[index + 1U] > crop.rgba8[index + 2U] ? 1U : 0U;
+            }
+            EXPECT_GE(warm, static_cast<size_t>(crop.width) * crop.height * 99U / 100U) << phase;
+        }
+        EXPECT_EQ(Access::validationErrorCount(player_client), 0U) << phase;
+        EXPECT_TRUE(saveFullFrame(directory / (std::string{phase} + ".png"), frame));
+        evidence << "{\"phase\":\"" << phase << "\",\"join_epoch\":" << player_client.worldLoadingJoinEpoch()
+            << ",\"first_submission\":" << captured.first_submission.sequence
+            << ",\"captured_submission\":" << frame.frame_identity->sequence
+            << ",\"typed_source_at_first_frame\":" << captured.typed_source_at_first_frame
+            << ",\"validation_enabled\":" << Access::runtimeInfo(player_client).validation_enabled
+            << ",\"validation_errors\":" << Access::validationErrorCount(player_client) << "}\n";
+    };
+    ASSERT_EQ(player_client.worldLoadingStatus().state, client::WorldLoadingState::Creating);
+    ASSERT_EQ(player_client.worldLoadingStatus().map_snapshot, nullptr);
+    auto const creating = Access::captureFirstNormalLoadingFrame(player_client);
+    ASSERT_TRUE(creating);
+    verifyAndSave("creating", *creating, true);
+
+    ASSERT_TRUE(Access::publishGeneration(player_client, {
+        .stage = generation::GenerationStage::V21Platec, .completed = 1U, .total = 4U,
+    }));
+    ASSERT_EQ(player_client.worldLoadingStatus().state, client::WorldLoadingState::PreparingAtlas);
+    ASSERT_EQ(player_client.worldLoadingStatus().map_snapshot, nullptr);
+    auto const unresolved = Access::captureFirstNormalLoadingFrame(player_client);
+    ASSERT_TRUE(unresolved);
+    EXPECT_FALSE(unresolved->typed_source_at_first_frame);
+    verifyAndSave("preparing-unresolved", *unresolved, false);
+
+    ASSERT_TRUE(Access::installPreparedLoadingSource(player_client, {
+        .world = world,
+        .root = root,
+        .map = nullptr,
+    }));
+    auto const source_deadline = Clock::now() + std::chrono::seconds{5};
+    while (!player_client.terrainLodRoot() && Clock::now() < source_deadline) {
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(player_client.terrainLodRoot(), root);
+    ASSERT_FALSE(Access::retainedNativeLoadingSource(player_client));
+    auto const typed = Access::captureFirstNormalLoadingFrame(player_client);
+    ASSERT_TRUE(typed);
+    EXPECT_TRUE(typed->typed_source_at_first_frame);
+    verifyAndSave("preparing-typed", *typed, false);
+    EXPECT_FALSE(player_client.worldLoadingStatus().ready_prompt_frame_rendered_at);
+
+    Access::resetLoadingConnection(player_client);
+    ASSERT_NE(player_client.worldLoadingJoinEpoch(), first_join);
+    ASSERT_EQ(player_client.worldLoadingStatus().state, client::WorldLoadingState::Creating);
+    ASSERT_EQ(player_client.worldLoadingStatus().map_snapshot, nullptr);
+    ASSERT_FALSE(Access::retainedNativeLoadingSource(player_client));
+    auto const reset = Access::captureFirstNormalLoadingFrame(player_client);
+    ASSERT_TRUE(reset);
+    EXPECT_FALSE(reset->typed_source_at_first_frame);
+    verifyAndSave("reset-creating", *reset, true);
 }
 
 #if defined(__APPLE__)
 TEST(PlayerClientFocusTest, CopiedFrameHasNoToastAndSuccessShowsCenteredToast)
 {
-    static constexpr uint32_t ROI_LEFT_PERCENT = 20U;
-    static constexpr uint32_t ROI_RIGHT_PERCENT = 80U;
-    static constexpr uint32_t ROI_BOTTOM_PERCENT = 35U;
-    static constexpr uint8_t MINIMUM_BRIGHT_CHANNEL = 205U;
+    static constexpr uint8_t MINIMUM_GREEN_CHANNEL = 175U;
+    static constexpr uint8_t MINIMUM_GREEN_MARGIN = 12U;
     static constexpr uint32_t MINIMUM_TOAST_PIXELS = 80U;
 
     client::PlayerClient player_client;
@@ -1273,24 +3841,39 @@ TEST(PlayerClientFocusTest, CopiedFrameHasNoToastAndSuccessShowsCenteredToast)
     std::optional<client::RendererFrameCapture> const copied_frame =
         client::PlayerClientFocusTestAccess::capturePlayerFrame(player_client);
     ASSERT_TRUE(copied_frame.has_value());
-    auto const countBrightToastPixels = [](client::RendererFrameCapture const& capture) {
-        uint32_t const roi_left = capture.width * ROI_LEFT_PERCENT / 100U;
-        uint32_t const roi_right = capture.width * ROI_RIGHT_PERCENT / 100U;
-        uint32_t const roi_bottom = capture.height * ROI_BOTTOM_PERCENT / 100U;
+    struct ToastPixels final {
         uint32_t count = 0U;
-        for (uint32_t y = 0U; y < roi_bottom; ++y) {
+        uint64_t x_sum = 0U;
+        uint64_t y_sum = 0U;
+    };
+    auto const findGreenToastPixels = [](client::RendererFrameCapture const& capture) {
+        uint32_t const margin = std::min(32U, capture.width / 4U);
+        uint32_t const roi_left = margin > 4U ? margin - 4U : 0U;
+        uint32_t const roi_right = capture.width - roi_left;
+        uint32_t const toast_y = std::max(24U, capture.height * 12U / 100U);
+        uint32_t const roi_top = toast_y > 4U ? toast_y - 4U : 0U;
+        uint32_t const roi_bottom = std::min(capture.height, toast_y + 56U);
+        ToastPixels pixels;
+        for (uint32_t y = roi_top; y < roi_bottom; ++y) {
             for (uint32_t x = roi_left; x < roi_right; ++x) {
                 uint64_t const pixel = (static_cast<uint64_t>(y) * capture.width + x) * 4U;
-                if (capture.rgba8[pixel] >= MINIMUM_BRIGHT_CHANNEL
-                    && capture.rgba8[pixel + 1U] >= MINIMUM_BRIGHT_CHANNEL
-                    && capture.rgba8[pixel + 2U] >= MINIMUM_BRIGHT_CHANNEL) {
-                    ++count;
+                uint8_t const red = capture.rgba8[pixel];
+                uint8_t const green = capture.rgba8[pixel + 1U];
+                uint8_t const blue = capture.rgba8[pixel + 2U];
+                if (green >= MINIMUM_GREEN_CHANNEL
+                    && red >= MINIMUM_GREEN_CHANNEL
+                    && blue >= MINIMUM_GREEN_CHANNEL
+                    && green >= red + MINIMUM_GREEN_MARGIN
+                    && green >= blue + MINIMUM_GREEN_MARGIN) {
+                    ++pixels.count;
+                    pixels.x_sum += x;
+                    pixels.y_sum += y;
                 }
             }
         }
-        return count;
+        return pixels;
     };
-    EXPECT_LT(countBrightToastPixels(*copied_frame), MINIMUM_TOAST_PIXELS)
+    EXPECT_LT(findGreenToastPixels(*copied_frame).count, MINIMUM_TOAST_PIXELS)
         << "the screenshot frame must be captured before its success notification";
 
     std::string const pasteboard_name = "MinecraftClone.ScreenshotToastTest."
@@ -1318,32 +3901,11 @@ TEST(PlayerClientFocusTest, CopiedFrameHasNoToastAndSuccessShowsCenteredToast)
         client::PlayerClientFocusTestAccess::capturePlayerFrame(player_client);
     ASSERT_TRUE(toast_frame.has_value());
 
-    uint32_t const roi_left = toast_frame->width * ROI_LEFT_PERCENT / 100U;
-    uint32_t const roi_right = toast_frame->width * ROI_RIGHT_PERCENT / 100U;
-    uint32_t const roi_bottom = toast_frame->height * ROI_BOTTOM_PERCENT / 100U;
-    uint32_t toast_pixels = 0U;
-    uint64_t pixel_x_sum = 0U;
-    uint64_t pixel_y_sum = 0U;
-    for (uint32_t y = 0U; y < roi_bottom; ++y) {
-        for (uint32_t x = roi_left; x < roi_right; ++x) {
-            uint64_t const pixel = (static_cast<uint64_t>(y) * toast_frame->width + x) * 4U;
-            uint8_t const red = toast_frame->rgba8[pixel];
-            uint8_t const green = toast_frame->rgba8[pixel + 1U];
-            uint8_t const blue = toast_frame->rgba8[pixel + 2U];
-            if (red >= MINIMUM_BRIGHT_CHANNEL
-                && green >= MINIMUM_BRIGHT_CHANNEL
-                && blue >= MINIMUM_BRIGHT_CHANNEL) {
-                ++toast_pixels;
-                pixel_x_sum += x;
-                pixel_y_sum += y;
-            }
-        }
-    }
-    EXPECT_EQ(toast_pixels, countBrightToastPixels(*toast_frame));
-    ASSERT_GT(toast_pixels, MINIMUM_TOAST_PIXELS)
+    ToastPixels const toast_pixels = findGreenToastPixels(*toast_frame);
+    ASSERT_GT(toast_pixels.count, MINIMUM_TOAST_PIXELS)
         << "a successful clipboard copy should show a readable toast near the top center";
-    double const toast_center_x = static_cast<double>(pixel_x_sum) / toast_pixels;
-    double const toast_center_y = static_cast<double>(pixel_y_sum) / toast_pixels;
+    double const toast_center_x = static_cast<double>(toast_pixels.x_sum) / toast_pixels.count;
+    double const toast_center_y = static_cast<double>(toast_pixels.y_sum) / toast_pixels.count;
     EXPECT_NEAR(toast_center_x, static_cast<double>(toast_frame->width) / 2.0, toast_frame->width * 0.1);
     EXPECT_LT(toast_center_y, static_cast<double>(toast_frame->height) * 0.25);
 }
@@ -1354,6 +3916,8 @@ TEST(PlayerClientFocusTest, TerrainPromptRequiresNonemptyActiveSceneThenMatching
     client::PlayerClient player_client;
     ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client, false));
     ASSERT_EQ(player_client.worldLoadingStatus().state, client::WorldLoadingState::ReadyForStart);
+    client::PlayerClientFocusTestAccess::renderFrame(player_client);
+    client::PlayerClientFocusTestAccess::setGenerationVisibleElapsed(player_client, std::chrono::seconds{10});
     for (uint32_t frame = 0U; frame < 6U; ++frame) {
         client::PlayerClientFocusTestAccess::renderFrame(player_client);
     }
@@ -1387,4 +3951,1156 @@ TEST(PlayerClientFocusTest, TerrainPromptRequiresNonemptyActiveSceneThenMatching
     client::PlayerClientFocusTestAccess::resetLoadingConnection(player_client);
     EXPECT_FALSE(client::PlayerClientFocusTestAccess::promptFrame(player_client).has_value());
     EXPECT_FALSE(player_client.worldLoadingStatus().ready_prompt_frame_rendered_at.has_value());
+}
+
+
+TEST(PlayerClientFocusTest, FocusAndMapTransitionsClearBlockEffectsAndPendingReceipts)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    client::PlayerClient player_client;
+    core::platform::glfw::GlfwWindow focus_sink{
+        core::platform::glfw::WindowDescriptor{
+            .width = 64U, .height = 64U, .title = "Block effects focus sink",
+        },
+    };
+    ASSERT_TRUE(Access::beginPlayingWorld(player_client));
+    auto* window = Access::nativeWindow(player_client);
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+    ASSERT_TRUE(Access::seedBlockEffects(player_client));
+    ASSERT_FALSE(Access::acceptSeededParticleReceipt(player_client));
+    glfwFocusWindow(focus_sink.nativeHandle());
+    ASSERT_TRUE(waitForFocusState(player_client, false));
+    EXPECT_FALSE(Access::breakInputActive(player_client));
+    EXPECT_FALSE(Access::placementInputActive(player_client));
+    EXPECT_FALSE(Access::hasStoredBlockTarget(player_client));
+    EXPECT_FALSE(Access::hasPendingBreakReceipt(player_client));
+    EXPECT_TRUE(Access::acceptSeededParticleReceipt(player_client));
+    Access::updateBlockEffects(player_client);
+    EXPECT_FALSE(Access::hasStoredBlockTarget(player_client));
+    EXPECT_TRUE(Access::acceptSeededParticleReceipt(player_client));
+
+    glfwFocusWindow(window);
+    ASSERT_TRUE(waitForFocusState(player_client, true));
+    ASSERT_TRUE(Access::seedBlockEffects(player_client));
+    ASSERT_FALSE(Access::acceptSeededParticleReceipt(player_client));
+    // Map opening must clear effects before the next presentation update.
+    Access::setWorldMapOpen(player_client, true);
+    EXPECT_FALSE(Access::breakInputActive(player_client));
+    EXPECT_FALSE(Access::placementInputActive(player_client));
+    EXPECT_FALSE(Access::hasStoredBlockTarget(player_client));
+    EXPECT_FALSE(Access::hasPendingBreakReceipt(player_client));
+    EXPECT_TRUE(Access::acceptSeededParticleReceipt(player_client));
+    Access::updateBlockEffects(player_client);
+    EXPECT_TRUE(Access::acceptSeededParticleReceipt(player_client));
+    Access::setWorldMapOpen(player_client, false);
+    EXPECT_FALSE(Access::breakInputActive(player_client));
+    EXPECT_FALSE(Access::placementInputActive(player_client));
+}
+
+TEST(PlayerClientFocusTest, SyntheticBlockSnapshotSamplesOnceAndNullReturnsToReleasePath)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    client::PlayerClient player{shared::WorldMode::Flight, std::nullopt, startupFrameCaptureOptions()};
+    ASSERT_TRUE(Access::beginPlayingWorld(player));
+    client::GameClientBenchmarkHooks hooks{};
+    uint32_t samples = 0U;
+    hooks.block_button_snapshot = [&]() -> std::optional<client::BlockButtonSnapshot> {
+        ++samples;
+        return std::nullopt;
+    };
+    Access::setIsolationHooks(player, &hooks);
+    Access::updateBlockEffects(player);
+    EXPECT_EQ(samples, 0U) << "callback must not replace ordinary platform ownership";
+    hooks.isolate_platform_input = true;
+    ASSERT_TRUE(Access::seedBlockEffects(player));
+    Access::updateBlockEffects(player);
+    EXPECT_EQ(samples, 1U);
+    EXPECT_FALSE(Access::breakInputActive(player));
+    EXPECT_FALSE(Access::hasPendingBreakReceipt(player));
+    EXPECT_FALSE(Access::hasStoredBlockTarget(player));
+    Access::setIsolationHooks(player, nullptr);
+}
+
+TEST(PlayerClientFocusTest, FootstepRequiresGroundedMaterializedWalkAndStableVerticalState)
+{
+    static constexpr uint64_t WORLD_REVISION = 1U;
+    static constexpr uint64_t WORLD_SEED = 42U;
+    shared::SparseWorld support_world{
+        shared::SparseWorldOptions{ .seed = WORLD_SEED },
+        shared::SparseWorldGenerationMode::MaterializedOnly,
+    };
+    shared::Chunk support_chunk{{.x = 32, .y = 32, .z = 0}};
+    ASSERT_TRUE(support_chunk.setBlock({.x = 0U, .y = 0U, .z = 10U}, shared::Block::Stone));
+    ASSERT_TRUE(support_world.publishMaterializedChunk(support_chunk, WORLD_REVISION, WORLD_SEED));
+
+    shared::Player player{
+        .id = 1U,
+        .x = 512,
+        .y = 512,
+        .z = 11,
+        .x_subcell = 1'000U,
+        .ch = '@',
+        .movement_capabilities = { .bits = 0U },
+        .vertical_velocity_subcells = 0,
+    };
+    shared::PlayerPosition previous{
+        .x = 512,
+        .y = 512,
+        .z = 11,
+    };
+    using Access = client::PlayerClientFocusTestAccess;
+
+    EXPECT_EQ(Access::footstepMaterial(&support_world, shared::WorldMode::Flight, player, previous),
+        shared::Block::Stone);
+
+    shared::PlayerPosition const stationary{
+        .x = player.x,
+        .y = player.y,
+        .z = player.z,
+        .x_subcell = player.x_subcell,
+        .y_subcell = player.y_subcell,
+        .z_subcell = player.z_subcell,
+    };
+    EXPECT_FALSE(Access::footstepMaterial(&support_world, shared::WorldMode::Flight, player, stationary));
+
+    shared::Player airborne = player;
+    airborne.z = 12;
+    EXPECT_FALSE(Access::footstepMaterial(&support_world, shared::WorldMode::Flight, airborne, previous));
+    airborne = player;
+    airborne.z_subcell = 1U;
+    EXPECT_FALSE(Access::footstepMaterial(&support_world, shared::WorldMode::Flight, airborne, previous));
+
+    shared::Player falling = player;
+    falling.vertical_velocity_subcells = -1;
+    EXPECT_FALSE(Access::footstepMaterial(&support_world, shared::WorldMode::Flight, falling, previous));
+    shared::Player rising = player;
+    rising.vertical_velocity_subcells = 1;
+    EXPECT_FALSE(Access::footstepMaterial(&support_world, shared::WorldMode::Flight, rising, previous));
+
+    shared::Player flying = player;
+    flying.movement_capabilities.bits = static_cast<uint8_t>(shared::MovementCapability::Flight);
+    EXPECT_FALSE(Access::footstepMaterial(&support_world, shared::WorldMode::Flight, flying, previous));
+    shared::Player bypass = player;
+    bypass.movement_capabilities.bits = static_cast<uint8_t>(shared::MovementCapability::Flight)
+        | static_cast<uint8_t>(shared::MovementCapability::CollisionBypass);
+    EXPECT_FALSE(Access::footstepMaterial(&support_world, shared::WorldMode::Flight, bypass, previous));
+
+    shared::PlayerPosition const previous_height{
+        .x = previous.x,
+        .y = previous.y,
+        .z = previous.z - 1,
+    };
+    EXPECT_FALSE(Access::footstepMaterial(
+        &support_world, shared::WorldMode::Flight, player, previous_height));
+}
+
+TEST(PlayerClientFocusTest, LandingCueRequiresFreshSupportedAirborneToGroundedState)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    client::PlayerClient player_client{shared::WorldMode::Flight};
+    shared::SparseWorld& world = Access::authoritativeWorld(player_client);
+    shared::Chunk support_chunk{{.x = 32, .y = 32, .z = 0}};
+    ASSERT_TRUE(support_chunk.setBlock({.x = 1U, .y = 0U, .z = 10U}, shared::Block::Stone));
+    ASSERT_TRUE(world.publishMaterializedChunk(support_chunk, 1U, 42U));
+
+    shared::Player airborne{
+        .id = 1U,
+        .x = 512,
+        .y = 512,
+        .z = 11,
+        .x_subcell = 1'000U,
+        .ch = '@',
+        .movement_capabilities = { .bits = 0U },
+        .vertical_velocity_subcells = -1,
+    };
+    shared::Player grounded = airborne;
+    grounded.x_subcell = 5'000U;
+    grounded.vertical_velocity_subcells = 0;
+
+    uint32_t event_count = 0U;
+    auto const observe = [&](shared::Player const& player, shared::GameMode const mode, uint32_t const revision) {
+        if (std::optional<shared::Block> const material = Access::observeLandingTransition(
+                player_client, player, mode, revision)) {
+            EXPECT_EQ(*material, shared::Block::Stone);
+            ++event_count;
+        }
+    };
+
+    observe(airborne, shared::GameMode::Survival, 1U);
+    airborne.x_subcell = 2'000U;
+    observe(airborne, shared::GameMode::Survival, 2U);
+    EXPECT_EQ(event_count, 0U) << "airborne movement has no supporting material";
+
+    observe(grounded, shared::GameMode::Survival, 3U);
+    observe(grounded, shared::GameMode::Survival, 3U);
+    EXPECT_EQ(event_count, 1U) << "a repeated grounded revision does not retrigger landing";
+
+    observe(airborne, shared::GameMode::Survival, 4U);
+    observe(grounded, shared::GameMode::Spectator, 5U);
+    observe(grounded, shared::GameMode::Survival, 6U);
+    EXPECT_EQ(event_count, 1U) << "a mode change does not synthesize a landing";
+
+    observe(airborne, shared::GameMode::Survival, 7U);
+    Access::advanceLandingJoinEpoch(player_client);
+    observe(grounded, shared::GameMode::Survival, 8U);
+    EXPECT_EQ(event_count, 1U) << "a world-join boundary starts a fresh landing baseline";
+
+    shared::Player flying_airborne = airborne;
+    flying_airborne.movement_capabilities.bits = static_cast<uint8_t>(shared::MovementCapability::Flight);
+    shared::Player flying_grounded = grounded;
+    flying_grounded.movement_capabilities = flying_airborne.movement_capabilities;
+    observe(flying_airborne, shared::GameMode::Creative, 9U);
+    observe(flying_grounded, shared::GameMode::Creative, 10U);
+    EXPECT_EQ(event_count, 1U) << "flight capability suppresses the landing cue";
+}
+
+TEST(PlayerClientFocusTest, ModeAndSessionCancellationDisarmHeldPlacementUntilAnotherPhysicalPress)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    client::PlayerClient player;
+    ASSERT_TRUE(Access::beginPlayingWorld(player));
+    auto const now = std::chrono::steady_clock::now();
+    Access::sampleHeldPlacement(player, true, true, now);
+    ASSERT_TRUE(Access::placementInputActive(player));
+    Access::setPendingPlacementMode(player, true);
+    Access::sampleHeldPlacement(player, true, false, now);
+    EXPECT_FALSE(Access::placementInputActive(player));
+    Access::setPendingPlacementMode(player, false);
+    Access::sampleHeldPlacement(player, true, false, now);
+    EXPECT_FALSE(Access::placementInputActive(player));
+    Access::sampleHeldPlacement(player, false, false, now);
+    Access::sampleHeldPlacement(player, true, true, now);
+    ASSERT_TRUE(Access::placementInputActive(player));
+    Access::clearPlacementSession(player);
+    Access::sampleHeldPlacement(player, true, false, now);
+    EXPECT_FALSE(Access::placementInputActive(player));
+}
+
+TEST(PlayerClientFocusTest, HeldRmbPlacesAcrossAuthoritativeRetargetsDuringOrdinaryUpwardFlight)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    using Clock = std::chrono::steady_clock;
+    using namespace std::chrono_literals;
+    auto const configuration = shared::World::canonicalConfiguration();
+    generation::GenerationConfiguration generation_configuration{};
+    generation_configuration.model_tag = generation::TerrainModelTag::V9;
+    ASSERT_EQ(generation_configuration.model_tag, generation::TerrainModelTag::V9);
+    generation_configuration.seed = configuration.seed;
+    auto preparation = std::make_shared<server::WorldPreparation>(
+        generation_configuration, configuration.algorithm_version);
+    auto const preparation_deadline = Clock::now() + 30s;
+    while (preparation->latest().state == server::WorldPreparationState::Preparing
+        && Clock::now() < preparation_deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
+    ASSERT_EQ(preparation->latest().state, server::WorldPreparationState::Ready);
+    client::PlayerClient player{shared::WorldMode::Flight, std::nullopt, startupFrameCaptureOptions(),
+        [preparation](shared::TerrainSessionIdentity const&) {
+            return client::PreparedTerrainWorldStatus{
+                .state = client::PreparedTerrainWorldState::Ready, .world = preparation->readyWorld()};
+        }};
+    Access::restoreOrdinaryStartupAfterCaptureOptIn(player);
+    glfwFocusWindow(Access::nativeWindow(player));
+    ASSERT_TRUE(waitForFocusState(player, true));
+    ASSERT_TRUE(Access::setLookAngles(player, {.yaw_degrees = 0.0, .pitch_degrees = -89.0}));
+    server::GameServer server{0U, {}, shared::WorldMode::Flight, configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, preparation, server::GameServer::BindMode::Loopback};
+    ASSERT_TRUE(server.isValid());
+    std::jthread server_thread{[&](std::stop_token const& stop) {
+        std::atomic_bool stopped{false};
+        std::stop_callback callback{stop, [&] { stopped.store(true); }};
+        server.run(stopped);
+    }};
+    ASSERT_TRUE(Access::connectPlacementTest(player, core::Address::localhost(server.port())));
+    bool pressed = false;
+    bool hold_started = false;
+    std::optional<double> initial_z;
+    double highest_z = 0.0;
+    std::vector<shared::WorldCoordinate> placed_cells;
+    std::vector<double> placement_heights;
+    std::optional<Clock::time_point> released_at;
+    uint32_t submissions_at_release = 0U;
+    auto next_movement = Clock::now();
+    std::optional<Clock::time_point> playing_at;
+    auto const deadline = Clock::now() + 60s;
+    while (Clock::now() < deadline && (!released_at || Clock::now() < *released_at + 600ms)) {
+        Access::pumpPlacementTest(player);
+        if (player.worldLoadingStatus().state != client::WorldLoadingState::Playing) {
+            std::this_thread::sleep_for(1ms);
+            continue;
+        }
+        if (!playing_at) { playing_at = Clock::now(); }
+        if (Clock::now() >= *playing_at + 5s) { break; }
+        auto const pose = Access::editLatencyPlayer(player);
+        if (!pose) { break; }
+        double const z = shared::playerPositionZ(*pose);
+        if (!initial_z) { initial_z = z; }
+        highest_z = std::max(highest_z, z);
+        while (auto const result = player.consumeAcceptedBlockActionResult()) {
+            if (result->sequence != 0U && result->status == shared::BlockActionStatus::Accepted
+                && std::find(placed_cells.begin(), placed_cells.end(), result->target) == placed_cells.end()) {
+                placed_cells.push_back(result->target);
+                placement_heights.push_back(z);
+            }
+        }
+        // Retarget a second reachable ground cell while stationary, then
+        // return to the column below and keep the same hold during ascent.
+        if (placed_cells.size() == 1U) {
+            shared::VoxelRay ray;
+            shared::BlockTarget target;
+            static_cast<void>(Access::editLatencyAim(player, ray, target));
+        } else if (placed_cells.size() >= 2U) {
+            EXPECT_TRUE(Access::setLookAngles(player, {.yaw_degrees = 0.0, .pitch_degrees = -89.0}));
+        }
+        auto const now = Clock::now();
+        if (placed_cells.size() >= 3U && !released_at) {
+            released_at = now;
+            submissions_at_release = Access::nextBlockActionSequence(player);
+        }
+        // Rise through ordinary input before aiming below: the default spawn
+        // stands on terrain, where placement would correctly overlap the body.
+        hold_started = hold_started || z >= *initial_z + 1.1;
+        bool const held = hold_started && !released_at.has_value();
+        Access::sampleHeldPlacement(player, held, held && !pressed, now);
+        pressed = held;
+        if (now >= next_movement) {
+            EXPECT_TRUE(Access::sendPlacementTestMovement(player,
+                shared::Direction{.z = static_cast<uint8_t>(
+                    !hold_started || (placed_cells.size() >= 2U && !released_at) ? 127U : 0U)}, now));
+            next_movement = now + 100ms;
+        }
+        player.flush();
+        std::this_thread::sleep_for(1ms);
+    }
+    server_thread.request_stop();
+    server_thread.join();
+    ASSERT_TRUE(released_at.has_value()) << Access::placementDiagnostic(player)
+        << " accepted=" << placed_cells.size() << " initial_z=" << initial_z.value_or(-1.0)
+        << " highest_z=" << highest_z;
+    ASSERT_EQ(placed_cells.size(), 3U);
+    ASSERT_TRUE(initial_z.has_value());
+    ASSERT_EQ(placement_heights.size(), 3U);
+    EXPECT_NEAR(placement_heights[0], placement_heights[1], 0.001);
+    EXPECT_GT(placement_heights[2], placement_heights[1]);
+    EXPECT_GT(highest_z, *initial_z + 1.0);
+    EXPECT_EQ(Access::nextBlockActionSequence(player), submissions_at_release);
+    for (auto const cell : placed_cells) {
+        auto const* world = Access::editLatencyWorld(player);
+        ASSERT_NE(world, nullptr);
+        EXPECT_EQ(world->queryBlock(cell).block, shared::Block::Stone);
+        EXPECT_GT(world->cellVersion(cell), 0U);
+    }
+    auto const scene_has_edits = [&] {
+        auto const scene = Access::editLatencyScene(player);
+        auto const* world = Access::editLatencyWorld(player);
+        return scene && world && std::ranges::all_of(placed_cells, [&](auto const cell) {
+            auto const key = shared::WorldBounds::chunkCoordinate(cell);
+            return std::ranges::any_of(scene->chunk_sources, [&](auto const& source) {
+                return source.coordinate == key && source.edit_revision == world->editChunkRevision(key);
+            });
+        });
+    };
+    auto const frame_deadline = Clock::now() + 10s;
+    while (!scene_has_edits() && Clock::now() < frame_deadline) {
+        Access::renderFrame(player);
+        std::this_thread::sleep_for(1ms);
+    }
+    ASSERT_TRUE(scene_has_edits());
+    auto const frame = Access::capturePlayerFrame(player);
+    ASSERT_TRUE(frame);
+    EXPECT_TRUE(saveFullFrame(startupEvidenceDirectory() / "held-placement-v9.png", *frame));
+    std::ofstream receipt{startupEvidenceDirectory() / "held-placement-v9.json"};
+    receipt << "{\"model\":\"v9\",\"accepted_cells\":3,\"default_aoi\":true,"
+        << "\"initial_z\":" << *initial_z << ",\"highest_z\":" << highest_z
+        << ",\"submissions_at_release\":" << submissions_at_release
+        << ",\"submissions_after_release\":" << Access::nextBlockActionSequence(player) << "}\n";
+}
+
+static void runAuthoritativeEditNativeFrames(bool const posttravel, bool const readbacks = true)
+{
+    using Clock = std::chrono::steady_clock;
+    using Access = client::PlayerClientFocusTestAccess;
+    static constexpr uint32_t ACTION_COUNT = 6U;
+    static constexpr uint64_t MAXIMUM_FRAMES = 3U;
+    auto const preparation_started_at = Clock::now();
+    auto const configuration = shared::World::canonicalConfiguration();
+    generation::GenerationConfiguration generation_configuration{};
+    generation_configuration.seed = configuration.seed;
+    if (posttravel) { generation_configuration.model_tag = generation::TerrainModelTag::V10; }
+    auto preparation = std::make_shared<server::WorldPreparation>(
+        generation_configuration, configuration.algorithm_version, preparation_started_at);
+    auto const preparation_deadline = preparation_started_at + std::chrono::seconds{120};
+    while (preparation->latest().state == server::WorldPreparationState::Preparing
+        && Clock::now() < preparation_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+    auto const preparation_completed_at = Clock::now();
+    auto const directory = startupEvidenceDirectory() / (posttravel
+        ? (readbacks ? "native-v10-posttravel-edits" : "native-v10-posttravel-edits-no-readback") : "native-edit-latency");
+    std::filesystem::create_directories(directory);
+    std::ofstream event_file{directory / "events.jsonl"};
+    std::ostringstream buffered_events;
+    std::ostream& events = readbacks ? static_cast<std::ostream&>(event_file) : buffered_events;
+    events << "{\"event\":\"observer_mode\",\"readbacks\":" << readbacks
+        << ",\"pixel_qualification\":" << readbacks
+        << ",\"full_performance_qualification\":false,\"shared_host_load_controlled\":false,"
+        << "\"timing_events_buffered_until_after_run\":" << !readbacks << "}\n";
+    events << "{\"event\":\"default_world_preparation\",\"elapsed_ms\":"
+        << std::chrono::duration_cast<std::chrono::milliseconds>(
+            preparation_completed_at - preparation_started_at).count()
+        << ",\"state\":" << static_cast<uint32_t>(preparation->latest().state)
+        << ",\"timeout_seconds\":120}\n";
+    events.flush();
+    ASSERT_EQ(preparation->latest().state, server::WorldPreparationState::Ready)
+        << "default canonical preparation failed or exceeded its separate setup bound";
+
+    ASSERT_EQ(glfwInit(), GLFW_TRUE);
+    auto player_owner = [posttravel] {
+        struct RestoreFocusHint final {
+            ~RestoreFocusHint() { glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE); }
+        } restore_focus_hint;
+        glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
+        return std::make_unique<client::PlayerClient>(shared::WorldMode::Flight, std::nullopt,
+            client::PlayerClientBenchmarkOptions{.enable_diagnostic_frame_capture = true, .enable_live_ui = posttravel});
+    }();
+    client::PlayerClient& player = *player_owner;
+    Access::restoreOrdinaryStartupAfterCaptureOptIn(player);
+    auto* window = Access::nativeWindow(player);
+    glfwRestoreWindow(window);
+    Access::renderFrame(player);
+    auto const accepted_at = Clock::now();
+    server::GameServer server{0U, {}, shared::WorldMode::Flight, configuration,
+        shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, preparation, server::GameServer::BindMode::Loopback};
+    ASSERT_TRUE(server.isValid());
+    std::atomic_bool server_failed{false};
+    std::jthread server_thread{[&](std::stop_token const& stop) {
+        std::atomic_bool stopped{false};
+        std::stop_callback callback{stop, [&] { stopped.store(true); }};
+        try { server.run(stopped); } catch (...) { server_failed.store(true); }
+    }};
+    struct Edit final {
+        uint32_t sequence = 0U;
+        shared::WorldCoordinate cell{};
+        shared::Block material = shared::Block::Air;
+        uint64_t version_before = 0U;
+        uint64_t revision = 0U;
+        uint64_t submitted_at_frame = 0U;
+        uint64_t delta_at_frame = 0U;
+        uint64_t accepted_completed_count = 0U;
+        Clock::time_point submitted_at{};
+        std::optional<Clock::time_point> delta_at;
+        std::optional<Clock::time_point> ack_at;
+        std::optional<client::RendererFrameIdentity> visible_submission;
+        bool pixel_captured = false;
+        std::optional<client::RendererFrameIdentity> completed_scene;
+        std::optional<Clock::time_point> completed_scene_at;
+        std::vector<uint32_t> submitted_sequences;
+        uint64_t pixel_hash = 0U;
+    };
+    std::vector<Edit> edits;
+    edits.reserve(ACTION_COUNT);
+    std::vector<std::pair<std::string, client::RendererFrameCapture>> retained_captures;
+    retained_captures.reserve(ACTION_COUNT + 3U);
+    auto retain_capture = [&](std::string label, client::RendererFrameCapture capture) {
+        EXPECT_LT(retained_captures.size(), ACTION_COUNT + 3U);
+        if (retained_captures.size() < ACTION_COUNT + 3U) {
+            retained_captures.emplace_back(std::move(label), std::move(capture));
+        }
+    };
+    bool synthetic_left = false;
+    bool synthetic_right = false;
+    bool previous_synthetic_left = false;
+    bool previous_synthetic_right = false;
+    uint32_t observed_next_sequence = 1U;
+    std::optional<uint32_t> previous_result_sequence;
+    std::optional<shared::BlockActionStatus> previous_result_status;
+    struct FrameScene final {
+        client::RendererFrameIdentity identity;
+        std::shared_ptr<client::TerrainLodScene const> scene;
+    };
+    std::vector<FrameScene> frames;
+    frames.reserve(256U);
+    bool started = false;
+    bool capture_pending = false;
+    std::optional<Clock::time_point> edits_started;
+    uint32_t stable_completed_frames = 0U;
+    uint64_t last_completed = 0U;
+    uint64_t completed_count = 0U;
+    uint64_t last_completed_generation = 0U;
+    struct LoopTiming final {
+        int64_t request_us;
+        int64_t cycle_us;
+        int64_t render_us;
+        uint64_t completed_sequence;
+        uint64_t completed_generation;
+    };
+    static constexpr size_t MAXIMUM_LOOP_SAMPLES = 20'000U;
+    std::vector<LoopTiming> loop_timings;
+    loop_timings.reserve(MAXIMUM_LOOP_SAMPLES);
+    shared::Direction travel_direction{};
+    std::optional<Clock::time_point> flight_started;
+    std::optional<Clock::time_point> descent_started;
+    std::optional<Clock::time_point> ground_stable_since;
+    std::optional<shared::Player> travel_origin;
+    std::optional<double> previous_descent_z;
+    bool travel_finished = !posttravel;
+    bool before_captured = !posttravel || !readbacks;
+    std::optional<uint64_t> before_pixel_hash;
+    auto last_loop_at = Clock::now();
+    auto next_descent_diagnostic = Clock::now();
+    std::optional<std::string> descent_capture_label;
+    bool stationary_capture_requested = false;
+    std::optional<Clock::time_point> descent_failed_at;
+    bool failure_capture_requested = false;
+    bool failure_capture_saved = false;
+    std::optional<shared::Player> stopped_pose;
+    std::vector<std::pair<shared::WorldCoordinate, uint64_t>> stopped_support;
+    auto next_status_diagnostic = Clock::now();
+    auto scene_has_revision = [](client::TerrainLodScene const& scene, Edit const& edit) {
+        auto const key = shared::WorldBounds::chunkCoordinate(edit.cell);
+        return std::ranges::any_of(scene.chunk_sources, [&](auto const& source) {
+            return source.coordinate == key && source.edit_revision == edit.revision;
+        });
+    };
+    auto milliseconds = [accepted_at](Clock::time_point time) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(time - accepted_at).count();
+    };
+    client::GameClientBenchmarkHooks hooks{};
+    hooks.isolate_platform_input = true;
+    if (posttravel) {
+        hooks.block_button_snapshot = [&]() -> std::optional<client::BlockButtonSnapshot> {
+            client::BlockButtonSnapshot const sample{
+                .left_held = synthetic_left, .left_pressed = synthetic_left && !previous_synthetic_left,
+                .right_held = synthetic_right, .right_pressed = synthetic_right && !previous_synthetic_right};
+            previous_synthetic_left = synthetic_left;
+            previous_synthetic_right = synthetic_right;
+            return sample;
+        };
+    }
+    hooks.input_override = [&](uint64_t) { return std::optional<shared::Direction>{travel_direction}; };
+    std::optional<Clock::time_point> target_search_started;
+    uint32_t target_search_failures = 0U;
+    std::optional<shared::VoxelRay> stable_action_ray;
+    std::optional<shared::WorldCoordinate> stable_placement_cell;
+    hooks.deadline = accepted_at + std::chrono::seconds{90};
+    hooks.start_input_override = [&](uint64_t) {
+        auto const status = player.worldLoadingStatus();
+        if (!started && status.state == client::WorldLoadingState::ReadyForStart
+            && status.ready_prompt_frame_rendered_at) {
+            started = true;
+            return true;
+        }
+        return false;
+    };
+    hooks.on_loop = [&](client::GameClientLoopSample const& sample) {
+        auto const now = Clock::now();
+        if (posttravel && now - last_loop_at > std::chrono::milliseconds{100}) {
+            events << "{\"event\":\"loop_stall\",\"elapsed_ms\":"
+                << std::chrono::duration_cast<std::chrono::milliseconds>(now - last_loop_at).count() << "}\n";
+        }
+        auto const cycle_time = now - last_loop_at;
+        last_loop_at = now;
+        auto const progress = Access::frameProgress(player);
+        auto const scene = Access::editLatencyScene(player);
+        auto const* world = Access::editLatencyWorld(player);
+        bool const newly_completed = progress.completed && progress.completed->sequence != last_completed;
+        if (progress.completed) {
+            if (progress.completed->swapchain_generation == last_completed_generation) {
+                ASSERT_GE(progress.completed->sequence, last_completed);
+                completed_count += progress.completed->sequence - last_completed;
+            } else {
+                if (posttravel && !edits.empty()) {
+                    ADD_FAILURE() << "swapchain generation changed during accepted edit observation";
+                    Access::stop(player);
+                }
+                completed_count += progress.completed->sequence;
+            }
+            last_completed_generation = progress.completed->swapchain_generation;
+            last_completed = progress.completed->sequence;
+        }
+        if (!readbacks && loop_timings.size() < MAXIMUM_LOOP_SAMPLES) {
+            loop_timings.push_back({
+                std::chrono::duration_cast<std::chrono::microseconds>(now - accepted_at).count(),
+                std::chrono::duration_cast<std::chrono::microseconds>(cycle_time).count(),
+                std::chrono::duration_cast<std::chrono::microseconds>(sample.render_duration).count(),
+                progress.completed ? progress.completed->sequence : 0U,
+                progress.completed ? progress.completed->swapchain_generation : 0U});
+        }
+        if (now >= next_status_diagnostic) {
+            auto const status = player.worldLoadingStatus();
+            auto const runtime = Access::runtimeInfo(player);
+            events << "{\"event\":\"readiness\",\"request_elapsed_ms\":" << milliseconds(now)
+                << ",\"state\":" << static_cast<uint32_t>(status.state)
+                << ",\"atlas_ready\":" << status.atlas_ready << ",\"spawn_safe\":" << status.spawn_safe
+                << ",\"has_spawn\":" << status.safe_spawn_position.has_value()
+                << ",\"has_player\":" << Access::editLatencyPlayer(player).has_value()
+                << ",\"initial_ready\":" << status.initial_sphere_ready_chunks
+                << ",\"initial_required\":" << status.initial_sphere_required_chunks
+                << ",\"initial_complete\":" << status.initial_sphere_ready
+                << ",\"playable_ready\":" << status.playable_sphere_ready_chunks
+                << ",\"playable_required\":" << status.playable_sphere_required_chunks
+                << ",\"resident_columns\":" << status.resident_authoritative_columns
+                << ",\"required_columns\":" << status.required_authoritative_columns
+                << ",\"prompt_rendered\":" << status.ready_prompt_frame_rendered_at.has_value()
+                << ",\"start_pending\":" << status.start_pending
+                << ",\"start_ack\":" << status.start_acknowledged_at.has_value()
+                << ",\"terrain_lod_active\":" << runtime.terrain_lod_active
+                << ",\"terrain_lod_leaves\":" << runtime.terrain_lod_leaf_count
+                << ",\"actual_columns\":" << runtime.terrain_lod_actual_column_count
+                << ",\"scene_chunk_sources\":" << (scene ? scene->chunk_sources.size() : 0U)
+                << ",\"scene_authority_sources\":" << (scene ? scene->authority_sources.size() : 0U)
+                << ",\"scene_faces\":" << (scene ? terrainLodSceneFaceCount(*scene) : 0U)
+                << ",\"submitted_sequence\":" << (progress.submitted ? progress.submitted->sequence : 0U)
+                << ",\"completed_sequence\":" << (progress.completed ? progress.completed->sequence : 0U)
+                << ",\"capture_state\":" << static_cast<uint32_t>(Access::captureState(player))
+                << ",\"last_presentation_succeeded\":" << Access::lastPresentationSucceeded(player)
+                << ",\"generation_completed\":" << status.generation_completed
+                << ",\"generation_total\":" << status.generation_total << "}\n";
+            events.flush();
+            next_status_diagnostic = now + std::chrono::seconds{1};
+        }
+        if (progress.submitted && scene && (frames.empty()
+                || frames.back().identity.sequence != progress.submitted->sequence)) {
+            frames.push_back({*progress.submitted, scene});
+            if (frames.size() > 256U) { frames.erase(frames.begin()); }
+        }
+        if (player.worldLoadingStatus().state != client::WorldLoadingState::Playing || !world || !scene) {
+            return;
+        }
+        if (!travel_finished) {
+            auto const pose = Access::editLatencyPlayer(player);
+            ASSERT_TRUE(pose);
+            ASSERT_TRUE(pose->movement_capabilities.allows(shared::MovementCapability::Flight));
+            ASSERT_FALSE(pose->movement_capabilities.allows(shared::MovementCapability::CollisionBypass));
+            if (readbacks && descent_capture_label) {
+                if (auto capture = readbacks ? Access::takeFrameCapture(player) : std::nullopt) {
+                    EXPECT_TRUE(capture->frame_identity);
+                    events << "{\"event\":\"descent_diagnostic_frame\",\"label\":\""
+                        << *descent_capture_label << "\",\"frame_sequence\":"
+                        << (capture->frame_identity ? capture->frame_identity->sequence : 0U) << "}\n";
+                    retain_capture(*descent_capture_label + ".png", std::move(*capture));
+                    failure_capture_saved = *descent_capture_label == "descent-failure";
+                    descent_capture_label.reset();
+                }
+            }
+            auto log_footprint = [&](char const* reason) {
+                double const x = shared::playerPositionX(*pose);
+                double const y = shared::playerPositionY(*pose);
+                double const z = shared::playerPositionZ(*pose);
+                int64_t const first_x = static_cast<int64_t>(std::floor(x));
+                int64_t const first_y = static_cast<int64_t>(std::floor(y));
+                int64_t const last_x = static_cast<int64_t>(std::floor(x
+                    + static_cast<double>(shared::World::PLAYER_WIDTH_SUBCELLS - 1U) / shared::SUBCELLS_PER_CELL));
+                int64_t const last_y = static_cast<int64_t>(std::floor(y
+                    + static_cast<double>(shared::World::PLAYER_WIDTH_SUBCELLS - 1U) / shared::SUBCELLS_PER_CELL));
+                int64_t const first_z = static_cast<int64_t>(std::floor(z)) - 1;
+                int64_t const last_z = static_cast<int64_t>(std::floor(z
+                    + static_cast<double>(shared::World::PLAYER_HEIGHT_SUBCELLS - 1U) / shared::SUBCELLS_PER_CELL));
+                events << "{\"event\":\"descent_footprint\",\"reason\":\"" << reason
+                    << "\",\"elapsed_ms\":" << milliseconds(now) << ",\"position\":[" << x << ',' << y << ',' << z
+                    << "],\"subcells\":[" << pose->x_subcell << ',' << pose->y_subcell << ',' << pose->z_subcell
+                    << "],\"columns\":[";
+                bool first_column = true;
+                for (int64_t cx = first_x; cx <= last_x; ++cx) {
+                    for (int64_t cy = first_y; cy <= last_y; ++cy) {
+                        if (!first_column) { events << ','; }
+                        first_column = false;
+                        auto const column = world->authoritativeColumn(cx, cy);
+                        events << "{\"xy\":[" << cx << ',' << cy << "],\"present\":" << column.has_value();
+                        if (column) {
+                            events << ",\"highest_solid_z\":" << column->highest_solid_z
+                            << ",\"base_highest_solid_z\":" << column->base_highest_solid_z
+                            << ",\"column_revision\":" << column->revision;
+                        }
+                        events << ",\"cells\":[";
+                        for (int64_t cz = first_z; cz <= last_z; ++cz) {
+                            if (cz != first_z) { events << ','; }
+                            shared::WorldCoordinate const cell{cx, cy, cz};
+                            auto const query = world->queryBlock(cell);
+                            events << "{\"z\":" << cz << ",\"state\":" << static_cast<uint32_t>(query.state)
+                            << ",\"material\":" << (query.block ? static_cast<int>(*query.block) : -1)
+                            << ",\"edit_revision\":"
+                            << world->editChunkRevision(shared::WorldBounds::chunkCoordinate(cell)) << '}';
+                        }
+                        events << "]}";
+                    }
+                }
+                events << "]}\n";
+                events.flush();
+            };
+            if (descent_failed_at) {
+                travel_direction = {};
+                if (readbacks && !descent_capture_label && !failure_capture_requested) {
+                    Access::requestFrameCapture(player);
+                    descent_capture_label = "descent-failure";
+                    failure_capture_requested = true;
+                }
+                if (!readbacks || failure_capture_saved || now - *descent_failed_at > std::chrono::seconds{2}) {
+                    Access::stop(player);
+                }
+                return;
+            }
+            if (!flight_started) { flight_started = now; travel_origin = pose; }
+            auto const elapsed = now - *flight_started;
+            if (elapsed < std::chrono::seconds{2}) {
+                travel_direction = {.z = 127U, .accelerated = true, .speedup = 80U};
+            } else if (elapsed < std::chrono::seconds{6}) {
+                bool const turned = elapsed >= std::chrono::seconds{4};
+                travel_direction = {.x = static_cast<uint8_t>(turned ? 127U : 0U),
+                    .y = static_cast<uint8_t>(turned ? 0U : 127U), .accelerated = true, .speedup = 80U};
+                EXPECT_TRUE(Access::setLookAngles(player,
+                    {.yaw_degrees = turned ? 90.0 : 0.0, .pitch_degrees = -20.0}));
+            } else {
+                descent_started = descent_started.value_or(now);
+                travel_direction = {.z = static_cast<uint8_t>(-127), .accelerated = true, .speedup = 80U};
+                double const z = shared::playerPositionZ(*pose);
+                // World::moveFlightPlayer retains the last clear vertical sample at
+                // SWEEP_STRIDE = SUBCELLS_PER_CELL / 2; near-ground need not mean contact.
+                static constexpr double MAXIMUM_SWEEP_CLEARANCE = 0.5;
+                double const x = shared::playerPositionX(*pose);
+                double const y = shared::playerPositionY(*pose);
+                int64_t const first_x = static_cast<int64_t>(std::floor(x));
+                int64_t const first_y = static_cast<int64_t>(std::floor(y));
+                int64_t const last_x = static_cast<int64_t>(std::floor(x
+                    + static_cast<double>(shared::World::PLAYER_WIDTH_SUBCELLS - 1U) / shared::SUBCELLS_PER_CELL));
+                int64_t const last_y = static_cast<int64_t>(std::floor(y
+                    + static_cast<double>(shared::World::PLAYER_WIDTH_SUBCELLS - 1U) / shared::SUBCELLS_PER_CELL));
+                int64_t const first_body_z = static_cast<int64_t>(std::floor(z));
+                int64_t const last_body_z = static_cast<int64_t>(std::floor(z
+                    + static_cast<double>(shared::World::PLAYER_HEIGHT_SUBCELLS - 1U) / shared::SUBCELLS_PER_CELL));
+                bool body_is_materialized_air = true;
+                bool support_queries_known = true;
+                double nearest_support_gap = std::numeric_limits<double>::infinity();
+                std::vector<std::pair<shared::WorldCoordinate, uint64_t>> support;
+                for (int64_t cx = first_x; cx <= last_x; ++cx) {
+                    for (int64_t cy = first_y; cy <= last_y; ++cy) {
+                        for (int64_t cz = first_body_z; cz <= last_body_z; ++cz) {
+                            auto const query = world->queryBlock({cx, cy, cz});
+                            body_is_materialized_air = body_is_materialized_air
+                            && query.state == shared::GenerationState::Materialized
+                            && query.block == shared::Block::Air;
+                        }
+                        shared::WorldCoordinate const cell{cx, cy, first_body_z - 1};
+                        auto const query = world->queryBlock(cell);
+                        support_queries_known = support_queries_known
+                            && query.state == shared::GenerationState::Materialized && query.block.has_value();
+                        if (query.state == shared::GenerationState::Materialized
+                            && query.block && *query.block != shared::Block::Air) {
+                            nearest_support_gap = std::min(nearest_support_gap, z - static_cast<double>(cell.z + 1));
+                            support.emplace_back(cell, world->cellVersion(cell));
+                        }
+                    }
+                }
+                bool const stationary = previous_descent_z && std::abs(z - *previous_descent_z) < 0.001;
+                if (now >= next_descent_diagnostic) {
+                    log_footprint(stationary ? "stationary" : "descending");
+                    next_descent_diagnostic = now + std::chrono::seconds{1};
+                }
+                if (readbacks && stationary && !stationary_capture_requested && !descent_capture_label) {
+                    log_footprint("first_stationary");
+                    Access::requestFrameCapture(player);
+                    descent_capture_label = "descent-first-stationary";
+                    stationary_capture_requested = true;
+                }
+                bool const stopped_on_solid = stationary && body_is_materialized_air && support_queries_known
+                    && nearest_support_gap >= 0.0 && nearest_support_gap <= MAXIMUM_SWEEP_CLEARANCE;
+                if (stopped_on_solid) { ground_stable_since = ground_stable_since.value_or(now); }
+                else { ground_stable_since.reset(); }
+                previous_descent_z = z;
+                if (ground_stable_since && now - *ground_stable_since >= std::chrono::milliseconds{500}) {
+                    travel_direction = {};
+                    travel_finished = true;
+                    stopped_pose = pose;
+                    stopped_support = std::move(support);
+                    log_footprint("near_ground_sweep_stop");
+                    events << "{\"event\":\"near_ground_clearance\",\"gap_cells\":" << nearest_support_gap
+                        << ",\"maximum_cells\":" << MAXIMUM_SWEEP_CLEARANCE
+                        << ",\"source\":\"World::moveFlightPlayer SWEEP_STRIDE=SUBCELLS_PER_CELL/2\","
+                        << "\"body_materialized_air\":" << body_is_materialized_air << "}\n";
+                    EXPECT_GT(std::hypot(shared::playerPositionX(*pose) - shared::playerPositionX(*travel_origin),
+                        shared::playerPositionY(*pose) - shared::playerPositionY(*travel_origin)), 100.0);
+                    events << "{\"event\":\"normal_descent_collision_stop\",\"x\":"
+                        << shared::playerPositionX(*pose) << ",\"y\":" << shared::playerPositionY(*pose)
+                        << ",\"z\":" << z << ",\"elapsed_ms\":" << milliseconds(now) << "}\n";
+                }
+                if (now - *descent_started > std::chrono::seconds{30}) {
+                    log_footprint("failure");
+                    ADD_FAILURE() << "ordinary descent did not stop on canonical solid ground";
+                    descent_failed_at = now;
+                    travel_direction = {};
+                }
+            }
+            events.flush();
+            return;
+        }
+        if (posttravel) {
+            auto const next_sequence = Access::editLatencyNextSequence(player);
+            if (!edits.empty()) {
+                for (uint32_t sequence = observed_next_sequence; sequence < next_sequence; ++sequence) {
+                    auto& active = edits.back();
+                    if (!active.ack_at) { active.submitted_sequences.push_back(sequence); }
+                    events << "{\"event\":\"held_transport_submit\",\"sequence\":" << sequence
+                        << ",\"action_sequence\":" << active.sequence
+                        << ",\"left_held\":" << synthetic_left << ",\"right_held\":" << synthetic_right
+                        << ",\"break_active\":" << Access::breakInputActive(player);
+                    auto const target = Access::interactionTarget(player);
+                    events << ",\"target_present\":" << target.has_value();
+                    if (target) {
+                        auto const query = world->queryBlock(target->cell);
+                        events << ",\"target\":[" << target->cell.x << ',' << target->cell.y << ',' << target->cell.z
+                            << "],\"target_state\":" << static_cast<uint32_t>(query.state)
+                            << ",\"target_material\":" << (query.block ? static_cast<int>(*query.block) : -1);
+                    }
+                    events << "}\n";
+                }
+            }
+            observed_next_sequence = next_sequence;
+            if (edits.empty()) { Access::writeInputOwnership(player, events); }
+        }
+        if (auto const& result = player.blockActionStatus(); result) {
+            if (posttravel && (previous_result_sequence != result->sequence || previous_result_status != result->status)) {
+                events << "{\"event\":\"held_transport_result\",\"sequence\":" << result->sequence
+                    << ",\"status\":" << static_cast<uint32_t>(result->status)
+                    << ",\"target\":[" << result->target.x << ',' << result->target.y << ',' << result->target.z << "]}\n";
+                previous_result_sequence = result->sequence;
+                previous_result_status = result->status;
+            }
+            for (auto& edit : edits) {
+                bool const matches = result->sequence == edit.sequence
+                    || (posttravel && std::ranges::find(edit.submitted_sequences, result->sequence)
+                        != edit.submitted_sequences.end());
+                if (!matches || edit.ack_at) { continue; }
+                if (result->status == shared::BlockActionStatus::Accepted) {
+                    edit.ack_at = now;
+                    if (posttravel) { synthetic_left = false; synthetic_right = false; }
+                    edit.accepted_completed_count = completed_count;
+                    events << "{\"event\":\"accepted_result\",\"sequence\":" << edit.sequence
+                        << ",\"server_tick\":" << result->server_tick
+                        << ",\"received_ms\":" << milliseconds(now) << "}\n";
+                } else if (result->status != shared::BlockActionStatus::Progress) {
+                    events << "{\"event\":\"action_rejected\",\"sequence\":" << edit.sequence
+                        << ",\"status\":" << static_cast<uint32_t>(result->status) << "}\n";
+                    ADD_FAILURE() << "real server rejected action sequence " << edit.sequence
+                        << " status " << static_cast<uint32_t>(result->status);
+                    Access::stop(player);
+                }
+            }
+        }
+        for (auto& edit : edits) {
+            auto const query = world->queryBlock(edit.cell);
+            if (!edit.delta_at && world->cellVersion(edit.cell) > edit.version_before && query.block == edit.material) {
+                edit.delta_at = now;
+                edit.delta_at_frame = progress.submitted ? progress.submitted->sequence : 0U;
+                edit.revision = world->editChunkRevision(shared::WorldBounds::chunkCoordinate(edit.cell));
+                events << "{\"event\":\"delta_installed\",\"sequence\":" << edit.sequence
+                    << ",\"revision\":" << edit.revision << ",\"at_ms\":" << milliseconds(now) << "}\n";
+            }
+            if (edit.delta_at && !edit.visible_submission && progress.submitted && scene_has_revision(*scene, edit)) {
+                edit.visible_submission = progress.submitted;
+            }
+            if (readbacks && edit.visible_submission && !edit.pixel_captured && !capture_pending) {
+                Access::requestFrameCapture(player);
+                capture_pending = true;
+            }
+            if (posttravel && edit.ack_at && !edit.pixel_captured && !edit.completed_scene
+                && completed_count - edit.accepted_completed_count > MAXIMUM_FRAMES) {
+                ADD_FAILURE() << "accepted edit exceeded three unique completed GPU frames";
+                Access::stop(player);
+            }
+            if (!readbacks && edit.ack_at && edit.delta_at && !edit.completed_scene && progress.completed) {
+                auto const completed = std::ranges::find_if(frames, [&](auto const& frame) {
+                    return frame.identity.sequence == progress.completed->sequence
+                        && frame.identity.swapchain_generation == progress.completed->swapchain_generation;
+                });
+                if (completed != frames.end() && scene_has_revision(*completed->scene, edit)) {
+                    EXPECT_LE(completed_count - edit.accepted_completed_count, MAXIMUM_FRAMES);
+                    edit.completed_scene = completed->identity;
+                    edit.completed_scene_at = now;
+                    events << "{\"event\":\"completed_scene_without_readback\",\"sequence\":" << edit.sequence
+                        << ",\"revision\":" << edit.revision << ",\"gpu_sequence\":" << completed->identity.sequence
+                        << ",\"gpu_generation\":" << completed->identity.swapchain_generation
+                        << ",\"accepted_to_completed_frames\":" << completed_count - edit.accepted_completed_count
+                        << ",\"first_matching_completed_ms\":" << milliseconds(now)
+                        << ",\"accepted_to_completed_us\":"
+                        << std::chrono::duration_cast<std::chrono::microseconds>(now - *edit.ack_at).count()
+                        << ",\"submit_to_completed_us\":"
+                        << std::chrono::duration_cast<std::chrono::microseconds>(now - edit.submitted_at).count()
+                        << ",\"pixel_qualification\":false}\n";
+                }
+            }
+            if (!posttravel && edit.delta_at && !edit.visible_submission && progress.submitted) {
+                EXPECT_LE(progress.submitted->sequence - edit.delta_at_frame, MAXIMUM_FRAMES)
+                    << "accepted delta waited for unrelated full-scene work, sequence=" << edit.sequence;
+            }
+        }
+        if (auto capture = readbacks ? Access::takeFrameCapture(player) : std::nullopt) {
+            capture_pending = false;
+            ASSERT_TRUE(capture->frame_identity) << "native pixels require their exact successful submission identity";
+            auto const frame = std::ranges::find_if(frames, [&](auto const& value) {
+                return value.identity.sequence == capture->frame_identity->sequence
+                    && value.identity.swapchain_generation == capture->frame_identity->swapchain_generation;
+            });
+            ASSERT_NE(frame, frames.end());
+            if (posttravel && edits.empty()) {
+                before_captured = true;
+                before_pixel_hash = pixelHash(capture->rgba8);
+                retain_capture("before-edit.png", *capture);
+            }
+            for (auto& edit : edits) {
+                if (!edit.delta_at || edit.pixel_captured || !scene_has_revision(*frame->scene, edit)) { continue; }
+                edit.pixel_captured = true;
+                uint64_t const total_frames = capture->frame_identity->sequence - edit.submitted_at_frame;
+                uint64_t const delta_frames = capture->frame_identity->sequence - edit.delta_at_frame;
+                if (!posttravel) { EXPECT_LE(delta_frames, MAXIMUM_FRAMES) << "delta-to-native-pixels latency"; }
+                if (posttravel) {
+                    ASSERT_TRUE(edit.ack_at);
+                    EXPECT_LE(completed_count - edit.accepted_completed_count, MAXIMUM_FRAMES)
+                        << "accepted edit to completed native pixels";
+                    if (edits.front().sequence == edit.sequence && before_pixel_hash) {
+                        EXPECT_NE(pixelHash(capture->rgba8), *before_pixel_hash);
+                    }
+                }
+                // Centered native view is stationary and eye-aligned to the submitted ray.
+                std::vector<uint8_t> pixels;
+                for (uint32_t y = capture->height * 45U / 100U; y < capture->height * 55U / 100U; ++y) {
+                    for (uint32_t x = capture->width * 45U / 100U; x < capture->width * 55U / 100U; ++x) {
+                        size_t const offset = (static_cast<size_t>(y) * capture->width + x) * 4U;
+                        pixels.insert(pixels.end(), capture->rgba8.begin() + static_cast<ptrdiff_t>(offset),
+                            capture->rgba8.begin() + static_cast<ptrdiff_t>(offset + 4U));
+                    }
+                }
+                edit.pixel_hash = pixelHash(pixels);
+                retain_capture("action-" + std::to_string(edit.sequence) + ".png", *capture);
+                events << "{\"event\":\"completed_native_frame\",\"sequence\":" << edit.sequence
+                    << ",\"frame_sequence\":" << capture->frame_identity->sequence
+                    << ",\"submit_to_frame_count\":" << total_frames << ",\"delta_to_frame_count\":" << delta_frames
+                    << ",\"submit_to_readback_ms\":"
+                    << std::chrono::duration_cast<std::chrono::milliseconds>(now - edit.submitted_at).count()
+                    << ",\"delta_to_readback_ms\":"
+                    << std::chrono::duration_cast<std::chrono::milliseconds>(now - *edit.delta_at).count()
+                    << ",\"target_pixel_hash\":" << edit.pixel_hash << "}\n";
+            }
+        }
+        bool const previous_observed = edits.empty() || edits.back().pixel_captured
+            || (!readbacks && edits.back().completed_scene.has_value());
+        auto const loaded_status = player.worldLoadingStatus();
+        bool const loaded_world = loaded_status.playable_sphere_ready && loaded_status.required_authoritative_columns > 0U
+            && loaded_status.resident_authoritative_columns >= loaded_status.required_authoritative_columns
+            && Access::runtimeInfo(player).terrain_lod_actual_column_count >= loaded_status.required_authoritative_columns;
+        if (edits.size() < ACTION_COUNT && previous_observed && (!edits.empty() || (posttravel ? travel_finished : loaded_world))) {
+            ASSERT_TRUE(progress.submitted);
+            ASSERT_TRUE(progress.completed);
+            if (readbacks) {
+                ASSERT_TRUE(Access::captureState(player) == client::FrameCaptureState::Ready
+                    || Access::captureState(player) == client::FrameCaptureState::Completed);
+            }
+            if (posttravel && edits.empty()) {
+                auto const current_pose = Access::editLatencyPlayer(player);
+                bool const pose_matches = current_pose && stopped_pose
+                    && current_pose->x == stopped_pose->x && current_pose->y == stopped_pose->y
+                    && current_pose->z == stopped_pose->z && current_pose->x_subcell == stopped_pose->x_subcell
+                    && current_pose->y_subcell == stopped_pose->y_subcell
+                    && current_pose->z_subcell == stopped_pose->z_subcell;
+                bool const support_matches = !stopped_support.empty()
+                    && std::ranges::all_of(stopped_support, [&](auto const& entry) {
+                        auto const query = world->queryBlock(entry.first);
+                        return query.state == shared::GenerationState::Materialized
+                            && query.block && *query.block != shared::Block::Air
+                            && world->cellVersion(entry.first) == entry.second;
+                    });
+                if (!pose_matches || !support_matches) {
+                    events << "{\"event\":\"near_ground_changed_before_target\",\"pose_matches\":"
+                        << pose_matches << ",\"support_matches\":" << support_matches << "}\n";
+                    events.flush();
+                    ADD_FAILURE() << "near-ground pose/support changed before canonical target selection";
+                    Access::stop(player);
+                    return;
+                }
+            }
+            shared::VoxelRay ray;
+            shared::BlockTarget hit;
+            bool target_found = false;
+            if (stable_action_ray) {
+                ray = *stable_action_ray;
+                auto const resolved = shared::resolveInteractionTarget(
+                    *world, ray, shared::InteractionPerspective::FirstPerson, true);
+                target_found = resolved.status == shared::BlockTargetStatus::Hit && resolved.target.has_value();
+                if (target_found) { hit = *resolved.target; }
+                if (!target_found && (target_search_failures == 0U
+                        || (target_search_started && now - *target_search_started > std::chrono::seconds{2}))) {
+                    events << "{\"event\":\"stable_ray_failure\",\"status\":"
+                        << static_cast<uint32_t>(resolved.status)
+                        << ",\"face\":" << (resolved.target ? static_cast<int>(resolved.target->entered_face) : -1);
+                    if (resolved.target) {
+                        events << ",\"hit\":[" << resolved.target->cell.x << ',' << resolved.target->cell.y
+                            << ',' << resolved.target->cell.z << "]";
+                    }
+                    auto log_cell = [&](char const* label, shared::WorldCoordinate const cell) {
+                        auto const query = world->queryBlock(cell);
+                        events << ",\"" << label << "\":{\"cell\":[" << cell.x << ',' << cell.y << ',' << cell.z
+                            << "],\"state\":" << static_cast<uint32_t>(query.state)
+                            << ",\"material\":" << (query.block ? static_cast<int>(*query.block) : -1)
+                            << ",\"cell_version\":" << world->cellVersion(cell)
+                            << ",\"chunk_revision\":" << world->editChunkRevision(shared::WorldBounds::chunkCoordinate(cell))
+                            << '}';
+                    };
+                    if (stable_placement_cell) {
+                        log_cell("placed", *stable_placement_cell);
+                        auto support = *stable_placement_cell;
+                        --support.z;
+                        log_cell("support", support);
+                    }
+                    log_cell("ray_origin_sample", {static_cast<int64_t>(std::floor(ray.origin_x)),
+                        static_cast<int64_t>(std::floor(ray.origin_y)), static_cast<int64_t>(std::floor(ray.origin_z))});
+                    events << ",\"eye\":[" << ray.origin_x << ',' << ray.origin_y << ',' << ray.origin_z
+                        << "],\"direction\":[" << ray.direction_x << ',' << ray.direction_y << ',' << ray.direction_z << ']';
+                    if (auto const pose = Access::editLatencyPlayer(player)) {
+                        events << ",\"player\":[" << shared::playerPositionX(*pose) << ','
+                            << shared::playerPositionY(*pose) << ',' << shared::playerPositionZ(*pose) << ']';
+                    }
+                    events << "}\n";
+                    events.flush();
+                }
+            } else {
+                target_found = Access::editLatencyAim(player, ray, hit,
+                    target_search_failures == 0U ? &events : nullptr);
+                if (target_found) {
+                    stable_action_ray = ray;
+                    stable_placement_cell = hit.cell;
+                    ++stable_placement_cell->z;
+                }
+            }
+            if (!target_found) {
+                target_search_started = target_search_started.value_or(now);
+                ++target_search_failures;
+                if (target_search_failures == 1U || now - *target_search_started > std::chrono::seconds{2}) {
+                    events << "{\"event\":\"target_scan_failed\",\"rays\":32,\"attempts\":"
+                        << target_search_failures << ",\"stable_ray\":" << stable_action_ray.has_value()
+                        << ",\"reason\":\"canonical target resolution failed; see ray diagnostics\"}\n";
+                    events.flush();
+                }
+                if (now - *target_search_started > std::chrono::seconds{2}) {
+                    ADD_FAILURE() << "32-ray canonical target scan failed for two seconds";
+                    Access::stop(player);
+                }
+                return;
+            }
+            target_search_started.reset();
+            auto cell = hit.cell;
+            bool const placing = edits.size() % 2U == 0U;
+            if (placing) { ++cell.z; }
+            ASSERT_TRUE(stable_placement_cell);
+            ASSERT_EQ(cell, *stable_placement_cell)
+                << "fixed real ray must alternate the same placed cell; Break may enter any face";
+            if (!before_captured) {
+                if (!capture_pending) { Access::requestFrameCapture(player); capture_pending = true; }
+                return;
+            }
+            Edit edit;
+            edit.sequence = Access::editLatencyNextSequence(player);
+            edit.cell = cell;
+            edit.material = placing ? shared::Block::Stone : shared::Block::Air;
+            edit.version_before = world->cellVersion(cell);
+            edit.submitted_at = now;
+            edit.submitted_at_frame = progress.submitted ? progress.submitted->sequence : 0U;
+            if (posttravel) {
+                synthetic_left = !placing;
+                synthetic_right = placing;
+                edit.submitted_sequences.push_back(edit.sequence);
+            } else if (!player.submitBlockAction(
+                    placing ? shared::BlockActionKind::PlacePress : shared::BlockActionKind::BreakHold,
+                    ray, hit.cell, shared::Block::Stone)) { return; }
+            edits.push_back(edit);
+            edits_started = edits_started.value_or(now);
+            events << "{\"event\":\"submit\",\"sequence\":" << edit.sequence << ",\"at_ms\":" << milliseconds(now)
+                << ",\"cell\":[" << cell.x << ',' << cell.y << ',' << cell.z << ']'
+                << ",\"canonical_before_material\":" << static_cast<int>(world->queryBlock(cell).block.value_or(shared::Block::Air))
+                << ",\"ray_origin\":[" << ray.origin_x << ',' << ray.origin_y << ',' << ray.origin_z << ']'
+                << ",\"ray_direction\":[" << ray.direction_x << ',' << ray.direction_y << ',' << ray.direction_z << "]}\n";
+        }
+        if (edits.size() == ACTION_COUNT && std::ranges::all_of(edits, [&](auto const& e) {
+                return e.pixel_captured || (!readbacks && e.completed_scene.has_value()); })) {
+            if (newly_completed) { ++stable_completed_frames; }
+            if (stable_completed_frames >= 6U) { Access::stop(player); }
+        }
+        last_completed = progress.completed ? progress.completed->sequence : 0U;
+        events.flush();
+        if (server_failed.load() || (edits_started && now - *edits_started > std::chrono::seconds{10})) { Access::stop(player); }
+    };
+    player.run(core::Address::localhost(server.port()), '@', &hooks, accepted_at);
+    server_thread.request_stop();
+    server_thread.join();
+    preparation->cancel();
+    if (!readbacks) {
+        event_file << buffered_events.str();
+        for (auto const& timing : loop_timings) {
+            event_file << "{\"event\":\"loop_timing\",\"request_us\":" << timing.request_us
+                << ",\"cycle_us\":" << timing.cycle_us << ",\"render_us\":" << timing.render_us
+                << ",\"completed_sequence\":" << timing.completed_sequence
+                << ",\"completed_generation\":" << timing.completed_generation << "}\n";
+        }
+        event_file.flush();
+        EXPECT_LT(loop_timings.size(), MAXIMUM_LOOP_SAMPLES) << "bounded timing sample capacity exhausted";
+    }
+    for (auto const& [label, capture] : retained_captures) {
+        EXPECT_TRUE(saveFullFrame(directory / label, capture));
+    }
+    EXPECT_TRUE(travel_finished);
+    EXPECT_TRUE(before_captured);
+    EXPECT_FALSE(server_failed.load());
+    ASSERT_EQ(edits.size(), ACTION_COUNT);
+    for (auto const& edit : edits) {
+        EXPECT_TRUE(edit.ack_at);
+        EXPECT_TRUE(edit.delta_at);
+        EXPECT_TRUE(edit.visible_submission);
+        if (readbacks) { EXPECT_TRUE(edit.pixel_captured); }
+        else { EXPECT_TRUE(edit.completed_scene); }
+    }
+    EXPECT_GE(stable_completed_frames, 6U);
+    for (size_t index = 1U; readbacks && index < edits.size(); ++index) {
+        EXPECT_NE(edits[index - 1U].pixel_hash, edits[index].pixel_hash)
+            << "place/break must change the actual target-centered native pixels";
+    }
+    auto const* final_world = Access::editLatencyWorld(player);
+    ASSERT_NE(final_world, nullptr);
+    EXPECT_EQ(final_world->queryBlock(edits.back().cell).block, shared::Block::Air);
+    auto const final_scene = Access::editLatencyScene(player);
+    ASSERT_TRUE(final_scene);
+    EXPECT_TRUE(scene_has_revision(*final_scene, edits.back())) << "old full-scene work must not roll back the last edit";
+}
+
+TEST(PlayerClientFocusTest, AuthoritativeEditsReachCompletedNativeFramesWithinThreeFrames)
+{
+    runAuthoritativeEditNativeFrames(false);
+}
+
+TEST(PlayerClientFocusTest, V10PosttravelHeldEditsReachCompletedNativeFramesWithinThreeFrames)
+{
+    runAuthoritativeEditNativeFrames(true);
+}
+
+TEST(PlayerClientFocusTest, V10PosttravelEditsWithoutReadbacks)
+{
+    runAuthoritativeEditNativeFrames(true, false);
+}
+
+TEST(PlayerClientFocusTest, BenchmarkInputIsolationIgnoresInjectedMapMovementClickAndWheel)
+{
+    using Access = client::PlayerClientFocusTestAccess;
+    client::PlayerClient player;
+    client::GameClientBenchmarkHooks hooks{};
+    EXPECT_FALSE(hooks.isolate_platform_input);
+    hooks.isolate_platform_input = true;
+    Access::setIsolationHooks(player, &hooks);
+    EXPECT_FALSE(Access::injectIsolatedInput(player));
+    EXPECT_FALSE(Access::worldMapOpen(player));
+    auto const direction = Access::gameplayInput(player);
+    EXPECT_EQ(direction.x, 0U);
+    EXPECT_EQ(direction.y, 0U);
+    EXPECT_EQ(direction.z, 0U);
+    EXPECT_FALSE(Access::hasStartTransitionInputs(player));
+    Access::setIsolationHooks(player, nullptr);
+    std::array const map_key{GLFW_KEY_M};
+    EXPECT_TRUE(Access::updatePlatformInputSnapshot(player, map_key));
 }

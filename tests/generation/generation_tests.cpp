@@ -63,6 +63,88 @@ TEST(GenerationConfigurationTests, IdentityBindsAllParametersAndSourceRevision)
     EXPECT_NE(generation::configurationIdentity(changed), IDENTITY);
 }
 
+TEST(GenerationConfigurationTests, V21IdentityNamesReviewedShoreContactRevision)
+{
+    generation::GenerationConfiguration configuration;
+    configuration.model_tag = generation::TerrainModelTag::V21;
+
+    std::string const identity = generation::configurationIdentity(configuration);
+
+    EXPECT_NE(identity.find("shore-contact=v1"), std::string::npos);
+    EXPECT_NE(identity.find("native-v21-r3"), std::string::npos);
+}
+
+TEST(GenerationConfigurationTests, NativeV10FineTerrainHasASeparateSourceBoundIdentity)
+{
+    generation::GenerationConfiguration baseline;
+    baseline.model_tag = generation::TerrainModelTag::V10;
+    generation::GenerationConfiguration candidate = baseline;
+    candidate.use_v10_fine_terrain = true;
+
+    std::string const baseline_identity = generation::configurationIdentity(baseline);
+    std::string const candidate_identity = generation::configurationIdentity(candidate);
+
+    EXPECT_EQ(candidate_identity,
+        baseline_identity + std::string{generation::V10_FINE_TERRAIN_IDENTITY_SUFFIX});
+    EXPECT_EQ(baseline_identity.size(), 308U);
+    EXPECT_EQ(candidate_identity.size(), 378U);
+    EXPECT_LE(candidate_identity.size(), generation::CONFIGURATION_IDENTITY_MAX_BYTES);
+    EXPECT_NE(candidate_identity, baseline_identity);
+    candidate.model_tag = generation::TerrainModelTag::R6;
+    EXPECT_THROW((void)generation::configurationIdentity(candidate), std::invalid_argument);
+}
+
+TEST(GenerationSnapshotTests, ValidatesV21StagePayloadUnitsAndFieldDomains)
+{
+    static constexpr size_t SAMPLE_COUNT = 256U * 256U;
+    static constexpr size_t PHASE_SAMPLE_COUNT = 8U * SAMPLE_COUNT;
+    generation::GenerationSnapshot snapshot;
+    snapshot.stage = generation::GenerationStage::V21Water;
+    snapshot.resolution = 256U;
+    snapshot.v21.emplace();
+    auto& fields = *snapshot.v21;
+    fields.source_elevation_m.resize(SAMPLE_COUNT);
+    fields.temperature_celsius.resize(SAMPLE_COUNT);
+    fields.precipitation_mm_year.resize(SAMPLE_COUNT);
+    fields.wind_u.resize(SAMPLE_COUNT);
+    fields.wind_v.resize(SAMPLE_COUNT);
+    fields.current_u.resize(SAMPLE_COUNT);
+    fields.current_v.resize(SAMPLE_COUNT);
+    fields.phase_temperature_celsius.resize(PHASE_SAMPLE_COUNT);
+    fields.phase_precipitation_mm_year.resize(PHASE_SAMPLE_COUNT);
+    fields.land_snow_water_equivalent_m.resize(PHASE_SAMPLE_COUNT);
+    fields.glacier_thickness_m.resize(PHASE_SAMPLE_COUNT);
+    fields.sea_ice_thickness_m.resize(PHASE_SAMPLE_COUNT);
+    fields.water_level_blocks.resize(SAMPLE_COUNT);
+    fields.ocean_mask.resize(SAMPLE_COUNT);
+    fields.lake_mask.resize(SAMPLE_COUNT);
+    fields.river_mask.resize(SAMPLE_COUNT);
+    fields.biome_id.resize(SAMPLE_COUNT, 4U);
+    fields.ice_surface_kind.resize(SAMPLE_COUNT,
+        static_cast<uint8_t>(generation::V21GenerationIceSurfaceKind::None));
+    fields.plate_ids.resize(SAMPLE_COUNT, 7U);
+    fields.plate_directions.push_back({.plate_id = 7U, .x = 1.0F, .y = 0.0F});
+    fields.plate_directions_observed_after_native_step = 100U;
+
+    EXPECT_TRUE(generation::isValidGenerationSnapshot(snapshot));
+
+    auto invalid = snapshot;
+    invalid.v21->biome_id[0U] = 13U;
+    EXPECT_FALSE(generation::isValidGenerationSnapshot(invalid));
+
+    invalid = snapshot;
+    invalid.v21->ocean_mask[0U] = 2U;
+    EXPECT_FALSE(generation::isValidGenerationSnapshot(invalid));
+
+    invalid = snapshot;
+    invalid.v21->phase_precipitation_mm_year.pop_back();
+    EXPECT_FALSE(generation::isValidGenerationSnapshot(invalid));
+
+    invalid = snapshot;
+    invalid.v9.emplace();
+    EXPECT_FALSE(generation::isValidGenerationSnapshot(invalid));
+}
+
 TEST(GenerationNumericsTests, NumpyTanhMatchesPinnedFloat64Vectors)
 {
     struct Vector

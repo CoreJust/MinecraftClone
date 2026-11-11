@@ -59,6 +59,77 @@ if(invalid_benchmark_backend_result EQUAL 0
     message(FATAL_ERROR "game benchmark did not reject an invalid CoreLang backend")
 endif()
 
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --terrain-model invalid
+        --evidence "${OUTPUT_DIRECTORY}/invalid-terrain-model.json"
+    RESULT_VARIABLE invalid_terrain_model_result
+    OUTPUT_VARIABLE invalid_terrain_model_stdout
+    ERROR_VARIABLE invalid_terrain_model_stderr
+    TIMEOUT 10
+)
+if(invalid_terrain_model_result EQUAL 0
+    OR NOT "${invalid_terrain_model_stdout}${invalid_terrain_model_stderr}"
+        MATCHES "terrain model must be r6, v9, v21, v10, or native-v10-fine")
+    message(FATAL_ERROR "game benchmark did not reject an invalid terrain model")
+endif()
+
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --terrain-model v21 --workload unsupported
+        --evidence "${OUTPUT_DIRECTORY}/v21-parser-acceptance.json"
+    RESULT_VARIABLE v21_terrain_model_result
+    OUTPUT_VARIABLE v21_terrain_model_stdout
+    ERROR_VARIABLE v21_terrain_model_stderr
+    TIMEOUT 10
+)
+if(v21_terrain_model_result EQUAL 0
+    OR NOT "${v21_terrain_model_stdout}${v21_terrain_model_stderr}"
+        MATCHES "invalid game benchmark workload: unsupported")
+    message(FATAL_ERROR "game benchmark did not accept V21 before validating a later workload option")
+endif()
+
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --terrain-model v10 --workload unsupported
+        --evidence "${OUTPUT_DIRECTORY}/v10-parser-acceptance.json"
+    RESULT_VARIABLE v10_terrain_model_result
+    OUTPUT_VARIABLE v10_terrain_model_stdout
+    ERROR_VARIABLE v10_terrain_model_stderr
+    TIMEOUT 10
+)
+if(v10_terrain_model_result EQUAL 0
+    OR NOT "${v10_terrain_model_stdout}${v10_terrain_model_stderr}"
+        MATCHES "invalid game benchmark workload: unsupported")
+    message(FATAL_ERROR "V10 model selector did not reach workload validation")
+endif()
+
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --terrain-model native-v10-fine --workload unsupported
+        --evidence "${OUTPUT_DIRECTORY}/native-v10-fine-parser-acceptance.json"
+    RESULT_VARIABLE native_v10_fine_model_result
+    OUTPUT_VARIABLE native_v10_fine_model_stdout
+    ERROR_VARIABLE native_v10_fine_model_stderr
+    TIMEOUT 10
+)
+if(native_v10_fine_model_result EQUAL 0
+    OR NOT "${native_v10_fine_model_stdout}${native_v10_fine_model_stderr}"
+        MATCHES "invalid game benchmark workload: unsupported")
+    message(FATAL_ERROR "native V10 fine selector did not reach workload validation")
+endif()
+
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --terrain-model v9
+        --workload ordinary-turning --gameplay-proof performance
+        --evidence "${OUTPUT_DIRECTORY}/v9-gameplay-proof.json"
+    RESULT_VARIABLE v9_gameplay_proof_result
+    OUTPUT_VARIABLE v9_gameplay_proof_stdout
+    ERROR_VARIABLE v9_gameplay_proof_stderr
+    TIMEOUT 10
+)
+if(v9_gameplay_proof_result EQUAL 0
+    OR NOT "${v9_gameplay_proof_stdout}${v9_gameplay_proof_stderr}"
+        MATCHES "gameplay proof requires the R6 terrain model")
+    message(FATAL_ERROR "game benchmark did not keep gameplay proof bound to R6")
+endif()
+
 foreach(backend IN ITEMS interpreter jit aot)
     execute_process(
         COMMAND "${MC_MAIN}" --benchmark-game --workload ordinary-turning
@@ -180,10 +251,10 @@ file(WRITE "${valid_scenario}" [=[@version(0.1.5)
 pub fn scenario() {
     profile("flight3d-v1")
     seed(42u64)
-    playerXYZ("alice", '@'c8, 4i32, 4i32, 0i32, 0i16, 0i16, 0i16)
+    playerXYZ("alice", '@'c8, 4i32, 4i32, 10i32, 0i16, 0i16, 0i16)
     moveXYZ("alice", 1i8, 0i8, 0i8)
     wait(10u64)
-    expectXYZ("alice", 9i32, 4i32, 0i32)
+    expectXYZ("alice", 9i32, 4i32, 10i32)
 }
 ]=])
 execute_process(
@@ -212,6 +283,57 @@ foreach(required_text
     string(FIND "${valid_json}" "${required_text}" match_index)
     if(match_index EQUAL -1)
         message(FATAL_ERROR "valid scenario evidence is missing ${required_text}")
+    endif()
+endforeach()
+
+execute_process(
+    COMMAND "${MC_MAIN}" --scenario "${valid_scenario}" --evidence -
+    RESULT_VARIABLE streamed_result
+    OUTPUT_VARIABLE streamed_stdout
+    ERROR_VARIABLE streamed_stderr
+    TIMEOUT 10
+)
+if(NOT streamed_result EQUAL 0)
+    message(FATAL_ERROR "stdout evidence command failed: ${streamed_stderr}")
+endif()
+string(FIND "${streamed_stdout}" "\nMC_RUNTIME_EVIDENCE_V1 " frame_start)
+if(frame_start EQUAL -1)
+    message(FATAL_ERROR "stdout evidence frame marker is missing")
+endif()
+math(EXPR frame_header_start "${frame_start} + 1")
+string(SUBSTRING "${streamed_stdout}" ${frame_header_start} -1 frame_tail)
+string(REGEX MATCH "^MC_RUNTIME_EVIDENCE_V1 ([0-9]+)\n" frame_header "${frame_tail}")
+if(frame_header STREQUAL "")
+    message(FATAL_ERROR "stdout evidence frame length is malformed")
+endif()
+set(frame_byte_count "${CMAKE_MATCH_1}")
+string(LENGTH "${frame_header}" frame_header_length)
+math(EXPR frame_payload_start "${frame_header_length}")
+string(SUBSTRING "${frame_tail}" ${frame_payload_start} ${frame_byte_count} frame_json)
+string(LENGTH "${frame_json}" frame_payload_length)
+if(NOT frame_payload_length EQUAL frame_byte_count)
+    message(FATAL_ERROR "stdout evidence frame is truncated")
+endif()
+math(EXPR frame_suffix_start "${frame_payload_start} + ${frame_byte_count}")
+string(SUBSTRING "${frame_tail}" ${frame_suffix_start} -1 frame_suffix)
+string(FIND "${frame_suffix}" "\nMC_RUNTIME_EVIDENCE_V1 " duplicate_frame_start)
+if(NOT duplicate_frame_start EQUAL -1)
+    message(FATAL_ERROR "stdout evidence contains more than one frame")
+endif()
+string(JSON streamed_schema ERROR_VARIABLE streamed_json_error GET "${frame_json}" schema_version)
+if(NOT streamed_json_error STREQUAL "NOTFOUND"
+    OR NOT streamed_schema STREQUAL "mc.runtime-evidence.v1")
+    message(FATAL_ERROR "stdout evidence frame does not contain valid runtime JSON: ${streamed_json_error}")
+endif()
+foreach(required_text
+    "\"passed\": true"
+    "\"ticks\": 10"
+    "\"clients_accepted\": 1"
+    "\"expectations_passed\": 1"
+)
+    string(FIND "${frame_json}" "${required_text}" match_index)
+    if(match_index EQUAL -1)
+        message(FATAL_ERROR "stdout evidence frame is missing ${required_text}")
     endif()
 endforeach()
 
@@ -366,5 +488,194 @@ foreach(required_text "\"passed\": false" "capture image and evidence paths must
     string(FIND "${collision_json}" "${required_text}" match_index)
     if(match_index EQUAL -1)
         message(FATAL_ERROR "collision evidence is missing ${required_text}")
+    endif()
+endforeach()
+
+foreach(capture_case IN ITEMS invalid-phase missing-image)
+    if(capture_case STREQUAL "invalid-phase")
+        set(capture_args --benchmark-frame-capture image.ppm --benchmark-frame-capture-phase invalid)
+        set(expected_error "benchmark frame capture phase must be generation or playing")
+    else()
+        set(capture_args --benchmark-frame-capture-phase generation)
+        set(expected_error "benchmark frame capture phase requires --benchmark-frame-capture")
+    endif()
+    execute_process(
+        COMMAND "${MC_MAIN}" --benchmark-game ${capture_args} --evidence "${OUTPUT_DIRECTORY}/capture-invalid.json"
+        RESULT_VARIABLE capture_result
+        OUTPUT_VARIABLE capture_stdout
+        ERROR_VARIABLE capture_stderr
+        TIMEOUT 10
+    )
+    if(capture_result EQUAL 0 OR NOT "${capture_stdout}${capture_stderr}" MATCHES "${expected_error}")
+        message(FATAL_ERROR "capture argument validation failed for ${capture_case}")
+    endif()
+endforeach()
+
+file(WRITE "${OUTPUT_DIRECTORY}/capture-collision.ppm" "preserved-image")
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --benchmark-frame-capture "${OUTPUT_DIRECTORY}/capture-collision.ppm"
+        --evidence "${OUTPUT_DIRECTORY}/capture-collision.ppm"
+    RESULT_VARIABLE collision_result
+    OUTPUT_VARIABLE collision_stdout
+    ERROR_VARIABLE collision_stderr
+    TIMEOUT 10
+)
+file(READ "${OUTPUT_DIRECTORY}/capture-collision.ppm" collision_image)
+if(collision_result EQUAL 0 OR NOT collision_image STREQUAL "preserved-image"
+    OR NOT "${collision_stdout}${collision_stderr}" MATCHES "capture image and evidence paths must differ")
+    message(FATAL_ERROR "capture collision did not preserve existing output")
+endif()
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --benchmark-frame-capture image.ppm
+        --benchmark-frame-capture-delay-ms 30001 --evidence "${OUTPUT_DIRECTORY}/capture-invalid-delay.json"
+    RESULT_VARIABLE delay_result
+    OUTPUT_VARIABLE delay_stdout
+    ERROR_VARIABLE delay_stderr
+    TIMEOUT 10
+)
+if(delay_result EQUAL 0 OR NOT "${delay_stdout}${delay_stderr}" MATCHES "delay must be between zero and 30 seconds")
+    message(FATAL_ERROR "capture delay range was not enforced")
+endif()
+
+foreach(capture_site_case IN ITEMS accepted reference-accepted missing nonfinite proof spawn-z no-frame bounds pitch generation-phase)
+    set(capture_site_model native-v10-fine)
+    if(capture_site_case STREQUAL "reference-accepted")
+        set(capture_site_model v10)
+    endif()
+    set(capture_site_args
+        --terrain-model "${capture_site_model}" --workload diagnostic-stationary
+        --benchmark-frame-capture capture-site.ppm)
+    if(capture_site_case STREQUAL "accepted" OR capture_site_case STREQUAL "reference-accepted")
+        list(APPEND capture_site_args --benchmark-capture-site 32768 32768 450 153.25 -23.5
+            --diagnostic-full-radius-capture)
+        set(expected_error "--diagnostic-full-radius-capture requires --workload speed-200-full-radius")
+    elseif(capture_site_case STREQUAL "missing")
+        list(APPEND capture_site_args --benchmark-capture-site 32768 32768)
+        set(expected_error "benchmark capture site requires x y z yaw pitch")
+    elseif(capture_site_case STREQUAL "nonfinite")
+        list(APPEND capture_site_args --benchmark-capture-site 32768 32768 450 nan -23.5)
+        set(expected_error "benchmark capture site yaw and pitch must be finite")
+    elseif(capture_site_case STREQUAL "proof")
+        list(APPEND capture_site_args --benchmark-capture-site 32768 32768 450 0 0 --gameplay-proof performance)
+        set(expected_error "benchmark capture site cannot be used with a gameplay proof")
+    elseif(capture_site_case STREQUAL "spawn-z")
+        list(APPEND capture_site_args --benchmark-capture-site 32768 32768 450 0 0 --benchmark-spawn-z 500)
+        set(expected_error "benchmark capture site cannot be combined with --benchmark-spawn-z")
+    elseif(capture_site_case STREQUAL "no-frame")
+        list(REMOVE_ITEM capture_site_args --benchmark-frame-capture capture-site.ppm)
+        list(APPEND capture_site_args --benchmark-capture-site 32768 32768 450 0 0)
+        set(expected_error "benchmark capture site requires --benchmark-frame-capture")
+    elseif(capture_site_case STREQUAL "bounds")
+        list(APPEND capture_site_args --benchmark-capture-site -1 32768 450 0 0)
+        set(expected_error "benchmark capture site coordinates are outside the flight world")
+    elseif(capture_site_case STREQUAL "generation-phase")
+        list(APPEND capture_site_args --benchmark-frame-capture-phase generation
+            --benchmark-capture-site 32768 32768 450 0 0)
+        set(expected_error "benchmark capture site requires playing frame capture")
+    else()
+        list(APPEND capture_site_args --benchmark-capture-site 32768 32768 450 0 90)
+        set(expected_error "benchmark capture site pitch must be from -89 to 89 degrees")
+    endif()
+    execute_process(
+        COMMAND "${MC_MAIN}" --benchmark-game ${capture_site_args}
+            --evidence "${OUTPUT_DIRECTORY}/capture-site-${capture_site_case}.json"
+        RESULT_VARIABLE capture_site_result
+        OUTPUT_VARIABLE capture_site_stdout
+        ERROR_VARIABLE capture_site_stderr
+        TIMEOUT 10
+    )
+    if(capture_site_result EQUAL 0
+        OR NOT "${capture_site_stdout}${capture_site_stderr}" MATCHES "${expected_error}")
+        message(FATAL_ERROR "capture-site argument validation failed for ${capture_site_case}: ${capture_site_stdout}${capture_site_stderr}")
+    endif()
+endforeach()
+
+foreach(live_ui_case IN ITEMS accepted duplicate)
+    set(live_ui_args --benchmark-live-ui)
+    if(live_ui_case STREQUAL "duplicate")
+        list(APPEND live_ui_args --benchmark-live-ui)
+        set(live_ui_expected_error "invalid game benchmark option: --benchmark-live-ui")
+    else()
+        list(APPEND live_ui_args --terrain-model invalid)
+        set(live_ui_expected_error "terrain model must be r6, v9, v21, v10, or native-v10-fine")
+    endif()
+    execute_process(
+        COMMAND "${MC_MAIN}" --benchmark-game ${live_ui_args}
+            --evidence "${OUTPUT_DIRECTORY}/live-ui-invalid.json"
+        RESULT_VARIABLE live_ui_result
+        OUTPUT_VARIABLE live_ui_stdout
+        ERROR_VARIABLE live_ui_stderr
+        TIMEOUT 10
+    )
+    if(live_ui_result EQUAL 0 OR NOT "${live_ui_stdout}${live_ui_stderr}" MATCHES "${live_ui_expected_error}")
+        message(FATAL_ERROR "live UI benchmark argument validation failed for ${live_ui_case}")
+    endif()
+endforeach()
+
+function(assert_surface_spawn_parse expected)
+    foreach(launch_mode IN ITEMS --server --local-game)
+        execute_process(
+            COMMAND "${MC_MAIN}" "${launch_mode}" ${ARGN}
+            RESULT_VARIABLE result OUTPUT_VARIABLE stdout ERROR_VARIABLE stderr TIMEOUT 10
+        )
+        if(result EQUAL 0 OR NOT "${stdout}${stderr}" MATCHES "${expected}")
+            message(FATAL_ERROR "${launch_mode} surface spawn parse mismatch: ${stdout}${stderr}")
+        endif()
+    endforeach()
+endfunction()
+assert_surface_spawn_parse("surface spawn contains an invalid coordinate" --spawn-surface invalid 0)
+assert_surface_spawn_parse("spawn point is outside the world" --spawn-surface -1 0)
+assert_surface_spawn_parse("spawn point is outside the world" --spawn-surface 65536 0)
+assert_surface_spawn_parse("spawn point is outside the world" --spawn-surface 0 -1)
+assert_surface_spawn_parse("spawn point is outside the world" --spawn-surface 0 65536)
+assert_surface_spawn_parse("server launch syntax" --spawn-surface 0)
+assert_surface_spawn_parse("server launch syntax" --spawn-surface 0 0 --spawn 0 0 8)
+assert_surface_spawn_parse("server launch syntax" --spawn 0 0 8 --spawn-surface 0 0)
+assert_surface_spawn_parse("invalid port" --spawn-surface 0 0 --port 0)
+assert_surface_spawn_parse("invalid port" --spawn-surface 65535 65535 --port 0)
+
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --workload speed-200-turning
+        --full-radius-warmup-seconds 1 --evidence "${OUTPUT_DIRECTORY}/turning-invalid.json"
+    RESULT_VARIABLE turning_workload_result
+    OUTPUT_VARIABLE turning_workload_stdout
+    ERROR_VARIABLE turning_workload_stderr
+    TIMEOUT 10
+)
+if(turning_workload_result EQUAL 0
+    OR NOT "${turning_workload_stdout}${turning_workload_stderr}"
+        MATCHES "requires --workload speed-200-full-radius")
+    message(FATAL_ERROR "speed-200-turning did not reach its workload-specific validation")
+endif()
+
+# A valid height must pass the parser and reach a later, deliberately rejected option.
+execute_process(
+    COMMAND "${MC_MAIN}" --benchmark-game --terrain-model v10 --benchmark-spawn-z 1600
+        --workload unsupported --evidence "${OUTPUT_DIRECTORY}/airborne-parser.json"
+    RESULT_VARIABLE airborne_parser_result
+    OUTPUT_VARIABLE airborne_parser_stdout
+    ERROR_VARIABLE airborne_parser_stderr
+    TIMEOUT 10
+)
+if(airborne_parser_result EQUAL 0
+    OR NOT "${airborne_parser_stdout}${airborne_parser_stderr}"
+        MATCHES "invalid game benchmark workload: unsupported")
+    message(FATAL_ERROR "valid airborne height did not reach later workload validation")
+endif()
+
+foreach(invalid_height IN ITEMS malformed 1600.5 2147483648)
+    execute_process(
+        COMMAND "${MC_MAIN}" --benchmark-game --terrain-model v10
+            --benchmark-spawn-z "${invalid_height}"
+            --evidence "${OUTPUT_DIRECTORY}/airborne-invalid.json"
+        RESULT_VARIABLE airborne_invalid_result
+        OUTPUT_VARIABLE airborne_invalid_stdout
+        ERROR_VARIABLE airborne_invalid_stderr
+        TIMEOUT 10
+    )
+    if(airborne_invalid_result EQUAL 0
+        OR NOT "${airborne_invalid_stdout}${airborne_invalid_stderr}"
+            MATCHES "benchmark spawn height must be an integer")
+        message(FATAL_ERROR "invalid airborne height was not rejected: ${invalid_height}")
     endif()
 endforeach()

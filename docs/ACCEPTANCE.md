@@ -3,14 +3,31 @@
 The executable provides bounded evidence modes:
 
 ```sh
-mc_main --scenario <file> --evidence <json>
-mc_main --benchmark-render [--present-immediate] [--hud] --evidence <json>
-mc_main --benchmark-game [--present-immediate] [--workload ordinary|ordinary-turning|speed-200|speed-200-full-radius|wrapped-border|permission-collision] [--diagnostic-full-radius-capture] [--diagnostic-presentation-stages] [--diagnostic-indexed-stone-quads 0|1|2] --evidence <json>
+mc_main --scenario <file> --evidence <json-or-dash>
+mc_main --benchmark-render [--present-immediate] [--hud] --evidence <json-or-dash>
+mc_main --benchmark-game [--present-immediate] [--workload ordinary|ordinary-turning|speed-200|speed-200-full-radius|wrapped-border|permission-collision|diagnostic-stationary] [--diagnostic-full-radius-capture] [--diagnostic-presentation-stages] [--diagnostic-indexed-stone-quads 0|1|2] --evidence <json-or-dash>
 mc_main --player-client-2d --address <IP:PORT> --replay stationary|ordinary-turning --seconds 1..120 --evidence <new-directory>
-mc_main --capture-render --image <ppm> --evidence <json>
+mc_main --capture-render --image <ppm> --evidence <json-or-dash>
 ```
 
-Scenario mode drives a bounded local server and authoritative assertions. Renderer modes require Vulkan/windows; watchdogs bound execution and preserve failures.
+Pass `--evidence -` for one frame after progress logs:
+`\nMC_RUNTIME_EVIDENCE_V1 <byte-count>\n` plus exactly that many bytes of the
+regular-file JSON, including its final newline. Windows emits binary. Reject
+missing, duplicate, truncated or invalid frames; retain process exit status.
+External compression leaves the workload and measurement window unchanged.
+
+Diagnostic only; no qualification:
+
+```sh
+mc_main --benchmark-game --terrain-model v10 --workload speed-200 --benchmark-spawn-z 1600 --present-immediate --evidence <json>
+mc_main --benchmark-game --benchmark-frame-capture <fresh.ppm> --evidence <json>
+mc_main --benchmark-game --benchmark-frame-capture <fresh.ppm> --benchmark-frame-capture-phase generation --benchmark-frame-capture-delay-ms <0..30000> --evidence <json>
+# Capture-site comparison
+mc_main --benchmark-game --terrain-model v10 --workload diagnostic-stationary --benchmark-frame-capture <reference.ppm> --benchmark-capture-site <x> <y> <z> <yaw> <pitch> --evidence <reference.json>
+mc_main --benchmark-game --terrain-model native-v10-fine --workload diagnostic-stationary --benchmark-frame-capture <fresh.ppm> --benchmark-capture-site <x> <y> <z> <yaw> <pitch> --evidence <json>
+```
+
+Scenarios assert local authority. Renderer modes require Vulkan/windows; watchdogs preserve failures.
 
 Evidence records framebuffer size, device/driver, present mode, validation/HUD,
 durations, frame count and CPU percentiles. Historical
@@ -23,10 +40,24 @@ wrapped-border and permission/collision churn; compare separate receipts. Rates
 require authoritative state changes. MC-AI-0247 `AdverseNetwork` tests cover
 impairment, but this loopback benchmark does not measure frame timing under it.
 
-The JSON retains raw loop and tick durations, present outcomes, traffic, resident
-tiles, visible faces and client payload bytes. GPU duration is the latest renderer
-sample and may lag; request rate is not GPU FPS. Physical scanout, resident mesh
-bytes and power mode are unavailable. Raw samples and percentiles remain available.
+JSON retains raw loop/tick durations, presents, traffic, resident tiles, visible faces
+and payload bytes. GPU duration may lag; scanout, resident mesh bytes and power mode
+are unavailable.
+
+`diagnostic_client_after_resize_*_duration_ns` separates data/HUD, map/block,
+terrain LOD and post-LOD CPU stages from renderer calls. Percentiles are not additive.
+
+V10-fine x30 diagnostics record start, authority and disk coverage. Native x200
+records fenced readiness and recovery around 30 seconds of travel.
+
+```sh
+python3 script/ci/verify_gameplay_gate.py --inspect-s2-turning macos --receipt <json>
+python3 script/ci/verify_gameplay_gate.py --inspect-s2-turning windows --receipt <json>
+mc_main --benchmark-game --terrain-model native-v10-fine --workload speed-200-full-radius --present-immediate --evidence <json>
+python3 script/ci/verify_gameplay_gate.py --inspect-s2-recovery windows --receipt <json>
+```
+
+Inspector output is diagnostic only.
 
 Both gameplay proofs use render distance 256. `terrain-coverage` remains x200
 recovery; `performance` uses `turning-x30-movement-v2`: a 30-second stationary
@@ -35,14 +66,10 @@ seconds stationary. S1 uses `mc.s1-lod-performance.v2`: each movement loop, auth
 trajectory anchor must certify horizontal full-volume 640 coverage. Require 6,561
 resident/required XY columns, 64 vertical chunks and 419,904 chunk equivalents,
 positive session coverage epoch, and the same current required XY chunk center.
-Announcement lag is allowed; the older announced center cannot substitute for
-the current required set. Separate active nonempty visual 320 LOD evidence is
-required. Dense 48 start/dense 80 cache do not prove full 640. Generic 320 benchmarks
-retain exact geometric chunk sets queried through `hasAuthoritativeChunk`;
-never reinterpret their counters as S1 profile counts. Prior 40/72 readiness
-receipts preserve the invalid unit interpretation and are not current passes.
-Loading deadlines
-keep the original request-accepted T0 through world preparation and client startup.
+Announcements may lag, but measure the current required set. Also require active
+visual 320 LOD. Dense 48/80 caches cannot prove 640 coverage. Generic 320 uses
+exact `hasAuthoritativeChunk` geometry. Historical 40/72 receipts used invalid units.
+Loading deadlines start at request acceptance, including world preparation and startup.
 At least 99% of
 the moving window must meet the fresh-frame target: 8,333,333 ns on Mac (120 Hz)
 and 3,333,333 ns on Windows (300 Hz), measured from distinct submissions whose
@@ -70,7 +97,7 @@ mc_main --player-client-2d --address 127.0.0.1:8765 --replay ordinary-turning \
   --seconds 30 --evidence /absolute/path/new-evidence
 ```
 
-Use a new output directory with an existing parent. Replay includes loading
+New output directories need an existing parent. Replay includes loading
 from request acceptance, production server/start gate, and stationary or synthetic
 x30 input. Snapshots retain pixel/material/coverage/height/update masks and
 terrain/position identity; they claim no GPU FPS and bypass live input.
@@ -107,12 +134,11 @@ cases cover a 15-second freeze and reconnect after server replacement. Disconnec
 and pending-join cancellation must stop and join production hooks. Each `mc_tests`
 case has a 120-second timeout; the relay changes no shipping behavior.
 
-Capture tests use `--player-client-capture` and four presets. They await the
-server-selected disk and CPU/renderer mesh coverage, compare keys across 16
-headings, then write PPMs. Radius 256 contains 205,861 tiles; origin spawns at
-(0,0). Portable output is at least 1000x600; `MC_S7_REQUIRE_2560X1440=1` selects
-exact Mac dimensions. Inspect every frame.
-
-The four Mac images show central-spike flight at distance 72 (16,241 tiles),
-the adjacent trench, a mountain climb, and first-person origin. Wait for each
-selected disk/mesh set; inspect 2560×1440 output with a bottom-center label.
+Four `--player-client-capture` presets use server `--spawn-surface X Y` at preset
+coordinates for safe canonical Z. Before sweeping 16 headings, require a session-
+matched native LOD partition of the 65,536² world, all 6,889 columns in the
+configured player-centered 83×83 capture window, uploaded faces and a fence-
+completed frame. This is a configured test condition, not a general runtime
+residency quota. Keep scene/columns stable; write PPMs and retain ≥1000×600,
+optional exact 2560×1440, terrain, color, HUD and title pixel checks. Origin starts
+above prepared canonical terrain at (0,0). Inspect every image.

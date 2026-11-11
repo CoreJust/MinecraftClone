@@ -522,3 +522,59 @@ TEST(HeightTileWorkerPoolTest, CancellationDrainsSubmittedCompletionsAndQueuedWo
 }
 
 } // namespace
+
+TEST(HeightTileWorkerPoolTest, NativeV9SamplesCanonicalColumnsWithoutAnUnusedRegionalLease)
+{
+    static constexpr uint64_t WORLD_EPOCH = 1U;
+    generation::GenerationConfiguration configuration;
+    configuration.model_tag = generation::TerrainModelTag::V9;
+    auto world = std::make_shared<shared::TerrainWorld>(generation::prepareAtlas(configuration), 17U);
+    shared::WorldGenerationCoordinator coordinator{32U, world->identity().revision, world->identity().seed};
+    coordinator.setTerrainContext(world, WORLD_EPOCH);
+    shared::GenerationJob job = heightTileJob(1U, *world, nullptr);
+    auto const bound = coordinator.bindTerrainLeaf(job);
+    ASSERT_TRUE(bound.has_value());
+    server::HeightTileWorkerPool pool{world, 1U};
+    ASSERT_TRUE(pool.enqueue({.client_id = 7U, .generation = job.revision, .job = *bound}));
+    auto const results = takeResults(pool, 1U);
+    ASSERT_EQ(results.size(), 1U);
+    ASSERT_TRUE(results.front().succeeded);
+    auto const legacy_leaf = preparedLeaf(*world, job.coordinate);
+    auto const reference = world->sampleSurface(*legacy_leaf, {job.coordinate.x, job.coordinate.y, 0});
+    auto const& actual = results.front().tile.surface;
+    EXPECT_EQ(actual.identity, reference.identity);
+    EXPECT_EQ(actual.block_sea_level, reference.block_sea_level);
+    EXPECT_EQ(actual.max_height, reference.max_height);
+    for (uint32_t index = 0U; index < shared::Chunk::FACE_BLOCK_COUNT; ++index) {
+        for (uint16_t z = 0U; z < shared::WorldExtent::DEPTH; ++z) {
+            EXPECT_EQ(actual.columns[index].materialAt(z, actual.block_sea_level),
+                reference.columns[index].materialAt(z, reference.block_sea_level));
+        }
+    }
+    auto materialization = *bound;
+    materialization.id = 2U;
+    materialization.stage = shared::GenerationStage::Materialize;
+    ASSERT_TRUE(pool.enqueue({.client_id = 7U, .generation = job.revision,
+        .job = materialization, .world_generation = true}));
+    auto const dense = takeResults(pool, 1U);
+    ASSERT_EQ(dense.size(), 1U);
+    ASSERT_TRUE(dense.front().succeeded);
+    EXPECT_EQ(dense.front().chunk.contentIdentity(),
+        world->materializeChunk(reference, job.coordinate).contentIdentity());
+    EXPECT_EQ(pool.queueMetrics().surface_tile_samples_total, 1U);
+    EXPECT_EQ(pool.queueMetrics().surface_tile_cache_hits_total, 1U);
+    job.world_epoch = 2U;
+    EXPECT_FALSE(pool.enqueue({.client_id = 7U, .generation = job.revision, .job = job}));
+    job.world_epoch = WORLD_EPOCH;
+    job.terrain_identity->seed += 1U;
+    EXPECT_FALSE(pool.enqueue({.client_id = 7U, .generation = job.revision, .job = job}));
+    job.terrain_identity = world->identity();
+    job.id = 3U;
+    job.cancellation_source->request_stop();
+    ASSERT_TRUE(pool.enqueue({.client_id = 7U, .generation = job.revision, .job = job}));
+    auto const cancelled = takeResults(pool, 1U);
+    ASSERT_EQ(cancelled.size(), 1U);
+    EXPECT_TRUE(cancelled.front().cancelled);
+    EXPECT_FALSE(cancelled.front().succeeded);
+    EXPECT_EQ(pool.queueMetrics().surface_tile_samples_total, 1U);
+}

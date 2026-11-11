@@ -22,6 +22,7 @@ struct RendererFrameIdentity final {
 struct RendererFrameProgress final {
     std::optional<RendererFrameIdentity> submitted;
     std::optional<RendererFrameIdentity> completed;
+    std::optional<std::chrono::steady_clock::time_point> completed_observed_at;
 };
 
 struct RendererRetiredFrameCompletion final {
@@ -66,6 +67,17 @@ public:
         m_submissions_by_slot.try_emplace(frame_slot);
     }
 
+    void setRetiredHistoryEnabled(bool const enabled) noexcept
+    {
+        if (m_retain_retired_history == enabled) {
+            return;
+        }
+        m_retain_retired_history = enabled;
+        if (!enabled) {
+            std::vector<RendererRetiredFrameCompletion>{}.swap(m_retired_completions);
+        }
+    }
+
     // Only call after the presentation backend has completed every submitted fence.
     void observeRecreationCompleted(std::chrono::steady_clock::time_point const observed_at)
     {
@@ -74,8 +86,13 @@ public:
             if (!submission) {
                 continue;
             }
-            m_retired_completions.push_back({ *submission, frame_slot, observed_at });
-            observeCompletedSlot(frame_slot);
+            if (m_retain_retired_history) {
+                m_retired_completions.push_back({ *submission, frame_slot, observed_at });
+            }
+            observeCompletedSlot(frame_slot, observed_at);
+        }
+        if (!m_retain_retired_history) {
+            return;
         }
         using CompletionOffset = std::vector<RendererRetiredFrameCompletion>::difference_type;
         std::sort(
@@ -99,7 +116,10 @@ public:
         m_retired_completions.clear();
     }
 
-    void observeCompletedSlot(uint32_t const frame_slot) noexcept
+    void observeCompletedSlot(
+        uint32_t const frame_slot,
+        std::chrono::steady_clock::time_point const observed_at = std::chrono::steady_clock::now()
+    ) noexcept
     {
         auto const submission = m_submissions_by_slot.find(frame_slot);
         if (submission == m_submissions_by_slot.end()) {
@@ -112,10 +132,12 @@ public:
         submission->second.reset();
         if (!m_progress.completed.has_value()) {
             m_progress.completed = completed_submission;
+            m_progress.completed_observed_at = observed_at;
             return;
         }
         if (completed_submission.sequence > m_progress.completed->sequence) {
             m_progress.completed = completed_submission;
+            m_progress.completed_observed_at = observed_at;
         }
     }
 
@@ -148,6 +170,7 @@ private:
     RendererFrameProgress m_progress;
     std::vector<RendererRetiredFrameCompletion> m_retired_completions;
     std::unordered_map<uint32_t, std::optional<RendererFrameIdentity>> m_submissions_by_slot;
+    bool m_retain_retired_history = false;
     uint64_t m_next_sequence = 1U;
 };
 

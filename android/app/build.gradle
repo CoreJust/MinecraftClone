@@ -39,6 +39,7 @@ def vcpkgOverlayPorts = file('../../script/ci/vcpkg-overlays')
 def fallbackShaderSources = layout.buildDirectory.dir('generated/fallback-shaders')
 def requiredShaderAssets = [
     'text.frag.spv',
+    'adaptive_text.frag.spv',
     'text.vert.spv',
     'grid.vert.spv',
     'player.vert.spv',
@@ -51,8 +52,11 @@ def requiredShaderAssets = [
     'sky.frag.spv',
     'map.vert.spv',
     'map.frag.spv',
+    'gui_vector.vert.spv',
+    'gui_vector.frag.spv',
     'trivial.frag.spv',
 ]
+def runtimeAudioAssets = file("${buildDir}/generated/runtime-audio")
 def hudLicenseAssets = file("${buildDir}/generated/hud-licenses")
 def hwasanWrapAssets = layout.buildDirectory.dir('generated/hwasan-wrap')
 def requiredHudLicenseAssets = [
@@ -73,11 +77,15 @@ def stageFallbackShaders = tasks.register('stageFallbackShaders', Sync) {
         include 'trivial.frag'
         include 'text.vert'
         include 'text.frag'
+        include 'adaptive_text.frag'
+        include 'text_glyph.glsl'
         include 'stone_solid.frag'
         include 'sky.vert'
         include 'sky.frag'
         include 'map.vert'
         include 'map.frag'
+        include 'gui_vector.vert'
+        include 'gui_vector.frag'
     }
     into(fallbackShaderSources)
 }
@@ -87,6 +95,15 @@ def stageHudLicenses = tasks.register('stageHudLicenses', Sync) {
         include 'TAMSYN_LICENSE.txt'
     }
     into(new File(hudLicenseAssets, 'licenses/hud'))
+}
+def stageRuntimeAudio = tasks.register('stageRuntimeAudio', Sync) {
+    from('../../assets/audio') {
+        include 'welcome.wav'
+        include 'gameplay.wav'
+        include 'README.md'
+        include 'music.json'
+    }
+    into(new File(runtimeAudioAssets, 'audio'))
 }
 def stageHwasanWrap = tasks.register('stageHwasanWrap') {
     outputs.dir(hwasanWrapAssets)
@@ -163,7 +180,7 @@ android {
     sourceSets {
         main {
             shaders.setSrcDirs([fallbackShaderSources])
-            assets.setSrcDirs([hudLicenseAssets])
+            assets.setSrcDirs([hudLicenseAssets, runtimeAudioAssets])
             if (sanitizer == 'hwasan') {
                 resources.srcDir(hwasanWrapAssets)
             }
@@ -242,13 +259,13 @@ if (coreProjectDir != null && !coreProjectDir.trim().isEmpty()) {
 
 tasks.configureEach {
     if (name ==~ /.*[Ll]int.*/) {
-        dependsOn(stageHudLicenses)
+        dependsOn(stageHudLicenses, stageRuntimeAudio)
     }
     if (name ==~ /(merge|compile).+Shaders/) {
         dependsOn(stageFallbackShaders)
     }
     if (name ==~ /merge.+Assets/) {
-        dependsOn(stageHudLicenses)
+        dependsOn(stageHudLicenses, stageRuntimeAudio)
     }
 }
 
@@ -268,6 +285,11 @@ def verifyDebugShaderAssets = tasks.register('verifyDebugShaderAssets') {
             requiredHudLicenseAssets.each { String asset ->
                 if (zip.getEntry("assets/${asset}") == null) {
                     throw new GradleException("Debug APK is missing HUD attribution/license asset: ${asset}")
+                }
+            }
+            ['welcome.wav', 'gameplay.wav', 'README.md', 'music.json'].each { String asset ->
+                if (zip.getEntry("assets/audio/${asset}") == null) {
+                    throw new GradleException("Debug APK is missing runtime audio asset: ${asset}")
                 }
             }
             if (sanitizer == 'hwasan' && zip.getEntry('lib/arm64-v8a/wrap.sh') == null) {

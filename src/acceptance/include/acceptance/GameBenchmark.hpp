@@ -1,9 +1,13 @@
 #pragma once
 
+#include <client/Camera.hpp>
+
 #include <shared/corelang/ExecutionTypes.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
+
+#include <generation/Generation.hpp>
 
 #include <acceptance/EvidenceJson.hpp>
 #include <acceptance/ReplayInput.hpp>
@@ -12,6 +16,8 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
+#include <functional>
 #include <map>
 #include <optional>
 #include <span>
@@ -36,6 +42,12 @@ inline constexpr std::chrono::seconds GAME_BENCHMARK_FULL_RADIUS_MOVEMENT{ 30 };
 inline constexpr std::chrono::seconds GAME_BENCHMARK_FULL_RADIUS_NON_WARMUP_BUDGET{ 120 };
 inline constexpr std::chrono::seconds GAME_BENCHMARK_S1_MOVEMENT_WINDOW{ 30 };
 inline constexpr uint32_t GAME_BENCHMARK_S1_EXPECTED_MOVEMENT_UPDATES = 300U;
+inline constexpr std::string_view GAME_BENCHMARK_S2_NATIVE_CONFIGURATION_IDENTITY =
+    "terrain-v10;source=f775213330028b165328885c6899ac0bf9c3c0c9a93ff6e0aca591554dec6e59"
+    ";seed=42;resolution=256;platec=1.4.3-direct;foundation=v1;fine-climate=v1"
+    ";fresh-climate=v7;scale=1;datum=512;depth=2048;native-v10-r1;water=v5-fine-bed-v1"
+    ";river=c8f9b851f7891e555165648d473b39df1ecffc9b73ae65cf5b14ed9f5ba04703"
+    ";fine=e52e2e82b3e9873e14e543e0a7583fb978a182f1555997bda6febcd9ff25061a";
 inline constexpr std::string_view GAME_BENCHMARK_S1_QUALIFICATION_MANIFEST =
     "{\n"
     "  \"contract\": \"mc.s1-qualification-settings.v1\",\n"
@@ -70,6 +82,10 @@ static_assert(GAME_BENCHMARK_S1_MOVEMENT_WINDOW / shared::TICK
 ) noexcept;
 
 [[nodiscard]] uint32_t gameBenchmarkS1PresentedCurrentColumnCount(
+    client::TerrainLodScene const& scene,
+    shared::PlayerPosition center
+);
+[[nodiscard]] uint32_t gameBenchmarkNativePresentedCurrentColumnCount(
     client::TerrainLodScene const& scene,
     shared::PlayerPosition center
 );
@@ -138,6 +154,30 @@ void gameBenchmarkObserveGeometricSphere(
 [[nodiscard]] bool gameBenchmarkS1VisualLodSampleReady(
     std::optional<GameBenchmarkFrameSample::VisualLod> const& sample
 ) noexcept;
+[[nodiscard]] bool gameBenchmarkNativeTerrainSampleCurrent(
+    GameBenchmarkFrameSample::NativeTerrain const& sample,
+    shared::TerrainIdentity const& session_identity,
+    uint64_t session_join_epoch,
+    uint64_t coverage_epoch
+) noexcept;
+[[nodiscard]] bool gameBenchmarkNativeTerrainFrameFenceConfirmed(
+    GameBenchmarkFrameSample const& sample,
+    std::span<GameBenchmarkFrameCompletion const> completions
+) noexcept;
+[[nodiscard]] bool gameBenchmarkS2NativeTurningAnchorReady(
+    GameBenchmarkFrameSample const& frame,
+    GameBenchmarkFrameCompletion const& completion,
+    shared::TerrainSessionIdentity const& session,
+    uint64_t coverage_epoch,
+    shared::PlayerPosition const& player_position
+);
+[[nodiscard]] bool gameBenchmarkS2NativeRecoveryBarrierReady(
+    GameBenchmarkFrameSample const& frame,
+    GameBenchmarkFrameCompletion const& completion,
+    shared::TerrainSessionIdentity const& session,
+    uint64_t coverage_epoch,
+    shared::PlayerPosition const& player_position
+);
 [[nodiscard]] bool gameBenchmarkS1MovementReceiptsComplete(GameBenchmarkEvidence const& benchmark) noexcept;
 [[nodiscard]] bool gameBenchmarkS1ReadinessDeadlinesMet(
     std::optional<uint64_t> ready_prompt_offset_ns,
@@ -203,6 +243,12 @@ struct GameBenchmarkFrameBudgetWindow final {
     bool complete = false;
     uint64_t completion_observation_tail_ns = 0U;
 };
+
+[[nodiscard]] GameBenchmarkNativeTurningCoverage gameBenchmarkS2NativeTurningCoverage(
+    std::span<GameBenchmarkFrameSample const> frames,
+    GameBenchmarkFrameBudgetWindow const& window,
+    uint64_t session_join_epoch
+);
 
 [[nodiscard]]
 std::vector<std::chrono::nanoseconds> gameBenchmarkSuccessfulPresentIntervals(
@@ -273,6 +319,14 @@ private:
     std::optional<shared::HeightTileKey> m_last_center;
 };
 
+struct GameBenchmarkCaptureSite final {
+    int32_t x;
+    int32_t y;
+    int32_t z;
+    double yaw_degrees;
+    double pitch_degrees;
+};
+
 struct GameBenchmarkOptions final {
     std::chrono::seconds cold_duration{ 2 };
     std::chrono::seconds warm_duration{ 3 };
@@ -285,9 +339,39 @@ struct GameBenchmarkOptions final {
     shared::corelang::Backend backend = shared::corelang::Backend::Interpreter;
     std::chrono::seconds full_radius_warmup_timeout = GAME_BENCHMARK_FULL_RADIUS_DEFAULT_WARMUP_TIMEOUT;
     bool diagnostic_full_radius_capture = false;
+    generation::TerrainModelTag terrain_model = generation::TerrainModelTag::R6;
+    bool use_v10_fine_terrain = false;
+    bool enable_live_ui = false;
+    std::filesystem::path frame_capture_image;
+    std::string frame_capture_phase = "playing";
+    std::chrono::milliseconds frame_capture_delay{0};
+    std::optional<int32_t> diagnostic_spawn_z;
+    std::optional<GameBenchmarkCaptureSite> diagnostic_capture_site;
 };
 
-[[nodiscard]] std::chrono::seconds gameBenchmarkDeadline(GameBenchmarkOptions const& options) noexcept;
+[[nodiscard]]
+std::optional<shared::PlayerPosition> gameBenchmarkDiagnosticSpawnPosition(GameBenchmarkOptions const& options);
+
+[[nodiscard]]
+std::optional<std::string> gameBenchmarkSpawnOverrideError(GameBenchmarkOptions const& options);
+
+[[nodiscard]]
+std::optional<std::string> gameBenchmarkCaptureSiteError(GameBenchmarkOptions const& options);
+
+[[nodiscard]]
+std::function<std::optional<client::CameraAngles>(std::chrono::steady_clock::time_point)>
+gameBenchmarkDiagnosticCaptureCameraOverride(GameBenchmarkOptions const& options);
+
+[[nodiscard]]
+bool gameBenchmarkSourceStreamingWorkload(GameBenchmarkOptions const& options) noexcept;
+
+[[nodiscard]]
+std::optional<GameBenchmarkNativeTerrainDiagnostics> gameBenchmarkNativeTerrainDiagnostics(
+    std::span<GameBenchmarkFrameSample const> frames,
+    std::span<GameBenchmarkFrameCompletion const> completions
+);
+
+[[nodiscard]] std::chrono::seconds gameBenchmarkDeadline(GameBenchmarkOptions const& options);
 
 [[nodiscard]]
 bool gameBenchmarkDiagnosticOverridesPresent(bool explicit_diagnostic_capture = false) noexcept;

@@ -12,9 +12,12 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <exception>
 #include <fstream>
+#include <iostream>
 #include <limits>
+#include <ostream>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -22,6 +25,30 @@
 namespace acceptance {
 
 namespace {
+
+class ScopedStdoutLock final {
+public:
+    ScopedStdoutLock() noexcept
+    {
+#if defined(_WIN32)
+        ::_lock_file(stdout);
+#else
+        ::flockfile(stdout);
+#endif
+    }
+
+    ~ScopedStdoutLock()
+    {
+#if defined(_WIN32)
+        ::_unlock_file(stdout);
+#else
+        ::funlockfile(stdout);
+#endif
+    }
+
+    ScopedStdoutLock(ScopedStdoutLock const&) = delete;
+    ScopedStdoutLock& operator=(ScopedStdoutLock const&) = delete;
+};
 
 std::string jsonString(std::string_view const value)
 {
@@ -246,6 +273,20 @@ std::string jsonNumber(double const value)
     return std::string{buffer.data(), converted.ptr};
 }
 
+std::string diagnosticCaptureSiteJson(
+    std::optional<GameBenchmarkEvidence::DiagnosticCaptureSite> const& site
+)
+{
+    if (!site) {
+        return "null";
+    }
+    return "{ \"x\": " + std::to_string(site->x)
+        + ", \"y\": " + std::to_string(site->y)
+        + ", \"z\": " + std::to_string(site->z)
+        + ", \"yaw_degrees\": " + jsonNumber(site->yaw_degrees)
+        + ", \"pitch_degrees\": " + jsonNumber(site->pitch_degrees) + " }";
+}
+
 [[nodiscard]]
 std::string_view presentationAcquireStageName(GameBenchmarkPresentationAcquireStage const stage)
 {
@@ -370,6 +411,80 @@ std::string terrainRadialBandsJson(std::array<GameBenchmarkFrameSample::TerrainR
     }
     result.push_back(']');
     return result;
+}
+
+std::string terrainLodUpdateDiagnosticsJson(GameBenchmarkFrameSample::TerrainLodUpdate const& diagnostics)
+{
+    auto const& source_index = diagnostics.source_index;
+    return std::string{"{ \"enabled\": "} + (diagnostics.enabled ? "true" : "false")
+        + ", \"report_duration_ns\": " + std::to_string(diagnostics.report_duration_ns)
+        + ", \"world_reset_duration_ns\": " + std::to_string(diagnostics.world_reset_duration_ns)
+        + ", \"interest_prune_duration_ns\": " + std::to_string(diagnostics.interest_prune_duration_ns)
+        + ", \"worker_handoff_duration_ns\": " + std::to_string(diagnostics.worker_handoff_duration_ns)
+        + ", \"worker_future_get_duration_ns\": " + std::to_string(diagnostics.worker_future_get_duration_ns)
+        + ", \"worker_candidate_adopt_duration_ns\": "
+            + std::to_string(diagnostics.worker_candidate_adopt_duration_ns)
+        + ", \"worker_columns_copy_duration_ns\": " + std::to_string(diagnostics.worker_columns_copy_duration_ns)
+        + ", \"edit_lane_duration_ns\": " + std::to_string(diagnostics.edit_lane_duration_ns)
+        + ", \"pending_validation_duration_ns\": " + std::to_string(diagnostics.pending_validation_duration_ns)
+        + ", \"renderer_upsert_duration_ns\": " + std::to_string(diagnostics.renderer_upsert_duration_ns)
+        + ", \"renderer_plan_duration_ns\": " + std::to_string(diagnostics.renderer_plan_duration_ns)
+        + ", \"renderer_buffer_update_duration_ns\": "
+            + std::to_string(diagnostics.renderer_buffer_update_duration_ns)
+        + ", \"renderer_publish_duration_ns\": " + std::to_string(diagnostics.renderer_publish_duration_ns)
+        + ", \"renderer_uploaded_face_count\": " + std::to_string(diagnostics.renderer_uploaded_face_count)
+        + ", \"prepared_draw_index_publish_count\": " + std::to_string(diagnostics.prepared_draw_index_publish_count)
+        + ", \"render_thread_draw_index_build_count\": "
+            + std::to_string(diagnostics.render_thread_draw_index_build_count)
+        + ", \"scene_handoff_duration_ns\": " + std::to_string(diagnostics.scene_handoff_duration_ns)
+        + ", \"scene_activation_log_duration_ns\": "
+            + std::to_string(diagnostics.scene_activation_log_duration_ns)
+        + ", \"scene_plan_presented_duration_ns\": "
+            + std::to_string(diagnostics.scene_plan_presented_duration_ns)
+        + ", \"scene_column_selection_duration_ns\": "
+            + std::to_string(diagnostics.scene_column_selection_duration_ns)
+        + ", \"scene_pending_release_duration_ns\": "
+            + std::to_string(diagnostics.scene_pending_release_duration_ns)
+        + ", \"source_refresh_duration_ns\": " + std::to_string(diagnostics.source_refresh_duration_ns)
+        + ", \"source_validation_duration_ns\": " + std::to_string(diagnostics.source_validation_duration_ns)
+        + ", \"discovery_capture_duration_ns\": " + std::to_string(diagnostics.discovery_capture_duration_ns)
+        + ", \"dispatch_preparation_duration_ns\": " + std::to_string(diagnostics.dispatch_preparation_duration_ns)
+        + ", \"source_refresh_count\": " + std::to_string(diagnostics.source_refresh_count)
+        + ", \"source_validation_count\": " + std::to_string(diagnostics.source_validation_count)
+        + ", \"validated_column_count\": " + std::to_string(diagnostics.validated_column_count)
+        + ", \"stale_column_count\": " + std::to_string(diagnostics.stale_column_count)
+        + ", \"completed_job_count\": " + std::to_string(diagnostics.completed_job_count)
+        + ", \"edit_lane_call_count\": " + std::to_string(diagnostics.edit_lane_call_count)
+        + ", \"pending_validation_count\": " + std::to_string(diagnostics.pending_validation_count)
+        + ", \"pending_actual_column_count\": " + std::to_string(diagnostics.pending_actual_column_count)
+        + ", \"pending_chunk_source_count\": " + std::to_string(diagnostics.pending_chunk_source_count)
+        + ", \"pending_authority_source_count\": " + std::to_string(diagnostics.pending_authority_source_count)
+        + ", \"source_rejection_count\": " + std::to_string(diagnostics.source_rejection_count)
+        + ", \"plan_rejection_count\": " + std::to_string(diagnostics.plan_rejection_count)
+        + ", \"scene_handoff_attempt_count\": " + std::to_string(diagnostics.scene_handoff_attempt_count)
+        + ", \"scene_handoff_complete_count\": " + std::to_string(diagnostics.scene_handoff_complete_count)
+        + ", \"discovery_capture_attempt_count\": "
+            + std::to_string(diagnostics.discovery_capture_attempt_count)
+        + ", \"discovery_capture_success_count\": "
+            + std::to_string(diagnostics.discovery_capture_success_count)
+        + ", \"dispatch_count\": " + std::to_string(diagnostics.dispatch_count)
+        + ", \"dispatch_column_count\": " + std::to_string(diagnostics.dispatch_column_count)
+        + ", \"source_index\": { \"change_read_duration_ns\": "
+        + std::to_string(source_index.change_read_duration_ns)
+        + ", \"resident_snapshot_duration_ns\": "
+        + std::to_string(source_index.resident_snapshot_duration_ns)
+        + ", \"resident_diff_duration_ns\": " + std::to_string(source_index.resident_diff_duration_ns)
+        + ", \"dependency_selection_duration_ns\": "
+        + std::to_string(source_index.dependency_selection_duration_ns)
+        + ", \"selection_count\": " + std::to_string(source_index.selection_count)
+        + ", \"authoritative_change_count\": " + std::to_string(source_index.authoritative_change_count)
+        + ", \"resident_snapshot_count\": " + std::to_string(source_index.resident_snapshot_count)
+        + ", \"resident_chunk_count\": " + std::to_string(source_index.resident_chunk_count)
+        + ", \"resident_diff_change_count\": " + std::to_string(source_index.resident_diff_change_count)
+        + ", \"affected_column_count\": " + std::to_string(source_index.affected_column_count)
+        + ", \"selected_column_count\": " + std::to_string(source_index.selected_column_count)
+        + ", \"discovery_candidate_count\": " + std::to_string(source_index.discovery_candidate_count)
+        + ", \"full_resync_count\": " + std::to_string(source_index.full_resync_count) + " } }";
 }
 
 std::string meshEpisodesJson(GameBenchmarkFrameSample::MeshEpisodes const& episodes)
@@ -564,6 +679,49 @@ std::string visualLodJson(GameBenchmarkFrameSample::VisualLod const& sample)
         + ", \"sources_current\": " + (sample.sources_current ? "true" : "false") + " }";
 }
 
+std::string nativeTerrainJson(GameBenchmarkFrameSample::NativeTerrain const& sample)
+{
+    return "{ \"backend\": " + jsonString(sample.backend)
+        + ", \"submitted_frame_sequence_id\": " + std::to_string(sample.submitted_frame_sequence_id)
+        + ", \"renderer_submitted_frame_count\": " + std::to_string(sample.renderer_submitted_frame_count)
+        + ", \"scene_present\": " + (sample.scene_present ? "true" : "false")
+        + ", \"terrain_identity\": " + terrainIdentityJson(sample.terrain_identity)
+        + ", \"session_join_epoch\": " + std::to_string(sample.session_join_epoch)
+        + ", \"coverage_epoch\": " + std::to_string(sample.coverage_epoch)
+        + ", \"active_coverage_epoch\": " + optionalUint64Json(sample.active_coverage_epoch)
+        + ", \"scene_center\": { \"x\": " + std::to_string(sample.scene_center_x)
+            + ", \"y\": " + std::to_string(sample.scene_center_y) + " }"
+        + ", \"actual_column_count\": " + std::to_string(sample.actual_column_count)
+        + ", \"required_actual_columns\": " + std::to_string(sample.required_actual_columns)
+        + ", \"presented_current_actual_columns\": "
+            + (sample.presented_current_actual_columns
+                ? std::to_string(*sample.presented_current_actual_columns) : "null")
+        + ", \"submitted_scene_face_count\": " + std::to_string(sample.submitted_scene_face_count)
+        + ", \"current_player_position\": " + optionalPlayerPositionJson(sample.current_player_position)
+        + ", \"session_matches\": " + (sample.session_matches ? "true" : "false")
+        + ", \"coverage_matches\": " + (sample.coverage_matches ? "true" : "false")
+        + ", \"sources_current\": " + (sample.sources_current ? "true" : "false")
+        + ", \"underfoot_actual_column_present\": "
+            + (sample.underfoot_actual_column_present ? "true" : "false")
+        + ", \"underfoot_authority_source_present\": "
+            + (sample.underfoot_authority_source_present ? "true" : "false")
+        + ", \"underfoot_mesh_query_agrees\": "
+            + (sample.underfoot_mesh_query_agrees ? (*sample.underfoot_mesh_query_agrees ? "true" : "false") : "null")
+        + " }";
+}
+
+std::string nativeTurningCoverageJson(std::optional<GameBenchmarkNativeTurningCoverage> const& coverage)
+{
+    if (!coverage) {
+        return "null";
+    }
+    return "{ \"start_offset_ns\": " + std::to_string(coverage->start_offset_ns)
+        + ", \"end_offset_ns\": " + std::to_string(coverage->end_offset_ns)
+        + ", \"submitted_frames\": " + std::to_string(coverage->submitted_frames)
+        + ", \"current_disk_frames\": " + std::to_string(coverage->current_disk_frames)
+        + ", \"window_drained\": " + (coverage->window_drained ? "true" : "false") + " }";
+}
+
 std::string qualificationSettingsJson(
     std::optional<GameBenchmarkFrameSample::QualificationSettings> const& sample
 )
@@ -596,6 +754,99 @@ std::string optionalVisualLodField(
 )
 {
     return sample ? ", \"visual_lod\": " + visualLodJson(*sample) : std::string{};
+}
+
+std::string authoritativeMovementUpdateJson(GameBenchmarkAuthoritativePlayableSphereUpdate const& update)
+{
+    return "{ \"update_ordinal\": " + std::to_string(update.update_ordinal)
+        + ", \"offset_ns\": " + std::to_string(update.offset_ns)
+        + ", \"state_revision\": " + std::to_string(update.state_revision)
+        + ", \"acknowledged_input_sequence\": "
+            + std::to_string(update.acknowledged_input_sequence)
+        + ", \"authoritative_position\": " + playerPositionJson(update.authoritative_position)
+        + ", \"movement_capabilities\": " + std::to_string(update.movement_capabilities)
+        + ", \"vertical_velocity_subcells\": "
+            + std::to_string(update.vertical_velocity_subcells)
+        + ", \"playable_sphere\": " + playableSphereJson(update.playable_sphere)
+        + optionalVisualLodField(update.visual_lod) + " }";
+}
+
+std::string authoritativeMovementUpdatesJson(
+    std::vector<GameBenchmarkAuthoritativePlayableSphereUpdate> const& updates
+)
+{
+    std::string result = "[";
+    for (size_t index = 0U; index < updates.size(); ++index) {
+        if (index != 0U) {
+            result += ", ";
+        }
+        result += authoritativeMovementUpdateJson(updates[index]);
+    }
+    return result + "]";
+}
+
+std::string nativeTurningAuthorityJson(std::optional<GameBenchmarkNativeTurningAuthority> const& evidence)
+{
+    if (!evidence) {
+        return "null";
+    }
+    return "{ \"trajectory_anchor\": "
+        + (evidence->trajectory_anchor ? authoritativeMovementUpdateJson(*evidence->trajectory_anchor) : "null")
+        + ", \"anchor_coverage_offset_ns\": " + optionalUint64Json(evidence->anchor_coverage_offset_ns)
+        + ", \"boundary_capture_complete\": " + (evidence->boundary_capture_complete ? "true" : "false")
+        + ", \"boundary_updates\": " + authoritativeMovementUpdatesJson(evidence->boundary_updates)
+        + ", \"movement_updates\": " + authoritativeMovementUpdatesJson(evidence->movement_updates) + " }";
+}
+
+std::string nativeFullRadiusRecoveryJson(std::optional<GameBenchmarkNativeFullRadiusRecovery> const& evidence)
+{
+    if (!evidence) {
+        return "null";
+    }
+    return "{ \"terminal_phase\": " + jsonString(evidence->terminal_phase)
+        + ", \"initial_frame_sequence_id\": " + optionalUint64Json(evidence->initial_frame_sequence_id)
+        + ", \"movement_start_frame_sequence_id\": " + optionalUint64Json(evidence->movement_start_frame_sequence_id)
+        + ", \"recovery_frame_sequence_id\": " + optionalUint64Json(evidence->recovery_frame_sequence_id)
+        + ", \"movement_start_offset_ns\": " + optionalUint64Json(evidence->movement_start_offset_ns)
+        + ", \"movement_end_offset_ns\": " + optionalUint64Json(evidence->movement_end_offset_ns)
+        + ", \"movement_window_complete\": " + (evidence->movement_window_complete ? "true" : "false")
+        + ", \"movement_anchor\": "
+            + (evidence->movement_anchor ? authoritativeMovementUpdateJson(*evidence->movement_anchor) : "null")
+        + ", \"movement_updates\": " + authoritativeMovementUpdatesJson(evidence->movement_updates) + " }";
+}
+
+std::string nativeTerrainDiagnosticsJson(GameBenchmarkNativeTerrainDiagnostics const& evidence)
+{
+    return "{ \"backend\": " + jsonString(evidence.backend)
+        + ", \"status\": " + jsonString(evidence.status)
+        + ", \"terrain_identity\": " + terrainIdentityJson(evidence.terrain_identity)
+        + ", \"qualification_profile\": "
+            + (evidence.qualification_profile.empty() ? "null" : jsonString(evidence.qualification_profile))
+        + ", \"turning_start_frame_sequence_id\": "
+            + (evidence.turning_start_frame_sequence_id
+                ? std::to_string(*evidence.turning_start_frame_sequence_id) : "null")
+        + ", \"turning_coverage\": " + nativeTurningCoverageJson(evidence.turning_coverage)
+        + ", \"turning_authority\": " + nativeTurningAuthorityJson(evidence.turning_authority)
+        + ", \"full_radius_recovery\": " + nativeFullRadiusRecoveryJson(evidence.full_radius_recovery)
+        + ", \"sample_count\": " + std::to_string(evidence.sample_count)
+        + ", \"submitted_frame_count\": " + std::to_string(evidence.submitted_frame_count)
+        + ", \"fence_confirmed_frame_count\": " + std::to_string(evidence.fence_confirmed_frame_count)
+        + ", \"session_match_count\": " + std::to_string(evidence.session_match_count)
+        + ", \"coverage_match_count\": " + std::to_string(evidence.coverage_match_count)
+        + ", \"source_current_count\": " + std::to_string(evidence.source_current_count)
+        + ", \"underfoot_actual_column_count\": " + std::to_string(evidence.underfoot_actual_column_count)
+        + ", \"underfoot_authority_source_count\": "
+            + std::to_string(evidence.underfoot_authority_source_count)
+        + ", \"qualification_complete\": " + (evidence.qualification_complete ? "true" : "false")
+        + ", \"underfoot_mesh_query_agreement\": "
+            + jsonString(evidence.underfoot_mesh_query_agreement) + " }";
+}
+
+std::string optionalNativeTerrainField(
+    std::optional<GameBenchmarkFrameSample::NativeTerrain> const& sample
+)
+{
+    return sample ? ", \"native_terrain\": " + nativeTerrainJson(*sample) : std::string{};
 }
 
 std::string fullTerrainSnapshotJson(GameBenchmarkFullTerrainSnapshot const& snapshot)
@@ -776,20 +1027,6 @@ std::string fullRadiusTerrainJson(GameBenchmarkFullRadiusEvidence const& evidenc
 
 std::string s1TerrainPerformanceJson(GameBenchmarkS1TerrainPerformanceEvidence const& evidence)
 {
-    auto const updateJson = [](GameBenchmarkFullRadiusEvidence::AuthoritativePlayableSphereUpdate const& update) {
-        return "{ \"update_ordinal\": " + std::to_string(update.update_ordinal)
-            + ", \"offset_ns\": " + std::to_string(update.offset_ns)
-            + ", \"state_revision\": " + std::to_string(update.state_revision)
-            + ", \"acknowledged_input_sequence\": "
-                + std::to_string(update.acknowledged_input_sequence)
-            + ", \"authoritative_position\": " + playerPositionJson(update.authoritative_position)
-            + ", \"movement_capabilities\": " + std::to_string(update.movement_capabilities)
-            + ", \"vertical_velocity_subcells\": "
-                + std::to_string(update.vertical_velocity_subcells)
-            + ", \"playable_sphere\": " + playableSphereJson(update.playable_sphere)
-            + optionalVisualLodField(update.visual_lod) + " }";
-    };
-
     std::string result = "{ \"contract\": \"mc.s1-lod-performance.v2\", "
         "\"timing_origin\": \"world-request-accepted\", \"initial_radius_blocks\": 48, "
         "\"actual_radius_blocks\": " + std::to_string(evidence.actual_radius_blocks)
@@ -812,7 +1049,7 @@ std::string s1TerrainPerformanceJson(GameBenchmarkS1TerrainPerformanceEvidence c
             + std::to_string(evidence.movement_authoritative_update_count)
         + ", \"movement_trajectory_anchor\": "
             + (evidence.movement_trajectory_anchor
-                ? updateJson(*evidence.movement_trajectory_anchor) : "null")
+                ? authoritativeMovementUpdateJson(*evidence.movement_trajectory_anchor) : "null")
         + ", \"movement_trajectory_anchor_sphere_sample_offset_ns\": "
             + optionalUint64Json(evidence.movement_trajectory_anchor_sphere_sample_offset_ns)
         + ", \"movement_boundary_authoritative_updates_complete\": "
@@ -822,14 +1059,14 @@ std::string s1TerrainPerformanceJson(GameBenchmarkS1TerrainPerformanceEvidence c
         if (index != 0U) {
             result += ", ";
         }
-        result += updateJson(evidence.movement_boundary_authoritative_updates[index]);
+        result += authoritativeMovementUpdateJson(evidence.movement_boundary_authoritative_updates[index]);
     }
     result += "], \"movement_authoritative_sphere_updates\": [";
     for (size_t index = 0U; index < evidence.movement_authoritative_sphere_updates.size(); ++index) {
         if (index != 0U) {
             result += ", ";
         }
-        result += updateJson(evidence.movement_authoritative_sphere_updates[index]);
+        result += authoritativeMovementUpdateJson(evidence.movement_authoritative_sphere_updates[index]);
     }
     result += "], \"movement_playable_sphere_complete\": ";
     result += evidence.movement_playable_sphere_complete ? "true" : "false";
@@ -981,8 +1218,12 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
             + ",\n"
         "    \"terrain_identity\": " + terrainIdentityJson(benchmark.terrain_identity) + ",\n"
         "    \"session_join_epoch\": " + std::to_string(benchmark.session_join_epoch) + ",\n"
+        "    \"live_ui_enabled\": " + (benchmark.live_ui_enabled ? "true" : "false") + ",\n"
         "    \"diagnostic_overrides_present\": "
             + (benchmark.diagnostic_overrides_present ? "true" : "false") + ",\n"
+        "    \"diagnostic_spawn_z\": "
+            + (benchmark.diagnostic_spawn_z ? std::to_string(*benchmark.diagnostic_spawn_z) : "null") + ",\n"
+        "    \"diagnostic_capture_site\": " + diagnosticCaptureSiteJson(benchmark.diagnostic_capture_site) + ",\n"
         "    \"cold_duration_ms\": " + std::to_string(benchmark.cold_duration_ms) + ",\n"
         "    \"warm_duration_ms\": " + std::to_string(benchmark.warm_duration_ms) + ",\n"
         "    \"uncapped_duration_ms\": " + std::to_string(benchmark.uncapped_duration_ms) + ",\n"
@@ -1028,6 +1269,9 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
         "    \"terrain_readiness\": "
             + (benchmark.terrain_readiness
                 ? terrainReadinessJson(*benchmark.terrain_readiness) : "null") + ",\n"
+        "    \"native_terrain_diagnostics\": "
+            + (benchmark.native_terrain_diagnostics
+                ? nativeTerrainDiagnosticsJson(*benchmark.native_terrain_diagnostics) : "null") + ",\n"
         "    \"full_radius_terrain\": "
             + (benchmark.full_radius_terrain
                 ? fullRadiusTerrainJson(*benchmark.full_radius_terrain) : "null") + ",\n"
@@ -1037,6 +1281,13 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
         "    \"presentation_timing\": "
             + (benchmark.presentation_timing
                 ? presentationTimingJson(*benchmark.presentation_timing) : "null") + ",\n"
+        "    \"diagnostic_frame_capture_path\": " + jsonString(benchmark.diagnostic_frame_capture_path) + ",\n"
+        "    \"diagnostic_frame_capture_phase\": " + jsonString(benchmark.diagnostic_frame_capture_phase) + ",\n"
+        "    \"diagnostic_frame_capture_delay_ms\": " + std::to_string(benchmark.diagnostic_frame_capture_delay_ms) + ",\n"
+        "    \"diagnostic_frame_requested_loading_state\": "
+            + jsonString(benchmark.diagnostic_frame_requested_loading_state) + ",\n"
+        "    \"diagnostic_frame_capture_state\": " + jsonString(benchmark.diagnostic_frame_capture_state) + ",\n"
+        "    \"diagnostic_frame_capture_error\": " + jsonString(benchmark.diagnostic_frame_capture_error) + ",\n"
         "    \"controlled_start\": "
             + (benchmark.controlled_start ? startActionJson(*benchmark.controlled_start) : "null") + ",\n"
         "    \"frame_completion_source\": \"per-slot-submitted-frame-fence-success-observed-on-reuse\",\n"
@@ -1199,6 +1450,7 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
             + ", \"playable_sphere\": "
                 + (sample.playable_sphere ? playableSphereJson(*sample.playable_sphere) : "null")
             + optionalVisualLodField(sample.visual_lod)
+            + optionalNativeTerrainField(sample.native_terrain)
             + ", \"qualification_settings\": " + qualificationSettingsJson(sample.qualification_settings)
             + ", \"presented_player\": " + presentedPlayerJson(sample.presented_player)
             + ", \"started_offset_ns\": " + std::to_string(sample.started_offset_ns)
@@ -1250,6 +1502,14 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
                 + (sample.diagnostic_presentation_recreation_deferred ? "true" : "false")
             + ", \"diagnostic_cpu_command_record_duration_ns\": "
                 + std::to_string(sample.diagnostic_cpu_command_record_duration_ns)
+            + ", \"diagnostic_cpu_presentation_prepare_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_presentation_prepare_duration_ns)
+            + ", \"diagnostic_cpu_pipeline_bind_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_pipeline_bind_duration_ns)
+            + ", \"diagnostic_cpu_context_complete_call_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_context_complete_call_duration_ns)
+            + ", \"diagnostic_cpu_stone_face_growth_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_stone_face_growth_duration_ns)
             + ", \"diagnostic_cpu_visible_range_collection_duration_ns\": "
                 + std::to_string(sample.diagnostic_cpu_visible_range_collection_duration_ns)
             + ", \"diagnostic_cpu_height_tile_group_and_tile_traversal_duration_ns\": "
@@ -1314,6 +1574,16 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
                 + std::to_string(sample.diagnostic_renderer_resize_duration_ns)
             + ", \"diagnostic_client_render_after_resize_duration_ns\": "
                 + std::to_string(sample.diagnostic_client_render_after_resize_duration_ns)
+            + ", \"diagnostic_client_after_resize_data_hud_duration_ns\": "
+                + std::to_string(sample.diagnostic_client_after_resize_data_hud_duration_ns)
+            + ", \"diagnostic_client_after_resize_map_block_duration_ns\": "
+                + std::to_string(sample.diagnostic_client_after_resize_map_block_duration_ns)
+            + ", \"diagnostic_client_after_resize_terrain_lod_duration_ns\": "
+                + std::to_string(sample.diagnostic_client_after_resize_terrain_lod_duration_ns)
+            + ", \"diagnostic_client_after_resize_post_lod_duration_ns\": "
+                + std::to_string(sample.diagnostic_client_after_resize_post_lod_duration_ns)
+            + ", \"diagnostic_terrain_lod_update\": "
+                + terrainLodUpdateDiagnosticsJson(sample.diagnostic_terrain_lod_update)
             + ", \"diagnostic_renderer_call_duration_ns\": "
                 + std::to_string(sample.diagnostic_renderer_call_duration_ns)
             + ", \"diagnostic_client_render_after_renderer_duration_ns\": "
@@ -1448,11 +1718,44 @@ std::string evidenceJson(RuntimeEvidence const& evidence)
         "}\n";
 }
 
+std::expected<void, std::string> writeEvidenceJsonFrame(
+    std::ostream& output,
+    RuntimeEvidence const& evidence
+)
+{
+    std::string const json = evidenceJson(evidence);
+    using StreamSize = std::streamsize;
+    using StringSize = std::string::size_type;
+    if (json.size() > static_cast<StringSize>(std::numeric_limits<StreamSize>::max())) {
+        return std::unexpected("evidence output exceeds the stream byte-count limit");
+    }
+
+    std::string const header = "\nMC_RUNTIME_EVIDENCE_V1 " + std::to_string(json.size()) + "\n";
+    output.write(header.data(), static_cast<StreamSize>(header.size()));
+    output.write(json.data(), static_cast<StreamSize>(json.size()));
+    output.flush();
+    if (!output) {
+        return std::unexpected("cannot write framed evidence output");
+    }
+    return { };
+}
+
 std::expected<void, std::string> writeEvidenceJson(
     std::filesystem::path const& path,
     RuntimeEvidence const& evidence
 )
 {
+    if (path == std::filesystem::path{ "-" }) {
+        std::cout.flush();
+        if (std::fflush(stdout) != 0 || std::ferror(stdout) != 0) {
+            return std::unexpected("cannot flush progress before the evidence frame");
+        }
+
+        // Keep the frame contiguous with respect to the stdout logger, including watchdog writes.
+        ScopedStdoutLock const lock;
+        return writeEvidenceJsonFrame(std::cout, evidence);
+    }
+
     std::ofstream output{ path, std::ios::binary | std::ios::trunc };
     if (!output) {
         return std::unexpected("cannot open evidence output: " + path.string());

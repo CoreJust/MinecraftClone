@@ -17,6 +17,8 @@ struct TextGlyph {
     float up_z;
     float width;
     float height;
+    uint light_color;
+    uint dark_color;
 };
 
 layout(std430, set = 0, binding = 0) readonly buffer TextGlyphBuffer {
@@ -32,6 +34,8 @@ layout(push_constant) uniform TextParams {
 } params;
 
 layout(location = 3) out vec3 out_camera_offset;
+layout(location = 4) flat out uint out_light_color;
+layout(location = 5) flat out uint out_dark_color;
 layout(location = 0) out vec2 out_pixel_position;
 layout(location = 1) flat out uint out_character;
 layout(location = 2) flat out uint out_packed_color;
@@ -59,13 +63,14 @@ const vec2 WORLD_QUAD_VERTICES[6] = {
 
 void main() {
     out_camera_offset = vec3(0.0);
+    const uint mode = params.mode & 1u;
     TextGlyph glyph = text.glyphs[gl_InstanceIndex];
-    const vec2 quad_vertex = params.mode == TEXT_MODE_SCREEN
+    const vec2 quad_vertex = mode == TEXT_MODE_SCREEN
         ? SCREEN_QUAD_VERTICES[gl_VertexIndex]
         : WORLD_QUAD_VERTICES[gl_VertexIndex];
     vec2 vertex_position = quad_vertex * vec2(glyph.width, glyph.height) * params.scale;
     vec3 position = vec3(glyph.x, glyph.y, glyph.z) * params.scale;
-    if (params.mode == TEXT_MODE_SCREEN) {
+    if (mode == TEXT_MODE_SCREEN) {
         vec2 pixel = position.xy + vertex_position;
         gl_Position = vec4(
             (pixel.x / params.resolution.x) * 2.0 - 1.0,
@@ -73,7 +78,7 @@ void main() {
             0.0,
             1.0
         );
-    } else if (params.mode == TEXT_MODE_WORLD) {
+    } else if (mode == TEXT_MODE_WORLD) {
         vec3 world_position = position
             + vec3(glyph.right_x, glyph.right_y, glyph.right_z) * vertex_position.x
             + vec3(glyph.up_x, glyph.up_y, glyph.up_z) * vertex_position.y;
@@ -89,6 +94,8 @@ void main() {
         gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
     }
     out_character = glyph.character;
+    out_light_color = glyph.light_color;
+    out_dark_color = glyph.dark_color;
     out_packed_color = glyph.packed_color;
     out_pixel_position = quad_vertex * vec2(8.0, 16.0);
 }

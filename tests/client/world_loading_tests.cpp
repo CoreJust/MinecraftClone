@@ -1,5 +1,6 @@
 #include <client/WorldLoading.hpp>
 #include <shared/world/Chunk.hpp>
+#include <shared/world/SparseWorld.hpp>
 #include <shared/world/TerrainWorld.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldCoverage.hpp>
@@ -53,6 +54,8 @@ using namespace std::chrono_literals;
     auto atlas = std::make_shared<generation::GlobalAtlas>();
     atlas->configuration = configuration;
     atlas->elevation.assign(sample_count, 1.0F);
+    atlas->temperature.assign(sample_count, 15.0F);
+    atlas->precipitation.assign(sample_count, 0.3F);
     return atlas;
 }
 
@@ -170,6 +173,58 @@ TEST(WorldLoadingTest, ActualMapSnapshotsReplaceOlderSnapshotsAndRejectStaleWorl
     EXPECT_EQ(status.map_snapshot, second_snapshot);
 }
 
+TEST(WorldLoadingTest, NativeV21SnapshotsRequireTheV21PayloadForAV21Session)
+{
+    static constexpr Clock::time_point T0{};
+    client::WorldLoadingIdentity world_identity = identity();
+    world_identity.configuration.model_tag = generation::TerrainModelTag::V21;
+    client::WorldLoading loading{client::WorldLoadingPlatform::Mac};
+    ASSERT_TRUE(loading.begin(world_identity, T0));
+
+    auto snapshot = std::make_shared<generation::GenerationSnapshot>();
+    snapshot->stage = generation::GenerationStage::V21Platec;
+    snapshot->resolution = 256U;
+    snapshot->v21.emplace();
+    snapshot->v21->source_elevation_m.assign(65'536U, 0.0F);
+    snapshot->v21->plate_ids.assign(65'536U, 7U);
+    snapshot->v21->plate_directions = {{7U, 1.0F, 0.0F}};
+    snapshot->v21->plate_directions_observed_after_native_step = 1U;
+    ASSERT_TRUE(generation::isValidGenerationSnapshot(*snapshot));
+
+    EXPECT_TRUE(loading.publishGenerationProgress(
+        world_identity,
+        generation::GenerationProgress{
+            .stage = generation::GenerationStage::V21Platec,
+            .completed = 1U,
+            .total = 10U,
+            .snapshot = snapshot,
+        },
+        T0 + 1s
+    ));
+    EXPECT_EQ(loading.status(T0 + 1s).generation_stage, generation::GenerationStage::V21Platec);
+
+    client::WorldLoading v21_loading{client::WorldLoadingPlatform::Mac};
+    ASSERT_TRUE(v21_loading.begin(world_identity, T0));
+    auto wrong_snapshot = std::make_shared<generation::GenerationSnapshot>();
+    wrong_snapshot->stage = generation::GenerationStage::V9Platec;
+    wrong_snapshot->resolution = 256U;
+    wrong_snapshot->v9.emplace();
+    wrong_snapshot->v9->source_elevation_m.assign(65'536U, 0.0F);
+    wrong_snapshot->v9->plate_ids.assign(65'536U, 7U);
+    wrong_snapshot->v9->plate_directions = {{7U, 1.0F, 0.0F}};
+    ASSERT_TRUE(generation::isValidGenerationSnapshot(*wrong_snapshot));
+    EXPECT_FALSE(v21_loading.publishGenerationProgress(
+        world_identity,
+        generation::GenerationProgress{
+            .stage = generation::GenerationStage::V9Platec,
+            .completed = 1U,
+            .total = 10U,
+            .snapshot = wrong_snapshot,
+        },
+        T0 + 1s
+    ));
+}
+
 TEST(WorldLoadingTest, ConfigurationBindingAndReconnectPreserveTheOriginalRequestClock)
 {
     static constexpr Clock::time_point T0{};
@@ -258,6 +313,60 @@ TEST(WorldLoadingTest, AtlasCompletionAttestationAllowsJoinReadinessWithoutClien
         T0 + 1s
     ));
     EXPECT_TRUE(loading.status(T0 + 1s).spawn_safe);
+}
+
+TEST(WorldLoadingTest, StartReadinessWaitsForEveryInitialSphereChunk)
+{
+    static constexpr Clock::time_point T0{};
+    static constexpr shared::PlayerPosition CENTER{ .x = 1'024, .y = 1'024, .z = 430 };
+    client::WorldLoading loading{ client::WorldLoadingPlatform::Windows };
+    client::WorldLoadingIdentity const world_identity = identity();
+    ASSERT_TRUE(loading.begin(world_identity, T0));
+    ASSERT_TRUE(loading.publishAtlasCompletion(
+        world_identity,
+        terrainIdentity(world_identity.configuration),
+        T0 + 1s
+    ));
+    ASSERT_TRUE(loading.publishRefinedSpawn(
+        world_identity,
+        CENTER,
+        client::SpawnValidation::Safe,
+        T0 + 1s
+    ));
+
+    std::vector<shared::ChunkCoordinate> const initial_keys = client::WorldLoading::requiredChunkKeys(
+        CENTER,
+        client::WorldLoading::INITIAL_READY_SPHERE_RADIUS_BLOCKS
+    );
+    ASSERT_GT(initial_keys.size(), 1U);
+    uint32_t const required_count = static_cast<uint32_t>(initial_keys.size());
+    ASSERT_EQ(required_count, 208U);
+    shared::ChunkCoordinate const missing_key = initial_keys.back();
+    for (shared::ChunkCoordinate const key : initial_keys) {
+        if (key != missing_key) {
+            ASSERT_TRUE(loading.publishMaterializedChunk(
+                world_identity,
+                shared::Chunk{ key },
+                T0 + 2s
+            ));
+        }
+    }
+
+    client::WorldLoadingStatus const partial_status = loading.status(T0 + 2s);
+    EXPECT_FALSE(partial_status.initial_sphere_ready);
+    EXPECT_EQ(partial_status.initial_sphere_ready_chunks, required_count - 1U);
+    EXPECT_EQ(partial_status.initial_sphere_required_chunks, required_count);
+    EXPECT_EQ(partial_status.state, client::WorldLoadingState::PreparingSpawn);
+
+    ASSERT_TRUE(loading.publishMaterializedChunk(
+        world_identity,
+        shared::Chunk{ missing_key },
+        T0 + 3s
+    ));
+    client::WorldLoadingStatus const ready_status = loading.status(T0 + 3s);
+    EXPECT_TRUE(ready_status.initial_sphere_ready);
+    EXPECT_EQ(ready_status.initial_sphere_ready_chunks, required_count);
+    EXPECT_EQ(ready_status.state, client::WorldLoadingState::ReadyForStart);
 }
 
 TEST(WorldLoadingTest, KeyIsConsumedUntilTheReadyPromptWasActuallyPresented)
@@ -421,7 +530,8 @@ TEST(WorldLoadingTest, MissingEdgeProfilePreventsReadinessAndEvictionRemovesIt)
     EXPECT_TRUE(ready.playable_sphere_ready);
     EXPECT_EQ(ready.playable_sphere_first_ready_at, PUBLISHED_AT);
     EXPECT_EQ(ready.required_authoritative_columns, columns.size());
-    EXPECT_EQ(ready.playable_sphere_required_chunks, columns.size() * 64U);
+    EXPECT_EQ(ready.playable_sphere_required_chunks,
+        columns.size() * (shared::WorldExtent::DEPTH / shared::Chunk::SIDE_LENGTH));
     EXPECT_FALSE(ready.full_radius_deadline_missed);
     EXPECT_EQ(ready.full_radius_deadline, T0 + 15s);
     ASSERT_TRUE(loading.evictAuthoritativeColumn(world_identity, edge, T0 + 16s));
@@ -438,6 +548,8 @@ TEST(WorldLoadingTest, AuthoritativeTerrainFollowsMovementAndWrapsAtEveryAltitud
     ASSERT_TRUE(loading.begin(world_identity, T0));
     ASSERT_TRUE(loading.publishAtlas(world_identity, atlasFor(world_identity.configuration), T0));
     ASSERT_TRUE(loading.publishRefinedSpawn(world_identity, CENTER, client::SpawnValidation::Safe, T0));
+    materializeKeys(loading, world_identity, client::WorldLoading::requiredChunkKeys(
+        CENTER, client::WorldLoading::INITIAL_READY_SPHERE_RADIUS_BLOCKS), T0);
     EXPECT_TRUE(loading.status(T0).initial_sphere_ready);
     EXPECT_FALSE(loading.status(T0).playable_sphere_ready);
     auto const columns = shared::requiredTerrainColumns(CENTER, 640U);
@@ -552,3 +664,55 @@ TEST(WorldLoadingTest, FullReadinessWaitsForExactStartupReserveAndRearmsAfterPro
 }
 
 } // namespace
+
+TEST(WorldLoadingTest, V10ProgressPreservesTheAuthoritativeReadyPromptAndStartFence)
+{
+    static constexpr Clock::time_point T0{};
+    auto world_identity = identity();
+    world_identity.configuration.model_tag = generation::TerrainModelTag::V10;
+    client::WorldLoading loading{client::WorldLoadingPlatform::Mac};
+    ASSERT_TRUE(loading.begin(world_identity, T0));
+    auto snapshot = std::make_shared<generation::GenerationSnapshot>();
+    snapshot->stage = generation::GenerationStage::V10Platec;
+    snapshot->resolution = 256U;
+    auto& fields = snapshot->v10.emplace();
+    fields.height_raw.assign(65'536U, 1.25F);
+    fields.plate_ids.assign(65'536U, 0U);
+    fields.plate_directions = {{0U, 1.0F, 0.0F}};
+    fields.plate_directions_observed_after_native_step = 599U;
+    ASSERT_TRUE(generation::isValidGenerationSnapshot(*snapshot));
+    ASSERT_TRUE(loading.publishGenerationProgress(world_identity, {
+        .stage = snapshot->stage, .completed = 1U, .total = 4U, .snapshot = snapshot,
+    }, T0 + 1s));
+    snapshot->v21.emplace();
+    EXPECT_FALSE(loading.publishGenerationProgress(world_identity, {
+        .stage = snapshot->stage, .completed = 2U, .total = 4U, .snapshot = snapshot,
+    }, T0 + 2s));
+    snapshot->v21.reset();
+    for (auto stage : {generation::GenerationStage::V10Terrain, generation::GenerationStage::V10Climate,
+             generation::GenerationStage::V10Water, generation::GenerationStage::Complete}) {
+        ASSERT_TRUE(loading.publishGenerationProgress(world_identity, {
+            .stage = stage, .completed = 1U, .total = 1U,
+        }, T0 + 3s));
+    }
+    EXPECT_EQ(loading.status(T0 + 3s).state, client::WorldLoadingState::PreparingAtlas);
+    EXPECT_FALSE(loading.status(T0 + 3s).atlas_ready);
+    EXPECT_FALSE(loading.publishGenerationProgress(world_identity, {
+        .stage = generation::GenerationStage::V10Water, .completed = 1U, .total = 1U,
+    }, T0 + 3s));
+    auto authoritative_identity = terrainIdentity(world_identity.configuration);
+    authoritative_identity.terrain_version = 10U;
+    ASSERT_TRUE(loading.publishAtlasCompletion(world_identity, authoritative_identity, T0 + 4s));
+    static constexpr shared::PlayerPosition SPAWN{.x = 512, .y = 512, .z = 512};
+    ASSERT_TRUE(loading.publishRefinedSpawn(world_identity, SPAWN, client::SpawnValidation::Safe, T0 + 4s));
+    auto const keys = client::WorldLoading::requiredChunkKeys(
+        SPAWN, client::WorldLoading::INITIAL_READY_SPHERE_RADIUS_BLOCKS);
+    materializeKeys(loading, world_identity, keys, T0 + 5s);
+    ASSERT_EQ(loading.status(T0 + 5s).state, client::WorldLoadingState::ReadyForStart);
+    EXPECT_EQ(loading.acceptStartInput(world_identity, T0 + 5s), client::LoadingInputResult::Consumed);
+    ASSERT_TRUE(loading.markReadyPromptFrameRendered(world_identity, T0 + 6s));
+    EXPECT_EQ(loading.acceptStartInput(world_identity, T0 + 7s), client::LoadingInputResult::Started);
+    EXPECT_EQ(loading.status(T0 + 7s).state, client::WorldLoadingState::Starting);
+    ASSERT_TRUE(loading.acknowledgeStart(world_identity, true, {}, T0 + 8s));
+    EXPECT_EQ(loading.status(T0 + 8s).state, client::WorldLoadingState::Playing);
+}

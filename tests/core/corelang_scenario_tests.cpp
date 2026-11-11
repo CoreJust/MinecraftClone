@@ -7,6 +7,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -33,6 +34,21 @@ shared::ScenarioLimits scenarioLimits()
         .max_operations = 32U,
         .max_evidence = 8U,
     };
+}
+
+[[nodiscard]]
+std::string scenarioSource(std::string_view const operations)
+{
+    std::string source{R"core(@version(0.1.5)
+@use minecraft
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(1u64)
+    playerXYZ("alice", '@'c8, 0i32, 0i32, 0i32, 0i16, 0i16, 0i16)
+)core"};
+    source.append(operations);
+    source.append("\n}\n");
+    return source;
 }
 
 [[nodiscard]]
@@ -597,6 +613,154 @@ pub fn scenario() {
     ASSERT_FALSE(parsed.has_value());
     EXPECT_EQ(parsed.error().code, shared::ScenarioDiagnosticCode::CoreLangRuntimeFailure);
     EXPECT_NE(parsed.error().message.find("collision bypass requires flight permission"), std::string::npos);
+}
+
+TEST(CoreLangScenario, AcceptsExactTickOperationAndEvidenceBudgetLimits)
+{
+    static constexpr std::string_view OPERATIONS = R"core(
+    movementPermissions(true, true)
+    moveXYZ("alice", 0i8, 0i8, 0i8)
+    flightXYZ("alice", 0i8, 0i8, 0i8)
+    phaseXYZ("alice", 0i8, 0i8, 0i8)
+    cameraInputXYZ("alice", 0i8, 0i8, 0i8)
+    expectXYZ("alice", 0i32, 0i32, 0i32)
+    wait(1u64)
+    jump("alice")
+)core";
+    shared::ScenarioLimits limits = scenarioLimits();
+    limits.max_total_ticks = 2U;
+    limits.max_operations = 8U;
+    limits.max_evidence = 1U;
+
+    auto const parsed = shared::parseScenarioSource(
+        "scenario-budget-boundary.core",
+        scenarioSource(OPERATIONS),
+        limits
+    );
+
+    ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+    EXPECT_EQ(parsed->totalTicks(), 2U);
+    EXPECT_EQ(parsed->operations().size(), 8U);
+    EXPECT_EQ(parsed->evidenceCount(), 1U);
+}
+
+TEST(CoreLangScenario, RejectsFirstOperationBeyondConfiguredLimit)
+{
+    static constexpr std::string_view OPERATIONS = R"core(
+    movementPermissions(true, true)
+    moveXYZ("alice", 0i8, 0i8, 0i8)
+    flightXYZ("alice", 0i8, 0i8, 0i8)
+    phaseXYZ("alice", 0i8, 0i8, 0i8)
+    cameraInputXYZ("alice", 0i8, 0i8, 0i8)
+    expectXYZ("alice", 0i32, 0i32, 0i32)
+    wait(1u64)
+    jump("alice")
+    moveXYZ("alice", 0i8, 0i8, 0i8)
+)core";
+    shared::ScenarioLimits limits = scenarioLimits();
+    limits.max_total_ticks = 2U;
+    limits.max_operations = 8U;
+    limits.max_evidence = 1U;
+
+    auto const parsed = shared::parseScenarioSource(
+        "scenario-operation-one-over.core",
+        scenarioSource(OPERATIONS),
+        limits
+    );
+
+    ASSERT_FALSE(parsed.has_value());
+    EXPECT_EQ(parsed.error().code, shared::ScenarioDiagnosticCode::CoreLangRuntimeFailure);
+}
+
+TEST(CoreLangScenario, RejectsFirstEvidenceBeyondConfiguredLimit)
+{
+    static constexpr std::string_view OPERATIONS = R"core(
+    expectXYZ("alice", 0i32, 0i32, 0i32)
+    expectMovementPermissions("alice", false, false)
+)core";
+    shared::ScenarioLimits limits = scenarioLimits();
+    limits.max_evidence = 1U;
+
+    auto const parsed = shared::parseScenarioSource(
+        "scenario-evidence-one-over.core",
+        scenarioSource(OPERATIONS),
+        limits
+    );
+
+    ASSERT_FALSE(parsed.has_value());
+    EXPECT_EQ(parsed.error().code, shared::ScenarioDiagnosticCode::CoreLangRuntimeFailure);
+}
+
+TEST(CoreLangScenario, RejectsFirstTickBeyondConfiguredLimitAfterJump)
+{
+    static constexpr std::string_view OPERATIONS = R"core(
+    wait(1u64)
+    jump("alice")
+    wait(1u64)
+)core";
+    shared::ScenarioLimits limits = scenarioLimits();
+    limits.max_total_ticks = 2U;
+
+    auto const parsed = shared::parseScenarioSource(
+        "scenario-tick-one-over.core",
+        scenarioSource(OPERATIONS),
+        limits
+    );
+
+    ASSERT_FALSE(parsed.has_value());
+    EXPECT_EQ(parsed.error().code, shared::ScenarioDiagnosticCode::CoreLangRuntimeFailure);
+}
+
+TEST(CoreLangScenario, EnforcesEachInputComponentRangeIndependently)
+{
+    static constexpr std::array<std::string_view, 4U> INPUT_CALLS{
+        "moveXYZ",
+        "flightXYZ",
+        "phaseXYZ",
+        "cameraInputXYZ",
+    };
+    static constexpr std::array<int32_t, 5U> COMPONENT_VALUES{-2, -1, 0, 1, 2};
+
+    for (std::string_view const input_call : INPUT_CALLS) {
+        for (size_t axis = 0U; axis < 3U; ++axis) {
+            for (int32_t const component : COMPONENT_VALUES) {
+                SCOPED_TRACE(
+                    ::testing::Message{}
+                        << "call=" << input_call
+                        << ", axis=" << axis
+                        << ", component=" << component
+                );
+                std::array<int32_t, 3U> values{};
+                values[axis] = component;
+                std::string operations{"    "};
+                operations.append(input_call);
+                operations.append("(\"alice\", ");
+                for (size_t index = 0U; index < values.size(); ++index) {
+                    if (index != 0U) {
+                        operations.append(", ");
+                    }
+                    operations.append(std::to_string(values[index]));
+                    operations.append("i8");
+                }
+                operations.append(")\n");
+
+                auto const parsed = shared::parseScenarioSource(
+                    "scenario-input-component.core",
+                    scenarioSource(operations),
+                    scenarioLimits()
+                );
+                bool const accepted = component >= -1 && component <= 1;
+                EXPECT_EQ(parsed.has_value(), accepted);
+                if (parsed.has_value()) {
+                    EXPECT_EQ(parsed->operations().size(), 1U);
+                    continue;
+                }
+                if (!accepted) {
+                    EXPECT_EQ(parsed.error().code, shared::ScenarioDiagnosticCode::CoreLangRuntimeFailure);
+                }
+            }
+        }
+    }
 }
 
 

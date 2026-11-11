@@ -900,18 +900,18 @@ class CiAcquireTests(unittest.TestCase):
         lock = Path(__file__).resolve().parents[2] / "dependencies.lock.json"
         parsed = acquire.require_private_dependency_lock(lock)
         self.assertEqual(set(parsed), {"CoreCpp", "CoreProject2026"})
-        self.assertEqual(parsed["CoreCpp"]["revision"], "5c1bad11346cfad44470f5985f1944929952b9a6")
+        self.assertEqual(parsed["CoreCpp"]["revision"], "fe601accf2a85fada6238132da7ffea1296171a1")
         self.assertEqual(
             parsed["CoreCpp"]["fetch_ref"],
-            "refs/tags/v0.1.0-cc-0050-compiled-fmt",
+            "refs/tags/ai/compat/runtime-fe601acc",
         )
         self.assertEqual(
             parsed["CoreProject2026"]["revision"],
-            "23f81441c10a44896b87865a9b8ae7d4b51687db",
+            "bfe8a1140629f36c4747d7a40bbfd62e21fe5304",
         )
         self.assertEqual(
             parsed["CoreProject2026"]["fetch_ref"],
-            "refs/heads/ai-dev",
+            "refs/tags/v0.1.5",
         )
 
     def test_private_dependency_lock_rejects_corecpp_branch_fetch_ref(self):

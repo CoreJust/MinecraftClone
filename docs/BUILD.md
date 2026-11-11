@@ -2,26 +2,33 @@
 
 Supported platforms: Windows, macOS, and arm64 Android. Desktop requires C++23, CMake **3.25+** (preset schema 6), Ninja, vcpkg (`VCPKG_ROOT`), Python 3.12+ for checks, and a Vulkan SDK with loader/headers/`glslc`. Android requires the Gradle wrapper, SDK API 35, NDK **27.0.12077973**, bundled CMake 3.30.5, Java 21, and vcpkg builtin `arm64-android` (API 28 floor). `.gitattributes` enforces LF; [vcpkg configuration](../vcpkg-configuration.json) pins dependencies and the Windows GMP overlay; [manifest](../vcpkg.json) lists packages.
 
+Follow the [desktop dependency guide](DESKTOP_DEPENDENCIES.md) to install the
+pinned third-party and private package prefixes, then configure and test:
+
 ```sh
 python3 script/ai_setup.py
-cmake --preset debug
+cmake --preset debug \
+    -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
+    -DVCPKG_TARGET_TRIPLET="$VCPKG_TARGET_TRIPLET" \
+    -DCMAKE_PREFIX_PATH="$MC_PRIVATE_DEPENDENCIES_PREFIX" \
+    -DCoreCpp_DIR="$CORECPP_DIR" \
+    -DCoreProject2026_DIR="$COREPROJECT2026_DIR"
 cmake --build --preset debug
 ctest --preset debug --output-on-failure --no-tests=error
 python3 script/ai_check.py
 ```
 
-Run presets from the repository root; use `release` for optimization. Packages
-must expose `CoreCpp::Core`, `CoreCpp::Runtime`, and
-`CoreProject2026::CoreLang`; CMake verifies their exact SHAs against
-[`dependencies.lock.json`](../dependencies.lock.json). CoreCpp's fetched
-`ai-main` history must resolve its pinned SHA from a `refs/tags/` locator;
-only `ai-dev`/`ai-main` are allowed, and `MC_ALLOW_INEXACT_CORECPP` cannot
-bypass tags. CoreProject2026 provenance checks remain. Presets install vcpkg
-under `build/<preset>/vcpkg_installed`; `mc_main` is under `build/<preset>/`,
-and `cmake --install` includes shaders.
+Run presets from the repository root. `release` enables optimization. CMake
+requires `CoreCpp::Core`, `CoreCpp::Runtime`, and `CoreProject2026::CoreLang`
+and checks exact SHAs against [the lock](../dependencies.lock.json). The
+CoreCpp pin must resolve via `refs/tags/` in fetched `ai-main` history. Only
+`ai-dev` and `ai-main` are allowed. `MC_ALLOW_INEXACT_CORECPP` cannot bypass tags.
+Presets place `mc_main` and `vcpkg_installed` under `build/<preset>/`. The
+desktop build stages `welcome.wav`, `gameplay.wav`, `music.json`, and `README.md`
+in `assets/audio/` beside `mc_main`. The install includes shaders and audio.
 
-After building exact release inputs, use the deterministic [package tooling](PACKAGING.md) to create desktop archives or record Android APK evidence.
-See [runtime acceptance](ACCEPTANCE.md) for scenario, benchmark, and capture commands.
+Use [package tooling](PACKAGING.md) for exact desktop archives and APK evidence.
+[Runtime acceptance](ACCEPTANCE.md) covers scenarios, benchmarks, and captures.
 
 ## Android debug APK
 
@@ -114,7 +121,7 @@ findings](ai/S7-DELIVERY-PROCESS-REPAIR.md).
 | `ai_check.py --strict --level snapshot` | Same after commit, with a clean tree and valid snapshot metadata |
 | Task-specific smoke | Real renderer/network/persistence acceptance, recorded per task |
 
-The publisher is [publish.py](../publish.py). Checks-only takes explicit metadata:
+The publisher is [publish.py](../publish.py). Checks-only takes explicit metadata. The `0.1.0:3` value below is a historical Snapshot 3 example, not current package input:
 
 ```sh
 python3 publish.py 'EarlyDev:Initiation' 0.1.0:3 --checks-only

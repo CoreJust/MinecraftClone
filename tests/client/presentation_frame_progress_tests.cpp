@@ -63,6 +63,7 @@ TEST(PresentationFrameProgressTest, CompletesOnlyTheMatchingSubmissionAfterItsFe
 TEST(PresentationFrameProgressTest, PreservesEveryRealRetirementFenceReceiptBeforeSlotReuse)
 {
     client::detail::PresentationFrameProgressTracker tracker;
+    tracker.setRetiredHistoryEnabled(true);
     for (uint32_t slot = 0U; slot < 3U; ++slot) {
         tracker.prepareSlot(slot);
         static_cast<void>(tracker.recordSubmission(slot, 2U));
@@ -87,4 +88,47 @@ TEST(PresentationFrameProgressTest, PreservesEveryRealRetirementFenceReceiptBefo
     EXPECT_EQ(tracker.retiredCompletions().back().frame_slot, 0U);
     tracker.resetProgress();
     EXPECT_TRUE(tracker.retiredCompletions().empty());
+}
+
+TEST(PresentationFrameProgressTest, DoesNotRetainRetirementHistoryUnlessDiagnosticsOptIn)
+{
+    client::detail::PresentationFrameProgressTracker tracker;
+    tracker.prepareSlot(0U);
+    auto const observed_at = std::chrono::steady_clock::time_point{} + std::chrono::seconds{ 8 };
+    for (uint64_t sequence = 1U; sequence <= 256U; ++sequence) {
+        static_cast<void>(tracker.recordSubmission(0U, sequence));
+        tracker.observeRecreationCompleted(observed_at + std::chrono::nanoseconds{ sequence });
+        EXPECT_TRUE(tracker.retiredCompletions().empty());
+    }
+    ASSERT_TRUE(tracker.progress().completed.has_value());
+    EXPECT_EQ(tracker.progress().completed->sequence, 256U);
+    EXPECT_TRUE(tracker.progress().completed_observed_at.has_value());
+    EXPECT_EQ(*tracker.progress().completed_observed_at, observed_at + std::chrono::nanoseconds{ 256U });
+
+    tracker.setRetiredHistoryEnabled(true);
+    static_cast<void>(tracker.recordSubmission(0U, 257U));
+    tracker.observeRecreationCompleted(observed_at + std::chrono::nanoseconds{ 257U });
+    ASSERT_EQ(tracker.retiredCompletions().size(), 1U);
+    EXPECT_EQ(tracker.retiredCompletions().front().submission.sequence, 257U);
+    tracker.setRetiredHistoryEnabled(false);
+    EXPECT_TRUE(tracker.retiredCompletions().empty());
+}
+
+TEST(PresentationFrameProgressTest, CompletionObservationTimeIsStableUntilANewerFenceCompletes)
+{
+    client::detail::PresentationFrameProgressTracker tracker;
+    tracker.prepareSlot(0U);
+    tracker.prepareSlot(1U);
+    static_cast<void>(tracker.recordSubmission(0U, 4U));
+    static_cast<void>(tracker.recordSubmission(1U, 4U));
+    auto const first = std::chrono::steady_clock::time_point{} + std::chrono::seconds{ 5 };
+    tracker.observeCompletedSlot(1U, first);
+    ASSERT_TRUE(tracker.progress().completed_observed_at.has_value());
+    EXPECT_EQ(*tracker.progress().completed_observed_at, first);
+    tracker.observeCompletedSlot(0U, first + std::chrono::seconds{ 1 });
+    EXPECT_EQ(*tracker.progress().completed_observed_at, first);
+    tracker.observeCompletedSlot(1U, first + std::chrono::seconds{ 2 });
+    EXPECT_EQ(*tracker.progress().completed_observed_at, first);
+    tracker.resetProgress();
+    EXPECT_FALSE(tracker.progress().completed_observed_at.has_value());
 }

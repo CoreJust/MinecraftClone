@@ -170,7 +170,23 @@ add_executable(mc_tests
     generation/geology_tests.cpp
     generation/hydrology_tests.cpp
     generation/numpy_random_tests.cpp
+    generation/platec_compat_tests.cpp
     generation/reference_tests.cpp
+    generation/v21_course_geometry_tests.cpp
+    generation/v21_fine_plan_tests.cpp
+    generation/v21_terrain_tests.cpp
+    generation/v9_platec_source_tests.cpp
+    generation/v10_foundation_tests.cpp
+    generation/v10_fine_terrain_tests.cpp
+    generation/v10_platec_source_tests.cpp
+    generation/v10_climate_tests.cpp
+    generation/v10_climate_preparation_tests.cpp
+    generation/v10_water_preparation_tests.cpp
+    generation/v10_provider_tests.cpp
+    generation/v9_terrain_tests.cpp
+    generation/v9_climate_tests.cpp
+    generation/v9_water_tests.cpp
+    generation/v9_provider_tests.cpp
     core/algorithm_tests.cpp
     core/byte_io_tests.cpp
     core/crash_handler_tests.cpp
@@ -194,12 +210,14 @@ add_executable(mc_tests
     core/non_movable_tests.cpp
     core/os_tests.cpp
     core/range_span_tests.cpp
+    core/block_interaction_tests.cpp
     core/shared_message_tests.cpp
     core/scenario_parser_tests.cpp
     core/chunk_tests.cpp
     core/terrain_world_tests.cpp
     core/terrain_lod_tests.cpp
             core/world_coverage_tests.cpp
+    core/v10_terrain_world_tests.cpp
     core/terrain_world_reference_tests.cpp
     core/world_preparation_tests.cpp
     core/height_tile_worker_pool_tests.cpp
@@ -340,20 +358,29 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
     client/camera_controller_tests.cpp
     client/depth_format_tests.cpp
             client/camera_tests.cpp
+            client/block_action_transport_tests.cpp
+            client/block_interaction_effects_tests.cpp
             client/debug_hud_tests.cpp
             client/frame_scheduler_tests.cpp
             client/game_client_audio_tests.cpp
             client/world_loading_tests.cpp
+            client/ui_presentation_tests.cpp
+            client/s2_map_presentation_tests.cpp
+    client/v10_terrain_field_tests.cpp
             client/terrain_lod_source_tests.cpp
             client/terrain_lod_selection_tests.cpp
             client/terrain_lod_presentation_tests.cpp
+            client/river_bed_mesh_tests.cpp
             client/terrain_lod_runtime_tests.cpp
             client/terrain_lod_upload_plan_tests.cpp
             client/column_map_presentation_tests.cpp
             client/column_map_client_tests.cpp
             client/column_map_client_integration_tests.cpp
             client/generation_map_presentation_tests.cpp
+            client/generation_map_history_tests.cpp
+            client/generation_history_rendering_tests.cpp
             client/map_image_data_tests.cpp
+            client/screenshot_dib_tests.cpp
             client/presentation_frame_progress_tests.cpp
             client/bot_client_tests.cpp
             client/game_client_benchmark_tests.cpp
@@ -361,6 +388,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/gui_renderer_tests.cpp
             client/height_tile_interest_region_tests.cpp
             client/height_tile_draw_index_tests.cpp
+            client/terrain_lod_draw_index_tests.cpp
             client/height_tile_instance_reaper_tests.cpp
             client/client_audio_tests.cpp
             client/game_client_prediction_tests.cpp
@@ -460,11 +488,65 @@ if(MC_BUILD_CLIENT AND NOT ANDROID AND MC_ENABLE_RENDERER_SMOKE)
         RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_renderer_smoke>"
         DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES} GTest::gtest
     )
-    add_test(NAME RendererSmokeTest COMMAND mc_renderer_smoke)
+    set(MC_STARTUP_PRESENTATION_FILTER
+        "PlayerClientFocusTest.NormalLocalStartupRecordsMovingGenerationMapBeforeReady:PlayerClientFocusTest.ActualStartupCapturesLoadingReadyGameAndWorldMapAtTwoWindowSizes"
+    )
+    set(MC_HELD_PLACEMENT_FILTER
+        "PlayerClientFocusTest.HeldRmbPlacesAcrossAuthoritativeRetargetsDuringOrdinaryUpwardFlight"
+    )
+    add_test(NAME RendererSmokeTest COMMAND mc_renderer_smoke
+        "--gtest_filter=-${MC_STARTUP_PRESENTATION_FILTER}:${MC_HELD_PLACEMENT_FILTER}")
+    add_test(NAME PlayerHeldPlacementNativeV9Test COMMAND mc_renderer_smoke
+        "--gtest_filter=${MC_HELD_PLACEMENT_FILTER}")
+    set_tests_properties(PlayerHeldPlacementNativeV9Test PROPERTIES
+        TIMEOUT 120
+        RUN_SERIAL TRUE
+        LABELS "renderer;gpu;v9;placement"
+        FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
+    )
     set_tests_properties(RendererSmokeTest PROPERTIES
         TIMEOUT 45
         RUN_SERIAL TRUE
         LABELS "renderer;gpu"
+        FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
+    )
+    add_test(NAME PlayerStartupPresentationTest COMMAND mc_renderer_smoke "--gtest_filter=${MC_STARTUP_PRESENTATION_FILTER}")
+    set_tests_properties(PlayerStartupPresentationTest PROPERTIES
+        TIMEOUT 240
+        RUN_SERIAL TRUE
+        LABELS "renderer;gpu;startup"
+        FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
+    )
+    add_executable(mc_coarse_classifier_native client/coarse_classifier_native_tests.cpp main.cpp)
+    target_link_libraries(mc_coarse_classifier_native PRIVATE mc mc_test_support GTest::gtest)
+    mc_apply_target_defaults(mc_coarse_classifier_native)
+    mc_copy_target_shaders(mc_coarse_classifier_native mc)
+    mc_stage_windows_runtime(
+        mc_coarse_classifier_native
+        RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_coarse_classifier_native>"
+        DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES} GTest::gtest
+    )
+    add_test(NAME CoarseClassifierNativeTest COMMAND mc_coarse_classifier_native)
+    set_tests_properties(CoarseClassifierNativeTest PROPERTIES
+        TIMEOUT 60
+        RUN_SERIAL TRUE
+        LABELS "renderer;gpu;classifier"
+        FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
+    )
+    add_executable(mc_terrain_palette_native client/terrain_palette_native_tests.cpp main.cpp)
+    target_link_libraries(mc_terrain_palette_native PRIVATE mc mc_test_support GTest::gtest)
+    mc_apply_target_defaults(mc_terrain_palette_native)
+    mc_copy_target_shaders(mc_terrain_palette_native mc)
+    mc_stage_windows_runtime(
+        mc_terrain_palette_native
+        RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_terrain_palette_native>"
+        DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES} GTest::gtest
+    )
+    add_test(NAME TerrainPaletteNativeTest COMMAND mc_terrain_palette_native)
+    set_tests_properties(TerrainPaletteNativeTest PROPERTIES
+        TIMEOUT 180
+        RUN_SERIAL TRUE
+        LABELS "renderer;gpu;v9"
         FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
     )
     add_test(
@@ -534,10 +616,32 @@ if(MC_ENABLE_RENDERER_GOLDEN)
     )
 endif()
 
+set_source_files_properties(generation/v21_terrain_tests.cpp PROPERTIES
+    INCLUDE_DIRECTORIES "${PROJECT_SOURCE_DIR}/third_party/structural/NoiseLib/include"
+    COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/fp:strict>;$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-ffp-contract=off>"
+)
+
 target_include_directories(mc_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/generation
+    ${PROJECT_SOURCE_DIR}/third_party/platec/cpp_src
+    ${PROJECT_SOURCE_DIR}/third_party/structural
 )
 target_compile_definitions(mc_tests PRIVATE
     MC_TERRAIN_REFERENCE_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/terrain_v2"
+    MC_V9_PLATEC_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/terrain_v9"
+)
+
+# Match the CPU map sources in mc_game_core.
+if(MC_BUILD_CLIENT OR (MC_BUILD_COLUMN_MAP AND NOT ANDROID))
+    target_compile_definitions(mc_tests PRIVATE MC_TEST_HAS_CPU_MAP=1)
+endif()
+
+set(MC_V10_FIXTURE_DIRECTORY "${PROJECT_SOURCE_DIR}/tests/fixtures/terrain_v10" CACHE PATH
+    "Hash-bound native V10 reference fixtures")
+set(MC_V10_CLIMATE_FIXTURE_DIRECTORY "${PROJECT_SOURCE_DIR}/tests/fixtures/terrain_v10/climate" CACHE PATH
+    "Hash-bound native V10 climate reference fixtures")
+target_compile_definitions(mc_tests PRIVATE
+    MC_V10_FIXTURE_DIRECTORY="${MC_V10_FIXTURE_DIRECTORY}"
+    MC_V10_CLIMATE_FIXTURE_DIRECTORY="${MC_V10_CLIMATE_FIXTURE_DIRECTORY}"
 )

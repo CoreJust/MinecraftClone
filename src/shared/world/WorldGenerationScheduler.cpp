@@ -814,18 +814,24 @@ std::optional<GenerationJob> WorldGenerationCoordinator::bindTerrainLeaf(Generat
         .terrain_identity = m_terrain_identity,
         .world_epoch = m_world_epoch,
     };
+    generation::TerrainModelTag const model = m_terrain_world->atlas()->configuration.model_tag;
+    bool const native_surface = model == generation::TerrainModelTag::V9
+        || model == generation::TerrainModelTag::V21
+        || model == generation::TerrainModelTag::V10;
     auto const artifact = m_regional_artifacts.find(key);
-    if (artifact == m_regional_artifacts.end()) {
+    if (!native_surface && artifact == m_regional_artifacts.end()) {
         return std::nullopt;
     }
-    artifact->second.last_access = ++m_regional_artifact_access_clock;
+    if (!native_surface) {
+        artifact->second.last_access = ++m_regional_artifact_access_clock;
+    }
     job.terrain_identity = m_terrain_identity;
     job.world_epoch = m_world_epoch;
     job.seed = m_seed;
     if (job.attempt == 0U) {
         job.attempt = m_next_attempt++;
     }
-    job.inherited_region = artifact->second.artifact;
+    job.inherited_region = native_surface ? nullptr : artifact->second.artifact;
     if (job.cancellation_source == nullptr) {
         job.cancellation_source = std::make_shared<std::stop_source>();
     }

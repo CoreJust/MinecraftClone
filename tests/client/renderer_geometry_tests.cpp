@@ -1,3 +1,5 @@
+#include <client/render/TerrainTextures.hpp>
+
 #include <glm/geometric.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
@@ -113,6 +115,31 @@ TEST(RendererGeometryTest, GridVariantsUseMatchingFrontFacingWinding)
     EXPECT_GT(orientation({ indices[3], indices[4], indices[5] }), 0.0F);
     EXPECT_GT(orientation(mesh_triangles[0]), 0.0F);
     EXPECT_GT(orientation(mesh_triangles[1]), 0.0F);
+}
+
+TEST(RendererGeometryTest, TerrainShaderKeepsSandInRangeAndUsesDiscreteV9SurfaceMaterials)
+{
+    std::string const source = readShader("terrain_texture_sampling.glsl");
+    std::regex const material_count_pattern{ R"(kTerrainMaterialCount\s*=\s*(\d+)u)" };
+    std::smatch material_count_match;
+    ASSERT_TRUE(std::regex_search(source, material_count_match, material_count_pattern));
+    EXPECT_EQ(std::stoul(material_count_match[1].str()), client::render::terrain_textures::MATERIAL_COUNT);
+    EXPECT_NE(source.find("canonical_terrain.enabled == 2u"), std::string::npos);
+    EXPECT_NE(source.find(".values[low.y * canonical_terrain.resolution + low.x].z"),
+        std::string::npos);
+    EXPECT_NE(source.find("dot(weights, vec4(equal(materials, uvec4(materials[candidate]))))"), std::string::npos);
+}
+
+TEST(RendererGeometryTest, ColdShallowV9SurfaceRetainsIceAboveTheDeepStoneCutoff)
+{
+    std::string const source = readShader("terrain_texture_sampling.glsl");
+    std::string const geometry = readShader("stone_geometry.glsl");
+    EXPECT_NE(geometry.find("out_surface_properties.x - pc.surface.x,"), std::string::npos);
+    EXPECT_NE(geometry.find("out_surface_properties.x - (pc.surface.x - 4.0),"), std::string::npos);
+    EXPECT_NE(source.find("if (classification.y < 0.0) return 1u;"), std::string::npos);
+    EXPECT_NE(source.find("if (classification.x < 0.0) {"), std::string::npos);
+    EXPECT_NE(source.find("canonicalTerrainSample(world_xy).x"), std::string::npos);
+    EXPECT_NE(source.find("temperature <= -2.0 ? 6u : 3u"), std::string::npos);
 }
 
 } // namespace

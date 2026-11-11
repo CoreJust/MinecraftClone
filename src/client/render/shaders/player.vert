@@ -14,6 +14,8 @@ layout(push_constant) uniform PushConstants {
 
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec3 outCameraOffset;
+layout(location = 2) out vec3 outLocalPosition;
+layout(location = 3) flat out float outBlockSeed;
 
 const vec3 kCubeVertices[36] = vec3[](
     vec3(0,0,0), vec3(1,1,0), vec3(1,0,0), vec3(0,0,0), vec3(0,1,0), vec3(1,1,0),
@@ -36,4 +38,6 @@ void main() {
     if (pc.curvature.z > 0.5) { world = curvedWorldPosition(world, pc.curvature.xy); }
     gl_Position = pc.projection_view * vec4(world, 1.0);
     outColor = vec4(pc.color.rgb * kFaceShades[gl_VertexIndex / 6], pc.color.a);
+    outLocalPosition = local;
+    outBlockSeed = pc.origin.w;
 }

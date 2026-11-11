@@ -44,6 +44,8 @@ struct ExecutionLimits final {
     uint64_t max_native_image_bytes{uint64_t{4U} * 1'024U * 1'024U};
     uint64_t max_instructions{65'536U};
     uint64_t max_execution_count{2U};
+    // Counts the full first-call initializer path; disabled for generic callers by default.
+    bool allow_persistent_static_initialization{false};
 };
 
 struct BackendReceipt final {

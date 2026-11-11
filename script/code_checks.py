@@ -194,7 +194,7 @@ def check_include_order_all(ctx, fpath, content):
 @register_source_check(CODE_FILES, "namespace closing comments match")
 def check_namespace_comments(ctx, fpath, content):
     errors = []
-    for ns in re.findall(r'namespace\s+([\w:]+)\s*\{', content):
+    for ns in re.findall(r'namespace\s+([\w:]+)\s*\{', strip_cpp_comments(content)):
         if not re.search(r'\}\s*//\s*namespace\s+' + re.escape(ns) + r'\s*$', content, re.MULTILINE):
             errors.append(f"missing closing comment for namespace {ns}")
     return errors

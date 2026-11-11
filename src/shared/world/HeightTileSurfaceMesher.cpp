@@ -83,7 +83,7 @@ shared::TerrainColumn columnAtReducedHeight(
         : highest_solid_z;
     column.ground_end_z = static_cast<uint16_t>(std::min(
         std::max(ground_end, ground_first),
-        generation::WORLD_DEPTH_BLOCKS
+        shared::WorldExtent::DEPTH
     ));
     return column;
 }

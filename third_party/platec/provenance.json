@@ -1,0 +1,467 @@
+{
+  "compiled_translation_units": [
+    "cpp_src/bounds.cpp",
+    "cpp_src/geometry.cpp",
+    "cpp_src/heightmap.cpp",
+    "cpp_src/lithosphere.cpp",
+    "cpp_src/mass.cpp",
+    "cpp_src/movement.cpp",
+    "cpp_src/noise.cpp",
+    "cpp_src/plate.cpp",
+    "cpp_src/plate_functions.cpp",
+    "cpp_src/rectangle.cpp",
+    "cpp_src/segment_creator.cpp",
+    "cpp_src/segment_data.cpp",
+    "cpp_src/segments.cpp",
+    "cpp_src/simplerandom.cpp",
+    "cpp_src/simplexnoise.cpp",
+    "cpp_src/sqrdmd.cpp",
+    "cpp_src/utils.cpp",
+    "cpp_src/world_point.cpp"
+  ],
+  "excluded_wrappers": [
+    {
+      "path": "cpp_src/platecapi.cpp",
+      "reason": "Unused global registry; the game owns one lithosphere directly.",
+      "sha256": "7bd79dc98c7e96ebb906759f043e1df0928ab17b38ff4ea536bde1a74b4ae875"
+    },
+    {
+      "path": "cpp_src/platecapi.hpp",
+      "reason": "Declares the omitted C registry API.",
+      "sha256": "b1eec55d6a54bd3e3aa68f211437d0087c814a1d2e5a33b304e6bad592a4e006"
+    },
+    {
+      "path": "platec_src/platecmodule.cpp",
+      "reason": "Python C API wrapper; runtime Python is outside the native game stage.",
+      "sha256": "a593b89b8186d4a2bd7f9dff675489b96fa113369e4bd9c30e01a8d6eaab4e66"
+    }
+  ],
+  "intentional_variant_changes": {
+    "cpp_src/noise.cpp": "single-Y angular wrap: 2*pi; defined signed-wrap seed square; explicit std::fma for all four 4D noise coordinates",
+    "cpp_src/simplexnoise.cpp": "single-Y angular wrap: 2*pi; explicit std::fma for 4D octave accumulation and gradient dot products",
+    "cpp_src/geometry.hpp": "explicit std::fma for FloatVector length and dotProduct on the v9 execution path",
+    "cpp_src/lithosphere.cpp": "explicit std::fma for initial land/sea mapping, collision ratio, buoyancy and restart blending; define zero age for empty crust during restart",
+    "cpp_src/mass.cpp": "explicit std::fma for crust-weighted center accumulation",
+    "cpp_src/movement.cpp": "explicit std::fma for velocity length, rotation and dot product",
+    "cpp_src/plate.cpp": "explicit std::fma for subduction, age blending, erosion and crust redistribution",
+    "cpp_src/platec_compat.hpp": "project-authored portable helpers for explicit std::fma and defined two's-complement seed-square wrap"
+  },
+  "license": {
+    "license_path": "LICENSE",
+    "license_sha256": "0d696cdb749b7be5c736b9c9da2dae7163c78d06b6c530bee4cdcd5e8be889ac",
+    "noise_lib_commit": "d72668a3f03b2938da8a0d6ab11166a686fb568d",
+    "noise_lib_license_files_in_frozen_closure": [],
+    "package_declaration": "LGPL-3.0-or-later",
+    "redistribution_status": "Resolve NoiseLib notice/license status before product redistribution; no standalone license was found in the frozen closure."
+  },
+  "model_identity": "b4229a9c5a3c090521488091d701f290084c2c330e5f2a67248ec0d52ab16572",
+  "native_port_evidence_sha256": "5a01f750b523e5f6dab354f1f5ea58cfe14e8ff557829bce5bed8c4bb22c38d6",
+  "portable_numeric_compatibility": {
+    "task": "MC-AI-0563",
+    "seed_square": "uint64 multiply, bit_cast to int64, then signed remainder % 256; this defines the upstream two's-complement wrap without signed-overflow UB",
+    "fused_operations": "The observed frozen contractions on the v9 execution path use explicit std::fma; implicit Platec contraction is disabled.",
+    "mac": {
+      "compiler": "AppleClang 17.0.0.17000603",
+      "vendor_options": "-ffp-contract=off;-fno-strict-overflow",
+      "focused_tests": "8/8 passed, including raw seeds 10, 2 and 42",
+      "test_log": "task-0563/mac-explicit-fma-tests-final.log",
+      "test_log_sha256": "974bdbc4a3f4b65f80a0d647a8d4d25781db3625c912ad67cd2b24e3c2a32208"
+    },
+    "windows": {
+      "compiler": "MSVC 19.44.35229",
+      "vendor_options": "/fp:precise",
+      "wrapper_sha_options": "/fp:strict",
+      "architecture_options": "No /fp:contract or /arch:AVX2",
+      "focused_tests": "7/7 V9 stage tests passed, including raw seeds 10, 2 and 42",
+      "source_readback_matches": true,
+      "receipt": "task-0563/windows-explicit-fma/receipt.json",
+      "receipt_sha256": "339b3cee2c3c9a9dbaf7608b8f390d598449a93f5c47218ae83f44bed46ac680",
+      "test_log": "task-0563/windows-explicit-fma/build-test.log",
+      "test_log_sha256": "af2374f5720591be5875ef478404ea1d8f5e754bd3c2169f8e88dc79f83302c8",
+      "wrap_edge_test": {
+        "result": "1/1 passed",
+        "vectors": [
+          0,
+          3037000499,
+          3037000500,
+          4294967294,
+          4294967295
+        ],
+        "receipt": "task-0563/windows-wrap-edges/receipt-corrected.json",
+        "receipt_sha256": "58621dad969c71fea18d606b8bdccfdf59ce7762c31b82f01f74ab2fc93040f4",
+        "test_log": "task-0563/windows-wrap-edges/build-test-corrected.log",
+        "test_log_sha256": "66a9ec66aa74f4362be2062f53178f22ef403f6827a233533e2a36b9289e9a3a",
+        "source_sha256": "841edc77832ad247e48d60cf61f0692864994a1d5bc1adb59df9948f21faf75"
+      }
+    },
+    "qualification_boundary": "This is native module raw-oracle parity; full game runtime and performance acceptance are separate."
+  },
+  "package": "PyPlatec 1.4.1 local single-Y angular-wrap variant",
+  "schema": 1,
+  "source_closure": [
+    {
+      "path": "LICENSE",
+      "sha256": "0d696cdb749b7be5c736b9c9da2dae7163c78d06b6c530bee4cdcd5e8be889ac"
+    },
+    {
+      "path": "MANIFEST.in",
+      "sha256": "b41dd85162f03cda9c1532e066c5b925e07c046c67956e822cbda612dbfd7acd"
+    },
+    {
+      "path": "PKG-INFO",
+      "sha256": "922f7df3c27e7da0268f9a79b460137c8c8da1d3415ae976c12a379d92ad187f"
+    },
+    {
+      "path": "PyPlatec.egg-info/PKG-INFO",
+      "sha256": "922f7df3c27e7da0268f9a79b460137c8c8da1d3415ae976c12a379d92ad187f"
+    },
+    {
+      "path": "PyPlatec.egg-info/SOURCES.txt",
+      "sha256": "0308cd2deed5be654b7e6908a647f43c86438b21dc3ee4651377dc5ef07b62cd"
+    },
+    {
+      "path": "PyPlatec.egg-info/dependency_links.txt",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "PyPlatec.egg-info/not-zip-safe",
+      "sha256": "7eb70257593da06f682a3ddda54a9d260d4fc514f645237f5ca74b08f8da61a6"
+    },
+    {
+      "path": "PyPlatec.egg-info/top_level.txt",
+      "sha256": "8fb5a572f7f7ba8190a8f4918abcdd8566c568a1a8edc294b7a63642f0216c61"
+    },
+    {
+      "path": "README.md",
+      "sha256": "c54650c1a09edd0546fef2c8e1cd602a4d2e34410a3d73a3f34f5273869c1aca"
+    },
+    {
+      "path": "cpp_src/bounds.cpp",
+      "sha256": "aee65514df842a45517e8555b98fa8cb084d2dc91b2696ad717210b9e2127e89"
+    },
+    {
+      "path": "cpp_src/bounds.hpp",
+      "sha256": "e4c4f1b3f37fe11a7efa41f4672973c190662001ba607a2be73428aa80e063a9"
+    },
+    {
+      "path": "cpp_src/geometry.cpp",
+      "sha256": "fe91e4a269b4426543d67d7bf72f1457c8a090cb759da961d082006ef62ed848"
+    },
+    {
+      "path": "cpp_src/geometry.hpp",
+      "sha256": "19b490bf11324526acb8d01d18b17aaedc7b166249c238dfea4c38da0be88aa0"
+    },
+    {
+      "path": "cpp_src/heightmap.cpp",
+      "sha256": "d7208033edecbb35dc718c1baff9c14dc3b2cbd5ecf3446a462445447bbc3d59"
+    },
+    {
+      "path": "cpp_src/heightmap.hpp",
+      "sha256": "f27fb681db12fa124c63012a430ddcf2dc7fe5d725af0281af6ef69f317ddc1f"
+    },
+    {
+      "path": "cpp_src/lithosphere.cpp",
+      "sha256": "a10f8cbc2aac699ffcb12475a7e5266eb47fff67fe51dea5bb09cb3fe092eb95"
+    },
+    {
+      "path": "cpp_src/lithosphere.hpp",
+      "sha256": "70fed109bc88042a73aa7457a4d52018ed79537b2eb84e9b63e22d439e494a8b"
+    },
+    {
+      "path": "cpp_src/mass.cpp",
+      "sha256": "7fd9d223535fbd538ca5a7faf77235f99d3e470663309a0b3494fd9a79465026"
+    },
+    {
+      "path": "cpp_src/mass.hpp",
+      "sha256": "74c2ef8e48cf99a2306ebb8b75d7136880294383bc20082d968a936d442c95e4"
+    },
+    {
+      "path": "cpp_src/movement.cpp",
+      "sha256": "d06fdc16ac4e5451f97031db1cbc4daf05e0c75809c9e1ea71bebf82a9ac31cd"
+    },
+    {
+      "path": "cpp_src/movement.hpp",
+      "sha256": "6af3370da01f1aec1350043bae34cc48d7f96e975984431213ff81cd5506b584"
+    },
+    {
+      "path": "cpp_src/noise.cpp",
+      "sha256": "9c197ee2a5cd42f4d8b989ffbf388a2530f5821168877bffa0cc6dd18f0242c9"
+    },
+    {
+      "path": "cpp_src/noise.hpp",
+      "sha256": "07f5adee2dba61dae4079b2de092cdf952023ac26f198ef705ffa83c3a62b547"
+    },
+    {
+      "path": "cpp_src/plate.cpp",
+      "sha256": "3a83f4fe4bc15a8c513bbbfaa080b9cfc7e0c43bd33e114bea752562e7548174"
+    },
+    {
+      "path": "cpp_src/plate.hpp",
+      "sha256": "0352aaf3c063d1466874aa6076f83be843a8a16777a31015e885d669f2e3d57c"
+    },
+    {
+      "path": "cpp_src/plate_functions.cpp",
+      "sha256": "af73ee8a614bf4d12d2f3fcc432f9f827c1ed1b2f570c6aac8692491eb183449"
+    },
+    {
+      "path": "cpp_src/plate_functions.hpp",
+      "sha256": "2c87995fbde59c0af3a9dd50414d8bee11ffd409c8139501ed59f4663217ebf7"
+    },
+    {
+      "path": "cpp_src/platecapi.cpp",
+      "sha256": "7bd79dc98c7e96ebb906759f043e1df0928ab17b38ff4ea536bde1a74b4ae875"
+    },
+    {
+      "path": "cpp_src/platecapi.hpp",
+      "sha256": "b1eec55d6a54bd3e3aa68f211437d0087c814a1d2e5a33b304e6bad592a4e006"
+    },
+    {
+      "path": "cpp_src/rectangle.cpp",
+      "sha256": "40210f0e48555535d0a5a490afdfa0638272252f8c7ed63f99ae881647ae4ad6"
+    },
+    {
+      "path": "cpp_src/rectangle.hpp",
+      "sha256": "a47bc1c8c574f164d7549479f7c4c8261be45ba15a6644d23578837b1dc6abdd"
+    },
+    {
+      "path": "cpp_src/segment_creator.cpp",
+      "sha256": "634af07aac7d10f509e3282c4590959518343daaff30df35ca05a553a5e62413"
+    },
+    {
+      "path": "cpp_src/segment_creator.hpp",
+      "sha256": "6f30f99b402c8eb6144b33c9fae4ba129e37f8d9959155fb0647f3be2a73a47f"
+    },
+    {
+      "path": "cpp_src/segment_data.cpp",
+      "sha256": "a392d7e2eb8d8a7a3fcf97fc131e9d11b51b941ceaa8b50a2ea2fa8fcd45cb6f"
+    },
+    {
+      "path": "cpp_src/segment_data.hpp",
+      "sha256": "7fab54b85a4f2d38f3083e88010cf8c833107c6856f9f5c629e2aa448432bc5a"
+    },
+    {
+      "path": "cpp_src/segments.cpp",
+      "sha256": "843660e2cbdb2dbd8ff2e2c187e04e68cf679622d19aaf7a493276502464212e"
+    },
+    {
+      "path": "cpp_src/segments.hpp",
+      "sha256": "c0525db70daf331d500c4ee87ec803bac0aa4a0a3d872166dca44a00c3459755"
+    },
+    {
+      "path": "cpp_src/simplerandom.cpp",
+      "sha256": "365ca1723da9a7f4ddc7da3a4666437a2dc11215fd6aeacb28d8ac4944693044"
+    },
+    {
+      "path": "cpp_src/simplerandom.hpp",
+      "sha256": "18f2e648e1f72a948921eb38bf11d3778bdf735c94d2764436a7f316f7c7ee2c"
+    },
+    {
+      "path": "cpp_src/simplexnoise.cpp",
+      "sha256": "6bbff8efaac829ffe98e3b9e9fef7c8ec48e5056fb812650a6282f812ff41ba3"
+    },
+    {
+      "path": "cpp_src/simplexnoise.hpp",
+      "sha256": "c7e517be09b4cb20f0708a1338580d2f2fc3b837c2ed4b69d45b4de49c514aca"
+    },
+    {
+      "path": "cpp_src/sqrdmd.cpp",
+      "sha256": "5313c27b9c8d991c4413f5190d4c743a58ec3f5d6ad1bae207da190c80dd6235"
+    },
+    {
+      "path": "cpp_src/sqrdmd.hpp",
+      "sha256": "7db5ab39e713c283b40a8dddef682088732f0d9953ef2bd5fe6b3880971a677b"
+    },
+    {
+      "path": "cpp_src/utils.cpp",
+      "sha256": "f0aa1765e63a3c34bcaea7399c6efa7e1df3affd549e728d14ff042a41e6aa2b"
+    },
+    {
+      "path": "cpp_src/utils.hpp",
+      "sha256": "caa314210424333e5a893517ab12815006e06a9df563d12956135a1feb10d5f4"
+    },
+    {
+      "path": "cpp_src/world_point.cpp",
+      "sha256": "c9d59640833093866ca5ab0b762370463c5b715ec6438a088d56958f1bafd28a"
+    },
+    {
+      "path": "cpp_src/world_point.hpp",
+      "sha256": "280ecffe50dd34c830fb47ca56d51b1b3056c377d30c573d05f4914878d9a93a"
+    },
+    {
+      "path": "platec_src/platecmodule.cpp",
+      "sha256": "a593b89b8186d4a2bd7f9dff675489b96fa113369e4bd9c30e01a8d6eaab4e66"
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "2fc036ccbc51ea95ead94f5d5932c8fcb4b0d57799e696653af45c7f0019016c"
+    },
+    {
+      "path": "setup.cfg",
+      "sha256": "a29823dd9fbb34b0b00c45fe5823d7c25a3133805e072cad4920cf76dee85bfa"
+    },
+    {
+      "path": "setup.py",
+      "sha256": "66bc411ae9b5002dd75f5b8d678811ca33064364640242143d20b9fe37046079"
+    },
+    {
+      "path": "test/test_generation.py",
+      "sha256": "a5902c61565e14f66f8cc2acc0f90b4d1cb290580f82886cd3a90c0e4ad13ce8"
+    }
+  ],
+  "source_snapshot_manifest_sha256": "f7b6f593c025fe6fb389da4521f030522806d5c064235a2a1c6eddaa7d856de5",
+  "upstream_commit": "63e8d6d2a7e3486eae5042c118bf4a882e7357b3",
+  "vendored_files": [
+    {
+      "path": "LICENSE",
+      "sha256": "0d696cdb749b7be5c736b9c9da2dae7163c78d06b6c530bee4cdcd5e8be889ac"
+    },
+    {
+      "path": "cpp_src/bounds.cpp",
+      "sha256": "aee65514df842a45517e8555b98fa8cb084d2dc91b2696ad717210b9e2127e89"
+    },
+    {
+      "path": "cpp_src/bounds.hpp",
+      "sha256": "e4c4f1b3f37fe11a7efa41f4672973c190662001ba607a2be73428aa80e063a9"
+    },
+    {
+      "path": "cpp_src/geometry.cpp",
+      "sha256": "fe91e4a269b4426543d67d7bf72f1457c8a090cb759da961d082006ef62ed848"
+    },
+    {
+      "path": "cpp_src/geometry.hpp",
+      "sha256": "1cbe968608da93b794b869d24dda7241047404e70d718d68acdeb6e1b1205ad1"
+    },
+    {
+      "path": "cpp_src/heightmap.cpp",
+      "sha256": "d7208033edecbb35dc718c1baff9c14dc3b2cbd5ecf3446a462445447bbc3d59"
+    },
+    {
+      "path": "cpp_src/heightmap.hpp",
+      "sha256": "f27fb681db12fa124c63012a430ddcf2dc7fe5d725af0281af6ef69f317ddc1f"
+    },
+    {
+      "path": "cpp_src/lithosphere.cpp",
+      "sha256": "d6702e73569bf1220fa3cd32c061ec723040ce6f6aa216af9b6567c39cd83a3d"
+    },
+    {
+      "path": "cpp_src/lithosphere.hpp",
+      "sha256": "70fed109bc88042a73aa7457a4d52018ed79537b2eb84e9b63e22d439e494a8b"
+    },
+    {
+      "path": "cpp_src/mass.cpp",
+      "sha256": "a959a0d2c1cb7d386c2df5d8b4c54b990411f0da4e39b7badb5bd3e2f58c50f7"
+    },
+    {
+      "path": "cpp_src/mass.hpp",
+      "sha256": "74c2ef8e48cf99a2306ebb8b75d7136880294383bc20082d968a936d442c95e4"
+    },
+    {
+      "path": "cpp_src/movement.cpp",
+      "sha256": "8bf6c2ae116063ceb794fc389dcab493007bafa44a964fc8eca49f90497e5201"
+    },
+    {
+      "path": "cpp_src/movement.hpp",
+      "sha256": "6af3370da01f1aec1350043bae34cc48d7f96e975984431213ff81cd5506b584"
+    },
+    {
+      "path": "cpp_src/noise.cpp",
+      "sha256": "317a5b93fdaa6b5b15e436bf9b5f529109ebd5ff8f4550dc8a19a7ad657a8b26"
+    },
+    {
+      "path": "cpp_src/noise.hpp",
+      "sha256": "07f5adee2dba61dae4079b2de092cdf952023ac26f198ef705ffa83c3a62b547"
+    },
+    {
+      "path": "cpp_src/plate.cpp",
+      "sha256": "f8f26aa4e1fb6ed1ae819fec21b1f2180d9b9ab0dbb938ec5eb5d15e2190649d"
+    },
+    {
+      "path": "cpp_src/plate.hpp",
+      "sha256": "0352aaf3c063d1466874aa6076f83be843a8a16777a31015e885d669f2e3d57c"
+    },
+    {
+      "path": "cpp_src/plate_functions.cpp",
+      "sha256": "af73ee8a614bf4d12d2f3fcc432f9f827c1ed1b2f570c6aac8692491eb183449"
+    },
+    {
+      "path": "cpp_src/plate_functions.hpp",
+      "sha256": "2c87995fbde59c0af3a9dd50414d8bee11ffd409c8139501ed59f4663217ebf7"
+    },
+    {
+      "path": "cpp_src/rectangle.cpp",
+      "sha256": "40210f0e48555535d0a5a490afdfa0638272252f8c7ed63f99ae881647ae4ad6"
+    },
+    {
+      "path": "cpp_src/rectangle.hpp",
+      "sha256": "a47bc1c8c574f164d7549479f7c4c8261be45ba15a6644d23578837b1dc6abdd"
+    },
+    {
+      "path": "cpp_src/segment_creator.cpp",
+      "sha256": "634af07aac7d10f509e3282c4590959518343daaff30df35ca05a553a5e62413"
+    },
+    {
+      "path": "cpp_src/segment_creator.hpp",
+      "sha256": "6f30f99b402c8eb6144b33c9fae4ba129e37f8d9959155fb0647f3be2a73a47f"
+    },
+    {
+      "path": "cpp_src/segment_data.cpp",
+      "sha256": "a392d7e2eb8d8a7a3fcf97fc131e9d11b51b941ceaa8b50a2ea2fa8fcd45cb6f"
+    },
+    {
+      "path": "cpp_src/segment_data.hpp",
+      "sha256": "7fab54b85a4f2d38f3083e88010cf8c833107c6856f9f5c629e2aa448432bc5a"
+    },
+    {
+      "path": "cpp_src/segments.cpp",
+      "sha256": "843660e2cbdb2dbd8ff2e2c187e04e68cf679622d19aaf7a493276502464212e"
+    },
+    {
+      "path": "cpp_src/segments.hpp",
+      "sha256": "c0525db70daf331d500c4ee87ec803bac0aa4a0a3d872166dca44a00c3459755"
+    },
+    {
+      "path": "cpp_src/simplerandom.cpp",
+      "sha256": "365ca1723da9a7f4ddc7da3a4666437a2dc11215fd6aeacb28d8ac4944693044"
+    },
+    {
+      "path": "cpp_src/simplerandom.hpp",
+      "sha256": "18f2e648e1f72a948921eb38bf11d3778bdf735c94d2764436a7f316f7c7ee2c"
+    },
+    {
+      "path": "cpp_src/simplexnoise.cpp",
+      "sha256": "6f1c47e0f9dd9d9ccd3a1b36c9031eca870358ab02dbfd3654903261c89a7bb4"
+    },
+    {
+      "path": "cpp_src/simplexnoise.hpp",
+      "sha256": "c7e517be09b4cb20f0708a1338580d2f2fc3b837c2ed4b69d45b4de49c514aca"
+    },
+    {
+      "path": "cpp_src/sqrdmd.cpp",
+      "sha256": "5313c27b9c8d991c4413f5190d4c743a58ec3f5d6ad1bae207da190c80dd6235"
+    },
+    {
+      "path": "cpp_src/sqrdmd.hpp",
+      "sha256": "7db5ab39e713c283b40a8dddef682088732f0d9953ef2bd5fe6b3880971a677b"
+    },
+    {
+      "path": "cpp_src/utils.cpp",
+      "sha256": "f0aa1765e63a3c34bcaea7399c6efa7e1df3affd549e728d14ff042a41e6aa2b"
+    },
+    {
+      "path": "cpp_src/utils.hpp",
+      "sha256": "caa314210424333e5a893517ab12815006e06a9df563d12956135a1feb10d5f4"
+    },
+    {
+      "path": "cpp_src/world_point.cpp",
+      "sha256": "c9d59640833093866ca5ab0b762370463c5b715ec6438a088d56958f1bafd28a"
+    },
+    {
+      "path": "cpp_src/world_point.hpp",
+      "sha256": "280ecffe50dd34c830fb47ca56d51b1b3056c377d30c573d05f4914878d9a93a"
+    },
+    {
+      "path": "cpp_src/platec_compat.hpp",
+      "sha256": "0ea60cdaac439c9147f69f316ccf963979da0ff56d14242b16f8252b993fdcd4"
+    }
+  ]
+}

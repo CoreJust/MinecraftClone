@@ -44,3 +44,8 @@ covered by `tests/core/corelang_policy_tests.cpp` and server integration tests.
 Disconnect publication removes a departed ID from explicit groups and
 entity-targeted assignments, so a later reused ID cannot inherit those concrete
 memberships or overrides.
+
+The [policy scripting reference](../scripting/POLICY.md) documents all five host
+calls, group-kind discriminants, target precedence, capability registration,
+limits, diagnostics and a complete source example. Keep this guide focused on
+the implementation boundary; the reference owns the public call contract.

@@ -3,13 +3,13 @@
   "dependencies": {
     "CoreCpp": {
       "repository": "CoreJust/CoreCpp",
-      "revision": "5c1bad11346cfad44470f5985f1944929952b9a6",
-      "fetch_ref": "refs/tags/v0.1.0-cc-0050-compiled-fmt"
+      "revision": "fe601accf2a85fada6238132da7ffea1296171a1",
+      "fetch_ref": "refs/tags/ai/compat/runtime-fe601acc"
     },
     "CoreProject2026": {
       "repository": "CoreJust/CoreProject2026",
-      "revision": "23f81441c10a44896b87865a9b8ae7d4b51687db",
-      "fetch_ref": "refs/heads/ai-dev"
+      "revision": "bfe8a1140629f36c4747d7a40bbfd62e21fe5304",
+      "fetch_ref": "refs/tags/v0.1.5"
     }
   }
 }

@@ -14,7 +14,28 @@
 namespace shared {
 
 inline constexpr std::string_view TERRAIN_LOD_MODEL = "lod-canonical-r6-height-v2";
+inline constexpr std::string_view TERRAIN_LOD_MODEL_V9 = "lod-canonical-v9-height-v1";
+inline constexpr std::string_view TERRAIN_LOD_MODEL_V21 =
+    "lod-native-v21-a3f58ba8feb417556f6ae90e5e9b96b4ca318c169908dc8f30ce87bce61010cc-r1";
+inline constexpr std::string_view TERRAIN_LOD_MODEL_V10 =
+    "lod-native-v10-f775213330028b165328885c6899ac0bf9c3c0c9a93ff6e0aca591554dec6e59-r1";
 inline constexpr uint64_t TERRAIN_LOD_MAX_NODES = 1'050'625U;
+
+[[nodiscard]]
+constexpr std::string_view terrainLodModel(generation::TerrainModelTag const model) noexcept
+{
+    switch (model) {
+    case generation::TerrainModelTag::V9:
+        return TERRAIN_LOD_MODEL_V9;
+    case generation::TerrainModelTag::V21:
+        return TERRAIN_LOD_MODEL_V21;
+    case generation::TerrainModelTag::V10:
+        return TERRAIN_LOD_MODEL_V10;
+    case generation::TerrainModelTag::R6:
+        return TERRAIN_LOD_MODEL;
+    }
+    return {};
+}
 
 enum class TerrainLodLevel : uint8_t { L0, L1, L2, L3 };
 
@@ -32,6 +53,15 @@ struct TerrainLodSample final {
     Block top_material = Block::Dirt;
     double temperature = 0.0;
     double precipitation = 0.0;
+    double source_l0_elevation_m = 0.0;
+    uint8_t source_biome_id = 255U;
+    bool source_native_coast_adjacent = false;
+    bool source_native_ocean = false;
+    bool v21_surface = false;
+    bool v10_surface = false;
+    double land_snow_water_equivalent_m = 0.0;
+    double glacier_thickness_m = 0.0;
+    double sea_ice_thickness_m = 0.0;
     bool operator==(TerrainLodSample const&) const = default;
 };
 
@@ -53,7 +83,13 @@ struct TerrainLodArtifact final {
     std::vector<TerrainLodNode> nodes;
 };
 
-[[nodiscard]] uint32_t terrainLodSpacing(uint32_t atlas_resolution, TerrainLodLevel level);
+[[nodiscard]] Block terrainLodSurfaceMaterial(TerrainLodSample const& sample, uint32_t sea_level);
+
+[[nodiscard]] uint32_t terrainLodSpacing(
+    uint32_t atlas_resolution,
+    TerrainLodLevel level,
+    generation::TerrainModelTag model = generation::TerrainModelTag::R6
+);
 
 // L0 covers the complete periodic world. Other levels require aligned, bounded windows.
 [[nodiscard]] std::shared_ptr<TerrainLodArtifact const> buildTerrainLod(

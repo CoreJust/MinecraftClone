@@ -180,6 +180,83 @@ TEST(TerrainWorldTest, MaterialIntervalsMatchInclusiveSeaAndBedrockRules)
     EXPECT_EQ(seabed.materialAt(SEA_LEVEL - 5U, SEA_LEVEL), shared::Block::Stone);
 }
 
+TEST(TerrainWorldTest, V9SandSnowValidationUsesSourceBiomeWaterAndStrictSummitTemperature)
+{
+    static constexpr uint32_t SEA_LEVEL = 384U;
+    shared::TerrainColumn coast{
+        .highest_solid_z = 384U,
+        .water_height_z = 384U,
+        .water_present = false,
+        .submerged = false,
+        .geological_elevation_km = 0.001,
+        .temperature_celsius = 12.0,
+        .precipitation = 0.3,
+        .top_material = shared::Block::Sand,
+        .ground_material = shared::Block::Dirt,
+        .ground_first_z = 380U,
+        .ground_end_z = 384U,
+        .source_l0_elevation_m = 20.0,
+        .source_biome_id = 4U,
+        .source_native_coast_adjacent = true,
+    };
+    EXPECT_EQ(static_cast<uint8_t>(shared::Block::Sand), 7U);
+    EXPECT_TRUE(shared::isValidBlock(shared::Block::Sand));
+    EXPECT_TRUE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+
+    coast.source_l0_elevation_m = 20.001;
+    EXPECT_FALSE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+    coast.source_l0_elevation_m = 20.0;
+    coast.water_present = true;
+    EXPECT_FALSE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+
+    coast.water_present = false;
+    coast.source_biome_id = 4U;
+    coast.source_native_coast_adjacent = false;
+    coast.top_material = shared::Block::Sand;
+    EXPECT_FALSE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+
+    coast.source_biome_id = 5U;
+    coast.source_l0_elevation_m = 100.0;
+    EXPECT_TRUE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+
+    shared::TerrainColumn const submerged_desert{
+        .highest_solid_z = 383U,
+        .water_height_z = 384U,
+        .water_present = true,
+        .submerged = true,
+        .geological_elevation_km = -0.001,
+        .temperature_celsius = 12.0,
+        .precipitation = 0.3,
+        .top_material = shared::Block::Dirt,
+        .ground_material = shared::Block::Dirt,
+        .ground_first_z = 380U,
+        .ground_end_z = 384U,
+        .source_l0_elevation_m = -1.0,
+        .source_biome_id = 5U,
+    };
+    EXPECT_TRUE(shared::isValidTerrainColumn(submerged_desert, SEA_LEVEL));
+    auto sand_underwater = submerged_desert;
+    sand_underwater.top_material = shared::Block::Sand;
+    EXPECT_FALSE(shared::isValidTerrainColumn(sand_underwater, SEA_LEVEL));
+
+    coast.source_biome_id = 0U;
+    coast.source_l0_elevation_m = 1'000.0;
+    coast.temperature_celsius = -0.001;
+    coast.top_material = shared::Block::Snow;
+    EXPECT_TRUE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+    coast.temperature_celsius = 0.0;
+    EXPECT_FALSE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+    coast.top_material = shared::Block::Grass;
+    EXPECT_TRUE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+
+    coast.source_biome_id = 4U;
+    coast.temperature_celsius = -1.0;
+    coast.top_material = shared::Block::Snow;
+    EXPECT_FALSE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+    coast.top_material = shared::Block::Grass;
+    EXPECT_TRUE(shared::isValidTerrainColumn(coast, SEA_LEVEL));
+}
+
 TEST(TerrainWorldTest, SamplesClimateMaterialsAndMaterializesMatchingChunks)
 {
     shared::TerrainWorld const warm_wet{ makeAtlas(384) };
@@ -390,6 +467,19 @@ TEST(TerrainWorldTest, UniformChunkMaterializationMatchesCanonicalBlocksAndHashe
     EXPECT_EQ(below_chunk_top.blockAt({ .x = BOUNDARY_COLUMN_X, .y = 0U, .z = TOP_BLOCK_Z }), shared::Block::Air);
 }
 
+TEST(TerrainWorldTest, R6MaterializesCanonicalAirAboveModelDepthWithinLogicalWorld)
+{
+    static constexpr int32_t FIRST_UPPER_SECTION = generation::WORLD_DEPTH_BLOCKS / shared::Chunk::SIDE_LENGTH;
+    static constexpr int32_t LAST_LOGICAL_SECTION = shared::WorldExtent::DEPTH / shared::Chunk::SIDE_LENGTH - 1;
+    auto const world = makeWorld(384);
+    auto const tile = sampleTile(*world);
+
+    for (int32_t const section : {FIRST_UPPER_SECTION, LAST_LOGICAL_SECTION}) {
+        auto const chunk = expectMaterializedChunkMatchesReference(*world, tile, { .x = 0, .y = 0, .z = section });
+        EXPECT_EQ(chunk.coordinate().z, section);
+    }
+}
+
 TEST(TerrainWorldTest, MaterializesFiveTypedLevelsAndPreservesSharedEdgesAndOrder)
 {
     auto atlas = std::make_shared<generation::GlobalAtlas>(*makeAtlas(384));
@@ -597,7 +687,9 @@ TEST(TerrainWorldTest, RejectsInvalidAtlasRegionAndMaterializationKeys)
         std::invalid_argument
     );
     EXPECT_THROW(
-        static_cast<void>(world.materializeChunk(tile, { .x = 0, .y = 0, .z = 64 })),
+        static_cast<void>(world.materializeChunk(tile, {
+            .x = 0, .y = 0, .z = shared::WorldExtent::DEPTH / shared::Chunk::SIDE_LENGTH,
+        })),
         std::invalid_argument
     );
 }
@@ -734,4 +826,76 @@ TEST(TerrainWorldTest, IdentityRequiresVersionedPortableShelfKernel)
         invalid_identity.configuration_identity.replace(revision, 16U, old_revision);
         EXPECT_FALSE(shared::isValidTerrainIdentity(invalid_identity));
     }
+}
+
+TEST(TerrainWorldTest, ProvesOnlyCategoricallyUniformAtlasCellsHaveWaterThroughout)
+{
+    static constexpr uint32_t RESOLUTION = 256U;
+    static constexpr uint32_t OCEAN_CELL_X = 12U;
+    static constexpr uint32_t OCEAN_CELL_Y = 34U;
+    static constexpr uint32_t LAKE_CELL_X = 128U;
+    static constexpr uint32_t LAKE_CELL_Y = 128U;
+    static constexpr uint32_t RIVER_SEAM_CELL_X = RESOLUTION - 1U;
+    static constexpr uint32_t RIVER_SEAM_CELL_Y = 0U;
+    static constexpr uint32_t CELL_EXTENT = generation::WORLD_SIZE_BLOCKS / RESOLUTION;
+
+    auto atlas = std::make_shared<generation::GlobalAtlas>(*makeAtlas(384));
+    atlas->ocean_mask[static_cast<size_t>(OCEAN_CELL_Y) * RESOLUTION + OCEAN_CELL_X] = 1U;
+    atlas->lake_mask[static_cast<size_t>(LAKE_CELL_Y) * RESOLUTION + LAKE_CELL_X] = 1U;
+    atlas->river_mask[static_cast<size_t>(RIVER_SEAM_CELL_Y) * RESOLUTION + RIVER_SEAM_CELL_X] = 1U;
+    shared::TerrainWorld const world{atlas};
+
+    uint32_t const ocean_origin_x = OCEAN_CELL_X * CELL_EXTENT;
+    uint32_t const ocean_origin_y = OCEAN_CELL_Y * CELL_EXTENT;
+    uint32_t const lake_origin_x = LAKE_CELL_X * CELL_EXTENT;
+    uint32_t const lake_origin_y = LAKE_CELL_Y * CELL_EXTENT;
+    uint32_t const river_seam_origin_x = RIVER_SEAM_CELL_X * CELL_EXTENT;
+    uint32_t const river_seam_origin_y = RIVER_SEAM_CELL_Y * CELL_EXTENT;
+
+    EXPECT_TRUE(world.hasWaterPresenceThroughoutAtlasCell(ocean_origin_x, ocean_origin_y, CELL_EXTENT));
+    EXPECT_TRUE(world.hasWaterPresenceThroughoutAtlasCell(lake_origin_x, lake_origin_y, CELL_EXTENT));
+    EXPECT_TRUE(world.hasWaterPresenceThroughoutAtlasCell(
+        river_seam_origin_x,
+        river_seam_origin_y,
+        CELL_EXTENT
+    ));
+    EXPECT_FALSE(world.hasWaterPresenceThroughoutAtlasCell(
+        ocean_origin_x + CELL_EXTENT,
+        ocean_origin_y,
+        CELL_EXTENT
+    ));
+    EXPECT_FALSE(world.hasWaterPresenceThroughoutAtlasCell(ocean_origin_x + 1U, ocean_origin_y, CELL_EXTENT));
+    EXPECT_FALSE(world.hasWaterPresenceThroughoutAtlasCell(ocean_origin_x, ocean_origin_y, CELL_EXTENT / 2U));
+    EXPECT_FALSE(world.hasWaterPresenceThroughoutAtlasCell(
+        generation::WORLD_SIZE_BLOCKS - CELL_EXTENT / 2U,
+        0U,
+        CELL_EXTENT
+    ));
+    EXPECT_FALSE(world.hasWaterPresenceThroughoutAtlasCell(
+        generation::WORLD_SIZE_BLOCKS,
+        0U,
+        CELL_EXTENT
+    ));
+    EXPECT_FALSE(world.hasWaterPresenceThroughoutAtlasCell(0U, generation::WORLD_SIZE_BLOCKS, CELL_EXTENT));
+
+    auto const sample = [&world](uint32_t const x, uint32_t const y) {
+        uint32_t const extent = shared::TERRAIN_REGION_EXTENTS.back();
+        std::shared_ptr<shared::RegionalArtifact const> const region = world.prepareRegion({
+            .origin_x = (x / extent) * extent,
+            .origin_y = (y / extent) * extent,
+            .extent = extent,
+        });
+        return world.sampleRegion(*region, static_cast<double>(x), static_cast<double>(y));
+    };
+
+    for (uint32_t const offset : {0U, 128U, 255U}) {
+        EXPECT_TRUE(sample(ocean_origin_x + offset, ocean_origin_y + offset).water_present);
+    }
+
+    uint32_t const center_x = LAKE_CELL_X * (generation::WORLD_SIZE_BLOCKS / RESOLUTION);
+    uint32_t const center_y = LAKE_CELL_Y * (generation::WORLD_SIZE_BLOCKS / RESOLUTION);
+    EXPECT_TRUE(sample(center_x + 128U, center_y + 128U).water_present);
+
+    EXPECT_TRUE(sample(generation::WORLD_SIZE_BLOCKS - 1U, 31U).water_present);
+    EXPECT_FALSE(sample(0U, 31U).water_present);
 }

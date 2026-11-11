@@ -43,7 +43,16 @@ enum class MessageType : uint8_t {
     ServerChunkCoverage = 16,
     ServerAuthoritativeTerrainBatch = 17,
     ClientAuthoritativeTerrainAck = 18,
+    ClientBlockAction = 19,
+    ServerBlockActionResult = 20,
+    ServerBlockDelta = 21,
+    ClientChunkResync = 22,
+    ServerEditChunkSnapshot = 23,
+    ServerEditedColumnManifest = 24,
+    ClientEditDeliveryAck = 25,
 };
+
+constexpr uint32_t GENERATION_SNAPSHOT_PHASE_COUNT = 8U;
 
 [[nodiscard]]
 constexpr bool isValidCharacter(char const ch) noexcept
@@ -119,18 +128,20 @@ void appendGenerationConfiguration(
     bytes.push_back(static_cast<uint8_t>(configuration.currents));
     bytes.push_back(static_cast<uint8_t>(configuration.wind_sign));
     bytes.push_back(static_cast<uint8_t>(configuration.coastal_elaboration));
+    bytes.push_back(static_cast<uint8_t>(configuration.model_tag));
+    bytes.push_back(static_cast<uint8_t>(configuration.use_v10_fine_terrain));
 }
 
 [[nodiscard]]
 uint64_t terrainSessionEncodedSize(TerrainSessionIdentity const& session) noexcept
 {
-    return 8U + 22U + session.terrain.configuration_identity.size() + 31U;
+    return 16U + 22U + session.terrain.configuration_identity.size() + 33U;
 }
 
 [[nodiscard]]
 uint64_t generationSnapshotEncodedSize(generation::GenerationSnapshot const& snapshot) noexcept
 {
-    uint64_t size = 5U;
+    uint64_t size = 6U;
     auto const add_field_size = [&size](uint64_t const field_size) {
         size += 4U + field_size;
     };
@@ -141,6 +152,68 @@ uint64_t generationSnapshotEncodedSize(generation::GenerationSnapshot const& sna
     add_field_size(snapshot.ocean_mask.size());
     add_field_size(snapshot.lake_mask.size());
     add_field_size(snapshot.river_mask.size());
+    if (snapshot.v9)
+    {
+        generation::V9GenerationSnapshotFields const& fields = *snapshot.v9;
+        size += 8U;
+        add_field_size(fields.source_elevation_m.size() * sizeof(float));
+        add_field_size(fields.temperature_celsius.size() * sizeof(float));
+        add_field_size(fields.wind_u.size() * sizeof(float));
+        add_field_size(fields.wind_v.size() * sizeof(float));
+        add_field_size(fields.current_u.size() * sizeof(float));
+        add_field_size(fields.current_v.size() * sizeof(float));
+        add_field_size(fields.precipitation_mm_year.size() * sizeof(float));
+        add_field_size(fields.water_level_m.size() * sizeof(float));
+        add_field_size(fields.ocean_mask.size());
+        add_field_size(fields.lake_mask.size());
+        add_field_size(fields.river_mask.size());
+        add_field_size(fields.ice_surface_kind.size());
+        add_field_size(fields.plate_ids.size() * sizeof(uint32_t));
+        size += fields.plate_directions.size() * 12U;
+    }
+    if (snapshot.v21)
+    {
+        generation::V21GenerationSnapshotFields const& fields = *snapshot.v21;
+        add_field_size(fields.source_elevation_m.size() * sizeof(float));
+        add_field_size(fields.temperature_celsius.size() * sizeof(float));
+        add_field_size(fields.precipitation_mm_year.size() * sizeof(float));
+        add_field_size(fields.wind_u.size() * sizeof(float));
+        add_field_size(fields.wind_v.size() * sizeof(float));
+        add_field_size(fields.current_u.size() * sizeof(float));
+        add_field_size(fields.current_v.size() * sizeof(float));
+        add_field_size(fields.phase_temperature_celsius.size() * sizeof(float));
+        add_field_size(fields.phase_precipitation_mm_year.size() * sizeof(float));
+        add_field_size(fields.water_level_blocks.size() * sizeof(float));
+        add_field_size(fields.land_snow_water_equivalent_m.size() * sizeof(float));
+        add_field_size(fields.glacier_thickness_m.size() * sizeof(float));
+        add_field_size(fields.sea_ice_thickness_m.size() * sizeof(float));
+        add_field_size(fields.ocean_mask.size());
+        add_field_size(fields.lake_mask.size());
+        add_field_size(fields.river_mask.size());
+        add_field_size(fields.biome_id.size());
+        add_field_size(fields.ice_surface_kind.size());
+        add_field_size(fields.plate_ids.size() * sizeof(uint32_t));
+        size += 4U + fields.plate_directions.size() * 12U + 4U;
+    }
+    if (snapshot.v10)
+    {
+        auto const& fields = *snapshot.v10;
+        add_field_size(fields.height_raw.size() * sizeof(float));
+        add_field_size(fields.water_level_m.size() * sizeof(float));
+        add_field_size(fields.sea_ice_thickness_m.size() * sizeof(float));
+        add_field_size(fields.land_snow_water_equivalent_m.size() * sizeof(float));
+        add_field_size(fields.glacier_thickness_m.size() * sizeof(float));
+        add_field_size(fields.source_elevation_m.size() * sizeof(double));
+        add_field_size(fields.local_effective_celsius.size() * sizeof(double));
+        add_field_size(fields.ground_m.size() * sizeof(double));
+        add_field_size(fields.theta_celsius.size() * sizeof(double));
+        add_field_size(fields.phase_precipitation_mm_year.size() * sizeof(double));
+        add_field_size(fields.ocean_mask.size() * sizeof(uint8_t));
+        add_field_size(fields.lake_mask.size() * sizeof(uint8_t));
+        add_field_size(fields.river_mask.size() * sizeof(uint8_t));
+        add_field_size(fields.plate_ids.size() * sizeof(uint32_t));
+        size += 8U + fields.plate_directions.size() * 12U;
+    }
     return size;
 }
 
@@ -173,6 +246,22 @@ void appendByteVector(std::vector<uint8_t>& bytes, std::vector<uint8_t> const& v
     bytes.insert(bytes.end(), values.begin(), values.end());
 }
 
+void appendUint32Vector(std::vector<uint8_t>& bytes, std::vector<uint32_t> const& values)
+{
+    appendUint32(bytes, static_cast<uint32_t>(values.size()));
+    for (uint32_t const value : values) {
+        appendUint32(bytes, value);
+    }
+}
+
+void appendDoubleVector(std::vector<uint8_t>& bytes, std::vector<double> const& values)
+{
+    appendUint32(bytes, static_cast<uint32_t>(values.size()));
+    for (double const value : values) {
+        appendUint64(bytes, std::bit_cast<uint64_t>(value));
+    }
+}
+
 void appendGenerationSnapshot(std::vector<uint8_t>& bytes, generation::GenerationSnapshot const& snapshot)
 {
     bytes.push_back(static_cast<uint8_t>(snapshot.stage));
@@ -184,6 +273,89 @@ void appendGenerationSnapshot(std::vector<uint8_t>& bytes, generation::Generatio
     appendByteVector(bytes, snapshot.ocean_mask);
     appendByteVector(bytes, snapshot.lake_mask);
     appendByteVector(bytes, snapshot.river_mask);
+    bytes.push_back(snapshot.v9 ? 1U : (snapshot.v21 ? 2U : (snapshot.v10 ? 3U : 0U)));
+    if (snapshot.v9)
+    {
+        generation::V9GenerationSnapshotFields const& fields = *snapshot.v9;
+        appendUint32(bytes, fields.plate_directions_observed_after_native_step);
+        appendFloatVector(bytes, fields.source_elevation_m);
+        appendFloatVector(bytes, fields.temperature_celsius);
+        appendFloatVector(bytes, fields.wind_u);
+        appendFloatVector(bytes, fields.wind_v);
+        appendFloatVector(bytes, fields.current_u);
+        appendFloatVector(bytes, fields.current_v);
+        appendFloatVector(bytes, fields.precipitation_mm_year);
+        appendFloatVector(bytes, fields.water_level_m);
+        appendByteVector(bytes, fields.ocean_mask);
+        appendByteVector(bytes, fields.lake_mask);
+        appendByteVector(bytes, fields.river_mask);
+        appendByteVector(bytes, fields.ice_surface_kind);
+        appendUint32Vector(bytes, fields.plate_ids);
+        appendUint32(bytes, static_cast<uint32_t>(fields.plate_directions.size()));
+        for (generation::GenerationPlateDirection const& direction : fields.plate_directions)
+        {
+            appendUint32(bytes, direction.plate_id);
+            appendUint32(bytes, std::bit_cast<uint32_t>(direction.x));
+            appendUint32(bytes, std::bit_cast<uint32_t>(direction.y));
+        }
+    }
+    if (snapshot.v21)
+    {
+        generation::V21GenerationSnapshotFields const& fields = *snapshot.v21;
+        appendFloatVector(bytes, fields.source_elevation_m);
+        appendFloatVector(bytes, fields.temperature_celsius);
+        appendFloatVector(bytes, fields.precipitation_mm_year);
+        appendFloatVector(bytes, fields.wind_u);
+        appendFloatVector(bytes, fields.wind_v);
+        appendFloatVector(bytes, fields.current_u);
+        appendFloatVector(bytes, fields.current_v);
+        appendFloatVector(bytes, fields.phase_temperature_celsius);
+        appendFloatVector(bytes, fields.phase_precipitation_mm_year);
+        appendFloatVector(bytes, fields.water_level_blocks);
+        appendFloatVector(bytes, fields.land_snow_water_equivalent_m);
+        appendFloatVector(bytes, fields.glacier_thickness_m);
+        appendFloatVector(bytes, fields.sea_ice_thickness_m);
+        appendByteVector(bytes, fields.ocean_mask);
+        appendByteVector(bytes, fields.lake_mask);
+        appendByteVector(bytes, fields.river_mask);
+        appendByteVector(bytes, fields.biome_id);
+        appendByteVector(bytes, fields.ice_surface_kind);
+        appendUint32Vector(bytes, fields.plate_ids);
+        appendUint32(bytes, static_cast<uint32_t>(fields.plate_directions.size()));
+        for (generation::GenerationPlateDirection const& direction : fields.plate_directions)
+        {
+            appendUint32(bytes, direction.plate_id);
+            appendUint32(bytes, std::bit_cast<uint32_t>(direction.x));
+            appendUint32(bytes, std::bit_cast<uint32_t>(direction.y));
+        }
+        appendUint32(bytes, fields.plate_directions_observed_after_native_step);
+    }
+    if (snapshot.v10)
+    {
+        auto const& fields = *snapshot.v10;
+        appendFloatVector(bytes, fields.height_raw);
+        appendFloatVector(bytes, fields.water_level_m);
+        appendFloatVector(bytes, fields.sea_ice_thickness_m);
+        appendFloatVector(bytes, fields.land_snow_water_equivalent_m);
+        appendFloatVector(bytes, fields.glacier_thickness_m);
+        appendDoubleVector(bytes, fields.source_elevation_m);
+        appendDoubleVector(bytes, fields.local_effective_celsius);
+        appendDoubleVector(bytes, fields.ground_m);
+        appendDoubleVector(bytes, fields.theta_celsius);
+        appendDoubleVector(bytes, fields.phase_precipitation_mm_year);
+        appendByteVector(bytes, fields.ocean_mask);
+        appendByteVector(bytes, fields.lake_mask);
+        appendByteVector(bytes, fields.river_mask);
+        appendUint32Vector(bytes, fields.plate_ids);
+        appendUint32(bytes, static_cast<uint32_t>(fields.plate_directions.size()));
+        for (auto const& direction : fields.plate_directions) {
+            appendUint32(bytes, direction.plate_id);
+            appendUint32(bytes, std::bit_cast<uint32_t>(direction.x));
+            appendUint32(bytes, std::bit_cast<uint32_t>(direction.y));
+        }
+        appendUint32(bytes, fields.plate_directions_observed_after_native_step);
+    }
+
 }
 
 void appendBoundedString(std::vector<uint8_t>& bytes, std::string const& value)
@@ -241,6 +413,7 @@ void appendTerrainIdentity(std::vector<uint8_t>& bytes, TerrainIdentity const& i
 void appendTerrainSession(std::vector<uint8_t>& bytes, TerrainSessionIdentity const& session)
 {
     appendUint64(bytes, session.join_epoch);
+    appendUint64(bytes, session.server_nonce);
     appendTerrainIdentity(bytes, session.terrain);
     appendGenerationConfiguration(bytes, session.configuration);
 }
@@ -262,6 +435,10 @@ void appendSurfaceTile(std::vector<uint8_t>& bytes, SurfaceTile const& tile)
         bytes.push_back(static_cast<uint8_t>(column.ground_material));
         appendUint16(bytes, column.ground_first_z);
         appendUint16(bytes, column.ground_end_z);
+        appendUint64(bytes, std::bit_cast<uint64_t>(column.source_l0_elevation_m));
+        bytes.push_back(column.source_biome_id);
+        bytes.push_back(static_cast<uint8_t>(column.source_native_coast_adjacent));
+        bytes.push_back(static_cast<uint8_t>(column.source_native_ocean));
     }
 }
 
@@ -302,6 +479,118 @@ void appendHeightTileRemoval(std::vector<uint8_t>& bytes, ServerRemoveHeightTile
 
 struct MessageEncoder final {
     std::vector<uint8_t> bytes;
+
+    std::vector<uint8_t> operator()(ClientBlockActionMessage const& message)
+    {
+        begin(MessageType::ClientBlockAction, terrainSessionEncodedSize(message.session) + 26U);
+        appendTerrainSession(bytes, message.session);
+        appendUint32(bytes, message.sequence);
+        bytes.push_back(static_cast<uint8_t>(message.kind));
+        appendUint16(bytes, static_cast<uint16_t>(message.aim_x));
+        appendUint16(bytes, static_cast<uint16_t>(message.aim_y));
+        appendUint16(bytes, static_cast<uint16_t>(message.aim_z));
+        appendChunkCoordinate(bytes, {
+            static_cast<int32_t>(message.target_hint.x),
+            static_cast<int32_t>(message.target_hint.y),
+            static_cast<int32_t>(message.target_hint.z),
+        });
+        bytes.push_back(static_cast<uint8_t>(message.material));
+        bytes.push_back(static_cast<uint8_t>(message.requested_mode));
+        bytes.push_back(static_cast<uint8_t>(message.perspective));
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ServerBlockActionResultMessage const& message)
+    {
+        begin(MessageType::ServerBlockActionResult, terrainSessionEncodedSize(message.session) + 41U);
+        appendTerrainSession(bytes, message.session);
+        appendUint32(bytes, message.sequence);
+        bytes.push_back(static_cast<uint8_t>(message.status));
+        appendUint64(bytes, message.server_tick);
+        appendChunkCoordinate(bytes, {
+            static_cast<int32_t>(message.target.x),
+            static_cast<int32_t>(message.target.y),
+            static_cast<int32_t>(message.target.z),
+        });
+        appendUint64(bytes, message.cell_version);
+        appendUint16(bytes, message.completed_intervals);
+        appendUint16(bytes, message.required_intervals);
+        bytes.push_back(static_cast<uint8_t>(message.mode));
+        bytes.push_back(message.effective_actions);
+        bytes.push_back(message.break_materials);
+        bytes.push_back(message.place_materials);
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ServerBlockDeltaMessage const& message)
+    {
+        begin(MessageType::ServerBlockDelta, terrainSessionEncodedSize(message.session) + 45U);
+        appendTerrainSession(bytes, message.session);
+        appendChunkCoordinate(bytes, {
+            static_cast<int32_t>(message.coordinate.x),
+            static_cast<int32_t>(message.coordinate.y),
+            static_cast<int32_t>(message.coordinate.z),
+        });
+        appendUint64(bytes, message.delivery_token);
+        appendUint64(bytes, message.from_revision);
+        appendUint64(bytes, message.to_revision);
+        appendUint64(bytes, message.cell_version);
+        bytes.push_back(static_cast<uint8_t>(message.material));
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ClientChunkResyncMessage const& message)
+    {
+        begin(MessageType::ClientChunkResync, terrainSessionEncodedSize(message.session) + 12U);
+        appendTerrainSession(bytes, message.session);
+        appendChunkCoordinate(bytes, message.coordinate);
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ServerEditChunkSnapshotMessage const& message)
+    {
+        auto encoded = encodeMessage(ServerMaterializedChunkBatchMessage{
+            .session = message.session, .coverage_epoch = 1U, .delivery_token = 1U,
+            .chunks = {message.chunk},
+        });
+        begin(MessageType::ServerEditChunkSnapshot, encodedEditChunkSnapshotSize(message) - 3U);
+        appendUint64(bytes, message.delivery_token);
+        appendUint64(bytes, message.revision);
+        appendUint16(bytes, static_cast<uint16_t>(message.edits.size()));
+        for (auto const& edit : message.edits) {
+            uint16_t const packed = static_cast<uint16_t>(edit.coordinate.x
+                | (edit.coordinate.y << 4U) | (edit.coordinate.z << 8U)
+                | (static_cast<uint16_t>(edit.material) << 12U));
+            appendUint16(bytes, packed);
+            appendUint64(bytes, edit.cell_version);
+        }
+        bytes.insert(bytes.end(), encoded.begin(), encoded.end());
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ServerEditedColumnManifestMessage const& message)
+    {
+        begin(MessageType::ServerEditedColumnManifest,
+            terrainSessionEncodedSize(message.session) + 29U + message.chunks.size() * 9U);
+        appendTerrainSession(bytes, message.session);
+        appendChunkCoordinate(bytes, message.column);
+        appendUint64(bytes, message.delivery_token);
+        appendUint64(bytes, message.watermark);
+        bytes.push_back(static_cast<uint8_t>(message.chunks.size()));
+        for (auto const& chunk : message.chunks) {
+            bytes.push_back(chunk.z);
+            appendUint64(bytes, chunk.revision);
+        }
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ClientEditDeliveryAckMessage const& message)
+    {
+        begin(MessageType::ClientEditDeliveryAck, terrainSessionEncodedSize(message.session) + 8U);
+        appendTerrainSession(bytes, message.session);
+        appendUint64(bytes, message.delivery_token);
+        return std::move(bytes);
+    }
 
     void begin(MessageType const type, uint64_t const payload_size)
     {
@@ -755,9 +1044,15 @@ std::optional<SurfaceTile> readSurfaceTile(MessageReader& reader, HeightTileKey 
         auto const ground_material = reader.readUint8();
         auto const ground_first_z = reader.readUint16();
         auto const ground_end_z = reader.readUint16();
+        auto const source_l0_elevation_m = reader.readDouble();
+        auto const source_biome_id = reader.readUint8();
+        auto const source_native_coast_adjacent = reader.readUint8();
+        auto const source_native_ocean = reader.readUint8();
         if (!highest_solid_z || !water_height_z || !water_present || *water_present > 1U
             || !submerged || *submerged > 1U || !geological_elevation_km || !temperature_celsius
-            || !precipitation || !top_material || !ground_material || !ground_first_z || !ground_end_z) {
+            || !precipitation || !top_material || !ground_material || !ground_first_z || !ground_end_z
+            || !source_l0_elevation_m || !source_biome_id || !source_native_coast_adjacent
+            || *source_native_coast_adjacent > 1U || !source_native_ocean || *source_native_ocean > 1U) {
             return std::nullopt;
         }
         column = TerrainColumn{
@@ -772,6 +1067,10 @@ std::optional<SurfaceTile> readSurfaceTile(MessageReader& reader, HeightTileKey 
             .ground_material = static_cast<Block>(*ground_material),
             .ground_first_z = *ground_first_z,
             .ground_end_z = *ground_end_z,
+            .source_l0_elevation_m = *source_l0_elevation_m,
+            .source_biome_id = *source_biome_id,
+            .source_native_coast_adjacent = *source_native_coast_adjacent == 1U,
+            .source_native_ocean = *source_native_ocean == 1U,
         };
     }
     return surface;
@@ -868,9 +1167,13 @@ std::optional<generation::GenerationConfiguration> readGenerationConfiguration(M
     auto const currents = reader.readUint8();
     auto const wind_sign = reader.readUint8();
     auto const coastal_elaboration = reader.readUint8();
+    auto const model_tag = reader.readUint8();
+    auto const use_v10_fine_terrain = reader.readUint8();
     if (!seed || !resolution || !epochs || !erosion_steps || !initial_climate_iterations
         || !climate_iterations || !currents || *currents > 1U || !wind_sign || !coastal_elaboration
-        || *coastal_elaboration > 1U) {
+        || *coastal_elaboration > 1U || !model_tag || !use_v10_fine_terrain
+        || *use_v10_fine_terrain > 1U
+        || *model_tag > static_cast<uint8_t>(generation::TerrainModelTag::V10)) {
         return std::nullopt;
     }
     return generation::GenerationConfiguration{
@@ -883,6 +1186,8 @@ std::optional<generation::GenerationConfiguration> readGenerationConfiguration(M
         .currents = *currents == 1U,
         .wind_sign = std::bit_cast<int8_t>(*wind_sign),
         .coastal_elaboration = *coastal_elaboration == 1U,
+        .model_tag = static_cast<generation::TerrainModelTag>(*model_tag),
+        .use_v10_fine_terrain = *use_v10_fine_terrain == 1U,
     };
 }
 
@@ -890,13 +1195,14 @@ std::optional<generation::GenerationConfiguration> readGenerationConfiguration(M
 std::optional<TerrainSessionIdentity> readTerrainSession(MessageReader& reader)
 {
     auto const join_epoch = reader.readUint64();
+    auto const server_nonce = reader.readUint64();
     auto const terrain = readTerrainIdentity(reader);
     auto const configuration = readGenerationConfiguration(reader);
-    if (!join_epoch || !terrain || !configuration) {
+    if (!join_epoch || !server_nonce || !terrain || !configuration) {
         return std::nullopt;
     }
     return TerrainSessionIdentity{
-        .join_epoch = *join_epoch,
+        .join_epoch = *join_epoch, .server_nonce = *server_nonce,
         .terrain = *terrain,
         .configuration = *configuration,
     };
@@ -982,6 +1288,48 @@ std::optional<std::vector<uint8_t>> readByteVector(
 }
 
 [[nodiscard]]
+std::optional<std::vector<uint32_t>> readUint32Vector(
+    MessageReader& reader,
+    uint32_t const sample_count
+)
+{
+    auto const count = reader.readUint32();
+    if (!count || (*count != 0U && *count != sample_count)
+        || static_cast<uint64_t>(*count) * sizeof(uint32_t) > reader.remaining()) {
+        return std::nullopt;
+    }
+    std::vector<uint32_t> values;
+    values.reserve(*count);
+    for (uint32_t index = 0U; index < *count; ++index) {
+        auto const value = reader.readUint32();
+        if (!value) {
+            return std::nullopt;
+        }
+        values.push_back(*value);
+    }
+    return values;
+}
+
+[[nodiscard]]
+std::optional<std::vector<double>> readDoubleVector(MessageReader& reader, uint32_t const sample_count)
+{
+    auto const count = reader.readUint32();
+    if (!count || (*count != 0U && *count != sample_count)
+        || static_cast<uint64_t>(*count) * sizeof(double) > reader.remaining()) {
+        return std::nullopt;
+    }
+    std::vector<double> values;
+    values.reserve(*count);
+    for (uint32_t index = 0U; index < *count; ++index) {
+        auto const value = reader.readUint64();
+        if (!value) {
+            return std::nullopt;
+        }
+        values.push_back(std::bit_cast<double>(*value));
+    }
+    return values;
+}
+
 std::optional<generation::GenerationSnapshot> readGenerationSnapshot(MessageReader& reader)
 {
     auto const stage = reader.readUint8();
@@ -1002,6 +1350,212 @@ std::optional<generation::GenerationSnapshot> readGenerationSnapshot(MessageRead
         || !ocean_mask || !lake_mask || !river_mask) {
         return std::nullopt;
     }
+    auto const snapshot_kind = reader.readUint8();
+    if (!snapshot_kind || *snapshot_kind > 3U) {
+        return std::nullopt;
+    }
+    std::optional<generation::V9GenerationSnapshotFields> v9;
+    if (*snapshot_kind == 1U)
+    {
+        auto const observed_after_native_step = reader.readUint32();
+        auto const source_elevation_m = readFloatVector(reader, sample_count);
+        auto const temperature_celsius = readFloatVector(reader, sample_count);
+        auto const wind_u = readFloatVector(reader, sample_count);
+        auto const wind_v = readFloatVector(reader, sample_count);
+        auto const current_u = readFloatVector(reader, sample_count);
+        auto const current_v = readFloatVector(reader, sample_count);
+        auto const precipitation_mm_year = readFloatVector(reader, sample_count);
+        auto const water_level_m = readFloatVector(reader, sample_count);
+        auto const v9_ocean_mask = readByteVector(reader, sample_count);
+        auto const v9_lake_mask = readByteVector(reader, sample_count);
+        auto const v9_river_mask = readByteVector(reader, sample_count);
+        auto const ice_surface_kind = readByteVector(reader, sample_count);
+        auto const plate_ids = readUint32Vector(reader, sample_count);
+        auto const direction_count = reader.readUint32();
+        if (!observed_after_native_step || !source_elevation_m || !temperature_celsius
+            || !wind_u || !wind_v || !current_u || !current_v || !precipitation_mm_year
+            || !water_level_m || !v9_ocean_mask || !v9_lake_mask
+            || !v9_river_mask || !ice_surface_kind || !plate_ids || !direction_count
+            || *direction_count == 0U || *direction_count > 1024U
+            || static_cast<uint64_t>(*direction_count) * 12U > reader.remaining()) {
+            return std::nullopt;
+        }
+        generation::V9GenerationSnapshotFields fields{
+            .source_elevation_m = *source_elevation_m,
+            .temperature_celsius = *temperature_celsius,
+            .wind_u = *wind_u,
+            .wind_v = *wind_v,
+            .current_u = *current_u,
+            .current_v = *current_v,
+            .precipitation_mm_year = *precipitation_mm_year,
+            .water_level_m = *water_level_m,
+            .ocean_mask = *v9_ocean_mask,
+            .lake_mask = *v9_lake_mask,
+            .river_mask = *v9_river_mask,
+            .ice_surface_kind = *ice_surface_kind,
+            .plate_ids = *plate_ids,
+            .plate_directions_observed_after_native_step = *observed_after_native_step,
+        };
+        fields.plate_directions.reserve(*direction_count);
+        for (uint32_t index = 0U; index < *direction_count; ++index)
+        {
+            auto const plate_id = reader.readUint32();
+            auto const x = reader.readFloat();
+            auto const y = reader.readFloat();
+            if (!plate_id || !x || !y) {
+                return std::nullopt;
+            }
+            fields.plate_directions.push_back({ .plate_id = *plate_id, .x = *x, .y = *y });
+        }
+        v9 = std::move(fields);
+    }
+    std::optional<generation::V21GenerationSnapshotFields> v21;
+    if (*snapshot_kind == 2U)
+    {
+        if (*resolution != 256U) {
+            return std::nullopt;
+        }
+        uint32_t const phase_sample_count = sample_count * GENERATION_SNAPSHOT_PHASE_COUNT;
+        auto const source_elevation_m = readFloatVector(reader, sample_count);
+        auto const temperature_celsius = readFloatVector(reader, sample_count);
+        auto const precipitation_mm_year = readFloatVector(reader, sample_count);
+        auto const wind_u = readFloatVector(reader, sample_count);
+        auto const wind_v = readFloatVector(reader, sample_count);
+        auto const current_u = readFloatVector(reader, sample_count);
+        auto const current_v = readFloatVector(reader, sample_count);
+        auto const phase_temperature_celsius = readFloatVector(reader, phase_sample_count);
+        auto const phase_precipitation_mm_year = readFloatVector(reader, phase_sample_count);
+        auto const water_level_blocks = readFloatVector(reader, sample_count);
+        auto const land_snow_water_equivalent_m = readFloatVector(reader, phase_sample_count);
+        auto const glacier_thickness_m = readFloatVector(reader, phase_sample_count);
+        auto const sea_ice_thickness_m = readFloatVector(reader, phase_sample_count);
+        auto const ocean_mask = readByteVector(reader, sample_count);
+        auto const lake_mask = readByteVector(reader, sample_count);
+        auto const river_mask = readByteVector(reader, sample_count);
+        auto const biome_id = readByteVector(reader, sample_count);
+        auto const ice_surface_kind = readByteVector(reader, sample_count);
+        auto const plate_ids = readUint32Vector(reader, sample_count);
+        auto const direction_count = reader.readUint32();
+        if (!source_elevation_m || !temperature_celsius || !precipitation_mm_year
+            || !wind_u || !wind_v || !current_u || !current_v || !phase_temperature_celsius
+            || !phase_precipitation_mm_year || !water_level_blocks
+            || !land_snow_water_equivalent_m || !glacier_thickness_m || !sea_ice_thickness_m
+            || !ocean_mask || !lake_mask || !river_mask || !biome_id || !ice_surface_kind
+            || !plate_ids || !direction_count || *direction_count == 0U || *direction_count > 1024U
+            || static_cast<uint64_t>(*direction_count) * 12U > reader.remaining()) {
+            return std::nullopt;
+        }
+        generation::V21GenerationSnapshotFields fields{
+            .source_elevation_m = *source_elevation_m,
+            .temperature_celsius = *temperature_celsius,
+            .precipitation_mm_year = *precipitation_mm_year,
+            .wind_u = *wind_u,
+            .wind_v = *wind_v,
+            .current_u = *current_u,
+            .current_v = *current_v,
+            .phase_temperature_celsius = *phase_temperature_celsius,
+            .phase_precipitation_mm_year = *phase_precipitation_mm_year,
+            .land_snow_water_equivalent_m = *land_snow_water_equivalent_m,
+            .glacier_thickness_m = *glacier_thickness_m,
+            .sea_ice_thickness_m = *sea_ice_thickness_m,
+            .water_level_blocks = *water_level_blocks,
+            .ocean_mask = *ocean_mask,
+            .lake_mask = *lake_mask,
+            .river_mask = *river_mask,
+            .biome_id = *biome_id,
+            .ice_surface_kind = *ice_surface_kind,
+            .plate_ids = *plate_ids,
+        };
+        fields.plate_directions.reserve(*direction_count);
+        for (uint32_t index = 0U; index < *direction_count; ++index)
+        {
+            auto const plate_id = reader.readUint32();
+            auto const x = reader.readFloat();
+            auto const y = reader.readFloat();
+            if (!plate_id || !x || !y) {
+                return std::nullopt;
+            }
+            fields.plate_directions.push_back({ .plate_id = *plate_id, .x = *x, .y = *y });
+        }
+        auto const observed_after_native_step = reader.readUint32();
+        if (!observed_after_native_step) {
+            return std::nullopt;
+        }
+        fields.plate_directions_observed_after_native_step = *observed_after_native_step;
+        v21 = std::move(fields);
+    }
+    std::optional<generation::V10GenerationSnapshotFields> v10;
+    if (*snapshot_kind == 3U)
+    {
+        if (*resolution != 256U) {
+            return std::nullopt;
+        }
+        uint32_t const phase_sample_count = sample_count * GENERATION_SNAPSHOT_PHASE_COUNT;
+        auto const height_raw = readFloatVector(reader, sample_count);
+        auto const water_level_m = readFloatVector(reader, sample_count);
+        auto const sea_ice_thickness_m = readFloatVector(reader, phase_sample_count);
+        auto const land_snow_water_equivalent_m = readFloatVector(reader, phase_sample_count);
+        auto const glacier_thickness_m = readFloatVector(reader, phase_sample_count);
+        auto const source_elevation_m = readDoubleVector(reader, sample_count);
+        auto const local_effective_celsius = readDoubleVector(reader, 8U * 32U * 32U);
+        auto const ground_m = readDoubleVector(reader, 32U * 32U);
+        auto const theta_celsius = readDoubleVector(reader, 8U * 32U * 32U);
+        auto const phase_precipitation_mm_year = readDoubleVector(reader, phase_sample_count);
+        auto const ocean_mask = readByteVector(reader, sample_count);
+        auto const lake_mask = readByteVector(reader, sample_count);
+        auto const river_mask = readByteVector(reader, sample_count);
+        auto const plate_ids = readUint32Vector(reader, sample_count);
+        auto const direction_count = reader.readUint32();
+        if (!height_raw
+            || !water_level_m
+            || !sea_ice_thickness_m
+            || !land_snow_water_equivalent_m
+            || !glacier_thickness_m
+            || !source_elevation_m
+            || !local_effective_celsius
+            || !ground_m
+            || !theta_celsius
+            || !phase_precipitation_mm_year
+            || !ocean_mask
+            || !lake_mask
+            || !river_mask
+            || !plate_ids
+            || !direction_count || *direction_count == 0U || *direction_count > 1024U
+            || static_cast<uint64_t>(*direction_count) * 12U > reader.remaining()) {
+            return std::nullopt;
+        }
+        generation::V10GenerationSnapshotFields fields;
+        fields.height_raw = *height_raw;
+        fields.water_level_m = *water_level_m;
+        fields.sea_ice_thickness_m = *sea_ice_thickness_m;
+        fields.land_snow_water_equivalent_m = *land_snow_water_equivalent_m;
+        fields.glacier_thickness_m = *glacier_thickness_m;
+        fields.source_elevation_m = *source_elevation_m;
+        fields.local_effective_celsius = *local_effective_celsius;
+        fields.ground_m = *ground_m;
+        fields.theta_celsius = *theta_celsius;
+        fields.phase_precipitation_mm_year = *phase_precipitation_mm_year;
+        fields.ocean_mask = *ocean_mask;
+        fields.lake_mask = *lake_mask;
+        fields.river_mask = *river_mask;
+        fields.plate_ids = *plate_ids;
+        fields.plate_directions.reserve(*direction_count);
+        for (uint32_t index = 0U; index < *direction_count; ++index) {
+            auto const plate_id = reader.readUint32();
+            auto const x = reader.readFloat();
+            auto const y = reader.readFloat();
+            if (!plate_id || !x || !y) {
+                return std::nullopt;
+            }
+            fields.plate_directions.push_back({ .plate_id = *plate_id, .x = *x, .y = *y });
+        }
+        auto const observed = reader.readUint32();
+        if (!observed) {
+            return std::nullopt;
+        }
+        fields.plate_directions_observed_after_native_step = *observed;
+        v10 = std::move(fields);
+    }
     return generation::GenerationSnapshot{
         .stage = static_cast<generation::GenerationStage>(*stage),
         .resolution = *resolution,
@@ -1012,6 +1566,9 @@ std::optional<generation::GenerationSnapshot> readGenerationSnapshot(MessageRead
         .ocean_mask = *ocean_mask,
         .lake_mask = *lake_mask,
         .river_mask = *river_mask,
+        .v9 = std::move(v9),
+        .v21 = std::move(v21),
+        .v10 = std::move(v10),
     };
 }
 
@@ -1019,7 +1576,7 @@ std::optional<generation::GenerationSnapshot> readGenerationSnapshot(MessageRead
 constexpr bool isValidGenerationStage(generation::GenerationStage const stage) noexcept
 {
     return static_cast<uint8_t>(stage)
-        <= static_cast<uint8_t>(generation::GenerationStage::Complete);
+        <= static_cast<uint8_t>(generation::GenerationStage::V10Water);
 }
 
 [[nodiscard]]
@@ -1076,7 +1633,7 @@ bool isValidUtf8(std::string const& value) noexcept
 [[nodiscard]]
 bool isValidTerrainSessionIdentity(TerrainSessionIdentity const& session) noexcept
 {
-    if (session.join_epoch == 0U || !isValidTerrainIdentity(session.terrain)
+    if (session.join_epoch == 0U || session.server_nonce == 0U || !isValidTerrainIdentity(session.terrain)
         || session.terrain.seed != session.configuration.seed) {
         return false;
     }
@@ -1086,41 +1643,6 @@ bool isValidTerrainSessionIdentity(TerrainSessionIdentity const& session) noexce
     } catch (...) {
         return false;
     }
-}
-
-[[nodiscard]]
-bool isValidGenerationSnapshot(generation::GenerationSnapshot const& snapshot) noexcept
-{
-    if (!isValidGenerationStage(snapshot.stage)
-        || (snapshot.resolution != 256U && snapshot.resolution != MAX_GENERATION_SNAPSHOT_RESOLUTION)) {
-        return false;
-    }
-    uint32_t const sample_count = snapshot.resolution * snapshot.resolution;
-    bool has_field = false;
-    auto const valid_float_field = [&has_field, sample_count](std::vector<float> const& values) {
-        if (values.empty()) {
-            return true;
-        }
-        has_field = true;
-        return values.size() == sample_count
-            && std::ranges::all_of(values, [](float const value) { return std::isfinite(value); });
-    };
-    auto const valid_mask = [&has_field, sample_count](std::vector<uint8_t> const& values) {
-        if (values.empty()) {
-            return true;
-        }
-        has_field = true;
-        return values.size() == sample_count
-            && std::ranges::all_of(values, [](uint8_t const value) { return value <= 1U; });
-    };
-    return valid_float_field(snapshot.elevation)
-        && valid_float_field(snapshot.temperature)
-        && valid_float_field(snapshot.precipitation)
-        && valid_float_field(snapshot.water_level)
-        && valid_mask(snapshot.ocean_mask)
-        && valid_mask(snapshot.lake_mask)
-        && valid_mask(snapshot.river_mask)
-        && has_field;
 }
 
 [[nodiscard]]
@@ -1134,8 +1656,15 @@ bool isValidWorldPreparation(ServerWorldPreparationMessage const& message) noexc
         return false;
     }
     if (message.latest_snapshot
-        && (!isValidGenerationSnapshot(*message.latest_snapshot)
-            || static_cast<uint8_t>(message.latest_snapshot->stage) > static_cast<uint8_t>(message.stage))) {
+        && (!generation::isValidGenerationSnapshot(*message.latest_snapshot)
+            || (message.session.configuration.model_tag == generation::TerrainModelTag::V9)
+                != message.latest_snapshot->v9.has_value()
+            || (message.session.configuration.model_tag == generation::TerrainModelTag::V21)
+                != message.latest_snapshot->v21.has_value()
+            || (message.session.configuration.model_tag == generation::TerrainModelTag::V10)
+                != message.latest_snapshot->v10.has_value()
+            || (message.stage != generation::GenerationStage::Complete
+                && static_cast<uint8_t>(message.latest_snapshot->stage) > static_cast<uint8_t>(message.stage)))) {
         return false;
     }
     if (message.final_atlas_complete
@@ -1244,6 +1773,65 @@ bool isValidMessage(Message const& message) noexcept
                 && isValidDirection(value.direction.z)
                 && isValidDirection(static_cast<uint8_t>(value.direction.view_x))
                 && isValidDirection(static_cast<uint8_t>(value.direction.view_y));
+        } else if constexpr (std::is_same_v<Value, ClientBlockActionMessage>) {
+            auto const normalized = WorldBounds::normalize(value.target_hint);
+            return isValidTerrainSessionIdentity(value.session) && value.sequence != 0U
+                && value.kind <= BlockActionKind::RequestMode
+                && value.requested_mode <= GameMode::Survival
+                && value.perspective <= InteractionPerspective::ThirdPersonFront
+                && normalized && *normalized == value.target_hint && isValidBlock(value.material)
+                && (value.kind == BlockActionKind::BreakRelease || value.kind == BlockActionKind::RequestMode
+                    || value.aim_x != 0 || value.aim_y != 0 || value.aim_z != 0);
+        } else if constexpr (std::is_same_v<Value, ServerBlockActionResultMessage>) {
+            return isValidTerrainSessionIdentity(value.session)
+                && (value.sequence != 0U || value.status == BlockActionStatus::Accepted)
+                && value.status <= BlockActionStatus::InvalidMode && value.mode <= GameMode::Survival
+                && value.effective_actions < (1U << INTERACTION_ACTION_COUNT)
+                && (value.break_materials & 1U) == 0U && (value.place_materials & 1U) == 0U;
+        } else if constexpr (std::is_same_v<Value, ServerBlockDeltaMessage>) {
+            auto const normalized = WorldBounds::normalize(value.coordinate);
+            return isValidTerrainSessionIdentity(value.session) && normalized && *normalized == value.coordinate
+                && value.from_revision != std::numeric_limits<uint64_t>::max()
+                && value.to_revision == value.from_revision + 1U && value.cell_version != 0U
+                && value.cell_version <= value.to_revision && isValidBlock(value.material);
+        } else if constexpr (std::is_same_v<Value, ClientEditDeliveryAckMessage>) {
+            return isValidTerrainSessionIdentity(value.session) && value.delivery_token != 0U;
+        } else if constexpr (std::is_same_v<Value, ClientChunkResyncMessage>) {
+            return isValidTerrainSessionIdentity(value.session) && WorldBounds::isValidChunk(value.coordinate);
+        } else if constexpr (std::is_same_v<Value, ServerEditChunkSnapshotMessage>) {
+            if (!isValidTerrainSessionIdentity(value.session) || value.edits.size() > Chunk::BLOCK_COUNT
+                || !materializeChunkPayload(value.chunk)) {
+                return false;
+            }
+            std::array<bool, Chunk::BLOCK_COUNT> seen{};
+            for (auto const& edit : value.edits) {
+                if (edit.coordinate.x >= Chunk::SIDE_LENGTH || edit.coordinate.y >= Chunk::SIDE_LENGTH
+                    || edit.coordinate.z >= Chunk::SIDE_LENGTH || !isValidBlock(edit.material)
+                    || edit.cell_version == 0U || edit.cell_version > value.revision) {
+                    return false;
+                }
+                size_t const index = edit.coordinate.x + Chunk::SIDE_LENGTH
+                    * (edit.coordinate.y + Chunk::SIDE_LENGTH * edit.coordinate.z);
+                if (seen[index]) {
+                    return false;
+                }
+                seen[index] = true;
+            }
+            return true;
+        } else if constexpr (std::is_same_v<Value, ServerEditedColumnManifestMessage>) {
+            if (!isValidTerrainSessionIdentity(value.session) || !WorldBounds::isValidChunk(value.column)
+                || value.column.z != 0 || value.chunks.size() > 64U) {
+                return false;
+            }
+            std::array<bool, WorldExtent::DEPTH / Chunk::SIDE_LENGTH> seen{};
+            for (auto const& chunk : value.chunks) {
+                if (chunk.z >= seen.size() || seen[chunk.z] || chunk.revision == 0U
+                    || chunk.revision > value.watermark) {
+                    return false;
+                }
+                seen[chunk.z] = true;
+            }
+            return true;
         } else if constexpr (std::is_same_v<Value, ClientHeightTileCreditMessage>) {
             if (value.world_revision == 0U || value.credits == 0U
                 || value.credits > HEIGHT_TILE_DELIVERY_WINDOW
@@ -1569,6 +2157,13 @@ uint64_t encodedMaterializedChunkBatchSize(ServerMaterializedChunkBatchMessage c
         size += 21U + (std::holds_alternative<DenseChunkData>(payload.data) ? Chunk::BLOCK_COUNT : 1U);
     }
     return size;
+}
+
+uint64_t encodedEditChunkSnapshotSize(ServerEditChunkSnapshotMessage const& message) noexcept
+{
+    uint64_t const chunk_bytes = 21U
+        + (std::holds_alternative<DenseChunkData>(message.chunk.data) ? Chunk::BLOCK_COUNT : 1U);
+    return 21U + 3U + terrainSessionEncodedSize(message.session) + 17U + chunk_bytes + message.edits.size() * 10U;
 }
 
 uint64_t encodedAuthoritativeTerrainBatchSize(ServerAuthoritativeTerrainBatchMessage const& message) noexcept
@@ -1920,6 +2515,166 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
                     .actual_radius_blocks = *actual_radius_blocks,
                     .visual_lod_radius_blocks = *visual_lod_radius_blocks,
                 };
+            }
+            break;
+        }
+        case MessageType::ClientBlockAction: {
+            auto const session = readTerrainSession(reader);
+            auto const sequence = reader.readUint32();
+            auto const kind = reader.readUint8();
+            auto const x = reader.readUint16();
+            auto const y = reader.readUint16();
+            auto const z = reader.readUint16();
+            auto const target = readChunkCoordinate(reader);
+            auto const material = reader.readUint8();
+            auto const mode = reader.readUint8();
+            auto const perspective = reader.readUint8();
+            if (session && sequence && kind && x && y && z && target && material && mode && perspective) {
+                message = ClientBlockActionMessage{
+                    .session = *session, .sequence = *sequence,
+                    .kind = static_cast<BlockActionKind>(*kind),
+                    .aim_x = std::bit_cast<int16_t>(*x), .aim_y = std::bit_cast<int16_t>(*y),
+                    .aim_z = std::bit_cast<int16_t>(*z),
+                    .target_hint = {target->x, target->y, target->z},
+                    .material = static_cast<Block>(*material), .requested_mode = static_cast<GameMode>(*mode),
+                    .perspective = static_cast<InteractionPerspective>(*perspective),
+                };
+            }
+            break;
+        }
+        case MessageType::ServerBlockActionResult: {
+            auto const session = readTerrainSession(reader);
+            auto const sequence = reader.readUint32();
+            auto const status = reader.readUint8();
+            auto const tick = reader.readUint64();
+            auto const target = readChunkCoordinate(reader);
+            auto const version = reader.readUint64();
+            auto const completed = reader.readUint16();
+            auto const required = reader.readUint16();
+            auto const mode = reader.readUint8();
+            auto const actions = reader.readUint8();
+            auto const breaking = reader.readUint8();
+            auto const placing = reader.readUint8();
+            if (
+                session
+                && sequence
+                && status
+                && tick
+                && target
+                && version
+                && completed
+                && required
+                && mode
+                && actions
+                && breaking
+                && placing
+            ) {
+                message = ServerBlockActionResultMessage{
+                    .session = *session, .sequence = *sequence, .status = static_cast<BlockActionStatus>(*status),
+                    .server_tick = *tick, .target = {target->x, target->y, target->z},
+                    .cell_version = *version, .completed_intervals = *completed, .required_intervals = *required,
+                    .mode = static_cast<GameMode>(*mode), .effective_actions = *actions,
+                    .break_materials = *breaking, .place_materials = *placing,
+                };
+            }
+            break;
+        }
+        case MessageType::ServerBlockDelta: {
+            auto const session = readTerrainSession(reader);
+            auto const coordinate = readChunkCoordinate(reader);
+            auto const token = reader.readUint64();
+            auto const from = reader.readUint64();
+            auto const to = reader.readUint64();
+            auto const version = reader.readUint64();
+            auto const material = reader.readUint8();
+            if (session && coordinate && token && from && to && version && material) {
+                message = ServerBlockDeltaMessage{
+                    .session = *session, .coordinate = {coordinate->x, coordinate->y, coordinate->z},
+                    .from_revision = *from, .to_revision = *to, .cell_version = *version,
+                    .material = static_cast<Block>(*material), .delivery_token = *token,
+                };
+            }
+            break;
+        }
+        case MessageType::ClientChunkResync: {
+            auto const session = readTerrainSession(reader);
+            auto const coordinate = readChunkCoordinate(reader);
+            if (session && coordinate) {
+                message = ClientChunkResyncMessage{.session = *session, .coordinate = *coordinate};
+            }
+            break;
+        }
+        case MessageType::ServerEditChunkSnapshot: {
+            auto const token = reader.readUint64();
+            auto const revision = reader.readUint64();
+            auto const count = reader.readUint16();
+            if (!token || !revision || !count || *count > Chunk::BLOCK_COUNT) {
+                break;
+            }
+            std::vector<EditCellPayload> edits;
+            for (uint16_t index = 0U; index < *count; ++index) {
+                auto const packed = reader.readUint16();
+                auto const version = reader.readUint64();
+                if (!packed || !version) {
+                    break;
+                }
+                edits.push_back({{
+                    static_cast<uint8_t>(*packed & 15U),
+                    static_cast<uint8_t>((*packed >> 4U) & 15U),
+                    static_cast<uint8_t>((*packed >> 8U) & 15U)},
+                    static_cast<Block>(*packed >> 12U), *version});
+            }
+            if (edits.size() != *count) {
+                break;
+            }
+            std::vector<uint8_t> nested;
+            while (auto const byte = reader.readUint8()) {
+                nested.push_back(*byte);
+            }
+            if (nested.size() < 3U || nested[2] != static_cast<uint8_t>(MessageType::ServerMaterializedChunkBatch)) {
+                break;
+            }
+            auto const decoded = decodeMessage(nested);
+            auto const* batch = decoded ? std::get_if<ServerMaterializedChunkBatchMessage>(&*decoded) : nullptr;
+            if (revision && batch && batch->chunks.size() == 1U) {
+                message = ServerEditChunkSnapshotMessage{
+                    .session = batch->session, .revision = *revision, .chunk = batch->chunks.front(),
+                    .edits = std::move(edits), .delivery_token = *token,
+                };
+            }
+            break;
+        }
+        case MessageType::ServerEditedColumnManifest: {
+            auto const session = readTerrainSession(reader);
+            auto const column = readChunkCoordinate(reader);
+            auto const token = reader.readUint64();
+            auto const watermark = reader.readUint64();
+            auto const count = reader.readUint8();
+            if (!session || !column || !token || !watermark || !count || *count > 64U) {
+                break;
+            }
+            std::vector<EditedChunkRequirement> chunks;
+            for (uint8_t index = 0U; index < *count; ++index) {
+                auto const z = reader.readUint8();
+                auto const revision = reader.readUint64();
+                if (!z || !revision) {
+                    break;
+                }
+                chunks.push_back({*z, *revision});
+            }
+            if (chunks.size() == *count) {
+                message = ServerEditedColumnManifestMessage{
+                    .session = *session, .column = *column, .watermark = *watermark,
+                    .chunks = std::move(chunks), .delivery_token = *token,
+                };
+            }
+            break;
+        }
+        case MessageType::ClientEditDeliveryAck: {
+            auto const session = readTerrainSession(reader);
+            auto const token = reader.readUint64();
+            if (session && token) {
+                message = ClientEditDeliveryAckMessage{.session = *session, .delivery_token = *token};
             }
             break;
         }

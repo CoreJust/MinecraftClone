@@ -15,13 +15,92 @@
 #include <cstdint>
 #include <expected>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
+#include <streambuf>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 namespace {
+
+class LimitedWriteStreamBuffer final : public std::streambuf {
+public:
+    explicit LimitedWriteStreamBuffer(std::streamsize const allowed_bytes)
+        : m_remaining_bytes(allowed_bytes)
+    { }
+
+    [[nodiscard]]
+    std::string const& written() const noexcept { return m_written; }
+
+protected:
+    std::streamsize xsputn(char const* source, std::streamsize const count) override
+    {
+        std::streamsize const written_bytes = count < m_remaining_bytes ? count : m_remaining_bytes;
+        m_written.append(source, static_cast<std::string::size_type>(written_bytes));
+        m_remaining_bytes -= written_bytes;
+        return written_bytes;
+    }
+
+    int_type overflow(int_type const value) override
+    {
+        if (traits_type::eq_int_type(value, traits_type::eof())) {
+            return traits_type::not_eof(value);
+        }
+        if (m_remaining_bytes == 0) {
+            return traits_type::eof();
+        }
+        m_written += traits_type::to_char_type(value);
+        --m_remaining_bytes;
+        return value;
+    }
+
+private:
+    std::streamsize m_remaining_bytes;
+    std::string m_written;
+};
+
+TEST(EvidenceJson, WritesFrameWithExactJsonByteLength)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.mode = "benchmark-game";
+    evidence.failure = "stream test";
+    evidence.passed = false;
+    std::string const json = acceptance::evidenceJson(evidence);
+    std::ostringstream output;
+
+    auto const result = acceptance::writeEvidenceJsonFrame(output, evidence);
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(
+        output.str(),
+        "\nMC_RUNTIME_EVIDENCE_V1 " + std::to_string(json.size()) + "\n" + json
+    );
+}
+
+TEST(EvidenceJson, RejectsPartialFrameWrite)
+{
+    static constexpr std::streamsize PARTIAL_PAYLOAD_BYTES = 3;
+    acceptance::RuntimeEvidence evidence{};
+    evidence.mode = "benchmark-game";
+    std::string const json = acceptance::evidenceJson(evidence);
+    std::string const header = "\nMC_RUNTIME_EVIDENCE_V1 " + std::to_string(json.size()) + "\n";
+    LimitedWriteStreamBuffer output_buffer{
+        static_cast<std::streamsize>(header.size()) + PARTIAL_PAYLOAD_BYTES
+    };
+    std::ostream output{ &output_buffer };
+
+    auto const result = acceptance::writeEvidenceJsonFrame(output, evidence);
+
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(output_buffer.written().substr(0, header.size()), header);
+    EXPECT_EQ(
+        output_buffer.written().size(),
+        header.size() + static_cast<std::string::size_type>(PARTIAL_PAYLOAD_BYTES)
+    );
+    EXPECT_LT(output_buffer.written().size(), header.size() + json.size());
+}
 
 TEST(EvidenceJson, IdentifiesGameplayQualificationAndRawLoopOrder)
 {
@@ -461,6 +540,30 @@ TEST(EvidenceJson, SerializesDiagnosticOverridePresenceAsBooleans)
     evidence.game_benchmark->diagnostic_overrides_present = true;
     EXPECT_NE(acceptance::evidenceJson(evidence).find("\"diagnostic_overrides_present\": true"),
         std::string::npos);
+}
+
+TEST(EvidenceJson, SerializesDiagnosticSpawnHeightAsNullableMetadata)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
+    EXPECT_NE(acceptance::evidenceJson(evidence).find("\"diagnostic_spawn_z\": null"),
+        std::string::npos);
+    evidence.game_benchmark->diagnostic_spawn_z = 1'600;
+    EXPECT_NE(acceptance::evidenceJson(evidence).find("\"diagnostic_spawn_z\": 1600"),
+        std::string::npos);
+    EXPECT_NE(acceptance::evidenceJson(evidence).find("\"diagnostic_capture_site\": null"),
+        std::string::npos);
+    evidence.game_benchmark->diagnostic_capture_site =
+        acceptance::GameBenchmarkEvidence::DiagnosticCaptureSite{
+            .x = 32'765,
+            .y = 41'234,
+            .z = 1'600,
+            .yaw_degrees = 153.25,
+            .pitch_degrees = -23.5,
+        };
+    EXPECT_NE(acceptance::evidenceJson(evidence).find(
+        "\"diagnostic_capture_site\": { \"x\": 32765, \"y\": 41234, \"z\": 1600, "
+        "\"yaw_degrees\": 153.25, \"pitch_degrees\": -23.5 }"), std::string::npos);
 }
 
 TEST(EvidenceJson, IncludesVersionedMetadataTimingAndCounters)
@@ -958,6 +1061,10 @@ TEST(EvidenceJson, SerializesSeparateCpuRecordingPhasesInNanoseconds)
 {
     static constexpr uint64_t COLLECTION_NS = 1'234U;
     static constexpr uint64_t PREPARE_NS = 5'678U;
+    static constexpr uint64_t PRESENTATION_PREPARE_NS = 5'679U;
+    static constexpr uint64_t PIPELINE_BIND_NS = 5'680U;
+    static constexpr uint64_t CONTEXT_COMPLETE_NS = 5'681U;
+    static constexpr uint64_t FACE_GROWTH_NS = 5'682U;
     static constexpr uint64_t STONE_SCENE_NS = 9'012U;
     static constexpr uint64_t RESIDUAL_NS = 3'456U;
     static constexpr uint64_t TILE_TRAVERSAL_NS = 2'345U;
@@ -969,6 +1076,10 @@ TEST(EvidenceJson, SerializesSeparateCpuRecordingPhasesInNanoseconds)
     sample.diagnostic_cpu_height_tile_pending_range_order_duration_ns = RANGE_ORDER_NS;
     sample.diagnostic_cpu_height_tile_visible_range_merge_duration_ns = RANGE_MERGE_NS;
     sample.diagnostic_cpu_indirect_prepare_duration_ns = PREPARE_NS;
+    sample.diagnostic_cpu_presentation_prepare_duration_ns = PRESENTATION_PREPARE_NS;
+    sample.diagnostic_cpu_pipeline_bind_duration_ns = PIPELINE_BIND_NS;
+    sample.diagnostic_cpu_context_complete_call_duration_ns = CONTEXT_COMPLETE_NS;
+    sample.diagnostic_cpu_stone_face_growth_duration_ns = FACE_GROWTH_NS;
     sample.diagnostic_cpu_stone_scene_record_duration_ns = STONE_SCENE_NS;
     sample.diagnostic_cpu_command_record_residual_duration_ns = RESIDUAL_NS;
     acceptance::RuntimeEvidence evidence;
@@ -984,6 +1095,10 @@ TEST(EvidenceJson, SerializesSeparateCpuRecordingPhasesInNanoseconds)
     EXPECT_NE(json.find("\"diagnostic_cpu_height_tile_pending_range_order_duration_ns\": 3456,"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_cpu_height_tile_visible_range_merge_duration_ns\": 4567,"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_cpu_indirect_prepare_duration_ns\": 5678,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_presentation_prepare_duration_ns\": 5679,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_pipeline_bind_duration_ns\": 5680,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_context_complete_call_duration_ns\": 5681,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_stone_face_growth_duration_ns\": 5682,"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_cpu_stone_scene_record_duration_ns\": 9012,"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_cpu_command_record_residual_duration_ns\": 3456,"), std::string::npos);
 }
@@ -1355,7 +1470,11 @@ TEST(EvidenceJson, PreservesPlayerRenderStageTimingsPerFrame)
     frame.diagnostic_client_camera_resolution_duration_ns = 1'000'006U;
     frame.diagnostic_client_render_before_resize_duration_ns = 1'000'001U;
     frame.diagnostic_renderer_resize_duration_ns = 2'000'002U;
-    frame.diagnostic_client_render_after_resize_duration_ns = 3'000'003U;
+    frame.diagnostic_client_render_after_resize_duration_ns = 10'000'010U;
+    frame.diagnostic_client_after_resize_data_hud_duration_ns = 1'000'001U;
+    frame.diagnostic_client_after_resize_map_block_duration_ns = 2'000'002U;
+    frame.diagnostic_client_after_resize_terrain_lod_duration_ns = 3'000'003U;
+    frame.diagnostic_client_after_resize_post_lod_duration_ns = 4'000'004U;
     frame.diagnostic_renderer_call_duration_ns = 4'000'004U;
     frame.diagnostic_client_render_after_renderer_duration_ns = 5'000'005U;
 
@@ -1401,11 +1520,101 @@ TEST(EvidenceJson, PreservesPlayerRenderStageTimingsPerFrame)
     EXPECT_NE(json.find("\"diagnostic_client_render_before_resize_duration_ns\": 1000001"),
         std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_renderer_resize_duration_ns\": 2000002"), std::string::npos);
-    EXPECT_NE(json.find("\"diagnostic_client_render_after_resize_duration_ns\": 3000003"),
+    EXPECT_NE(json.find("\"diagnostic_client_render_after_resize_duration_ns\": 10000010"),
         std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_renderer_call_duration_ns\": 4000004"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_client_render_after_renderer_duration_ns\": 5000005"),
         std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_client_after_resize_data_hud_duration_ns\": 1000001"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_client_after_resize_map_block_duration_ns\": 2000002"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_client_after_resize_terrain_lod_duration_ns\": 3000003"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_client_after_resize_post_lod_duration_ns\": 4000004"),
+        std::string::npos);
+}
+
+TEST(EvidenceJson, PreservesTerrainLodUpdateStageTimingsAndWorkCounts)
+{
+    static constexpr uint64_t REPORT_DURATION_NS = 1'001U;
+    static constexpr uint64_t RESIDENT_DIFF_DURATION_NS = 4'004U;
+    static constexpr uint64_t PENDING_VALIDATION_DURATION_NS = 5'005U;
+    static constexpr uint64_t SCENE_HANDOFF_DURATION_NS = 6'006U;
+    static constexpr uint64_t WORKER_FUTURE_GET_DURATION_NS = 6'007U;
+    static constexpr uint64_t WORKER_ADOPT_DURATION_NS = 6'008U;
+    static constexpr uint64_t WORKER_COLUMNS_COPY_DURATION_NS = 6'009U;
+    static constexpr uint64_t SCENE_ACTIVATION_LOG_DURATION_NS = 6'010U;
+    static constexpr uint64_t SCENE_PLAN_PRESENTED_DURATION_NS = 6'011U;
+    static constexpr uint64_t SCENE_COLUMN_SELECTION_DURATION_NS = 6'012U;
+    static constexpr uint64_t SCENE_PENDING_RELEASE_DURATION_NS = 6'013U;
+    static constexpr uint64_t RENDERER_PLAN_DURATION_NS = 7'007U;
+    static constexpr uint64_t RENDERER_BUFFER_UPDATE_DURATION_NS = 8'008U;
+    static constexpr uint64_t RENDERER_PUBLISH_DURATION_NS = 9'009U;
+    static constexpr uint64_t RENDERER_UPLOADED_FACE_COUNT = 10'010U;
+    static constexpr uint64_t RESIDENT_CHUNK_COUNT = 707U;
+    static constexpr uint64_t RENDERER_UPSERT_DURATION_NS = 5'006U;
+    static constexpr uint64_t VALIDATED_COLUMN_COUNT = 808U;
+    static constexpr uint64_t CAPTURE_ATTEMPT_COUNT = 9U;
+
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark.emplace();
+    auto& diagnostics = evidence.game_benchmark->raw_frames.emplace_back().diagnostic_terrain_lod_update;
+    diagnostics.enabled = true;
+    diagnostics.report_duration_ns = REPORT_DURATION_NS;
+    diagnostics.worker_future_get_duration_ns = WORKER_FUTURE_GET_DURATION_NS;
+    diagnostics.worker_candidate_adopt_duration_ns = WORKER_ADOPT_DURATION_NS;
+    diagnostics.worker_columns_copy_duration_ns = WORKER_COLUMNS_COPY_DURATION_NS;
+    diagnostics.pending_validation_duration_ns = PENDING_VALIDATION_DURATION_NS;
+    diagnostics.renderer_upsert_duration_ns = RENDERER_UPSERT_DURATION_NS;
+    diagnostics.renderer_plan_duration_ns = RENDERER_PLAN_DURATION_NS;
+    diagnostics.renderer_buffer_update_duration_ns = RENDERER_BUFFER_UPDATE_DURATION_NS;
+    diagnostics.renderer_publish_duration_ns = RENDERER_PUBLISH_DURATION_NS;
+    diagnostics.renderer_uploaded_face_count = RENDERER_UPLOADED_FACE_COUNT;
+    diagnostics.prepared_draw_index_publish_count = 11U;
+    diagnostics.render_thread_draw_index_build_count = 12U;
+    diagnostics.scene_handoff_duration_ns = SCENE_HANDOFF_DURATION_NS;
+    diagnostics.scene_activation_log_duration_ns = SCENE_ACTIVATION_LOG_DURATION_NS;
+    diagnostics.scene_plan_presented_duration_ns = SCENE_PLAN_PRESENTED_DURATION_NS;
+    diagnostics.scene_column_selection_duration_ns = SCENE_COLUMN_SELECTION_DURATION_NS;
+    diagnostics.scene_pending_release_duration_ns = SCENE_PENDING_RELEASE_DURATION_NS;
+    diagnostics.validated_column_count = VALIDATED_COLUMN_COUNT;
+    diagnostics.source_validation_count = 10U;
+    diagnostics.edit_lane_call_count = 3U;
+    diagnostics.pending_validation_count = 4U;
+    diagnostics.dispatch_count = 2U;
+    diagnostics.discovery_capture_attempt_count = CAPTURE_ATTEMPT_COUNT;
+    diagnostics.source_index.resident_diff_duration_ns = RESIDENT_DIFF_DURATION_NS;
+    diagnostics.source_index.resident_chunk_count = RESIDENT_CHUNK_COUNT;
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"diagnostic_terrain_lod_update\": { \"enabled\": true"), std::string::npos);
+    EXPECT_NE(json.find("\"report_duration_ns\": 1001"), std::string::npos);
+    EXPECT_NE(json.find("\"resident_diff_duration_ns\": 4004"), std::string::npos);
+    EXPECT_NE(json.find("\"pending_validation_duration_ns\": 5005"), std::string::npos);
+    EXPECT_NE(json.find("\"worker_future_get_duration_ns\": 6007"), std::string::npos);
+    EXPECT_NE(json.find("\"worker_candidate_adopt_duration_ns\": 6008"), std::string::npos);
+    EXPECT_NE(json.find("\"worker_columns_copy_duration_ns\": 6009"), std::string::npos);
+    EXPECT_NE(json.find("\"renderer_upsert_duration_ns\": 5006"), std::string::npos);
+    EXPECT_NE(json.find("\"renderer_plan_duration_ns\": 7007"), std::string::npos);
+    EXPECT_NE(json.find("\"renderer_buffer_update_duration_ns\": 8008"), std::string::npos);
+    EXPECT_NE(json.find("\"renderer_publish_duration_ns\": 9009"), std::string::npos);
+    EXPECT_NE(json.find("\"renderer_uploaded_face_count\": 10010"), std::string::npos);
+    EXPECT_NE(json.find("\"prepared_draw_index_publish_count\": 11"), std::string::npos);
+    EXPECT_NE(json.find("\"render_thread_draw_index_build_count\": 12"), std::string::npos);
+    EXPECT_NE(json.find("\"scene_handoff_duration_ns\": 6006"), std::string::npos);
+    EXPECT_NE(json.find("\"scene_activation_log_duration_ns\": 6010"), std::string::npos);
+    EXPECT_NE(json.find("\"scene_plan_presented_duration_ns\": 6011"), std::string::npos);
+    EXPECT_NE(json.find("\"scene_column_selection_duration_ns\": 6012"), std::string::npos);
+    EXPECT_NE(json.find("\"scene_pending_release_duration_ns\": 6013"), std::string::npos);
+    EXPECT_NE(json.find("\"resident_chunk_count\": 707"), std::string::npos);
+    EXPECT_NE(json.find("\"validated_column_count\": 808"), std::string::npos);
+    EXPECT_NE(json.find("\"source_validation_count\": 10"), std::string::npos);
+    EXPECT_NE(json.find("\"edit_lane_call_count\": 3"), std::string::npos);
+    EXPECT_NE(json.find("\"pending_validation_count\": 4"), std::string::npos);
+    EXPECT_NE(json.find("\"dispatch_count\": 2"), std::string::npos);
+    EXPECT_NE(json.find("\"discovery_capture_attempt_count\": 9"), std::string::npos);
 }
 
 TEST(EvidenceJson, PreservesTimedTerrainRadialBands)
@@ -1571,4 +1780,35 @@ TEST(EvidenceJson, SerializesSubmittedSceneSettingsAndPresentedPlayerProof)
     EXPECT_NE(json.find(R"("camera_perspective": "first-person", "world_mode": "flight")"), std::string::npos);
     EXPECT_NE(json.find(R"("body": [17.250000, 33.500000, 96.000000])"), std::string::npos);
     EXPECT_NE(json.find(R"("submitted_frame_count": 9, "sampled_offset_ns": 11)"), std::string::npos);
+}
+
+TEST(EvidenceJson, PreservesOrdinaryDiagnosticCaptureIdentityAndFailure)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.mode = "benchmark-game-frame-capture";
+    evidence.game_benchmark.emplace();
+    auto& capture = *evidence.game_benchmark;
+    capture.diagnostic_frame_capture_path = "capture.ppm";
+    capture.diagnostic_frame_capture_phase = "generation";
+    capture.diagnostic_frame_capture_delay_ms = 6'000U;
+    capture.diagnostic_frame_requested_loading_state = "preparing-atlas";
+    capture.diagnostic_frame_capture_state = "failed";
+    capture.diagnostic_frame_capture_error = "output already exists";
+    std::string const json = acceptance::evidenceJson(evidence);
+    EXPECT_NE(json.find("\"mode\": \"benchmark-game-frame-capture\""), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_capture_path\": \"capture.ppm\""), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_capture_phase\": \"generation\""), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_requested_loading_state\": \"preparing-atlas\""), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_capture_delay_ms\": 6000"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_capture_state\": \"failed\""), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_capture_error\": \"output already exists\""), std::string::npos);
+}
+
+TEST(EvidenceJson, RecordsLiveUiBenchmarkOptIn)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
+    EXPECT_NE(acceptance::evidenceJson(evidence).find("\"live_ui_enabled\": false"), std::string::npos);
+    evidence.game_benchmark->live_ui_enabled = true;
+    EXPECT_NE(acceptance::evidenceJson(evidence).find("\"live_ui_enabled\": true"), std::string::npos);
 }

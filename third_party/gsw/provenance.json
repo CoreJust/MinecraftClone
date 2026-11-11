@@ -1,0 +1,45 @@
+{
+  "copy_note": "The six files were moved byte-for-byte from src/generation/V9WaterGsw/; hashes identify these local bytes, not an upstream revision.",
+  "files": [
+    {
+      "bytes": 1850,
+      "path": "LICENSE.txt",
+      "sha256": "b0583d2983e55cc550082d2009395d346d1d21d485258f7e318e4440b4b22e6b"
+    },
+    {
+      "bytes": 17741,
+      "path": "gsw_internal_const.h",
+      "sha256": "6c0ceff0c3a85fa6f4036793eb325ea61942fb58c802263cf3265755b79b56c5"
+    },
+    {
+      "bytes": 514188,
+      "path": "gsw_oceanographic_toolbox.c",
+      "sha256": "cf399f6b3f2c283899091cc82aad936d41e899cbc92382e415d259e4b2bf0476"
+    },
+    {
+      "bytes": 9345,
+      "path": "gsw_saar.c",
+      "sha256": "c1cb7b5adff7f1f0cff12a8906161dd66c2b58be7831864af188db9ba461df92"
+    },
+    {
+      "bytes": 8721249,
+      "path": "gsw_saar_data.h",
+      "sha256": "b6c4c78436e7fe1ae6015a20f1bc165ffece9d9d670c32db2352d3aa1decd153"
+    },
+    {
+      "bytes": 20033,
+      "path": "gswteos-10.h",
+      "sha256": "b1814976e83d243fea57322281c439510e342401cb5d82ed265c264a922b5916"
+    }
+  ],
+  "license_file": "LICENSE.txt",
+  "name": "GSW Oceanographic Toolbox C source closure",
+  "schema": "mc-third-party-gsw-provenance.v1",
+  "source_version_declarations": {
+    "gsw_oceanographic_toolbox.c": "3.05.0-3",
+    "gswteos-10.h": "3.05.0-2"
+  },
+  "total_bytes": 9284406,
+  "upstream_git_commit": null,
+  "upstream_git_commit_note": "Exact upstream C commit identity was not independently verified."
+}

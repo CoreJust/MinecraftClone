@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -731,6 +732,30 @@ TEST(PlayerPresentationTest, CameraPerspectivesKeepLookIntentSeparateFromDisplay
     EXPECT_EQ(front_third_person.pose.angles.yaw_degrees, 180.0);
     EXPECT_TRUE(front_third_person.renders_local_body);
     EXPECT_NEAR(client::Camera{ front_third_person.pose }.forward().y, -1.0, 1e-12);
+
+    shared::VoxelRay const eye_ray{
+        .origin_x = 12.3125,
+        .origin_y = 20.3125,
+        .origin_z = client::PLAYER_EYE_HEIGHT,
+        .direction_y = 1.0,
+    };
+    for (auto const [perspective, view] : {
+             std::pair{client::CameraPerspective::FirstPerson, first_person},
+             std::pair{client::CameraPerspective::ThirdPersonRear, rear_third_person},
+             std::pair{client::CameraPerspective::ThirdPersonFront, front_third_person},
+         }) {
+        auto const reconstructed = shared::reconstructInteractionCameraRay(eye_ray, perspective);
+        ASSERT_TRUE(reconstructed.has_value());
+        EXPECT_EQ(view.pose.position, (glm::dvec3{
+            reconstructed->origin_x,
+            reconstructed->origin_y,
+            reconstructed->origin_z,
+        }));
+        glm::dvec3 const camera_forward = client::Camera{view.pose}.forward();
+        EXPECT_NEAR(camera_forward.x, reconstructed->direction_x, 1e-12);
+        EXPECT_NEAR(camera_forward.y, reconstructed->direction_y, 1e-12);
+        EXPECT_NEAR(camera_forward.z, reconstructed->direction_z, 1e-12);
+    }
 }
 
 TEST(PlayerPresentationTest, CameraObstructionDistanceIsBoundedAndLocalBodyVisibilityFollowsPerspective)

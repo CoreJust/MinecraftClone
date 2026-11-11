@@ -29,6 +29,70 @@ Value const& requiredValue(std::optional<Value> const& optional)
     throw std::runtime_error("Test expected an optional value");
 }
 
+bool publishMovementTestSurface(shared::SparseWorld& world, bool const one_block_step)
+{
+    std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> heights = testsupport::makeHeightSamples(386U);
+    if (one_block_step) {
+        for (uint32_t y = 0U; y < shared::Chunk::SIDE_LENGTH; ++y) {
+            for (uint32_t x = 6U; x < shared::Chunk::SIDE_LENGTH; ++x) {
+                heights[y * shared::Chunk::SIDE_LENGTH + x] = 387U;
+            }
+        }
+    }
+    auto const identity = testsupport::makeTerrainIdentity(world.options().seed, world.options().revision);
+    if (!world.setTerrainIdentity(identity)
+        || !world.publishAuthoritativeSurface(testsupport::makeSurfaceTile({ .x = 0, .y = 0 }, identity, heights))) {
+        return false;
+    }
+
+    shared::Chunk::Blocks blocks;
+    for (uint32_t y = 0U; y < shared::Chunk::SIDE_LENGTH; ++y) {
+        for (uint32_t x = 0U; x < shared::Chunk::SIDE_LENGTH; ++x) {
+            auto const column = world.authoritativeColumn(x, y);
+            if (!column) {
+                return false;
+            }
+            for (uint32_t local_z = 0U; local_z < shared::Chunk::SIDE_LENGTH; ++local_z) {
+                uint32_t const z = 24U * shared::Chunk::SIDE_LENGTH + local_z;
+                blocks[local_z * shared::Chunk::FACE_BLOCK_COUNT + y * shared::Chunk::SIDE_LENGTH + x]
+                    = column->materialAt(static_cast<uint16_t>(z));
+            }
+        }
+    }
+    return world.publishMaterializedChunk(
+        shared::Chunk{ { .x = 0, .y = 0, .z = 24 }, blocks },
+        world.options().revision,
+        world.options().seed
+    );
+}
+
+bool publishDiagonalStepWall(shared::SparseWorld& world)
+{
+    shared::Chunk::Blocks blocks;
+    blocks.fill(shared::Block::Air);
+    for (uint32_t y = 0U; y < shared::Chunk::SIDE_LENGTH; ++y) {
+        for (uint32_t x = 0U; x < shared::Chunk::SIDE_LENGTH; ++x) {
+            uint32_t const floor_index = shared::Chunk::FACE_BLOCK_COUNT
+                + y * shared::Chunk::SIDE_LENGTH + x;
+            blocks[floor_index] = shared::Block::Stone;
+            if (x >= 6U && y < 6U) {
+                blocks[2U * shared::Chunk::FACE_BLOCK_COUNT + y * shared::Chunk::SIDE_LENGTH + x]
+                    = shared::Block::Stone;
+            } else if (x < 6U && y >= 6U) {
+                blocks[2U * shared::Chunk::FACE_BLOCK_COUNT + y * shared::Chunk::SIDE_LENGTH + x]
+                    = shared::Block::Stone;
+                blocks[3U * shared::Chunk::FACE_BLOCK_COUNT + y * shared::Chunk::SIDE_LENGTH + x]
+                    = shared::Block::Stone;
+            }
+        }
+    }
+    return world.publishMaterializedChunk(
+        shared::Chunk{ { .x = 0, .y = 0, .z = 24 }, blocks },
+        world.options().revision,
+        world.options().seed
+    );
+}
+
 } // namespace
 
 TEST(FlightWorldTest, UsesFirstWaveSpawnAndWrappedCoordinates)
@@ -480,6 +544,35 @@ TEST(FlightWorldTest, MaterializationCandidatesCoverSweptBodyHeight)
     EXPECT_TRUE(std::ranges::any_of(chunks, [](shared::ChunkCoordinate const coordinate) {
         return coordinate.x == 6 && coordinate.y == 6 && coordinate.z == 1;
     }));
+}
+
+TEST(FlightWorldTest, UpperBodyCollisionCandidatesLoadOnlyRequiredChunksBeforeMovement)
+{
+    for (int32_t const height : {1'023, 1'024, 2'047}) {
+        SCOPED_TRACE(height);
+        shared::SparseWorld blocks({.seed = 42U, .revision = 1U},
+            shared::SparseWorldGenerationMode::MaterializedOnly);
+        shared::World world{shared::WorldMode::Flight};
+        world.spawnPlayer(1U, '@', {.x = 100, .y = 100, .z = height});
+        ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+        world.setCollisionWorld(&blocks);
+        shared::Direction const direction{.x = 127U, .y = 0U};
+        EXPECT_FALSE(world.movePlayer(1U, direction));
+        auto const chunks = world.flightCollisionChunks(1U, direction);
+        int32_t const first_section = height / shared::Chunk::SIDE_LENGTH;
+        int32_t const last_section = std::min<int32_t>(height + 1, shared::WorldExtent::DEPTH - 1U)
+            / shared::Chunk::SIDE_LENGTH;
+        for (int32_t section = first_section; section <= last_section; ++section) {
+            EXPECT_TRUE(std::ranges::any_of(chunks, [section](shared::ChunkCoordinate const coordinate) {
+                return coordinate.x == 6 && coordinate.y == 6 && coordinate.z == section;
+            }));
+        }
+        for (auto const coordinate : chunks) {
+            EXPECT_LT(coordinate.z, shared::WorldExtent::DEPTH / shared::Chunk::SIDE_LENGTH);
+            ASSERT_TRUE(blocks.publishMaterializedChunk(shared::Chunk{coordinate}, 1U, 42U));
+        }
+        EXPECT_TRUE(world.movePlayer(1U, direction));
+    }
 }
 
 TEST(FlightWorldTest, AirborneJumpInputIncludesGravityCrossingIntoLowerChunk)
@@ -970,6 +1063,280 @@ TEST(FlightWorldTest, NonFlightMovementSlidesAlongAAdjacentTerrainWall)
     EXPECT_TRUE(world.movePlayer(1U, { .x = 0U, .y = 127U }));
     ASSERT_TRUE(world.player(1U).has_value());
     EXPECT_GT(shared::playerPositionY(requiredValue(world.player(1U))), 32'768.5);
+}
+
+TEST(FlightWorldTest, CreativeFlightWithCollisionKeepsMovingAcrossFlatAuthoritativeSurface)
+{
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(publishMovementTestSurface(collision_world, false));
+    auto const support = collision_world.authoritativeColumn(4, 4);
+    ASSERT_TRUE(support.has_value());
+    EXPECT_EQ(support->highest_solid_z, 385U);
+    EXPECT_EQ(collision_world.queryBlock({ .x = 4, .y = 4, .z = 386 }).block, shared::Block::Air);
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 386 });
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+    shared::Player const before = requiredValue(world.player(1U));
+
+    for (uint32_t tick = 0U; tick < 10U; ++tick) {
+        ASSERT_TRUE(world.movePlayer(1U, { .x = 127U, .y = 0U, .z = 0U }, shared::TICK))
+            << "held horizontal input stopped on flat materialized ground at tick " << tick;
+    }
+
+    shared::Player const after = requiredValue(world.player(1U));
+    EXPECT_EQ(after.movement_capabilities.bits, 1U);
+    EXPECT_GT(shared::playerPositionX(after), shared::playerPositionX(before));
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(after), 386.0);
+}
+
+TEST(FlightWorldTest, CreativeFlightKeepsHorizontalMotionWhileDescendingIntoFlatGround)
+{
+    static constexpr uint32_t HORIZONTAL_TICKS = 10U;
+    static constexpr uint32_t HORIZONTAL_DELTA_SUBCELLS_PER_TICK =
+        shared::MOVEMENT_SUBCELLS_PER_TICK * 127U / 180U;
+    static constexpr double EXPECTED_HORIZONTAL_DELTA = static_cast<double>(
+        HORIZONTAL_TICKS * HORIZONTAL_DELTA_SUBCELLS_PER_TICK
+    ) / shared::SUBCELLS_PER_CELL;
+
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(publishMovementTestSurface(collision_world, false));
+    auto const support = collision_world.authoritativeColumn(4U, 4U);
+    ASSERT_TRUE(support.has_value());
+    EXPECT_EQ(support->highest_solid_z, 385U);
+    EXPECT_EQ(collision_world.queryBlock({ .x = 4, .y = 4, .z = 386 }).block, shared::Block::Air);
+
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 386 });
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+    shared::Player const before = requiredValue(world.player(1U));
+
+    for (uint32_t tick = 0U; tick < HORIZONTAL_TICKS; ++tick) {
+        ASSERT_TRUE(world.movePlayer(1U, {
+            .x = 127U,
+            .y = 0U,
+            .z = static_cast<uint8_t>(-127),
+            .accelerated = false,
+            .speedup = 5U,
+        }, shared::TICK)) << "horizontal input stopped while Shift-style descent met flat ground at tick " << tick;
+        EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), 386.0);
+    }
+
+    shared::Player const after = requiredValue(world.player(1U));
+    EXPECT_NEAR(
+        shared::playerPositionX(after) - shared::playerPositionX(before),
+        EXPECTED_HORIZONTAL_DELTA,
+        1e-9
+    );
+}
+
+TEST(FlightWorldTest, DescendingFlatGroundRetainsBothHorizontalComponents)
+{
+    for (auto const heading : std::array{std::array{127, 127}, std::array{127, -63},
+             std::array{-63, 127}, std::array{-127, -127}}) {
+        for (uint16_t const subcell : {uint16_t{0}, uint16_t{7'500}}) {
+            SCOPED_TRACE(::testing::Message() << heading[0] << "," << heading[1] << ":" << subcell);
+            shared::SparseWorld collision_world;
+            ASSERT_TRUE(publishMovementTestSurface(collision_world, false));
+            shared::World world{shared::WorldMode::Flight};
+            world.spawnPlayer(1U, '@', {.x = 8, .y = 8, .z = 386,
+                .x_subcell = subcell, .y_subcell = subcell});
+            world.setCollisionWorld(&collision_world);
+            ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+            auto const before = requiredValue(world.player(1U));
+            for (uint32_t tick = 0U; tick < 5U; ++tick) {
+                ASSERT_TRUE(world.movePlayer(1U, {.x = static_cast<uint8_t>(heading[0]),
+                    .y = static_cast<uint8_t>(heading[1]), .z = static_cast<uint8_t>(-127)}));
+                auto const after = requiredValue(world.player(1U));
+                EXPECT_DOUBLE_EQ(shared::playerPositionZ(after), 386.0);
+                EXPECT_GT((shared::playerPositionX(after) - shared::playerPositionX(before)) * heading[0], 0.0);
+                EXPECT_GT((shared::playerPositionY(after) - shared::playerPositionY(before)) * heading[1], 0.0);
+            }
+        }
+    }
+}
+
+TEST(FlightWorldTest, CancelledVerticalInputKeepsDiagonalGroundMovement)
+{
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(publishMovementTestSurface(collision_world, false));
+    shared::World world{shared::WorldMode::Flight};
+    world.spawnPlayer(1U, '@', {.x = 4, .y = 4, .z = 386});
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+    // Space and Shift cancel before transmission, producing zero vertical input.
+    ASSERT_TRUE(world.movePlayer(1U, {.x = 127U, .y = 127U, .z = 0U}));
+    auto const after = requiredValue(world.player(1U));
+    EXPECT_GT(shared::playerPositionX(after), 4.0);
+    EXPECT_GT(shared::playerPositionY(after), 4.0);
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(after), 386.0);
+}
+
+TEST(FlightWorldTest, DescendingGroundSlideRetainsWallCollision)
+{
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(publishMovementTestSurface(collision_world, false));
+    for (int64_t y = 0; y < 16; ++y) {
+        ASSERT_TRUE(collision_world.setBlock({.x = 6, .y = y, .z = 386}, shared::Block::Stone));
+        ASSERT_TRUE(collision_world.setBlock({.x = 6, .y = y, .z = 387}, shared::Block::Stone));
+    }
+    shared::World world{shared::WorldMode::Flight};
+    world.spawnPlayer(1U, '@', {.x = 4, .y = 4, .z = 386});
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+    ASSERT_TRUE(world.movePlayer(1U, {.x = 127U, .y = 127U,
+        .z = static_cast<uint8_t>(-127), .accelerated = true, .speedup = 5U}));
+    auto const after = requiredValue(world.player(1U));
+    EXPECT_LT(shared::playerPositionX(after), 6.0);
+    EXPECT_GT(shared::playerPositionY(after), 4.0);
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(after), 386.0);
+}
+
+TEST(FlightWorldTest, DescendingGroundSlideDoesNotBypassDiagonalPlayer)
+{
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(publishMovementTestSurface(collision_world, false));
+    shared::World world{shared::WorldMode::Flight};
+    world.spawnPlayer(1U, '@', {.x = 4, .y = 4, .z = 386});
+    world.spawnPlayer(2U, '#', {.x = 5, .y = 5, .z = 386});
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+    ASSERT_TRUE(world.movePlayer(1U, {.x = 127U, .y = 127U,
+        .z = static_cast<uint8_t>(-127), .accelerated = true, .speedup = 5U}));
+    auto const after = requiredValue(world.player(1U));
+    EXPECT_TRUE(shared::playerPositionX(after) == 4.0 || shared::playerPositionY(after) == 4.0);
+}
+
+TEST(FlightWorldTest, OneBlockStepNeedsFlightLiftOrGroundedJump)
+{
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(publishMovementTestSurface(collision_world, true));
+    auto const lower_support = collision_world.authoritativeColumn(4, 4);
+    auto const raised_support = collision_world.authoritativeColumn(6, 4);
+    ASSERT_TRUE(lower_support.has_value());
+    ASSERT_TRUE(raised_support.has_value());
+    EXPECT_EQ(lower_support->highest_solid_z, 385U);
+    EXPECT_EQ(raised_support->highest_solid_z, 386U);
+    EXPECT_EQ(collision_world.queryBlock({ .x = 6, .y = 4, .z = 386 }).block, shared::Block::Grass);
+
+    shared::World flight_world{ shared::WorldMode::Flight };
+    flight_world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 386 });
+    flight_world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(flight_world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+    for (uint32_t tick = 0U; tick < 12U; ++tick) {
+        if (!flight_world.movePlayer(1U, { .x = 127U, .y = 0U, .z = 0U }, shared::TICK)) {
+            break;
+        }
+    }
+    shared::Player const flight_blocked = requiredValue(flight_world.player(1U));
+    double const flight_blocked_x = shared::playerPositionX(flight_blocked);
+    EXPECT_GT(flight_blocked_x, 4.0);
+    EXPECT_LT(flight_blocked_x, 6.0);
+    EXPECT_FALSE(flight_world.movePlayer(1U, { .x = 127U, .y = 0U, .z = 0U }, shared::TICK));
+    ASSERT_TRUE(flight_world.movePlayer(1U, { .x = 0U, .y = 0U, .z = 127U }, shared::TICK));
+    ASSERT_TRUE(flight_world.movePlayer(1U, { .x = 0U, .y = 0U, .z = 127U }, shared::TICK));
+    ASSERT_TRUE(flight_world.movePlayer(1U, { .x = 127U, .y = 0U, .z = 0U }, shared::TICK));
+    EXPECT_GT(shared::playerPositionX(requiredValue(flight_world.player(1U))), flight_blocked_x);
+
+    shared::World grounded_world{ shared::WorldMode::Flight };
+    grounded_world.spawnPlayer(2U, '#', { .x = 4, .y = 4, .z = 386 });
+    grounded_world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(grounded_world.setPlayerMovementCapabilities(2U, {}));
+    for (uint32_t tick = 0U; tick < 12U; ++tick) {
+        if (!grounded_world.movePlayer(2U, { .x = 127U, .y = 0U, .z = 0U }, shared::TICK)) {
+            break;
+        }
+    }
+    shared::Player const grounded_blocked = requiredValue(grounded_world.player(2U));
+    double const grounded_blocked_x = shared::playerPositionX(grounded_blocked);
+    EXPECT_GT(grounded_blocked_x, 4.0);
+    EXPECT_LT(grounded_blocked_x, 6.0);
+    EXPECT_FALSE(grounded_world.movePlayer(2U, { .x = 127U, .y = 0U, .z = 0U }, shared::TICK));
+    ASSERT_TRUE(grounded_world.movePlayer(2U, { .x = 0U, .y = 0U, .z = 127U }, shared::TICK));
+    ASSERT_TRUE(grounded_world.movePlayer(2U, {}, shared::TICK));
+    ASSERT_TRUE(grounded_world.movePlayer(2U, { .x = 127U, .y = 0U, .z = 0U }, shared::TICK));
+    EXPECT_GT(shared::playerPositionX(requiredValue(grounded_world.player(2U))), grounded_blocked_x);
+}
+
+TEST(FlightWorldTest, DiagonalFlightKeepsTheClearAxisCandidateHeightAcrossAStep)
+{
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(publishDiagonalStepWall(collision_world));
+    EXPECT_EQ(collision_world.queryBlock({ .x = 6, .y = 4, .z = 386 }).block, shared::Block::Stone);
+    EXPECT_EQ(collision_world.queryBlock({ .x = 5, .y = 6, .z = 387 }).block, shared::Block::Stone);
+
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', {
+        .x = 5,
+        .y = 4,
+        .z = 386,
+        .y_subcell = 9'000U,
+    });
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+
+    ASSERT_TRUE(world.movePlayer(1U, {
+        .x = 35U,
+        .y = 127U,
+        .z = 127U,
+        .accelerated = true,
+        .speedup = 5U,
+    }));
+
+    shared::Player const moved = requiredValue(world.player(1U));
+    EXPECT_GT(shared::playerPositionX(moved), 5.375);
+    EXPECT_DOUBLE_EQ(shared::playerPositionY(moved), 4.9);
+    EXPECT_GE(shared::playerPositionZ(moved), 387.0);
+}
+
+TEST(FlightWorldTest, DiagonalFallbackSamplesVerticalTravelBeforePassingACeiling)
+{
+    static constexpr std::array<int32_t, 2U> EMPTY_CHUNK_ZS{ 7, 8 };
+    static constexpr double CEILING_ENTRY_X = 6.0
+        - static_cast<double>(shared::World::PLAYER_WIDTH_SUBCELLS) / shared::SUBCELLS_PER_CELL;
+
+    shared::SparseWorld collision_world;
+    shared::Chunk::Blocks lower_chunk;
+    lower_chunk.fill(shared::Block::Air);
+    lower_chunk[6U * shared::Chunk::FACE_BLOCK_COUNT + 6U * shared::Chunk::SIDE_LENGTH + 4U]
+        = shared::Block::Stone;
+    lower_chunk[9U * shared::Chunk::FACE_BLOCK_COUNT + 4U * shared::Chunk::SIDE_LENGTH + 6U]
+        = shared::Block::Stone;
+    ASSERT_TRUE(collision_world.publishMaterializedChunk(
+        shared::Chunk{ { .x = 0, .y = 0, .z = 6 }, lower_chunk },
+        collision_world.options().revision,
+        collision_world.options().seed
+    ));
+    shared::Chunk::Blocks empty_chunk;
+    empty_chunk.fill(shared::Block::Air);
+    for (int32_t const chunk_z : EMPTY_CHUNK_ZS) {
+        ASSERT_TRUE(collision_world.publishMaterializedChunk(
+            shared::Chunk{ { .x = 0, .y = 0, .z = chunk_z }, empty_chunk },
+            collision_world.options().revision,
+            collision_world.options().seed
+        ));
+    }
+    EXPECT_EQ(collision_world.queryBlock({ .x = 4, .y = 6, .z = 102 }).block, shared::Block::Stone);
+    EXPECT_EQ(collision_world.queryBlock({ .x = 6, .y = 4, .z = 105 }).block, shared::Block::Stone);
+
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 100 });
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+
+    ASSERT_TRUE(world.movePlayer(1U, {
+        .x = 30U,
+        .y = 127U,
+        .z = 127U,
+        .accelerated = true,
+        .speedup = 80U,
+    }));
+
+    shared::Player const moved = requiredValue(world.player(1U));
+    EXPECT_GT(shared::playerPositionX(moved), 4.25);
+    EXPECT_LT(shared::playerPositionX(moved), CEILING_ENTRY_X);
+    EXPECT_GT(shared::playerPositionZ(moved), 110.0);
 }
 
 TEST(FlightWorldTest, NonFlightMovementUsesFlightWorldCoordinates)

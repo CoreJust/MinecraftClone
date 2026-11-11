@@ -1,0 +1,1804 @@
+{
+  "schema": 1,
+  "status": "planning-only",
+  "recorded_date": "2026-10-23",
+  "task": "MC-AI-0524",
+  "s2_task": "MC-AI-0483",
+  "classification_counts": {
+    "planned_s2_prerequisite": 7,
+    "confirmed_issue_or_documentation_gap": 17,
+    "architectural_constraint_or_measurement_gap": 4
+  },
+  "aliases": {
+    "ARC-004": "GPU-03"
+  },
+  "source": {
+    "repository": "https://github.com/CoreJust/MinecraftClone.git",
+    "head": "7b3f89e1f118fa3013c403f53658ebe92be4eb07",
+    "branch": "codex/ai-s1-release-reconcile",
+    "working_source_manifest_sha256": "ee51ffbf382740c701b3226bf9c8fda385dd6668456b757bec8eef4689b93307",
+    "reviewed_overlay_manifest_sha256": "77174f6dcc4680dc106fc69b6e2455d9c4f7e14c78c5e6ae86191aa65fb08cac",
+    "reviewed_test_delta_cutoff_utc": "2026-10-23T14:13:52.960724+00:00",
+    "limits": "No product tests or runtime benchmarks ran. Later test-only cleanup was excluded; production/docs/scripts/config were rechecked at seal. Reconcile against final S1 before implementation.",
+    "corelang_revision": "23f81441c10a44896b87865a9b8ae7d4b51687db",
+    "original_register_sha256": "17b48f6bbaefdde66e6e79914c40299d827f9d19dfbd9a2d36f42911b45e80b0"
+  },
+  "findings": [
+    {
+      "id": "SIM-001",
+      "severity": "P2",
+      "category": "authoritative_world_state",
+      "type": "known_s2_prerequisite",
+      "title": "Persist voxel edits independently of resident chunks",
+      "evidence": "setBlock mutates the resident Chunk and records/pins a dense override only when an authoritative surface exists. Eviction preserves a changed resident only with a nonzero authoritative baseline hash; ensureChunk sets that baseline only for profile-derived chunks. Without a profile, rematerialization regenerates the base. SparseWorldOptions default is 128; direct test fixtures may override it (one uses 2). The normal prepared server sets max_resident_chunks to MAX_FOUR_PLAYER_MATERIALIZED_INTEREST_CHUNK_KEYS = 1,024 chunks per client \u00d7 four (4,096 aggregate). Thus pinned edits can exhaust the configured finite cache, but normal production does not stop at 128.",
+      "trigger": "S2 edits before profile publication or edits more distinct chunks than the dense cache can retain.",
+      "consequence": "Edits may disappear after eviction/rematerialization, or pinned chunks may prevent terrain admission once the actually configured resident cap is consumed. The 128 value is only SparseWorldOptions default/direct-world default, not the prepared-server cap; normal server capacity is 4,096 aggregate. This is a documented S2 constraint, not a new S1 regression; S1 has no player-edit flow.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Use a normalized sparse cell override store including Air removals and base-equal writes; resolve it in queries, generated chunks, collision, summaries, and meshing. Keep dense chunks evictable and reject before mutation if authoritative state cannot be retained.",
+      "acceptance": "Edit before profile publication and verify persistence after profile arrival and eviction/rematerialization. Exceed whichever max_resident_chunks value the fixture or prepared server actually configures (use a small explicit cap for unit coverage and the normal cap for integration coverage); include Air and base-equal writes and verify queries, collision, and mesh inputs.",
+      "design_reference": "docs/ai/decisions/earlydev_0_1_1_s2_world.md:13-21",
+      "classification": "planned_s2_prerequisite",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W2"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/SparseWorld.cpp",
+          "start_line": 167,
+          "end_line": 212
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/SparseWorld.cpp",
+          "start_line": 216,
+          "end_line": 282
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/SparseWorld.cpp",
+          "start_line": 773,
+          "end_line": 796
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/world/SparseWorld.hpp",
+          "start_line": 97,
+          "end_line": 104
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/server/GameServer.cpp",
+          "start_line": 1298,
+          "end_line": 1304
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/world/WorldCoverage.hpp",
+          "start_line": 39,
+          "end_line": 42
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "tests/core/sparse_world_tests.cpp",
+          "start_line": 867,
+          "end_line": 872
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/code/GENERATION.md",
+          "start_line": 83,
+          "end_line": 85
+        }
+      ]
+    },
+    {
+      "id": "SIM-002",
+      "severity": "P2",
+      "category": "protocol_replication",
+      "type": "known_s2_prerequisite",
+      "title": "Replicate edits to clients that already hold a chunk",
+      "evidence": "Server chunk snapshots carry coordinate, content hash and material data without edit revisions; there is no block-action request or live delta. GameClient skips active resident coordinates without comparing/replacing bytes. Pending same-coordinate chunks are accepted only when resident hash matches; mismatches are reported not-resident for retry.",
+      "trigger": "An S2 edit changes a chunk after clients already installed it.",
+      "consequence": "The current path cannot update resident client chunks, leaving stale block/collision state. This is planned S2 behavior, not an S1 regression.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Add typed server-validated actions, per-chunk from/to revision deltas, bounded gap buffering and atomic revision-watermarked snapshots; validate session/base identity and resync gaps within bounded transport budgets.",
+      "acceptance": "With two clients holding one chunk, verify identical query and collision results after an edit. Cover duplicate/stale/out-of-order and ABA transitions, gaps, snapshot races, re-entry, reconnect, malformed hints and queue pressure.",
+      "design_reference": "docs/ai/decisions/earlydev_0_1_1_s2_replication.md:5-19",
+      "classification": "planned_s2_prerequisite",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W4"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/net/Message.hpp",
+          "start_line": 142,
+          "end_line": 168
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/net/Message.hpp",
+          "start_line": 281,
+          "end_line": 300
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/net/Message.cpp",
+          "start_line": 477,
+          "end_line": 498
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/net/Message.cpp",
+          "start_line": 1368,
+          "end_line": 1393
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/server/GameServer.cpp",
+          "start_line": 2502,
+          "end_line": 2508
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/server/GameServer.cpp",
+          "start_line": 3263,
+          "end_line": 3280
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/GameClient.cpp",
+          "start_line": 1286,
+          "end_line": 1369
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/GameClient.cpp",
+          "start_line": 1433,
+          "end_line": 1458
+        }
+      ]
+    },
+    {
+      "id": "SIM-003",
+      "severity": "P2",
+      "category": "authoritative_coverage",
+      "type": "known_s2_prerequisite",
+      "title": "Edited columns need revisioned voxel coverage, not only a base profile",
+      "evidence": "The compact profile stores highest-solid height, one ground interval and top/ground materials; queryBlock uses it for nonresident cells. Duplicate profile publication only accepts matching surface values. There is no edited vertical-chunk manifest, so a base-only profile cannot prove complete voxel coverage after edits add holes, overhangs or new Z chunks.",
+      "trigger": "S2 claims complete edited-column coverage or derives authoritative map/top values from a base-only profile.",
+      "consequence": "Profile coverage may disagree with canonical voxels or omit edited vertical chunks. This is planned S2 work, not an S1 regression under the surface-only contract.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Bind a complete override-bearing vertical-chunk manifest and required revisions to immutable base identity and a manifest watermark; keep columns partial/unknown until required chunks and deltas are installed.",
+      "acceptance": "Edit into a new Z chunk and keep complete coverage false until its revision arrives. Compare holes, overhangs and map/top summaries to canonical queries; accept current manifests and reject stale/mismatched identities.",
+      "design_reference": "docs/ai/decisions/earlydev_0_1_1_s2_replication.md:21-27",
+      "classification": "planned_s2_prerequisite",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W4"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/world/SparseWorld.hpp",
+          "start_line": 123,
+          "end_line": 160
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/SparseWorld.cpp",
+          "start_line": 318,
+          "end_line": 348
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/SparseWorld.cpp",
+          "start_line": 876,
+          "end_line": 923
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/GameClient.cpp",
+          "start_line": 1229,
+          "end_line": 1283
+        }
+      ]
+    },
+    {
+      "id": "SIM-004",
+      "severity": "P2",
+      "category": "permissions_and_modes",
+      "type": "known_s2_prerequisite",
+      "title": "Keep game modes and action rights separate from movement capabilities",
+      "evidence": "WorldMode is Flat versus Flight; MovementCapabilities contains Flight and CollisionBypass. GameServer consumes only minecraft:flight and minecraft:collision-bypass, while ClientInput carries movement and capability cycling. The generic policy registry is extensible; the gap is in current server integration.",
+      "trigger": "S2 needs Spectator, Creative and Survival behavior, break/place filters or mode authorization.",
+      "consequence": "Current movement bits cannot express action rights or separate topology from game mode. This is a planned S2 prerequisite, not an S1 regression.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Add separate authoritative game mode and action/mode capabilities, evaluate requests server-side, and apply transitions atomically with hard restrictions.",
+      "acceptance": "Verify Spectator cannot edit; Creative can break bedrock and retains collision; Survival cannot fly or break bedrock; filters are independent with empty-whitelist deny-all and empty-blacklist allow-all. Test hard vetoes, unauthorized requests and unsafe-transition rollback.",
+      "design_reference": "docs/ai/decisions/earlydev_0_1_1_s2.md:24-44,80-88",
+      "classification": "planned_s2_prerequisite",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W1",
+        "W3"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/server/GameServer.cpp",
+          "start_line": 844,
+          "end_line": 899
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/server/GameServer.cpp",
+          "start_line": 3029,
+          "end_line": 3070
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/server/GameServer.cpp",
+          "start_line": 3312,
+          "end_line": 3350
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/server/GameServer.cpp",
+          "start_line": 3389,
+          "end_line": 3435
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/world/World.hpp",
+          "start_line": 43,
+          "end_line": 74
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/world/World.hpp",
+          "start_line": 124,
+          "end_line": 145
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/net/Message.hpp",
+          "start_line": 206,
+          "end_line": 209
+        }
+      ]
+    },
+    {
+      "id": "TER-01",
+      "severity": "P2",
+      "category": "shared_world_performance_allocations",
+      "type": "confirmed_hotspot_unbenchmarked",
+      "title": "One dense edit makes every column in its profile tile rebuild and hash 1,024 blocks per read",
+      "evidence": "authoritativeColumn uses a 16x16-tile dense-section mask; whenever any section is changed or marked as an override, it allocates std::array<Block, 1024>, calls queryBlock at every z, then hashes every dense block. It does not check whether this requested x/y column was edited. captureTerrainLodColumn probes the center profile once, then requests 320 columns in its 18x18 window (four corners skipped). With one edited section in the center profile tile, the probe and 256 interior positions take the dense path; the 64 border positions belong to adjacent profile tiles. One capture therefore statically performs 263168 block queries, 257 separate 1-KiB array allocations, and 2105344 dense-block byte-mix iterations. The 256 arrays stored in TerrainLodColumnInput remain retained by TerrainLodRuntime::m_columns until stale or outside the interest window. Collision also reads authoritativeColumn for footprint cells. No runtime impact was measured.",
+      "trigger_and_consequence": "After one dense section in a published profile is edited, far-LOD captures rebuild full columns even for untouched x/y positions and retain those dense arrays; repeated captures after authority revisions and collision reads repeat the work. This can consume the deadline-bounded LOD capture budget and add allocator churn and retained memory during S1 edits and the planned S2 edit/map flow.",
+      "confidence": "high_static_work_count_runtime_cost_unmeasured",
+      "proposed_s2_remedy": "Represent accepted edits in the planned sparse coordinate-addressed overlay and derive overlay-aware column summaries from edits that intersect the requested x/y. Materialize dense per-z values only for an edited column when exact per-z access is required; consider revision-keyed derived-column caching if repeat-read measurements justify it. Keep far-LOD capture on compact overlay-aware summaries.",
+      "acceptance": "With one changed voxel in a tile, compare edited and untouched columns against queryBlock at all 1024 z values and verify collision and LOD height/material agreement. Instrument block queries, allocations, and retained bytes during repeated authoritativeColumn reads and one 18x18 LOD capture: untouched columns should not scan all z or allocate/retain dense arrays; touched-column work should be bounded. Benchmark repeated collision and LOD capture before and after with an identical fixed terrain identity and edit.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W0",
+        "W2"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/SparseWorld.cpp",
+          "start_line": 1005,
+          "end_line": 1025
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/SparseWorld.cpp",
+          "start_line": 1028,
+          "end_line": 1083
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/TerrainLodPresentation.cpp",
+          "start_line": 250,
+          "end_line": 295
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/TerrainLodRuntime.cpp",
+          "start_line": 197,
+          "end_line": 239
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/World.cpp",
+          "start_line": 91,
+          "end_line": 117
+        }
+      ]
+    },
+    {
+      "id": "CPU-001",
+      "severity": "P2",
+      "category": "concurrency_capacity",
+      "type": "architectural_constraint",
+      "title": "Local client and server pools can oversubscribe available processors",
+      "evidence": "Prepared server pool size is min(max(hardware_concurrency - 1, 1), 8); desktop client mesh pool clamps the hint to 2..8. Local server runs on a jthread while client/game loop uses caller thread. Configured totals are 17 threads on 8 logical processors (7+8 pools and 2 owner loops) and 18 on 12 (8+8+2). Idle workers block, so totals do not establish simultaneous runnable counts or utilization. Local client/server share a machine without a combined CPU budget; remote endpoints have separate budgets. Preparation and scene jobs can add workers conditionally.",
+      "trigger": "Local server height-tile and client preview-mesh work are both busy.",
+      "consequence": "Queues may contend for CPU and increase scheduling latency. The client cap stays 8 from 8 to 12 processors, and server pool grows only from 7 to 8. This is a scaling constraint, not proof of unusable cores.",
+      "confidence": "high for configured counts; low for runtime utilization",
+      "proposed_s2_remedy": "Measure combined local load first. If responsiveness degrades, add a shared local CPU budget or tune pool sizes from queue latency and throughput while preserving bounded queues and priority behavior.",
+      "acceptance": "On 8- and 12-logical-processor hosts, measure runnable workers, queue depth/wait, CPU time and fresh-frame intervals in client-only, server-only and combined local workloads. Compare current caps with a bounded shared-budget variant and report remote runs separately.",
+      "classification": "architectural_constraint_or_measurement_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W0"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/server/GameServer.cpp",
+          "start_line": 1139,
+          "end_line": 1147
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/server/GameServer.cpp",
+          "start_line": 1305,
+          "end_line": 1309
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/PlayerClient.cpp",
+          "start_line": 758,
+          "end_line": 768
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/main.cpp",
+          "start_line": 337,
+          "end_line": 375
+        }
+      ]
+    },
+    {
+      "id": "CPU-002",
+      "severity": "P2",
+      "category": "generation_cpu_and_allocations",
+      "type": "confirmed_extra_work_and_serial_architecture",
+      "title": "Atlas preparation is serial and emits unused progress snapshots",
+      "evidence": "WorldPreparation starts one jthread and serially prepares terrain plan then atlas. TerrainLodSource starts one worker; its default builder independently runs prepareAtlas then builds L0, duplicating atlas computation in a local game. Client-side atlas generation remains intentional for terrain LOD with a remote server. Inspected generation stages execute sequentially. makeSnapshot copies elevation; hydrology and climate stages copy full fields; publishStage constructs an immutable shared snapshot without checking whether a progress callback exists. Client TerrainLodSource calls prepareAtlas without a callback, so it still creates/copies progress snapshots.",
+      "trigger": "Initial terrain/profile preparation runs, including the no-progress client atlas path.",
+      "consequence": "Each atlas path is single-worker; local play repeats atlas computation across server and client, and the no-progress client path pays full-field snapshot allocations/copies. This may increase preparation latency and transient memory; effect is unmeasured.",
+      "confidence": "high for call path; low for duration",
+      "proposed_s2_remedy": "Skip snapshot construction when no callback exists, retaining it for progress consumers. Profile stage costs before parallelizing independent stages and preserve deterministic publication/cancellation.",
+      "acceptance": "Verify callback-present snapshots/progress unchanged and callback-absent preparation returns the same atlas without stage snapshots. Benchmark cold/warm preparation on 8/12 processors with wall/CPU time, peak allocation bytes and stage breakdown.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W0"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/server/WorldPreparation.cpp",
+          "start_line": 12,
+          "end_line": 38
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/server/WorldPreparation.cpp",
+          "start_line": 92,
+          "end_line": 124
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/TerrainLodSource.cpp",
+          "start_line": 42,
+          "end_line": 67
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/TerrainLodSource.cpp",
+          "start_line": 100,
+          "end_line": 112
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/generation/Generation.cpp",
+          "start_line": 49,
+          "end_line": 92
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/generation/Generation.cpp",
+          "start_line": 135,
+          "end_line": 385
+        }
+      ]
+    },
+    {
+      "id": "CPU-003",
+      "severity": "P2",
+      "category": "interactive_terrain_throughput",
+      "type": "conditional_capacity_risk",
+      "title": "Terrain LOD capture has a per-update cap, not a source-defined per-second rate",
+      "evidence": "PlayerClient::render calls TerrainLodRuntime::update once; connected GameClient loop calls render once per iteration and sleeps zero after successful presentation, with no fixed source-defined cadence. update attempts at most eight synchronous captures, can stop at deadline, and failed captures consume attempts. Relevant radius is 41 tiles; R40 spans 81x81 with one column of lead. One active scene-build future serializes scene construction; center movement marks dirty but does not cancel the active job. For an 81x81 viewport, conditional frontier arrival is 81*(|vx|+|vy|)/16 columns/s less shared x/y corner crossings. Base speed is 5.6 blocks/s, x30 is 168 blocks/s: cardinal demand ~850.5/s (~107 calls/s at eight successes); equal-axis diagonal ~1,193/s after aligned-corner correction (~150 calls/s). At hypothetical 120 calls/s, cap is 960/s. This is conditional; source does not establish 120 calls/s, and FPS is not update cadence.",
+      "trigger": "Sustained movement/turning with actual update calls and successful captures below route frontier arrival.",
+      "consequence": "Current/presented R40 coverage may lag under the conditional route/cadence combination. Historical failures are not attributed to this mechanism.",
+      "confidence": "high for cap/call coupling; medium for route estimate",
+      "proposed_s2_remedy": "Instrument update calls, captures/misses, deadline exits, current/presented sets, scene-build age and fresh frames across production routes. Change cap, budget or stale-scene cancellation only if measurements identify the limiting stage.",
+      "acceptance": "For required x15/x30 cardinal, diagonal, turns, reversal, wrap and higher-seek, record update calls/s separately from fresh frames/s; assert all 6,561 R40 columns current and presented on required updates and meet the 99% fresh-frame interval target, including stale-scene and deadline cases.",
+      "classification": "architectural_constraint_or_measurement_gap",
+      "coordinator_note": "Conditional rate estimate only. Update-call frequency is not fresh-frame frequency; no runtime root cause is attributed to this cap.",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W0",
+        "W5"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/TerrainLodRuntime.cpp",
+          "start_line": 216,
+          "end_line": 249
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/TerrainLodRuntime.cpp",
+          "start_line": 253,
+          "end_line": 291
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/include/client/TerrainLodRuntime.hpp",
+          "start_line": 68,
+          "end_line": 83
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/PlayerClient.cpp",
+          "start_line": 4325,
+          "end_line": 4331
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/PlayerClient.cpp",
+          "start_line": 4743,
+          "end_line": 4743
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/GameClient.cpp",
+          "start_line": 537,
+          "end_line": 575
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/world/World.hpp",
+          "start_line": 16,
+          "end_line": 18
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/world/World.hpp",
+          "start_line": 135,
+          "end_line": 135
+        }
+      ]
+    },
+    {
+      "id": "GPU-01",
+      "severity": "P2",
+      "category": "performance_observability",
+      "type": "s2_readiness_gap",
+      "title": "GPU timing cannot qualify whole-frame S2 rendering cost",
+      "evidence": "runtimeInfo() sets gpu_frame_duration to nullopt. The optional MC_DIAGNOSTIC_GPU_TIMESTAMPS path brackets terrain draws only and is disabled for MoltenVK because in-pass markers may be deferred. No utilization/counter stream is exposed.",
+      "trigger_and_consequence": "When S2 adds scene-color capture, composition, adaptive text, and map draws, current benchmark data cannot isolate their GPU cost. CPU timings and present cadence alone cannot distinguish GPU work from CPU submission or display pacing.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Add benchmark-only whole-frame and relevant pass timing where Vulkan timestamps are trustworthy. On MoltenVK, collect a platform GPU trace or explicitly report the GPU interval unavailable. Keep sample identity tied to acquired slot, submission, and fence completion; do not label timestamps as utilization.",
+      "acceptance": "Compare the same scene, device, extent, and camera for baseline, fixed HUD, adaptive HUD, and map rendering. Report CPU and GPU p50/p95/p99, scene-color target memory, and unsupported-path reason. Verify the interval includes scene, composite, map, and GUI work and is read only after the slot fence retires.",
+      "classification": "architectural_constraint_or_measurement_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W0",
+        "W6"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/include/client/render/VulkanRenderer.hpp",
+          "start_line": 151,
+          "end_line": 151
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/PresentationRenderer.cpp",
+          "start_line": 3087,
+          "end_line": 3123
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/PresentationRenderer.cpp",
+          "start_line": 1740,
+          "end_line": 1741
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/PresentationRenderer.cpp",
+          "start_line": 1827,
+          "end_line": 1828
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/PresentationRenderer.cpp",
+          "start_line": 4141,
+          "end_line": 4164
+        }
+      ]
+    },
+    {
+      "id": "GPU-02",
+      "severity": "P2",
+      "category": "s2_render_path_constraint",
+      "type": "s2_readiness_gap",
+      "title": "The GUI path has no same-frame scene-color input for adaptive HUD pixels",
+      "evidence": "The scene pass clears and writes the acquired swapchain image; the GUI pass loads and writes that same image. The text fragment shader emits packed glyph color and has no scene sampler; out_pixel_position is glyph-local.",
+      "trigger_and_consequence": "An S2 glyph or crosshair crossing alternating bright and dark terrain cannot select contrasting color independently for each covered pixel with the current path. This is an S2-07 boundary, not an S1 regression.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Render scene and target effects into a renderer-owned image for the acquired swapchain image, transition it to shader-read layout, composite to the presentation image, then draw GUI text. Retire targets and descriptors with the slot fence and preserve the linear offscreen-capture contract.",
+      "acceptance": "Capture a glyph and crosshair over alternating bright/dark scene pixels in one frame; verify per-pixel choice, fixed-color mode, coverage edges, overlap, resize/recreation, and no output self-sampling. Run installed shaders on desktop and Android and measure GPU/CPU and per-image memory cost.",
+      "classification": "planned_s2_prerequisite",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W6"
+      ],
+      "owner_tasks": [
+        "MC-AI-0484"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/PresentationRenderer.cpp",
+          "start_line": 3613,
+          "end_line": 3639
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/PresentationRenderer.cpp",
+          "start_line": 3863,
+          "end_line": 3915
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/shaders/text.vert",
+          "start_line": 34,
+          "end_line": 37
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/shaders/text.vert",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/shaders/text.frag",
+          "start_line": 113,
+          "end_line": 146
+        }
+      ]
+    },
+    {
+      "id": "GPU-03",
+      "severity": "P2",
+      "category": "s2_map_rendering_constraint",
+      "type": "s2_readiness_gap",
+      "title": "Map rendering is one full-screen image without viewport or crop commands",
+      "evidence": "The public API accepts one copied image and MapImageTexture owns one image/descriptor. recordMapImage() draws one full-screen triangle with viewport size, image size, and encoding only. map.vert covers the viewport and map.frag aspect-fits the complete image with letterboxing.",
+      "trigger_and_consequence": "The current primitive can show the S1 loading map but cannot place an S2 minimap over gameplay, draw pan/zoom source crops, or submit multiple independently sourced map images in one frame. These requirements are new S2 scope.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Add map draw values with immutable image revision, source crop, destination rectangle, scissor, and sampling mode. Preserve bounded staged uploads and per-frame-slot retirement for each stream.",
+      "acceptance": "Draw a local minimap and HUD over gameplay without changing pixels outside the destination rectangles; draw a full map with crop/zoom and wrapping; update two image streams while prior frame slots remain in flight; repeat after resize and check for stale images.",
+      "classification": "planned_s2_prerequisite",
+      "aliases": [
+        "ARC-004"
+      ],
+      "status": "planned",
+      "work_packages": [
+        "W7"
+      ],
+      "owner_tasks": [
+        "MC-AI-0515"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/include/client/render/VulkanRenderer.hpp",
+          "start_line": 247,
+          "end_line": 255
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/PresentationRenderer.cpp",
+          "start_line": 1028,
+          "end_line": 1068
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/PresentationRenderer.cpp",
+          "start_line": 3918,
+          "end_line": 3948
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/shaders/map.vert",
+          "start_line": 3,
+          "end_line": 10
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/shaders/map.frag",
+          "start_line": 18,
+          "end_line": 39
+        }
+      ]
+    },
+    {
+      "id": "CLI-01",
+      "severity": "P2",
+      "category": "Android input lifecycle",
+      "type": "confirmed code-path defect for a valid window-only lifecycle sequence; device occurrence unmeasured",
+      "title": "Surface replacement can replay stale Android keyboard actions",
+      "evidence": "TERM_WINDOW destroys window resources but only clears AndroidInput/touch pointers; it leaves m_ascend_input, m_descend_pressed and m_input_actions untouched. input() uses those fields to produce vertical direction, jump and cycle actions. INIT_WINDOW recreates resources on the same AndroidPlayerClient; AndroidMain constructs one instance for run(). NDK r27 native_app_glue independently sends TERM_WINDOW/INIT_WINDOW from native-window callbacks and LOST_FOCUS from a separate focus callback. Installed NDK r27.0.12077973 source at AndroidNDK@27.0.12077973/sources/android/native_app_glue/android_native_app_glue.c, SHA-256 36b26c94ae8a580d3550dfd3e320c1ebf304023fdcec4fe38336d06b2736b5b7: android_app_set_window 289-301, onWindowFocusChanged 400-403, onNativeWindowDestroyed 410-413, process_cmd 194-198.",
+      "trigger": "A vertical key/gamepad-button down while Playing; the physical key is released during native-window teardown without its matching key-up reaching the client; then APP_CMD_TERM_WINDOW followed by APP_CMD_INIT_WINDOW arrives while the activity remains resumed/focused and without LOST_FOCUS/PAUSE/STOP.",
+      "consequence": "The recreated surface resumes the same client with stale vertical control or one pending movement-capability cycle until a matching release or clearing lifecycle callback. A still-held physical key is not the defect. A focus-loss/pause sequence already clears these fields and is not the reported trigger.",
+      "confidence": "High for the source path; medium for device frequency. No runtime device reproduction was run.",
+      "proposed_s2_remedy": "Clear Android keyboard/gamepad held latches and queued edge actions on TERM_WINDOW through the same cancellation helper used for pause/focus loss, while retaining the connection and loading/session state. Apply the same cancellation boundary to future map/edit holds.",
+      "acceptance": "A deterministic Android client lifecycle test delivers ascend, descend and F6 downs, drops their matching key-up events during teardown, then dispatches TERM_WINDOW\u2192INIT_WINDOW while resumed/focused. The next submitted direction/action is neutral before a new press; release, LOST_FOCUS and PAUSE paths still clear state, and surface recreation retains the network session.",
+      "s2_consequence": "S2 held-break and map/edit controls need explicit cancellation on surface loss; a retained action must not continue an edit or movement after recreation. A stale F6 edge must not replay a capability change. Server policy still constrains which capabilities can be granted, but unexpected cycling can change effective controls.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W1",
+        "W5"
+      ],
+      "owner_tasks": [
+        "MC-AI-0516"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/android/AndroidPlayerClient.cpp",
+          "start_line": 645,
+          "end_line": 655
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/android/AndroidPlayerClient.cpp",
+          "start_line": 672,
+          "end_line": 705
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/android/AndroidPlayerClient.cpp",
+          "start_line": 998,
+          "end_line": 1021
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/android/AndroidPlayerClient.cpp",
+          "start_line": 93,
+          "end_line": 124
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/android/AndroidPlayerClient.cpp",
+          "start_line": 959,
+          "end_line": 996
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/android/AndroidMain.cpp",
+          "start_line": 164,
+          "end_line": 178
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/android/AndroidPlayerClient.hpp",
+          "start_line": 107,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "CLI-02",
+      "severity": "P2",
+      "category": "telemetry correctness / S2 readiness",
+      "type": "confirmed S2 metric-contract mismatch; runtime overstatement unmeasured",
+      "title": "Playing HUD FPS counts successful submissions, not completed fresh frames",
+      "evidence": "The renderer gives the HUD a Boolean from m_last_presented and DebugHud timestamps each true value. m_last_presented is set after PresentationContext::complete returns; ordinary Playing disables the distinct completion tracker unless benchmark capture requests it. The rendering guide says present IDs alone do not prove GPU completion and ordinary play leaves tracking off. DebugHud tests exercise the Boolean counter, not frame-fence completion. S2 explicitly requires completed fresh-frame FPS. The separate GameBenchmark path enables completion capture and confirms successful per-slot fence observations (GameBenchmark.cpp 2416-2427, 2640-2670, 3151-3168); this finding does not challenge that acceptance verifier.",
+      "trigger": "Ordinary gameplay with more than one submitted frame in flight, such as when GPU execution trails successful queue/presentation submission.",
+      "consequence": "The displayed FPS may reflect successful submission cadence rather than completed new frames. The discrepancy magnitude on supported devices is unmeasured, but this signal cannot satisfy the accepted S2 FPS definition.",
+      "confidence": "High for the metric source mismatch; unmeasured for user-visible magnitude.",
+      "proposed_s2_remedy": "Feed the HUD distinct completed frame identities and observation times, including swapchain generation, and count each completion once. If unavailable on a platform, preserve explicit unavailability rather than substituting submit cadence.",
+      "acceptance": "Defer completion fences while submitting multiple distinct frames. HUD FPS remains unchanged while they are pending and advances once per fence-confirmed frame; cover slot reuse, swapchain recreation and duplicate completion IDs. Preserve the existing fence-confirmed GameBenchmark verifier.",
+      "s2_consequence": "The gameplay telemetry contract and S2 moving-frame comparisons require completed fresh frames. A submission-only HUD value cannot be compared consistently with that acceptance metric.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W1",
+        "W5"
+      ],
+      "owner_tasks": [
+        "MC-AI-0516"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/PresentationRenderer.cpp",
+          "start_line": 2212,
+          "end_line": 2221
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/PresentationRenderer.cpp",
+          "start_line": 2317,
+          "end_line": 2351
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/PresentationRenderer.cpp",
+          "start_line": 2421,
+          "end_line": 2432
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/DebugHud.cpp",
+          "start_line": 105,
+          "end_line": 115
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/DebugHud.cpp",
+          "start_line": 138,
+          "end_line": 148
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/render/DebugHud.cpp",
+          "start_line": 370,
+          "end_line": 392
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/PlayerClient.cpp",
+          "start_line": 3891,
+          "end_line": 3908
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/ai/decisions/earlydev_0_1_1_s2_presentation.md",
+          "start_line": 54,
+          "end_line": 59
+        }
+      ]
+    },
+    {
+      "id": "ARC-001",
+      "severity": "P2",
+      "category": "architecture / cross-platform UI correctness",
+      "type": "confirmed behavior divergence; already identified in S2 planning",
+      "title": "Desktop and Android already interpret loading states differently",
+      "evidence": "Desktop handles Creating as Connecting. Android omits that case and formats default generation state; WorldLoadingStatus defaults to Tectonics with zero counts.",
+      "trigger": "A connection is being created before generation progress exists.",
+      "consequence": "Android displays false Tectonics 0/0 progress while desktop says it is connecting; users receive inconsistent state.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Share screen/readout semantics from the authoritative loading snapshot and keep platform layout/events in adapters, as specified by MC-AI-0516 and the accepted presentation design.",
+      "acceptance": "A deterministic loading-state matrix plus desktop/Android captures shows equivalent semantics for Creating, real stages, spawn preparation, ready/start, failure and cancellation; Creating never emits synthetic 0/0 or advances readiness.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W1",
+        "W5"
+      ],
+      "owner_tasks": [
+        "MC-AI-0516"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/PlayerClient.cpp",
+          "start_line": 3947,
+          "end_line": 3949
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/android/AndroidPlayerClient.cpp",
+          "start_line": 385,
+          "end_line": 410
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/include/client/WorldLoading.hpp",
+          "start_line": 65,
+          "end_line": 103
+        }
+      ]
+    },
+    {
+      "id": "ARC-002",
+      "severity": "P2",
+      "category": "architecture / cohesion",
+      "type": "confirmed architectural constraint, not a current runtime defect",
+      "title": "Keep new S2 policy out of the desktop frame-loop owner",
+      "evidence": "PlayerClient owns GLFW input, frame sequencing, LOD, loading layout, screenshot UI and benchmark/capture state; render combines loading presentation, screenshot prompts, input/camera, diagnostics, terrain scheduling and drawing.",
+      "trigger": "S2 targeting, map, mode, telemetry and hit-test state is added directly to PlayerClient or duplicated into AndroidPlayerClient.",
+      "consequence": "Screen changes become coupled to readiness, world reads, renderer mutation, frame scheduling and platform input, limiting isolated acceptance and increasing regression surface.",
+      "confidence": "high for current ownership; medium for future impact",
+      "proposed_s2_remedy": "Use the accepted immutable UiFrame and semantic-action boundaries; do not require a wholesale class rewrite or arbitrary file split.",
+      "acceptance": "Build the same UiFrame from identical client inputs on both platforms; rendering consumes it without GameClient/world queries or changes to authority/readiness; UI state transitions are testable without the Vulkan renderer.",
+      "classification": "architectural_constraint_or_measurement_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W1",
+        "W5"
+      ],
+      "owner_tasks": [
+        "MC-AI-0516"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/include/client/PlayerClient.hpp",
+          "start_line": 14,
+          "end_line": 24
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/include/client/PlayerClient.hpp",
+          "start_line": 559,
+          "end_line": 835
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/PlayerClient.cpp",
+          "start_line": 3888,
+          "end_line": 4068
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/PlayerClient.cpp",
+          "start_line": 4070,
+          "end_line": 4134
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/PlayerClient.cpp",
+          "start_line": 4333,
+          "end_line": 4501
+        }
+      ]
+    },
+    {
+      "id": "ARC-003",
+      "severity": "P2",
+      "category": "architecture / visual-data consistency",
+      "type": "confirmed S2 mismatch already documented",
+      "title": "Loading and accepted map designs use different water-ice rules",
+      "evidence": "The S1 loading raster tints ocean below -2 C, while the accepted S2 map mask uses water at/below -10 C and Snow-zone land.",
+      "trigger": "Loading imagery and the final/world map display the same model identity.",
+      "consequence": "Cells between the two thresholds appear frozen during loading and thaw on the final map, breaking S2's persistent shared-mask continuity.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Use one shared CPU compositor/palette and immutable identity-matched ice mask for generation and final map; keep this display proxy separate from terrain physics.",
+      "acceptance": "For one identity/epoch, shared ice membership and final pixels match between generation Arrival and world map; test threshold boundaries at -10 C and -2 C.",
+      "classification": "planned_s2_prerequisite",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W5",
+        "W7"
+      ],
+      "owner_tasks": [
+        "MC-AI-0515",
+        "MC-AI-0516"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/GenerationMapPresentation.cpp",
+          "start_line": 214,
+          "end_line": 229
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/client/PlayerClient.cpp",
+          "start_line": 3909,
+          "end_line": 3916
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/android/AndroidPlayerClient.cpp",
+          "start_line": 373,
+          "end_line": 382
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/ai/prototypes/s2-ui/world-map-view.js",
+          "start_line": 322,
+          "end_line": 343
+        }
+      ]
+    },
+    {
+      "id": "ENV-001",
+      "severity": "P3",
+      "category": "onboarding_documentation",
+      "type": "documentation_inconsistency",
+      "title": "The AI entrypoint still directs contributors to Snapshot 3",
+      "evidence": "The mandated AI entrypoint ends its initial-state section with an imperative to establish Snapshot 3. Current state selects MC-AI-0482 (EarlyDev 0.1.1:1, ED-011-S1) and the active MC-AI-0480 minor; MC-AI-0483 is later S2 backlog work. The entrypoint's ready-task command partly mitigates the contradiction but does not remove it.",
+      "trigger_and_consequence": "A new contributor following the repository's AI documentation entrypoint can be directed toward an obsolete snapshot baseline and unrelated acceptance scope, causing wasted or mis-scoped work.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Replace the Snapshot 3 imperative with current task-selection guidance or explicitly mark the paragraph as historical. Preserve historical branch creation details only as history.",
+      "acceptance": "Read the entrypoint against current.json and the selected task; new sessions must be directed to current task selection and no longer told to establish Snapshot 3. Run ai_docs.py check and ai_tasks.py check as integrity checks, while treating them as non-semantic validators.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W10"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/ai/README.md",
+          "start_line": 32,
+          "end_line": 36
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/ai/current.json",
+          "start_line": 1,
+          "end_line": 5
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/ai/tasks/MC-AI-0482.md",
+          "start_line": 1,
+          "end_line": 17
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/ai/tasks/MC-AI-0483.md",
+          "start_line": 7,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "ENV-002",
+      "severity": "P2",
+      "category": "reproducible_build_setup",
+      "type": "documentation_gap",
+      "title": "The documented desktop build omits required private dependency prefix setup",
+      "evidence": "The desktop guide runs ai_setup.py and the debug preset but provides no CoreCpp/CoreProject2026 install prefix or package-config paths. The base preset configures vcpkg only, while CMake requires both private packages and checks their provenance. The Android section shows a dependency prefix; CI separately fetches private sources using deploy keys and configures CMAKE_PREFIX_PATH, CoreCpp_DIR, and CoreProject2026_DIR.",
+      "trigger_and_consequence": "On a clean desktop setup with only the prerequisites stated in the guide, CMake has no documented way to locate the required private package configs. Configure fails at required find_package unless the exact packages were already installed in an ambient CMake search location and the developer independently knows how to select them, so the documented build is not reproducible from a fresh environment.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Document the supported desktop process for acquiring/building the locked private dependencies, installing them to a prefix, and setting CMAKE_PREFIX_PATH/CoreCpp_DIR/CoreProject2026_DIR. The guide may point to the existing helper and state the access it requires; do not imply vcpkg installs these packages.",
+      "acceptance": "From a clean desktop environment with no ambient CoreCpp/CoreProject2026 packages, follow the documented setup and authorized dependency-access steps. Verify CMake selects the revisions in dependencies.lock.json and rejects a deliberately mismatched package.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W10"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/BUILD.md",
+          "start_line": 3,
+          "end_line": 21
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/BUILD.md",
+          "start_line": 26,
+          "end_line": 47
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "CMakePresets.json",
+          "start_line": 5,
+          "end_line": 27
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "CMakeLists.txt",
+          "start_line": 59,
+          "end_line": 90
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": ".github/workflows/snapshot-artifacts.yml",
+          "start_line": 113,
+          "end_line": 176
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": ".github/workflows/snapshot-artifacts.yml",
+          "start_line": 286,
+          "end_line": 287
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": ".github/workflows/snapshot-artifacts.yml",
+          "start_line": 321,
+          "end_line": 322
+        }
+      ]
+    },
+    {
+      "id": "ENV-003",
+      "severity": "P3",
+      "category": "prerequisite_diagnostics",
+      "type": "preflight_exit_status_bug",
+      "title": "ai_setup.py exits successfully when the required vcpkg root is missing",
+      "evidence": "doctor() prints whether VCPKG_ROOT is set but returns failure only for old Python or missing CMake/Ninja. The debug preset builds CMAKE_TOOLCHAIN_FILE from VCPKG_ROOT. The focused setup tests cover the doctor's read-only behavior but not its exit status when the required toolchain root is absent. A bounded invocation with VCPKG_ROOT unset printed 'VCPKG_ROOT: missing' and exited 0.",
+      "trigger_and_consequence": "A developer follows the documented preflight-then-configure sequence with VCPKG_ROOT unset; preflight passes and the configure command later fails because the preset points at a nonexistent toolchain path. This is a low-impact readiness/reporting gap; CMake still fails closed.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Return failure when the required VCPKG_ROOT is unset or lacks scripts/buildsystems/vcpkg.cmake, with focused tests. Alternatively, if doctor is informational, stop describing it as a prerequisite check and add a separate fail-fast check to the build sequence.",
+      "acceptance": "With CMake and Ninja available, test missing VCPKG_ROOT and an invalid root and require the documented preflight to fail; a valid pinned root should pass.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W10"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "script/ai_setup.py",
+          "start_line": 65,
+          "end_line": 72
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "CMakePresets.json",
+          "start_line": 9,
+          "end_line": 11
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "script/tests/test_ai_setup.py",
+          "start_line": 66,
+          "end_line": 82
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/ai/README.md",
+          "start_line": 19,
+          "end_line": 28
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/BUILD.md",
+          "start_line": 5,
+          "end_line": 10
+        }
+      ]
+    },
+    {
+      "id": "ENV-004",
+      "severity": "P3",
+      "category": "packaging_documentation",
+      "type": "stale_version_example",
+      "title": "Packaging examples label current S1 inputs as version 0.1.0:3",
+      "evidence": "All desktop and Android examples use --version 0.1.0:3 and 0.1.0-3 output names. Current source identity is EarlyDev 0.1.1:1. The optional source-identity workflow rejects a version that does not match ProjectInfo.hpp, but direct package_snapshot.py writes the caller-supplied version into the desktop manifest or Android evidence.",
+      "trigger_and_consequence": "A contributor copies a direct packaging example for the current S1 source and produces a package or evidence JSON labeled 0.1.0:3 even though its input binaries are from 0.1.1:1. The optional artifact workflow rejects this mismatch, but the documented direct packager path does not.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Replace the old literal with an unmistakable version placeholder or the current 0.1.1:1 value, and keep example output filenames synchronized. Explain that release packaging should consume the source-identity result.",
+      "acceptance": "Every packaging example uses a version derived from current source identity or a clearly marked placeholder; no current quickstart example labels this source 0.1.0:3. Preserve the workflow check that rejects stale versions.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W10"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/PACKAGING.md",
+          "start_line": 29,
+          "end_line": 37
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/PACKAGING.md",
+          "start_line": 50,
+          "end_line": 61
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/PACKAGING.md",
+          "start_line": 101,
+          "end_line": 107
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/ProjectInfo.hpp",
+          "start_line": 9,
+          "end_line": 18
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/ai/tasks/MC-AI-0482.md",
+          "start_line": 1,
+          "end_line": 17
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "script/ci/build_snapshot.py",
+          "start_line": 144,
+          "end_line": 158
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "script/package_snapshot.py",
+          "start_line": 462,
+          "end_line": 468
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "script/package_snapshot.py",
+          "start_line": 639,
+          "end_line": 653
+        }
+      ]
+    },
+    {
+      "id": "API-001",
+      "severity": "P2",
+      "category": "documentation correctness",
+      "type": "confirmed documentation defect",
+      "title": "Reference contradicts sparse-profile support",
+      "evidence": "The reference introductory text lists flight3d-v1 and sparse-world-v1, but the global instruction at line 16 says flight3d-v1 is mandatory. The implementation accepts both profile names and registers the sparse-world calls for the 0.1.5 source frontend.",
+      "trigger_and_consequence": "A docs reader or S2 tool applies the line-16 restriction and rejects sparse-world scripts that the implementation and following example support.",
+      "confidence": "high",
+      "proposed_s2_remedy": "State both profile alternatives and scope each profile's calls in one reference table.",
+      "acceptance": "A minimal script for each profile passes parser validation, and the reference has no flight-only global requirement.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W9"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/scripting/REFERENCE.md",
+          "start_line": 3,
+          "end_line": 5
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/scripting/REFERENCE.md",
+          "start_line": 16,
+          "end_line": 16
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/scenario/CoreLangScenario.cpp",
+          "start_line": 28,
+          "end_line": 31
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/scenario/CoreLangScenario.cpp",
+          "start_line": 320,
+          "end_line": 329
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/scenario/CoreLangScenario.cpp",
+          "start_line": 803,
+          "end_line": 812
+        }
+      ]
+    },
+    {
+      "id": "API-002",
+      "severity": "P2",
+      "category": "documentation correctness / input contract",
+      "type": "confirmed implementation-documentation mismatch",
+      "title": "playerXYZ position bound is not enforced",
+      "evidence": "The docs promise x/y/z positions in -64..64. The CoreLang collector validates those fields as i32 and applies no positional range. Later Flight spawn validation constrains z to world bounds but does not enforce -64..64 or bound x/y to that interval.",
+      "trigger_and_consequence": "A script with spawn coordinates outside the documented interval passes this API's position validation, leaving users with an incorrect expectation about rejection and coordinate units.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Document actual accepted coordinate types, units and downstream world checks. Do not introduce a -64..64 restriction solely to preserve inaccurate prose.",
+      "acceptance": "Test x, y, and z just inside and outside the chosen bounds through parseScenarioSource and scenario admission; document units and the rejection location.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "coordinator_note": "Document actual accepted coordinate types, units and downstream world checks. Do not add a new -64..64 limit solely to preserve an inaccurate guide.",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W9"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/scripting/REFERENCE.md",
+          "start_line": 34,
+          "end_line": 35
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/scenario/CoreLangScenario.cpp",
+          "start_line": 353,
+          "end_line": 403
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/server/GameServer.cpp",
+          "start_line": 2763,
+          "end_line": 2785
+        }
+      ]
+    },
+    {
+      "id": "API-003",
+      "severity": "P2",
+      "category": "documentation correctness / bounded-execution contract",
+      "type": "confirmed implementation-documentation mismatch",
+      "title": "Scenario accounting table omits calls charged to tick, operation, and evidence budgets",
+      "evidence": "The docs define total ticks as the sum of waits, but jump increments the same total-tick counter by one. The operation table omits movement-permission operations; the evidence table omits expectMovementPermissions and expectVerticalVelocity. Every appended operation shares one operation counter.",
+      "trigger_and_consequence": "A script near a configured budget is rejected earlier than the published table predicts; authors cannot determine the true cap from the guide.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Define total ticks as wait values plus one per jump and enumerate all charged operations/evidence calls or describe the counters by their collector semantics.",
+      "acceptance": "For each budget, a deterministic test succeeds exactly at the documented boundary and rejects the next charged item; docs and diagnostics use the same accounting.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W9"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/scripting/EXECUTION.md",
+          "start_line": 42,
+          "end_line": 45
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/scenario/CoreLangScenario.cpp",
+          "start_line": 448,
+          "end_line": 470
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/scenario/CoreLangScenario.cpp",
+          "start_line": 473,
+          "end_line": 512
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/scenario/CoreLangScenario.cpp",
+          "start_line": 543,
+          "end_line": 598
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/scenario/CoreLangScenario.cpp",
+          "start_line": 654,
+          "end_line": 697
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/scenario/CoreLangScenario.cpp",
+          "start_line": 720,
+          "end_line": 732
+        }
+      ]
+    },
+    {
+      "id": "API-004",
+      "severity": "P3",
+      "category": "documentation completeness / typed-input contract",
+      "type": "confirmed omission",
+      "title": "flightXYZ and phaseXYZ component limits are omitted",
+      "evidence": "flightXYZ and phaseXYZ share the input collector with moveXYZ and cameraInputXYZ; the collector rejects any of their three i8 components outside -1..1. The reference states this range only for moveXYZ and cameraInputXYZ.",
+      "trigger_and_consequence": "A script author may provide a value that appears unconstrained by the reference and receive a host validation failure.",
+      "confidence": "high",
+      "proposed_s2_remedy": "State the shared -1..1 component range for all four input calls.",
+      "acceptance": "Docs-facing contract tests cover -2, -1, 0, 1, and 2 independently for each input axis and agree with host rejection.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W9"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/scripting/REFERENCE.md",
+          "start_line": 24,
+          "end_line": 26
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/scenario/CoreLangScenario.cpp",
+          "start_line": 405,
+          "end_line": 445
+        }
+      ]
+    },
+    {
+      "id": "API-005",
+      "severity": "P2",
+      "category": "documentation completeness / S2 authority boundary",
+      "type": "confirmed API documentation gap",
+      "title": "Policy DSL host surface is not specified as a callable API",
+      "evidence": "The policy guide describes policy concepts and preflight bounds, but omits the registered function names and signatures: policyGroup, policyMember, policySelector, policyRule, and policyAssign. Numeric group discriminants, u8 boolean flags, ordering/materialization conditions, exact defaults, and stable diagnostic names remain implementation-only.",
+      "trigger_and_consequence": "S2 script authors cannot derive accepted policy syntax or exact limits and may encode unsupported kinds or assume capability values have universal units/ranges.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Add typed examples and a complete call/enum/flag/order/limit/error table; state that capability units and value ranges are defined by PolicyCapabilityRegistry. Keep S2 modes behind PolicyHost's generic registry/materialization boundary.",
+      "acceptance": "One positive and negative contract test per binding plus docs review against PolicyCapabilityRegistry and all PolicyDiagnosticCode names.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W9"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/code/POLICY.md",
+          "start_line": 1,
+          "end_line": 46
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/policy/CoreLangPolicy.cpp",
+          "start_line": 321,
+          "end_line": 368
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/policy/CoreLangPolicy.cpp",
+          "start_line": 429,
+          "end_line": 607
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/policy/Policy.hpp",
+          "start_line": 84,
+          "end_line": 150
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/policy/CoreLangPolicy.cpp",
+          "start_line": 1419,
+          "end_line": 1448
+        }
+      ]
+    },
+    {
+      "id": "API-006",
+      "severity": "P2",
+      "category": "documentation completeness / generation extensibility",
+      "type": "confirmed API documentation gap",
+      "title": "World loading and height-tile plan APIs lack callable contracts",
+      "evidence": "The reference names terrain_random, set_block, and publish but gives no CoreLang types, local-coordinate bounds, block-ID enum, seed rule, or callback cap. The scripting guide describes generation plan concepts without names/signatures or numeric enum mappings. The scenario catalog does not list height_tile.core or its three parameter getter exports.",
+      "trigger_and_consequence": "S2 work that changes generation or adds script-driven plans must reverse-engineer hidden API ordering, values, bounds, and parameter units from source, making the server/world boundary easy to misuse.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Publish separate typed contract tables for scripted-world loading and generation plans, including errors, defaults, limits, units (mark inferred units), optional entrypoint behavior, and packaged sources.",
+      "acceptance": "Each host binding and each invalid order/value has a docs-linked positive/negative fixture; source catalog lists canonical_world.core and height_tile.core.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W9"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/scripting/REFERENCE.md",
+          "start_line": 85,
+          "end_line": 90
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/scripting/README.md",
+          "start_line": 38,
+          "end_line": 49
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "scenarios/README.md",
+          "start_line": 23,
+          "end_line": 32
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/ScriptedWorld.cpp",
+          "start_line": 179,
+          "end_line": 198
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/WorldGeneration.cpp",
+          "start_line": 118,
+          "end_line": 149
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/WorldGeneration.cpp",
+          "start_line": 187,
+          "end_line": 339
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/WorldGeneration.cpp",
+          "start_line": 459,
+          "end_line": 504
+        }
+      ]
+    },
+    {
+      "id": "API-007",
+      "severity": "P3",
+      "category": "documentation correctness",
+      "type": "confirmed stale diagnostic text",
+      "title": "Scenario diagnostics still describe the old source version",
+      "evidence": "UnknownSourceHeader documentation says the expected version is quoted 0.1.2, while the parser requires the bare @version(0.1.5) header.",
+      "trigger_and_consequence": "A rejected source header sends the user toward a syntax/version that this parser does not accept, despite the other scripting pages documenting 0.1.5.",
+      "confidence": "high",
+      "proposed_s2_remedy": "Update the diagnostic's expected header from the parser's actual source contract.",
+      "acceptance": "A stale-version source produces the documented diagnostic and the guide names the accepted bare 0.1.5 header.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W9"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "docs/scripting/DIAGNOSTICS.md",
+          "start_line": 17,
+          "end_line": 17
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/scenario/CoreLangScenario.cpp",
+          "start_line": 1142,
+          "end_line": 1158
+        }
+      ]
+    },
+    {
+      "id": "API-008",
+      "severity": "P2",
+      "category": "bounded execution / availability contract",
+      "type": "confirmed unbounded execution path for caller-provided source",
+      "title": "Public world-script adapters execute without an instruction bound",
+      "evidence": "ScriptedWorld::load has source and host-callback caps but calls core::lang::compile and Runtime::execute without ExecutionLimits, a static instruction proof, or a cancellation hook. TerrainGenerator(script_source) likewise executes configure_generation and parameter getters directly, with only a 16-declaration-callback cap. The exact locked CoreLang RuntimeOptions has no instruction/fuel field; Runtime::execute creates and calls the export; the interpreter run loop continues while execution frames remain and only checks an external flush flag. The loader-local runtimes do not expose a handle for another caller to request flush.",
+      "trigger_and_consequence": "If caller-provided or editor-authored source contains an unbounded loop, these source-taking adapters have no instruction/time cap and the local runtime provides no external cancellation path. Packaged finite scripts are not affected; the public API contract remains unsafe for untrusted source.",
+      "confidence": "high",
+      "proposed_s2_remedy": "For untrusted or editor-authored source, require bounded static validation before execution and an explicit cancellation/deadline policy; otherwise enforce and document a trusted packaged-source-only boundary.",
+      "acceptance": "A nonterminating/over-budget script is rejected before execution by bounded static analysis or canceled within a deterministic deadline; alternatively prove and test that arbitrary callers cannot submit source to these loaders.",
+      "classification": "confirmed_issue_or_documentation_gap",
+      "coordinator_note": "The path is confirmed against the exact pinned engine; no nonterminating script was executed. Current packaged finite scripts mitigate ordinary gameplay exposure.",
+      "aliases": [],
+      "status": "planned",
+      "work_packages": [
+        "W9"
+      ],
+      "owner_tasks": [
+        "MC-AI-0483"
+      ],
+      "resolution_rule": "Revalidate against final S1. Fix confirmed gaps, or cite source-matched evidence that S1 already removed them; existing S2 prerequisites close through their original acceptance. Measurement constraints require a recorded benchmark/decision, not an assumed implementation change.",
+      "locations": [
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/ScriptedWorld.cpp",
+          "start_line": 420,
+          "end_line": 481
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/WorldGeneration.cpp",
+          "start_line": 459,
+          "end_line": 504
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/include/shared/world/ScriptedWorld.hpp",
+          "start_line": 28,
+          "end_line": 57
+        },
+        {
+          "repository": "CoreJust/MinecraftClone",
+          "revision": "working-source",
+          "file": "src/shared/world/WorldGeneration.cpp",
+          "start_line": 187,
+          "end_line": 217
+        },
+        {
+          "repository": "CoreJust/CoreProject2026",
+          "revision": "23f81441c10a44896b87865a9b8ae7d4b51687db",
+          "file": "include/core/lang/Runtime.hpp",
+          "start_line": 65,
+          "end_line": 72
+        },
+        {
+          "repository": "CoreJust/CoreProject2026",
+          "revision": "23f81441c10a44896b87865a9b8ae7d4b51687db",
+          "file": "src/lang/execution/interpreter/implementation/Runtime_003.inc",
+          "start_line": 688,
+          "end_line": 718
+        },
+        {
+          "repository": "CoreJust/CoreProject2026",
+          "revision": "23f81441c10a44896b87865a9b8ae7d4b51687db",
+          "file": "src/lang/execution/interpreter/implementation/Runtime_005.inc",
+          "start_line": 367,
+          "end_line": 394
+        }
+      ]
+    }
+  ]
+}

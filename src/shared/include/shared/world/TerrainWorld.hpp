@@ -10,9 +10,14 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <unordered_map>
+
+namespace generation {
+struct V10SurfaceSample;
+} // namespace generation
 
 namespace shared {
 
@@ -27,7 +32,7 @@ inline constexpr std::array<uint32_t, 5> TERRAIN_REGION_EXTENTS{
 inline constexpr uint32_t TERRAIN_REGION_NODE_SIDE_LENGTH = 65U;
 inline constexpr uint32_t TERRAIN_REGION_NODE_COUNT =
     TERRAIN_REGION_NODE_SIDE_LENGTH * TERRAIN_REGION_NODE_SIDE_LENGTH;
-inline constexpr uint32_t TERRAIN_CONFIGURATION_IDENTITY_MAX_BYTES = 320U;
+inline constexpr uint32_t TERRAIN_CONFIGURATION_IDENTITY_MAX_BYTES = 384U;
 
 struct TerrainIdentity final {
     uint32_t terrain_version = generation::TERRAIN_VERSION;
@@ -63,6 +68,10 @@ struct TerrainColumn {
     Block ground_material = Block::Dirt;
     uint16_t ground_first_z = 0U;
     uint16_t ground_end_z = 0U;
+    double source_l0_elevation_m = 0.0;
+    uint8_t source_biome_id = 255U;
+    bool source_native_coast_adjacent = false;
+    bool source_native_ocean = false;
 
     [[nodiscard]]
     Block materialAt(uint16_t z, uint32_t block_sea_level) const noexcept;
@@ -109,6 +118,9 @@ private:
     TerrainIdentity m_identity;
     std::shared_ptr<generation::GlobalAtlas const> m_atlas;
     std::shared_ptr<RegionalArtifact const> m_parent;
+    std::span<double const> m_v9_l0_elevation;
+    std::span<uint8_t const> m_v9_ocean_mask;
+    std::span<uint8_t const> m_v9_lake_mask;
     std::array<Node, TERRAIN_REGION_NODE_COUNT> m_nodes{};
     std::array<bool, TERRAIN_REGION_NODE_COUNT> m_node_ready{};
 };
@@ -158,6 +170,36 @@ public:
     [[nodiscard]]
     uint16_t sampleSurfaceHeight(uint32_t world_x, uint32_t world_y) const;
 
+    // Returns the generated V10 top block at the periodic integer column.
+    [[nodiscard]]
+    Block sampleV10TopMaterial(uint32_t world_x, uint32_t world_y) const;
+
+    // Classifies an annual mean sample from this V10 atlas at the same periodic block XY.
+    [[nodiscard]]
+    static Block sampleV10TopMaterial(
+        generation::GlobalAtlas const& atlas, uint32_t world_x, uint32_t world_y,
+        generation::V10SurfaceSample const& source
+    );
+
+    // V9 material classification shares the immutable native L0 fields used by its source query.
+    [[nodiscard]]
+    double sourceV9L0ElevationAt(uint32_t world_x, uint32_t world_y) const noexcept;
+
+    // V21 L0 queries share the approved local geometry and 0.34 source scale.
+    [[nodiscard]]
+    double sourceV21L0ElevationAt(uint32_t world_x, uint32_t world_y) const;
+
+    [[nodiscard]]
+    bool hasAdjacentV9OceanOrLake(uint32_t world_x, uint32_t world_y) const noexcept;
+
+    // True only when every integer column in this exact atlas cell has canonical water presence.
+    [[nodiscard]]
+    bool hasWaterPresenceThroughoutAtlasCell(
+        uint32_t origin_x,
+        uint32_t origin_y,
+        uint32_t extent
+    ) const noexcept;
+
     [[nodiscard]]
     std::shared_ptr<RegionalArtifact const> prepareRegion(
         TerrainRegionKey key,
@@ -202,6 +244,13 @@ public:
 
 private:
     [[nodiscard]]
+    SurfaceTile sampleSurfaceColumns(
+        RegionalArtifact const* leaf,
+        ChunkCoordinate coordinate,
+        std::stop_token const& cancellation
+    ) const;
+
+    [[nodiscard]]
     std::shared_ptr<RegionalArtifact const> buildRegion(
         TerrainRegionKey key,
         uint32_t level_index,
@@ -230,6 +279,9 @@ private:
 private:
     std::shared_ptr<generation::GlobalAtlas const> m_atlas;
     TerrainIdentity m_identity;
+    std::span<double const> m_v9_l0_elevation;
+    std::span<uint8_t const> m_v9_ocean_mask;
+    std::span<uint8_t const> m_v9_lake_mask;
     mutable std::mutex m_cache_mutex;
     mutable std::unordered_map<TerrainRegionKey, RegionCacheEntry, RegionKeyHash> m_region_cache;
     mutable std::list<TerrainRegionKey> m_region_lru;

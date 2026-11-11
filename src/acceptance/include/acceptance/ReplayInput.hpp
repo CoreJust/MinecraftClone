@@ -32,6 +32,7 @@ enum class GameBenchmarkWorkload : uint8_t {
     PermissionCollisionChurn,
     DiagnosticStationary,
     Speed200FullRadiusRecovery,
+    Speed200TurningMovement,
 };
 
 struct GameBenchmarkMovementRouteSample final {
@@ -65,6 +66,9 @@ shared::Direction gameBenchmarkDirection(GameBenchmarkWorkload workload, uint64_
 
 [[nodiscard]]
 shared::Direction gameBenchmarkDirection(GameBenchmarkMovementRouteSample const& route) noexcept;
+
+[[nodiscard]]
+GameBenchmarkMovementRouteSample gameBenchmarkSpeed200TurningRouteAt(std::chrono::nanoseconds elapsed) noexcept;
 
 [[nodiscard]]
 GameBenchmarkMovementRouteSample gameBenchmarkMovementRouteAt(std::chrono::nanoseconds elapsed) noexcept;

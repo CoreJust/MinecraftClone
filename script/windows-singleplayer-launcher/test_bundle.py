@@ -16,6 +16,16 @@ import build_windows_singleplayer as builder
 
 class SinglePlayerBundleTest(unittest.TestCase):
     def fixture(self, root):
+        self.project_root = root / "project"
+        hud = self.project_root / "src/client/render/shaders"
+        hud.mkdir(parents=True)
+        (self.project_root / "LICENSE").write_bytes(b"game license\n")
+        (hud / "DEBUG_HUD_ATTRIBUTION.md").write_bytes(b"HUD attribution\n")
+        (hud / "TAMSYN_LICENSE.txt").write_bytes(b"HUD font license\n")
+        for index, (source, _) in enumerate(builder.MODEL_NOTICE_FILES):
+            notice = self.project_root / source
+            notice.parent.mkdir(parents=True, exist_ok=True)
+            notice.write_bytes(f"vendor notice {index}\n".encode())
         runtime = root / "runtime"
         (runtime / "shaders").mkdir(parents=True)
         (runtime / "mc_main.exe").write_bytes(b"MZ-reviewed-game")
@@ -23,7 +33,7 @@ class SinglePlayerBundleTest(unittest.TestCase):
         for name in (
             "grid.mesh", "player.mesh", "grid.vert", "player.vert", "player.frag", "stone.vert",
             "stone_indexed_block.vert", "stone.frag", "stone_solid.frag", "sky.vert", "sky.frag",
-            "trivial.frag", "text.vert", "text.frag", "map.vert", "map.frag",
+            "trivial.frag", "text.vert", "text.frag", "adaptive_text.frag", "map.vert", "map.frag", "gui_vector.vert", "gui_vector.frag",
         ):
             (runtime / "shaders" / f"{name}.spv").write_bytes(struct.pack("<I", 0x07230203))
         assets = root / "assets"
@@ -34,6 +44,10 @@ class SinglePlayerBundleTest(unittest.TestCase):
         (scenarios / "game.core").write_text("reviewed scenario\n")
         return runtime, assets, scenarios
 
+    def collect(self, inputs):
+        with mock.patch.object(builder, "ROOT", self.project_root):
+            return builder.collect_entries(*inputs)
+
     def prepare(self, inputs, output):
         game_hash = hashlib.sha256((inputs[0] / "mc_main.exe").read_bytes()).hexdigest()
         arguments = [
@@ -43,6 +57,7 @@ class SinglePlayerBundleTest(unittest.TestCase):
             "--source-identity", "portable-reviewed-candidate", "--prepare-only",
         ]
         with (
+            mock.patch.object(builder, "ROOT", self.project_root),
             mock.patch.object(sys, "argv", arguments),
             contextlib.redirect_stdout(io.StringIO()),
             contextlib.redirect_stderr(io.StringIO()),
@@ -52,7 +67,7 @@ class SinglePlayerBundleTest(unittest.TestCase):
     def test_bundle_is_deterministic_and_retains_exact_paths_bytes_and_hashes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            entries = builder.collect_entries(*self.fixture(root))
+            entries = self.collect(self.fixture(root))
             first = builder.write_bundle(entries, root / "first.bin")
             second = builder.write_bundle(list(reversed(entries)), root / "second.bin")
             data = (root / "first.bin").read_bytes()
@@ -79,23 +94,44 @@ class SinglePlayerBundleTest(unittest.TestCase):
             self.assertEqual(decoded, {entry.name: entry.data for entry in entries})
             self.assertIn("assets/texture.png", decoded)
             self.assertIn("scenarios/game.core", decoded)
+            for source, destination in builder.MODEL_NOTICE_FILES:
+                self.assertEqual(decoded[destination], (self.project_root / source).read_bytes())
             self.assertEqual(first["maximum_build_extra_bytes"], len(data) * 3 + 4_194_304)
 
+    def test_model_vendor_notices_use_distinct_paths_and_preserve_source_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            entries = self.collect(self.fixture(Path(directory)))
+            by_name = {entry.name: entry.data for entry in entries}
+            expected = {destination for _, destination in builder.MODEL_NOTICE_FILES}
+            actual = {name for name in by_name if name.startswith("licenses/model/")}
+            self.assertEqual(actual, expected)
+            self.assertEqual(len(actual), len(builder.MODEL_NOTICE_FILES))
+            for source, destination in builder.MODEL_NOTICE_FILES:
+                self.assertEqual(by_name[destination], (self.project_root / source).read_bytes())
+
+    def test_missing_model_vendor_notice_prevents_bundle_creation(self):
+        for source, _ in builder.MODEL_NOTICE_FILES:
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as directory:
+                inputs = self.fixture(Path(directory))
+                (self.project_root / source).unlink()
+                with self.assertRaises(builder.packages.PackageError):
+                    self.collect(inputs)
+
     def test_missing_game_or_runtime_or_shader_cannot_be_silently_packaged(self):
-        for removed in ["mc_main.exe", "runtime.dll", "shaders/map.vert.spv"]:
+        for removed in ["mc_main.exe", "runtime.dll", "shaders/map.vert.spv", "shaders/adaptive_text.frag.spv"]:
             with self.subTest(removed=removed), tempfile.TemporaryDirectory() as directory:
                 inputs = self.fixture(Path(directory))
                 (inputs[0] / removed).unlink()
                 with self.assertRaises(ValueError):
-                    builder.collect_entries(*inputs)
+                    self.collect(inputs)
 
-    def test_renamed_required_shader_is_rejected_with_sixteen_valid_magic_files(self):
+    def test_renamed_required_shader_is_rejected_with_otherwise_valid_magic_files(self):
         with tempfile.TemporaryDirectory() as directory:
             inputs = self.fixture(Path(directory))
             shader = inputs[0] / "shaders/map.vert.spv"
             shader.rename(shader.with_name("unexpected.vert.spv"))
             with self.assertRaises(builder.packages.PackageError):
-                builder.collect_entries(*inputs)
+                self.collect(inputs)
 
     def test_required_shader_in_a_nested_directory_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -105,14 +141,14 @@ class SinglePlayerBundleTest(unittest.TestCase):
             nested.mkdir()
             shader.rename(nested / shader.name)
             with self.assertRaises(builder.packages.PackageError):
-                builder.collect_entries(*inputs)
+                self.collect(inputs)
 
     def test_invalid_shader_magic_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             inputs = self.fixture(Path(directory))
             (inputs[0] / "shaders/map.vert.spv").write_bytes(b"not SPIR-V")
             with self.assertRaises(builder.packages.PackageError):
-                builder.collect_entries(*inputs)
+                self.collect(inputs)
 
     def test_prepare_creates_only_a_complete_manifest_in_a_new_output_directory(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -235,7 +271,7 @@ class SinglePlayerBundleTest(unittest.TestCase):
                 changed = list(inputs)
                 changed[index] = Path(directory) / "missing"
                 with self.assertRaises(ValueError):
-                    builder.collect_entries(*changed)
+                    self.collect(changed)
 
     def test_unsafe_windows_paths_case_collisions_and_links_are_rejected(self):
         for names in [["../escape"], ["CON.txt"], ["file", "FILE"], ["name."]]:
@@ -247,7 +283,7 @@ class SinglePlayerBundleTest(unittest.TestCase):
             inputs = self.fixture(Path(directory))
             (inputs[1] / "link").symlink_to(inputs[0] / "mc_main.exe")
             with self.assertRaises(ValueError):
-                builder.collect_entries(*inputs)
+                self.collect(inputs)
 
     def test_console_or_wrong_architecture_launcher_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
