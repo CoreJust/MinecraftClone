@@ -7,9 +7,11 @@
 
 #include <shared/world/ChunkMesher.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
+#include <shared/world/SparseWorld.hpp>
 #include <shared/world/TerrainWorld.hpp>
 
 #include <generation/Generation.hpp>
+#include <generation/V10Provider.hpp>
 
 #include <core/graphics/vulkan/Vulkan.hpp>
 #include <core/kernel/Spirv.hpp>
@@ -30,6 +32,7 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -62,6 +65,25 @@ private:
 constexpr uint32_t WIDTH = 640U;
 constexpr uint32_t HEIGHT = 480U;
 constexpr auto RENDER_TIMEOUT = std::chrono::seconds{ 10 };
+constexpr int32_t PIXEL_CHANGE_THRESHOLD = 2;
+
+void setSceneFaces(
+    client::TerrainLodScene& scene,
+    std::vector<client::StoneFaceInstance> faces,
+    uint32_t const extent = 256U
+)
+{
+    scene.logical_face_count = faces.size();
+    scene.groups.clear();
+    if (faces.empty()) {
+        return;
+    }
+    client::TerrainLodDrawGroup group{
+        .range = {0U, static_cast<uint32_t>(faces.size())}, .extent = extent,
+    };
+    group.face_storage = std::make_shared<std::vector<client::StoneFaceInstance> const>(std::move(faces));
+    scene.groups.push_back(std::move(group));
+}
 
 class ScopedStoneSetting final {
 public:
@@ -157,6 +179,25 @@ uint64_t skyPixelCount(client::RendererFrameCapture const& capture)
         if (blue > green + 20U && green > red + 20U) {
             ++count;
         }
+    }
+    return count;
+}
+
+[[nodiscard]]
+uint64_t changedPixelCount(
+    client::RendererFrameCapture const& baseline,
+    client::RendererFrameCapture const& candidate
+)
+{
+    uint64_t count = 0U;
+    for (uint64_t offset = 0U; offset < baseline.rgba8.size(); offset += 4U) {
+        bool changed = false;
+        for (uint64_t channel = 0U; channel < 3U; ++channel) {
+            int32_t const delta = static_cast<int32_t>(baseline.rgba8[offset + channel])
+                - static_cast<int32_t>(candidate.rgba8[offset + channel]);
+            changed |= delta < -PIXEL_CHANGE_THRESHOLD || delta > PIXEL_CHANGE_THRESHOLD;
+        }
+        count += changed ? 1U : 0U;
     }
     return count;
 }
@@ -267,15 +308,17 @@ TEST_F(StoneRendererAcceptanceTest, CanonicalClimateMatchesPhysicalMaterialDespi
                 auto scene = std::make_shared<client::TerrainLodScene>();
                 scene->shading_atlas = atlas;
                 scene->block_sea_level = atlas->block_sea_level;
+                std::vector<client::StoneFaceInstance> faces;
                 for (auto const indices : {std::array{0U, 1U, 2U}, std::array{0U, 2U, 3U}}) {
                     std::array<std::array<int32_t, 3>, 3> const vertices{
                         corners[indices[0]], corners[indices[1]], corners[indices[2]],
                     };
-                    scene->faces.push_back(climate_surface
+                    faces.push_back(climate_surface
                         ? client::StoneFaceInstance::fromTerrainSurfaceTriangle(vertices,
                             {wrong_temperature, wrong_temperature, wrong_temperature})
                         : client::StoneFaceInstance::fromTerrainTriangle(vertices, material));
                 }
+                setSceneFaces(*scene, std::move(faces), 16U);
                 return scene;
             };
             renderer.setCamera({
@@ -313,6 +356,323 @@ TEST_F(StoneRendererAcceptanceTest, CanonicalClimateMatchesPhysicalMaterialDespi
     }
 }
 
+TEST_F(StoneRendererAcceptanceTest, FractionalTerrainTessellationPreservesTexturePhase)
+{
+    constexpr std::array<std::array<int32_t, 3>, 4> corners{{
+        {4, 2, 128}, {12, 2, 128}, {12, 10, 128}, {4, 10, 128},
+    }};
+    constexpr std::array<double, 3> center{7.3125, 5.156'25, 4.0};
+    constexpr std::array<shared::Block, 3> materials{
+        shared::Block::Grass, shared::Block::Grass, shared::Block::Grass,
+    };
+    auto baseline = std::make_shared<client::TerrainLodScene>();
+    std::vector<client::StoneFaceInstance> whole_faces;
+    for (auto const indices : {std::array{0U, 1U, 2U}, std::array{0U, 2U, 3U}}) {
+        whole_faces.push_back(client::StoneFaceInstance::fromTerrainTriangle(
+            {corners[indices[0]], corners[indices[1]], corners[indices[2]]}, shared::Block::Grass));
+    }
+    setSceneFaces(*baseline, std::move(whole_faces), 16U);
+
+    auto subdivided = std::make_shared<client::TerrainLodScene>();
+    std::vector<client::StoneFaceInstance> metric_faces;
+    for (uint32_t i = 0; i < corners.size(); ++i) {
+        auto const metric_corner = [&](uint32_t const index) {
+            auto const& corner = corners[index];
+            return std::array<double, 3>{static_cast<double>(corner[0]),
+                static_cast<double>(corner[1]), static_cast<double>(corner[2]) / 32.0};
+        };
+        metric_faces.push_back(client::StoneFaceInstance::fromMetricTerrainMaterialTriangle(
+            {center, metric_corner(i), metric_corner((i + 1U) % corners.size())}, materials));
+    }
+    setSceneFaces(*subdivided, std::move(metric_faces), 16U);
+    m_renderer->setCamera({
+        .position = {8.0, -2.0, 12.0},
+        .angles = {.pitch_degrees = -55.0},
+    });
+    m_renderer->setTerrainLodScene(std::make_shared<client::TerrainLodScene>());
+    auto const background = render(*m_renderer);
+    m_renderer->setTerrainLodScene(baseline);
+    auto const whole = render(*m_renderer);
+    m_renderer->setTerrainLodScene(subdivided);
+    auto const split = render(*m_renderer);
+    if (char const* const capture_dir = std::getenv("MC_Q5_CAPTURE_DIR")) {
+        auto const write_capture = [&](char const* const name, client::RendererFrameCapture const& capture) {
+            std::string const destination = (std::filesystem::path{capture_dir} / name).string();
+            ScopedStoneSetting const capture_path{"MC_STONE_RENDERER_CAPTURE_PATH", destination.c_str()};
+            writeOptionalCapture(capture);
+        };
+        write_capture("whole.ppm", whole);
+        write_capture("split.ppm", split);
+    }
+    ASSERT_EQ(whole.rgba8.size(), split.rgba8.size());
+    ASSERT_EQ(whole.rgba8.size(), background.rgba8.size());
+    uint64_t visible_pixels = 0U;
+    uint64_t differing_pixels = 0U;
+    for (size_t offset = 0; offset < whole.rgba8.size(); offset += 4U) {
+        bool differs = false;
+        bool visible = false;
+        for (size_t channel = 0; channel < 3U; ++channel) {
+            int const difference = static_cast<int>(whole.rgba8[offset + channel])
+                - static_cast<int>(split.rgba8[offset + channel]);
+            differs |= difference < -3 || difference > 3;
+            visible |= whole.rgba8[offset + channel] != background.rgba8[offset + channel];
+        }
+        visible_pixels += visible ? 1U : 0U;
+        differing_pixels += differs ? 1U : 0U;
+    }
+    EXPECT_GT(visible_pixels, 10'000U) << "terrain must cover enough pixels for a meaningful comparison";
+    EXPECT_LT(differing_pixels, static_cast<uint64_t>(WIDTH) * HEIGHT / 100U)
+        << "fractional tessellation changed the terrain texture phase";
+    EXPECT_EQ(m_renderer->validationErrorCount(), 0U);
+}
+
+TEST_F(StoneRendererAcceptanceTest, CanonicalSummitColumnReachesOffscreenTerrain)
+{
+    constexpr uint32_t X = 46'357U;
+    constexpr uint32_t Y = 10'018U;
+    constexpr uint32_t TILE_X = X / 16U;
+    constexpr uint32_t TILE_Y = Y / 16U;
+    generation::GenerationConfiguration configuration;
+    configuration.model_tag = generation::TerrainModelTag::V10;
+    auto const atlas = generation::prepareAtlas(configuration);
+    auto const sample = generation::sampleV10AnnualMeanSurface(*atlas, X, Y, 3U);
+    ASSERT_NEAR(sample.elevation_m, 726.704'491'978'525'8, 1e-8);
+    shared::TerrainWorld const terrain{atlas};
+    shared::SparseWorld world{{}, shared::SparseWorldGenerationMode::MaterializedOnly};
+    ASSERT_TRUE(world.setTerrainIdentity(terrain.identity()));
+    for (int32_t dy = -2; dy <= 2; ++dy) {
+        for (int32_t dx = -2; dx <= 2; ++dx) {
+            if (std::abs(dx) + std::abs(dy) <= 2) {
+                ASSERT_TRUE(world.publishAuthoritativeSurface(terrain.sampleSurface({
+                    .x = static_cast<int32_t>(TILE_X) + dx,
+                    .y = static_cast<int32_t>(TILE_Y) + dy, .z = 0,
+                })));
+            }
+        }
+    }
+    auto captured = client::captureTerrainLodColumn(world, TILE_X, TILE_Y);
+    ASSERT_TRUE(captured.has_value());
+    auto const input = std::make_shared<client::TerrainLodColumnInput const>(std::move(*captured));
+    std::array const columns{input};
+    auto const coarse = client::buildTerrainLodSceneFromColumns(terrain, X, Y, {});
+    auto const fine = client::buildTerrainLodSceneFromColumns(terrain, X, Y, columns);
+    std::vector<std::shared_ptr<client::TerrainLodColumnInput const>> expanded_columns;
+    for (auto const offset : {std::array{0, 0}, std::array{-1, 0}, std::array{1, 0},
+             std::array{0, -1}, std::array{0, 1}}) {
+        auto expanded = client::captureTerrainLodColumn(world,
+            static_cast<uint32_t>(static_cast<int32_t>(TILE_X) + offset[0]),
+            static_cast<uint32_t>(static_cast<int32_t>(TILE_Y) + offset[1]));
+        ASSERT_TRUE(expanded.has_value());
+        expanded_columns.push_back(std::make_shared<client::TerrainLodColumnInput const>(std::move(*expanded)));
+    }
+    auto const expanded_scene = client::buildTerrainLodSceneFromColumns(terrain, X, Y, expanded_columns);
+    bool summit_top = false;
+    for (auto const& group : fine->groups) {
+        for (auto const& face : client::terrainLodGroupFaces(group)) {
+            summit_top |= face.faceDirection() == 5U && face.z == 1'238
+                && face.x <= static_cast<int32_t>(X) && face.y <= static_cast<int32_t>(Y)
+                && static_cast<int32_t>(X) < face.x + static_cast<int32_t>(face.u_extent)
+                && static_cast<int32_t>(Y) < face.y + static_cast<int32_t>(face.v_extent);
+        }
+    }
+    ASSERT_TRUE(summit_top) << "captured canonical summit must produce its top face at 1239";
+    m_renderer->setCamera({.position = {static_cast<double>(X), static_cast<double>(Y) - 30.0, 1'260.0},
+        .angles = {.pitch_degrees = -35.0}});
+    m_renderer->setTerrainLodScene(coarse);
+    auto const coarse_capture = render(*m_renderer);
+    m_renderer->setTerrainLodScene(fine);
+    auto const fine_capture = render(*m_renderer);
+    m_renderer->setTerrainLodScene(expanded_scene);
+    auto const expanded_capture = render(*m_renderer);
+    if (char const* const capture_dir = std::getenv("MC_FINE_CAPTURE_DIR")) {
+        auto const save = [&](char const* const name, client::RendererFrameCapture const& capture) {
+            std::string const destination = (std::filesystem::path{capture_dir} / name).string();
+            ScopedStoneSetting const capture_path{"MC_STONE_RENDERER_CAPTURE_PATH", destination.c_str()};
+            writeOptionalCapture(capture);
+        };
+        save("coarse.ppm", coarse_capture);
+        save("fine.ppm", fine_capture);
+        save("expanded.ppm", expanded_capture);
+    }
+    ASSERT_EQ(coarse_capture.rgba8.size(), fine_capture.rgba8.size());
+    size_t different_pixels = 0U;
+    for (size_t offset = 0U; offset < fine_capture.rgba8.size(); offset += 4U) {
+        different_pixels += !std::equal(fine_capture.rgba8.begin() + offset,
+            fine_capture.rgba8.begin() + offset + 3U, coarse_capture.rgba8.begin() + offset) ? 1U : 0U;
+    }
+    EXPECT_GT(different_pixels, 100U) << "canonical summit must visibly alter the rendered terrain";
+    EXPECT_EQ(m_renderer->validationErrorCount(), 0U);
+}
+
+TEST_F(StoneRendererAcceptanceTest, V10FineTerrainProviderSurfacesReachOffscreenStoneRenderer)
+{
+    struct Site final {
+        std::string_view name;
+        double x_m;
+        double y_m;
+    };
+    static constexpr std::array<Site, 4U> SITES{{
+        {"ridge", 52'372.486'699'750'08, 4'937.492'867'001'128},
+        {"s2_problem", 35'360.0, 33'230.0},
+        {"signed_coast", 45'056.0, 0.0},
+        {"river_channel", 34'784.0, 30'212.0},
+    }};
+    static constexpr std::array<std::string_view, 3U> LEVEL_NAMES{"canonical", "l2", "l3"};
+    static constexpr std::array<shared::Block, 3U> MATERIALS{
+        shared::Block::Grass, shared::Block::Grass, shared::Block::Grass,
+    };
+    static constexpr uint32_t GRID_SIDE = 128U;
+    static constexpr uint32_t GRID_SAMPLE_COUNT = GRID_SIDE * GRID_SIDE;
+    static constexpr uint32_t GRID_TRIANGLE_COUNT = (GRID_SIDE - 1U) * (GRID_SIDE - 1U) * 2U;
+    static constexpr double GRID_PITCH_M = 2.0;
+    static constexpr double V10_SURFACE_DATUM_M = 513.0;
+    static constexpr double CAMERA_DISTANCE_M = 150.0;
+    static constexpr double CAMERA_PITCH_DEGREES = -55.0;
+
+    generation::GenerationConfiguration configuration;
+    configuration.model_tag = generation::TerrainModelTag::V10;
+    auto const atlas = generation::prepareAtlas(configuration);
+    auto const metadata = generation::v10FineTerrainMetadata(*atlas);
+    RecordProperty("v10_fine_source_id", metadata.source_id);
+    RecordProperty("v10_fine_parent_identity_sha256", metadata.parent_identity_sha256);
+    RecordProperty("v10_fine_l2_identity_sha256", metadata.l2_identity_sha256);
+    RecordProperty("v10_fine_l3_identity_sha256", metadata.l3_identity_sha256);
+    RecordProperty("v10_fine_plan_sha256", metadata.plan_sha256);
+    RecordProperty("renderer_capture_width", WIDTH);
+    RecordProperty("renderer_capture_height", HEIGHT);
+    RecordProperty("renderer_grid_side", GRID_SIDE);
+    RecordProperty("renderer_grid_pitch_m", GRID_PITCH_M);
+    RecordProperty("renderer_material_block_id", static_cast<uint32_t>(MATERIALS.front()));
+    RecordProperty("renderer_capture_scope", "offscreen terrain fixture; not a full game screenshot");
+    RecordProperty("renderer_shading_mode", "production Vulkan terrain shader; no added hillshade");
+    RecordProperty("renderer_validation_enabled", m_renderer->validationEnabled() ? "true" : "false");
+    for (Site const& site : SITES) {
+        std::array<std::vector<double>, 3U> heights;
+        for (auto& level : heights) {
+            level.reserve(GRID_SAMPLE_COUNT);
+        }
+        uint32_t river_cell_count = 0U;
+        uint32_t river_flag_mismatch_count = 0U;
+        uint32_t river_bed_mismatch_count = 0U;
+        uint32_t river_stage_mismatch_count = 0U;
+        for (uint32_t row = 0U; row < GRID_SIDE; ++row) {
+            double const y_m = site.y_m + (static_cast<double>(row) - 63.5) * GRID_PITCH_M;
+            for (uint32_t column = 0U; column < GRID_SIDE; ++column) {
+                double const x_m = site.x_m + (static_cast<double>(column) - 63.5) * GRID_PITCH_M;
+                std::array<generation::V10SurfaceSample, 3U> const samples{
+                    generation::sampleV10Surface(*atlas, x_m, y_m, 3U),
+                    generation::sampleV10FineTerrainSurface(*atlas, x_m, y_m, 2U),
+                    generation::sampleV10FineTerrainSurface(*atlas, x_m, y_m, 3U),
+                };
+                for (uint32_t level = 0U; level < samples.size(); ++level) {
+                    heights[level].push_back(samples[level].elevation_m);
+                    if (samples[level].river != samples.front().river) {
+                        ++river_flag_mismatch_count;
+                    }
+                }
+                if (samples.front().river) {
+                    ++river_cell_count;
+                    for (uint32_t level = 1U; level < samples.size(); ++level) {
+                        river_bed_mismatch_count += samples[level].elevation_m != samples.front().elevation_m ? 1U : 0U;
+                        river_stage_mismatch_count += samples[level].water_level_m != samples.front().water_level_m ? 1U : 0U;
+                    }
+                }
+            }
+        }
+
+        std::array<std::shared_ptr<client::TerrainLodScene const>, 3U> scenes;
+        for (uint32_t level = 0U; level < scenes.size(); ++level) {
+            auto scene = std::make_shared<client::TerrainLodScene>();
+            scene->shading_atlas = atlas;
+            scene->block_sea_level = atlas->block_sea_level;
+            std::vector<client::StoneFaceInstance> faces;
+            faces.reserve(GRID_TRIANGLE_COUNT);
+            auto const vertex = [&](uint32_t const row, uint32_t const column) {
+                uint32_t const index = row * GRID_SIDE + column;
+                return std::array<double, 3U>{
+                    site.x_m + (static_cast<double>(column) - 63.5) * GRID_PITCH_M,
+                    site.y_m + (static_cast<double>(row) - 63.5) * GRID_PITCH_M,
+                    heights[level][index] + V10_SURFACE_DATUM_M,
+                };
+            };
+            for (uint32_t row = 0U; row + 1U < GRID_SIDE; ++row) {
+                for (uint32_t column = 0U; column + 1U < GRID_SIDE; ++column) {
+                    std::array<std::array<double, 3U>, 4U> const cell{
+                        vertex(row, column), vertex(row, column + 1U),
+                        vertex(row + 1U, column + 1U), vertex(row + 1U, column),
+                    };
+                    faces.push_back(client::StoneFaceInstance::fromMetricTerrainMaterialTriangle(
+                        {cell[0U], cell[1U], cell[2U]}, MATERIALS));
+                    faces.push_back(client::StoneFaceInstance::fromMetricTerrainMaterialTriangle(
+                        {cell[0U], cell[2U], cell[3U]}, MATERIALS));
+                }
+            }
+            ASSERT_EQ(faces.size(), GRID_TRIANGLE_COUNT);
+            setSceneFaces(*scene, std::move(faces), 256U);
+            scenes[level] = std::move(scene);
+        }
+
+        double const center_height_m = generation::sampleV10Surface(*atlas, site.x_m, site.y_m, 3U).elevation_m;
+        double const camera_drop_m = CAMERA_DISTANCE_M
+            * std::tan(-CAMERA_PITCH_DEGREES * std::numbers::pi / 180.0);
+        m_renderer->setCamera({
+            .position = {site.x_m, site.y_m - CAMERA_DISTANCE_M,
+                V10_SURFACE_DATUM_M + center_height_m + camera_drop_m},
+            .angles = {.pitch_degrees = CAMERA_PITCH_DEGREES},
+        });
+        std::array<client::RendererFrameCapture, 3U> captures;
+        for (uint32_t level = 0U; level < scenes.size(); ++level) {
+            m_renderer->setTerrainLodScene(scenes[level]);
+            captures[level] = render(*m_renderer);
+            ASSERT_EQ(captures[level].width, WIDTH);
+            ASSERT_EQ(captures[level].height, HEIGHT);
+            ASSERT_EQ(captures[level].rgba8.size(), static_cast<uint64_t>(WIDTH) * HEIGHT * 4U);
+        }
+
+        char const* const capture_directory = std::getenv("MC_V10_GAME_CAPTURE_DIR");
+        if (capture_directory != nullptr && capture_directory[0] != '\0') {
+            std::filesystem::path const directory{capture_directory};
+            std::filesystem::create_directories(directory);
+            for (uint32_t level = 0U; level < captures.size(); ++level) {
+                std::expected<std::monostate, std::string> const written = testsupport::writePpm(
+                    {
+                        .width = captures[level].width,
+                        .height = captures[level].height,
+                        .srgb_encoded = captures[level].srgb_encoded,
+                        .pixels = captures[level].rgba8,
+                    },
+                    directory / (std::string{site.name} + "-" + std::string{LEVEL_NAMES[level]} + ".ppm"),
+                    "MC-AI-0666 Vulkan offscreen provider field comparison; not a full-game capture"
+                );
+                ASSERT_TRUE(written.has_value()) << written.error();
+            }
+        }
+
+        uint64_t const l2_changed_pixels = changedPixelCount(captures[0U], captures[1U]);
+        uint64_t const l3_changed_pixels = changedPixelCount(captures[0U], captures[2U]);
+        uint64_t const l2_l3_changed_pixels = changedPixelCount(captures[1U], captures[2U]);
+        EXPECT_GT(l2_changed_pixels, 0U) << site.name;
+        EXPECT_GT(l3_changed_pixels, 0U) << site.name;
+        EXPECT_GT(l2_l3_changed_pixels, 0U) << site.name;
+        EXPECT_EQ(river_flag_mismatch_count, 0U) << site.name;
+        EXPECT_EQ(river_bed_mismatch_count, 0U) << site.name;
+        EXPECT_EQ(river_stage_mismatch_count, 0U) << site.name;
+        std::string const property_prefix = "v10_" + std::string{site.name} + "_";
+        RecordProperty((property_prefix + "sample_count").c_str(), GRID_SAMPLE_COUNT);
+        RecordProperty((property_prefix + "triangles_per_surface").c_str(), GRID_TRIANGLE_COUNT);
+        RecordProperty((property_prefix + "river_cell_count").c_str(), river_cell_count);
+        RecordProperty((property_prefix + "l2_changed_pixels").c_str(), std::to_string(l2_changed_pixels));
+        RecordProperty((property_prefix + "l3_changed_pixels").c_str(), std::to_string(l3_changed_pixels));
+        RecordProperty((property_prefix + "l2_l3_changed_pixels").c_str(), std::to_string(l2_l3_changed_pixels));
+        RecordProperty((property_prefix + "river_flag_mismatch_count").c_str(), river_flag_mismatch_count);
+        RecordProperty((property_prefix + "river_bed_mismatch_count").c_str(), river_bed_mismatch_count);
+        RecordProperty((property_prefix + "river_stage_mismatch_count").c_str(), river_stage_mismatch_count);
+    }
+    uint32_t const validation_error_count = m_renderer->validationErrorCount();
+    RecordProperty("renderer_validation_error_count", validation_error_count);
+    EXPECT_EQ(validation_error_count, 0U);
+}
+
 TEST_F(StoneRendererAcceptanceTest, V9Display512UsesNativeCanonicalFieldResolution)
 {
     auto const atlas = generation::prepareAtlas({
@@ -328,7 +688,7 @@ TEST_F(StoneRendererAcceptanceTest, V9Display512UsesNativeCanonicalFieldResoluti
     static constexpr std::array<std::array<int32_t, 3U>, 3U> VERTICES{{
         {0, 0, 8}, {16, 0, 8}, {0, 16, 8},
     }};
-    scene->faces.push_back(client::StoneFaceInstance::fromTerrainTriangle(VERTICES, shared::Block::Grass));
+    setSceneFaces(*scene, {client::StoneFaceInstance::fromTerrainTriangle(VERTICES, shared::Block::Grass)}, 16U);
 
     m_renderer->setTerrainLodScene(scene);
     m_renderer->setCamera(ABOVE_CAMERA);

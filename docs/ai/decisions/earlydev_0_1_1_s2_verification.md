@@ -1,8 +1,8 @@
 # S2 — Work packages and acceptance
 
-Future checks for the [S2 design](earlydev_0_1_1_s2.md), not executed results.
-The owner accepted UI prototype232eae68; native S2 stays unfinalized and S1 current.
-The [review register](earlydev_0_1_1_s2_review.md) accounts for all 28 follow-ups.
+Planned [S2 checks](earlydev_0_1_1_s2.md); no qualification claimed.
+Accepted UI prototype232eae68; S1 remains current.
+The [review register](earlydev_0_1_1_s2_review.md) covers 28 follow-ups.
 
 ## Ordered work packages
 
@@ -34,13 +34,13 @@ replacements without delaying independent documentation repairs.
 | Presets/policy | Exact three presets, Creative bedrock, no Survival flight, independent placement rules, empty whitelist/blacklist, hard veto and custom-rights HUD. |
 | Geometry | All views, inclusive reach boundary, occlusion, negative/wrapped XY, world Z limits, corner/edge ties, starting inside a block and Unknown without materialization. Third-person cannot reach through walls or gain distance. |
 | Breaking | Snow completes after 10 full ticks, Dirt/Grass 15, Ice 20, Stone 30; no initial-tick credit. Quick is first authorized tick. Duplicate input cannot accelerate progress. Same-cell aim jitter continues; release, expired hold, changed cell/rights/target or lost reach cancels. |
-| Placement/modes | One press produces at most one edit; no Air/out-of-bounds/occupied-cell placement or collidable-body intersection. Conflicting actors serialize. Unsafe switches retain the complete old state; airborne flight removal uses normal gravity. |
+| Placement/modes | Initial placement is single; holding repeats every 200 ms, resuming after target reacquisition. Event/frame callbacks cannot duplicate requests. Reject Air, occupied/out-of-bounds cells and body intersections. Serialize conflicting actors. Unsafe mode switches retain prior state; removing flight uses gravity. |
 | Storage | Air removals and return-to-base writes survive eviction/re-entry; edit more chunks than the configured residency cap without pinning those chunks. Replayed materialization cannot erase edits. |
 | Stream | Duplicate/out-of-order edits, snapshot-before/after-delta, per-chunk gaps, first edit in a new vertical chunk, reconnect and changed world epoch converge. A skipped unrelated global edit ID is not a gap. |
 | Full-volume coverage | A compact base profile cannot certify an edited column complete until its declared edit state is installed. Caves, overhangs, floating placements and top-block maps agree with authoritative queries. |
 | Meshes | Face and wrapped neighbors rebuild; stale worker/capture/upload results cannot reintroduce solids or hide holes. Aim-only changes do not remesh terrain. |
 
-Assert observable outcomes in the owning suites; never auto-bless goldens.
+Assert observable outcomes; never auto-bless goldens.
 
 Map acceptance in the [map design](earlydev_0_1_1_s2_maps.md) covers independent layers, units, readable combinations, navigation, edited surfaces, wrapping and bounded work.
 The [UI design](earlydev_0_1_1_s2_ui.md) owns four-screen flow, telemetry and controls. Verify uniform readouts/no View, F5, coherent plates, persistent shared ice/weather, exact final atlas and full-map T/O/Q. Exercise late/wrong-epoch previews, early ready, fence/start ack, fresh input, unavailable climate, saturated uploads and device recreation. Verify drawable1280x676/844x346 plus Android DPI/safe areas. Native proof remains required.
@@ -59,7 +59,7 @@ loss and mode/permission changes. Include Android controls/lifecycle and the
 required desktop/platform matrix; automated loopback is separate from physical
 two-laptop and owner acceptance.
 
-Carry final S1 loading, actual-volume, streaming and movement gates unchanged.
+Preserve final S1 loading, actual-volume, streaming and movement gates.
 Targets include at least 99% of moving time at 120 fresh FPS on Mac
 and 300 on Windows at the agreed settings. Measure matched baseline/fixed/
 adaptive workloads, CPU/GPU frame-time percentiles, edit-to-visible delay,

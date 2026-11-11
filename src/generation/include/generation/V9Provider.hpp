@@ -70,6 +70,54 @@ struct V9SurfaceSample final
     bool ocean = false;
     bool lake = false;
     bool river = false;
+    double land_snow_water_equivalent_m = 0.0;
+    double glacier_thickness_m = 0.0;
+    double sea_ice_thickness_m = 0.0;
+};
+
+struct V21SurfaceQueryWitness final
+{
+    int64_t edge = -1;
+    int64_t node = -1;
+    int32_t source_vertex = -1;
+    int32_t side = -1;
+    double required_stage_blocks = 0.0;
+    double maximum_cut_only_stage_blocks = 0.0;
+    double deficit_blocks = 0.0;
+    std::array<double, 2U> xy0_m{}, xy1_m{};
+};
+
+enum class V21SurfaceQueryFailureKind : uint8_t
+{
+    InvalidInput,
+    Cancelled,
+    FinePlan,
+    Water,
+};
+
+struct V21SurfaceQueryFailure final
+{
+    V21SurfaceQueryFailureKind kind = V21SurfaceQueryFailureKind::InvalidInput;
+    std::string message;
+    std::vector<V21SurfaceQueryWitness> witnesses;
+};
+
+struct V21SurfaceQueryGrid final
+{
+    uint32_t rows = 0U;
+    uint32_t columns = 0U;
+    double origin_x_m = 0.0;
+    double origin_y_m = 0.0;
+    double spacing_m = 0.0;
+    uint32_t lod = 0U;
+    uint32_t selected_phase = 0U;
+};
+
+struct V21SurfaceQueryResult final
+{
+    uint32_t rows = 0U;
+    uint32_t columns = 0U;
+    std::vector<V9SurfaceSample> samples;
 };
 
 struct V9WaterGrid final
@@ -112,9 +160,47 @@ std::span<V9PlateDirection const> v9PlateDirections(GlobalAtlas const& atlas);
 [[nodiscard]]
 V9SurfaceSample sampleV9Surface(GlobalAtlas const& atlas, double world_x_m, double world_y_m, uint32_t lod);
 
+// V21 uses the same registered native field value types, under a distinct
+// provider identity and metric/domain contract.
+[[nodiscard]]
+std::vector<V9RegisteredFieldView> v21RegisteredFields(GlobalAtlas const& atlas);
+
+[[nodiscard]]
+std::span<uint32_t const> v21CurrentPlateIds(GlobalAtlas const& atlas);
+
+[[nodiscard]]
+std::span<V9PlateDirection const> v21PlateDirections(GlobalAtlas const& atlas);
+
+[[nodiscard]]
+double v21L0ElevationAt(GlobalAtlas const& atlas, double world_x_m, double world_y_m);
+
+[[nodiscard]]
+V9SurfaceSample sampleV21Surface(
+    GlobalAtlas const& atlas,
+    double world_x_m,
+    double world_y_m,
+    uint32_t lod,
+    uint32_t selected_phase = 0U
+);
+
+[[nodiscard]]
+std::expected<V21SurfaceQueryResult, V21SurfaceQueryFailure> queryV21SurfaceGrid(
+    GlobalAtlas const& atlas,
+    V21SurfaceQueryGrid const& grid,
+    std::stop_token cancellation = {}
+);
+
 // Proves wetness for every integer block column covered by an aligned V9 source cell.
 [[nodiscard]]
 bool v9WaterCoversIntegerBlockCell(
+    GlobalAtlas const& atlas,
+    uint32_t origin_x,
+    uint32_t origin_y,
+    uint32_t extent
+) noexcept;
+
+[[nodiscard]]
+bool v21WaterCoversIntegerBlockCell(
     GlobalAtlas const& atlas,
     uint32_t origin_x,
     uint32_t origin_y,
@@ -133,5 +219,11 @@ uint16_t mapV9ElevationToBlock(double source_elevation_m);
 
 [[nodiscard]]
 uint16_t mapV9WaterLevelToBlock(double source_water_level_m);
+
+[[nodiscard]]
+uint16_t mapV21ElevationToBlock(double source_elevation_m);
+
+[[nodiscard]]
+uint16_t mapV21WaterLevelToBlock(double source_water_level_m);
 
 } // namespace generation

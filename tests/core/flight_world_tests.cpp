@@ -546,6 +546,35 @@ TEST(FlightWorldTest, MaterializationCandidatesCoverSweptBodyHeight)
     }));
 }
 
+TEST(FlightWorldTest, UpperBodyCollisionCandidatesLoadOnlyRequiredChunksBeforeMovement)
+{
+    for (int32_t const height : {1'023, 1'024, 2'047}) {
+        SCOPED_TRACE(height);
+        shared::SparseWorld blocks({.seed = 42U, .revision = 1U},
+            shared::SparseWorldGenerationMode::MaterializedOnly);
+        shared::World world{shared::WorldMode::Flight};
+        world.spawnPlayer(1U, '@', {.x = 100, .y = 100, .z = height});
+        ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+        world.setCollisionWorld(&blocks);
+        shared::Direction const direction{.x = 127U, .y = 0U};
+        EXPECT_FALSE(world.movePlayer(1U, direction));
+        auto const chunks = world.flightCollisionChunks(1U, direction);
+        int32_t const first_section = height / shared::Chunk::SIDE_LENGTH;
+        int32_t const last_section = std::min<int32_t>(height + 1, shared::WorldExtent::DEPTH - 1U)
+            / shared::Chunk::SIDE_LENGTH;
+        for (int32_t section = first_section; section <= last_section; ++section) {
+            EXPECT_TRUE(std::ranges::any_of(chunks, [section](shared::ChunkCoordinate const coordinate) {
+                return coordinate.x == 6 && coordinate.y == 6 && coordinate.z == section;
+            }));
+        }
+        for (auto const coordinate : chunks) {
+            EXPECT_LT(coordinate.z, shared::WorldExtent::DEPTH / shared::Chunk::SIDE_LENGTH);
+            ASSERT_TRUE(blocks.publishMaterializedChunk(shared::Chunk{coordinate}, 1U, 42U));
+        }
+        EXPECT_TRUE(world.movePlayer(1U, direction));
+    }
+}
+
 TEST(FlightWorldTest, AirborneJumpInputIncludesGravityCrossingIntoLowerChunk)
 {
     shared::SparseWorld blocks;
@@ -1100,6 +1129,83 @@ TEST(FlightWorldTest, CreativeFlightKeepsHorizontalMotionWhileDescendingIntoFlat
         EXPECTED_HORIZONTAL_DELTA,
         1e-9
     );
+}
+
+TEST(FlightWorldTest, DescendingFlatGroundRetainsBothHorizontalComponents)
+{
+    for (auto const heading : std::array{std::array{127, 127}, std::array{127, -63},
+             std::array{-63, 127}, std::array{-127, -127}}) {
+        for (uint16_t const subcell : {uint16_t{0}, uint16_t{7'500}}) {
+            SCOPED_TRACE(::testing::Message() << heading[0] << "," << heading[1] << ":" << subcell);
+            shared::SparseWorld collision_world;
+            ASSERT_TRUE(publishMovementTestSurface(collision_world, false));
+            shared::World world{shared::WorldMode::Flight};
+            world.spawnPlayer(1U, '@', {.x = 8, .y = 8, .z = 386,
+                .x_subcell = subcell, .y_subcell = subcell});
+            world.setCollisionWorld(&collision_world);
+            ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+            auto const before = requiredValue(world.player(1U));
+            for (uint32_t tick = 0U; tick < 5U; ++tick) {
+                ASSERT_TRUE(world.movePlayer(1U, {.x = static_cast<uint8_t>(heading[0]),
+                    .y = static_cast<uint8_t>(heading[1]), .z = static_cast<uint8_t>(-127)}));
+                auto const after = requiredValue(world.player(1U));
+                EXPECT_DOUBLE_EQ(shared::playerPositionZ(after), 386.0);
+                EXPECT_GT((shared::playerPositionX(after) - shared::playerPositionX(before)) * heading[0], 0.0);
+                EXPECT_GT((shared::playerPositionY(after) - shared::playerPositionY(before)) * heading[1], 0.0);
+            }
+        }
+    }
+}
+
+TEST(FlightWorldTest, CancelledVerticalInputKeepsDiagonalGroundMovement)
+{
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(publishMovementTestSurface(collision_world, false));
+    shared::World world{shared::WorldMode::Flight};
+    world.spawnPlayer(1U, '@', {.x = 4, .y = 4, .z = 386});
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+    // Space and Shift cancel before transmission, producing zero vertical input.
+    ASSERT_TRUE(world.movePlayer(1U, {.x = 127U, .y = 127U, .z = 0U}));
+    auto const after = requiredValue(world.player(1U));
+    EXPECT_GT(shared::playerPositionX(after), 4.0);
+    EXPECT_GT(shared::playerPositionY(after), 4.0);
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(after), 386.0);
+}
+
+TEST(FlightWorldTest, DescendingGroundSlideRetainsWallCollision)
+{
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(publishMovementTestSurface(collision_world, false));
+    for (int64_t y = 0; y < 16; ++y) {
+        ASSERT_TRUE(collision_world.setBlock({.x = 6, .y = y, .z = 386}, shared::Block::Stone));
+        ASSERT_TRUE(collision_world.setBlock({.x = 6, .y = y, .z = 387}, shared::Block::Stone));
+    }
+    shared::World world{shared::WorldMode::Flight};
+    world.spawnPlayer(1U, '@', {.x = 4, .y = 4, .z = 386});
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+    ASSERT_TRUE(world.movePlayer(1U, {.x = 127U, .y = 127U,
+        .z = static_cast<uint8_t>(-127), .accelerated = true, .speedup = 5U}));
+    auto const after = requiredValue(world.player(1U));
+    EXPECT_LT(shared::playerPositionX(after), 6.0);
+    EXPECT_GT(shared::playerPositionY(after), 4.0);
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(after), 386.0);
+}
+
+TEST(FlightWorldTest, DescendingGroundSlideDoesNotBypassDiagonalPlayer)
+{
+    shared::SparseWorld collision_world;
+    ASSERT_TRUE(publishMovementTestSurface(collision_world, false));
+    shared::World world{shared::WorldMode::Flight};
+    world.spawnPlayer(1U, '@', {.x = 4, .y = 4, .z = 386});
+    world.spawnPlayer(2U, '#', {.x = 5, .y = 5, .z = 386});
+    world.setCollisionWorld(&collision_world);
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+    ASSERT_TRUE(world.movePlayer(1U, {.x = 127U, .y = 127U,
+        .z = static_cast<uint8_t>(-127), .accelerated = true, .speedup = 5U}));
+    auto const after = requiredValue(world.player(1U));
+    EXPECT_TRUE(shared::playerPositionX(after) == 4.0 || shared::playerPositionY(after) == 4.0);
 }
 
 TEST(FlightWorldTest, OneBlockStepNeedsFlightLiftOrGroundedJump)

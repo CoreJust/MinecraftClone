@@ -18,18 +18,17 @@ ctest --preset debug --output-on-failure --no-tests=error
 python3 script/ai_check.py
 ```
 
-Run presets from the repository root; use `release` for optimization. Packages
-must expose `CoreCpp::Core`, `CoreCpp::Runtime`, and
-`CoreProject2026::CoreLang`; CMake verifies their exact SHAs against
-[`dependencies.lock.json`](../dependencies.lock.json). CoreCpp's fetched
-`ai-main` history must resolve its pinned SHA from a `refs/tags/` locator;
-only `ai-dev`/`ai-main` are allowed, and `MC_ALLOW_INEXACT_CORECPP` cannot
-bypass tags. CoreProject2026 provenance checks remain. Presets install vcpkg
-under `build/<preset>/vcpkg_installed`; `mc_main` is under `build/<preset>/`,
-and `cmake --install` includes shaders.
+Run presets from the repository root. `release` enables optimization. CMake
+requires `CoreCpp::Core`, `CoreCpp::Runtime`, and `CoreProject2026::CoreLang`
+and checks exact SHAs against [the lock](../dependencies.lock.json). The
+CoreCpp pin must resolve via `refs/tags/` in fetched `ai-main` history. Only
+`ai-dev` and `ai-main` are allowed. `MC_ALLOW_INEXACT_CORECPP` cannot bypass tags.
+Presets place `mc_main` and `vcpkg_installed` under `build/<preset>/`. The
+desktop build stages `welcome.wav`, `gameplay.wav`, `music.json`, and `README.md`
+in `assets/audio/` beside `mc_main`. The install includes shaders and audio.
 
-After building exact release inputs, use the deterministic [package tooling](PACKAGING.md) to create desktop archives or record Android APK evidence.
-See [runtime acceptance](ACCEPTANCE.md) for scenario, benchmark, and capture commands.
+Use [package tooling](PACKAGING.md) for exact desktop archives and APK evidence.
+[Runtime acceptance](ACCEPTANCE.md) covers scenarios, benchmarks, and captures.
 
 ## Android debug APK
 

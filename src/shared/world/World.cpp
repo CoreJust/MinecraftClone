@@ -1185,7 +1185,29 @@ bool World::moveFlightPlayer(
             return candidate;
         };
 
-        if (!direct_path_clear) {
+        bool ground_slide_clear = !direct_path_clear && delta_z < 0;
+        if (ground_slide_clear) {
+            int64_t const steps = std::max<int64_t>(1,
+                (std::max({absolute(delta_x), absolute(delta_y), absolute(delta_z)})
+                    + SWEEP_STRIDE - 1) / SWEEP_STRIDE);
+            for (int64_t step = 1; step <= steps; ++step) {
+                int64_t const x = start_x + delta_x * step / steps;
+                int64_t const y = start_y + delta_y * step / steps;
+                int64_t const z = start_z + delta_z * step / steps;
+                // Ground can cancel descent, but neither a wall nor another body
+                // may turn a blocked diagonal into an unchecked horizontal path.
+                if (!canFlightPlayerBeAt(player, x, y, start_z)
+                    || (!canFlightPlayerBeAt(player, x, y, z)
+                        && !canDeferDescendingTerrainCollision(x, y, z))) {
+                    ground_slide_clear = false;
+                    break;
+                }
+            }
+            if (ground_slide_clear) {
+                resolved_z = start_z;
+            }
+        }
+        if (!direct_path_clear && !ground_slide_clear) {
             HorizontalCandidate const x_candidate = resolveHorizontal(delta_x, true);
             HorizontalCandidate const y_candidate = resolveHorizontal(delta_y, false);
             if (delta_x == 0) {

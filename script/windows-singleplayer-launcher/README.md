@@ -13,7 +13,7 @@ The runtime directory must contain mc_main.exe, its redistributable DLLs, and
 exactly 19 compiled SPIR-V files in shaders/. The builder snapshots regular files
 with the existing package_snapshot helpers. It also includes assets, scenarios,
 the game and HUD licenses, and the native model vendors' original license and
-provenance files under `licenses/model/{platec,structural,superlu,gsw}/`. Those
+provenance files under `licenses/model/{platec,platec_v10,v10_perlin,structural,superlu,gsw}/`. Those
 files are copied byte-for-byte. The builder never downloads dependencies or
 copies GPU drivers. A supplied DLL closure must already have passed Windows
 execution and dependency inspection. Only the final MinecraftClone.exe goes to

@@ -56,6 +56,7 @@ def requiredShaderAssets = [
     'gui_vector.frag.spv',
     'trivial.frag.spv',
 ]
+def runtimeAudioAssets = file("${buildDir}/generated/runtime-audio")
 def hudLicenseAssets = file("${buildDir}/generated/hud-licenses")
 def hwasanWrapAssets = layout.buildDirectory.dir('generated/hwasan-wrap')
 def requiredHudLicenseAssets = [
@@ -94,6 +95,15 @@ def stageHudLicenses = tasks.register('stageHudLicenses', Sync) {
         include 'TAMSYN_LICENSE.txt'
     }
     into(new File(hudLicenseAssets, 'licenses/hud'))
+}
+def stageRuntimeAudio = tasks.register('stageRuntimeAudio', Sync) {
+    from('../../assets/audio') {
+        include 'welcome.wav'
+        include 'gameplay.wav'
+        include 'README.md'
+        include 'music.json'
+    }
+    into(new File(runtimeAudioAssets, 'audio'))
 }
 def stageHwasanWrap = tasks.register('stageHwasanWrap') {
     outputs.dir(hwasanWrapAssets)
@@ -170,7 +180,7 @@ android {
     sourceSets {
         main {
             shaders.setSrcDirs([fallbackShaderSources])
-            assets.setSrcDirs([hudLicenseAssets])
+            assets.setSrcDirs([hudLicenseAssets, runtimeAudioAssets])
             if (sanitizer == 'hwasan') {
                 resources.srcDir(hwasanWrapAssets)
             }
@@ -249,13 +259,13 @@ if (coreProjectDir != null && !coreProjectDir.trim().isEmpty()) {
 
 tasks.configureEach {
     if (name ==~ /.*[Ll]int.*/) {
-        dependsOn(stageHudLicenses)
+        dependsOn(stageHudLicenses, stageRuntimeAudio)
     }
     if (name ==~ /(merge|compile).+Shaders/) {
         dependsOn(stageFallbackShaders)
     }
     if (name ==~ /merge.+Assets/) {
-        dependsOn(stageHudLicenses)
+        dependsOn(stageHudLicenses, stageRuntimeAudio)
     }
 }
 
@@ -275,6 +285,11 @@ def verifyDebugShaderAssets = tasks.register('verifyDebugShaderAssets') {
             requiredHudLicenseAssets.each { String asset ->
                 if (zip.getEntry("assets/${asset}") == null) {
                     throw new GradleException("Debug APK is missing HUD attribution/license asset: ${asset}")
+                }
+            }
+            ['welcome.wav', 'gameplay.wav', 'README.md', 'music.json'].each { String asset ->
+                if (zip.getEntry("assets/audio/${asset}") == null) {
+                    throw new GradleException("Debug APK is missing runtime audio asset: ${asset}")
                 }
             }
             if (sanitizer == 'hwasan' && zip.getEntry('lib/arm64-v8a/wrap.sh') == null) {

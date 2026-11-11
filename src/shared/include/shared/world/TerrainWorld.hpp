@@ -15,6 +15,10 @@
 #include <string>
 #include <unordered_map>
 
+namespace generation {
+struct V10SurfaceSample;
+} // namespace generation
+
 namespace shared {
 
 inline constexpr std::array<uint32_t, 5> TERRAIN_REGION_EXTENTS{
@@ -28,7 +32,7 @@ inline constexpr std::array<uint32_t, 5> TERRAIN_REGION_EXTENTS{
 inline constexpr uint32_t TERRAIN_REGION_NODE_SIDE_LENGTH = 65U;
 inline constexpr uint32_t TERRAIN_REGION_NODE_COUNT =
     TERRAIN_REGION_NODE_SIDE_LENGTH * TERRAIN_REGION_NODE_SIDE_LENGTH;
-inline constexpr uint32_t TERRAIN_CONFIGURATION_IDENTITY_MAX_BYTES = 320U;
+inline constexpr uint32_t TERRAIN_CONFIGURATION_IDENTITY_MAX_BYTES = 384U;
 
 struct TerrainIdentity final {
     uint32_t terrain_version = generation::TERRAIN_VERSION;
@@ -67,6 +71,7 @@ struct TerrainColumn {
     double source_l0_elevation_m = 0.0;
     uint8_t source_biome_id = 255U;
     bool source_native_coast_adjacent = false;
+    bool source_native_ocean = false;
 
     [[nodiscard]]
     Block materialAt(uint16_t z, uint32_t block_sea_level) const noexcept;
@@ -165,9 +170,24 @@ public:
     [[nodiscard]]
     uint16_t sampleSurfaceHeight(uint32_t world_x, uint32_t world_y) const;
 
+    // Returns the generated V10 top block at the periodic integer column.
+    [[nodiscard]]
+    Block sampleV10TopMaterial(uint32_t world_x, uint32_t world_y) const;
+
+    // Classifies an annual mean sample from this V10 atlas at the same periodic block XY.
+    [[nodiscard]]
+    static Block sampleV10TopMaterial(
+        generation::GlobalAtlas const& atlas, uint32_t world_x, uint32_t world_y,
+        generation::V10SurfaceSample const& source
+    );
+
     // V9 material classification shares the immutable native L0 fields used by its source query.
     [[nodiscard]]
     double sourceV9L0ElevationAt(uint32_t world_x, uint32_t world_y) const noexcept;
+
+    // V21 L0 queries share the approved local geometry and 0.34 source scale.
+    [[nodiscard]]
+    double sourceV21L0ElevationAt(uint32_t world_x, uint32_t world_y) const;
 
     [[nodiscard]]
     bool hasAdjacentV9OceanOrLake(uint32_t world_x, uint32_t world_y) const noexcept;

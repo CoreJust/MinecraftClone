@@ -16,5 +16,6 @@ vec3 curvedWorldPosition(vec3 position, vec2 cameraXY) {
 }
 
 float worldVisibilityFog(vec2 cameraOffset, float visibilityRadius) {
-    return smoothstep(0.96 * visibilityRadius, visibilityRadius, length(cameraOffset));
+    // Keep the near field crisp and fade distant terrain across the visible horizon.
+    return smoothstep(0.55 * visibilityRadius, visibilityRadius, length(cameraOffset));
 }

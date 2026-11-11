@@ -1,5 +1,7 @@
 #include <client/UiPresentation.hpp>
 
+#include <shared/world/Chunk.hpp>
+
 #if defined(__APPLE__)
 #include <mach/mach.h>
 #elif defined(_WIN32)
@@ -35,14 +37,18 @@ constexpr TextColor UI_OUTLINE{ 20.0F / 255.0F, 36.0F / 255.0F, 45.0F / 255.0F, 
 constexpr TextColor UI_ACCENT{ 1.0F, 224.0F / 255.0F, 128.0F / 255.0F, 1.0F };
 constexpr TextColor UI_QUIET{ 194.0F / 255.0F, 208.0F / 255.0F, 207.0F / 255.0F, 1.0F };
 
+constexpr std::array<std::string_view, 3U> EXIT_CONFIRMATION_LINES{
+    "Exit the game?", "Enter or Y: confirm", "Esc: cancel",
+};
+
 constexpr std::array<std::string_view, 6U> ILLUSTRATIVE_PHASE_NAMES{
-    "Formation", "Relief", "Water", "Ice", "Climate", "Arrival",
+    "Formation", "Water", "Tectonics", "Ice", "Climate", "Arrival",
 };
 
 constexpr std::array<std::array<std::string_view, 2U>, 6U> ILLUSTRATIVE_PHASE_DESCRIPTIONS{{
     { "Continents drift.", "Rifts and collisions." },
-    { "Mountains rise.", "Islands emerge." },
     { "Seas find the coast.", "Rivers reach basins." },
+    { "Continents drift.", "Collision raises ridges." },
     { "Glaciers advance.", "Cold seas freeze." },
     { "Winds and currents.", "Rain finds wet ground." },
     { "A whole world.", "One starting point." },
@@ -50,7 +56,29 @@ constexpr std::array<std::array<std::string_view, 2U>, 6U> ILLUSTRATIVE_PHASE_DE
 
 constexpr std::array<std::string_view, 6U> ILLUSTRATIVE_PHASE_CAPTIONS{
     "Illustrative plate motion",
-    "Raising ridges and islands",
+    "Filling coasts and basins",
+    "Continental drift and uplift",
+    "Advancing glaciers and sea ice",
+    "Circulation and rainfall",
+    "Locating the starting area",
+};
+
+constexpr std::array<std::string_view, 6U> NATIVE_ILLUSTRATIVE_PHASE_NAMES{
+    "Creation", "Relief", "Water", "Ice", "Climate", "Arrival",
+};
+
+constexpr std::array<std::array<std::string_view, 2U>, 6U> NATIVE_ILLUSTRATIVE_PHASE_DESCRIPTIONS{{
+    { "Molten rock cools.", "A crust begins to form." },
+    { "Highlands cool first.", "A solid crust spreads." },
+    { "Seas find the coast.", "Rivers reach basins." },
+    { "Glaciers advance.", "Cold seas freeze." },
+    { "Winds and currents.", "Rain finds wet ground." },
+    { "A whole world.", "One starting point." },
+}};
+
+constexpr std::array<std::string_view, 6U> NATIVE_ILLUSTRATIVE_PHASE_CAPTIONS{
+    "A cooling molten world",
+    "Cooling highlands and plains",
     "Filling coasts and basins",
     "Advancing glaciers and sea ice",
     "Circulation and rainfall",
@@ -58,9 +86,25 @@ constexpr std::array<std::string_view, 6U> ILLUSTRATIVE_PHASE_CAPTIONS{
 };
 
 [[nodiscard]]
-uint32_t phaseIndex(GenerationMapAnimationPhase const phase) noexcept
+uint32_t phaseIndex(GenerationMapAnimationPhase const phase, bool const native) noexcept
 {
-    return phase == GenerationMapAnimationPhase::Creation ? 0U : static_cast<uint32_t>(phase);
+    switch (phase) {
+    case GenerationMapAnimationPhase::Tectonics:
+        return native ? 1U : 0U;
+    case GenerationMapAnimationPhase::Creation:
+        return 0U;
+    case GenerationMapAnimationPhase::Water:
+        return native ? 2U : 1U;
+    case GenerationMapAnimationPhase::Relief:
+        return native ? 1U : 2U;
+    case GenerationMapAnimationPhase::Ice:
+        return 3U;
+    case GenerationMapAnimationPhase::Climate:
+        return 4U;
+    case GenerationMapAnimationPhase::Arrival:
+        return 5U;
+    }
+    return 0U;
 }
 
 [[nodiscard]]
@@ -167,6 +211,18 @@ std::string_view generationPhase(generation::GenerationStage const stage) noexce
         return "Solving native climate";
     case generation::GenerationStage::V9Water:
         return "Routing native water and ice";
+    case generation::GenerationStage::V10Platec:
+    case generation::GenerationStage::V21Platec:
+        return "Advancing native tectonic plates";
+    case generation::GenerationStage::V10Terrain:
+    case generation::GenerationStage::V21Terrain:
+        return "Forming native terrain";
+    case generation::GenerationStage::V10Climate:
+    case generation::GenerationStage::V21Climate:
+        return "Solving native climate";
+    case generation::GenerationStage::V10Water:
+    case generation::GenerationStage::V21Water:
+        return "Routing native water and ice";
     case generation::GenerationStage::Complete:
         return "Preparing the starting area";
     }
@@ -195,15 +251,29 @@ UiProgress measuredProgress(uint32_t const completed, uint32_t const total) noex
 
 }
 
+UiLoadingMapSource uiLoadingMapSource(
+    WorldLoadingState const state, generation::TerrainModelTag const model
+) noexcept
+{
+    if (state != WorldLoadingState::PreparingAtlas && state != WorldLoadingState::PreparingSpawn
+        && state != WorldLoadingState::ReadyForStart && state != WorldLoadingState::Starting) {
+        return UiLoadingMapSource::Backdrop;
+    }
+    return model == generation::TerrainModelTag::V9 || model == generation::TerrainModelTag::V21
+        || model == generation::TerrainModelTag::V10
+        ? UiLoadingMapSource::Native : UiLoadingMapSource::Legacy;
+}
+
 UiFrame buildUiFrame(
     uint64_t const join_epoch,
     WorldLoadingStatus const& loading,
     bool const connection_attempt_started,
-    bool const prompt_frame_ready,
+    bool const start_scene_ready,
     UiTelemetrySnapshot telemetry,
     std::optional<GenerationMapAnimationFrame> animation,
     std::string_view const server_address,
-    std::optional<uint64_t> world_seed
+    std::optional<uint64_t> world_seed,
+    UiLoadingMapSource const loading_map_source
 )
 {
     UiScreen screen = UiScreen::Preparing;
@@ -259,11 +329,9 @@ UiFrame buildUiFrame(
     case WorldLoadingState::ReadyForStart:
         screen = UiScreen::ReadyForStart;
         title = "Creating your world";
-        if (prompt_frame_ready) {
+        if (start_scene_ready) {
             phase = "World ready";
             show_start_prompt = true;
-        } else if (animation.has_value()) {
-            phase = "World ready - watch its formation";
         } else {
             phase = "Preparing the terrain view";
         }
@@ -311,6 +379,7 @@ UiFrame buildUiFrame(
         .progress_text = std::move(progress_text),
         .server_address = std::string{ server_address },
         .world_seed = generation_view ? world_seed : std::nullopt,
+        .loading_map_source = loading_map_source,
         .illustrative_phase = illustrative_phase,
         .illustrative_phase_progress = illustrative_phase_progress,
         .generation_progress = progress,
@@ -390,11 +459,11 @@ UiLoadingLayout layoutUiLoading(
             }
         }
 
-        float const side_width = logical_width >= 1100.0F ? 300.0F : 260.0F;
+        float const side_width = wide ? 300.0F : 260.0F;
         float const field_x = wide ? margin + side_width + 28.0F : margin;
         float const field_width = (std::max)(0.0F, logical_width - field_x - margin);
         float const field_y = wide ? margin : body_top + 116.0F;
-        float const field_bottom = logical_height - margin - (wide ? 0.0F : 78.0F);
+        float const field_bottom = logical_height - margin - (wide ? 0.0F : 120.0F);
         float const square_size = std::floor((std::max)(0.0F, (std::min)(
             field_width,
             (std::max)(0.0F, field_bottom - field_y)
@@ -405,7 +474,12 @@ UiLoadingLayout layoutUiLoading(
             .width = square_size * dpi_scale,
             .height = square_size * dpi_scale,
         };
-        layout.left_rail_width_pixels = side_width * dpi_scale;
+        float const status_width = wide
+            ? (logical_width >= 1100.0F
+                ? side_width
+                : layout.map_viewport.x / dpi_scale - 2.0F * margin)
+            : logical_width - 2.0F * margin;
+        layout.left_rail_width_pixels = (std::max)(0.0F, status_width) * dpi_scale;
 
         layout.real_generation_status = {
             margin * dpi_scale,
@@ -547,8 +621,13 @@ void buildUiLoadingPresentation(
         );
     }
 
+    bool const native = frame.loading_map_source == UiLoadingMapSource::Native;
+    auto const& phase_names = native ? NATIVE_ILLUSTRATIVE_PHASE_NAMES : ILLUSTRATIVE_PHASE_NAMES;
+    auto const& phase_descriptions = native
+        ? NATIVE_ILLUSTRATIVE_PHASE_DESCRIPTIONS : ILLUSTRATIVE_PHASE_DESCRIPTIONS;
+    auto const& phase_captions = native ? NATIVE_ILLUSTRATIVE_PHASE_CAPTIONS : ILLUSTRATIVE_PHASE_CAPTIONS;
     uint32_t const phase_index = frame.illustrative_phase.has_value()
-        ? (std::min)(phaseIndex(*frame.illustrative_phase), static_cast<uint32_t>(ILLUSTRATIVE_PHASE_NAMES.size() - 1U))
+        ? (std::min)(phaseIndex(*frame.illustrative_phase, native), static_cast<uint32_t>(phase_names.size() - 1U))
         : 0U;
     if (frame.illustrative_phase.has_value()) {
         std::array<char, 8U> counter{
@@ -565,24 +644,24 @@ void buildUiLoadingPresentation(
         );
         submitOutlined(
             output,
-            ILLUSTRATIVE_PHASE_NAMES[phase_index],
+            phase_names[phase_index],
             UI_ACCENT,
             layout.illustration_title,
             layout.dpi_scale
         );
-        for (size_t index = 0U; index < ILLUSTRATIVE_PHASE_DESCRIPTIONS[phase_index].size(); ++index) {
+        for (size_t index = 0U; index < phase_descriptions[phase_index].size(); ++index) {
             submitOutlined(
                 output,
                 *frame.illustrative_phase == GenerationMapAnimationPhase::Creation
                     ? std::array<std::string_view, 2U>{"Molten rock cools.", "A crust begins to form."}[index]
-                    : ILLUSTRATIVE_PHASE_DESCRIPTIONS[phase_index][index],
+                    : phase_descriptions[phase_index][index],
                 UI_LIGHT,
                 layout.illustration_description[index],
                 layout.dpi_scale
             );
         }
         if (layout.illustration_rail[0].scale > 0.0F) {
-            for (size_t index = 0U; index < ILLUSTRATIVE_PHASE_NAMES.size(); ++index) {
+            for (size_t index = 0U; index < phase_names.size(); ++index) {
                 std::string item;
                 TextColor color = UI_QUIET;
                 if (index < phase_index) {
@@ -594,7 +673,7 @@ void buildUiLoadingPresentation(
                 } else {
                     item = "  ";
                 }
-                item.append(ILLUSTRATIVE_PHASE_NAMES[index]);
+                item.append(phase_names[index]);
                 submitOutlined(output, item, color, layout.illustration_rail[index], layout.dpi_scale);
             }
         }
@@ -602,7 +681,7 @@ void buildUiLoadingPresentation(
             submitOutlined(
                 output,
                 *frame.illustrative_phase == GenerationMapAnimationPhase::Creation
-                    ? "Cooling a young world" : ILLUSTRATIVE_PHASE_CAPTIONS[phase_index],
+                    ? "Cooling a young world" : phase_captions[phase_index],
                 UI_QUIET,
                 layout.status,
                 layout.dpi_scale
@@ -640,6 +719,109 @@ void buildUiLoadingPresentation(
         submitOutlined(output, "Esc  Cancel", UI_ACCENT, layout.action, layout.dpi_scale);
     } else if (isGenerationView(frame.screen)) {
         submitOutlined(output, "Esc  Cancel", UI_ACCENT, layout.action, layout.dpi_scale);
+    }
+}
+
+UiExitConfirmationLayout layoutUiExitConfirmation(
+    uint32_t const width,
+    uint32_t const height,
+    float const requested_dpi_scale
+) noexcept
+{
+    UiExitConfirmationLayout layout;
+    if (width == 0U || height == 0U) {
+        return layout;
+    }
+
+    float const dpi_scale = sanitizedDpiScale(requested_dpi_scale);
+    size_t const longest_line = std::max_element(
+        EXIT_CONFIRMATION_LINES.begin(), EXIT_CONFIRMATION_LINES.end(),
+        [](std::string_view const left, std::string_view const right) { return left.size() < right.size(); }
+    )->size();
+    float const width_scale = static_cast<float>(width) / (static_cast<float>(longest_line) * 16.0F);
+    float const line_count = static_cast<float>(EXIT_CONFIRMATION_LINES.size());
+    float const height_scale = static_cast<float>(height) / (line_count * 40.0F);
+    layout.scale = std::min({ dpi_scale, width_scale, height_scale });
+    float const line_advance = 40.0F * layout.scale;
+    float const first_y = (static_cast<float>(height) - line_advance * line_count) * 0.5F;
+    for (size_t index = 0U; index < EXIT_CONFIRMATION_LINES.size(); ++index) {
+        float const line_width = static_cast<float>(EXIT_CONFIRMATION_LINES[index].size())
+            * 16.0F * layout.scale;
+        layout.lines[index] = {
+            .x = (static_cast<float>(width) - line_width) * 0.5F,
+            .y = first_y + static_cast<float>(index) * line_advance,
+            .scale = layout.scale,
+        };
+    }
+    return layout;
+}
+
+std::string_view uiBlockDisplayName(shared::Block const block) noexcept
+{
+    switch (block) {
+    case shared::Block::Air: return "Air";
+    case shared::Block::Stone: return "Stone";
+    case shared::Block::Grass: return "Grass";
+    case shared::Block::Dirt: return "Dirt";
+    case shared::Block::Bedrock: return "Bedrock";
+    case shared::Block::Snow: return "Snow";
+    case shared::Block::Ice: return "Ice";
+    case shared::Block::Sand: return "Sand";
+    }
+    return "Unknown";
+}
+
+std::string uiTargetBlockLabel(shared::Block const block)
+{
+    std::string label{uiBlockDisplayName(block)};
+    label += " (ID ";
+    label += std::to_string(static_cast<uint8_t>(block));
+    label += ')';
+    return label;
+}
+
+std::string uiTargetHudEntry(std::optional<shared::BlockTarget> const& target)
+{
+    if (!target) {
+        return "Target: none";
+    }
+
+    std::string entry{"Target: "};
+    entry += std::to_string(target->cell.x);
+    entry += ',';
+    entry += std::to_string(target->cell.y);
+    entry += ',';
+    entry += std::to_string(target->cell.z);
+    entry += ' ';
+    entry += uiBlockDisplayName(target->block);
+    entry += " (";
+    entry += std::to_string(static_cast<uint8_t>(target->block));
+    entry += ')';
+    return entry;
+}
+
+std::optional<shared::Block> uiGameplayTargetBlock(
+    bool const gameplay_ui,
+    std::optional<shared::BlockTarget> const& resolved_target
+) noexcept
+{
+    if (!gameplay_ui || !resolved_target) {
+        return std::nullopt;
+    }
+    return resolved_target->block;
+}
+
+void buildUiExitConfirmationPresentation(
+    UiExitConfirmationLayout const& layout,
+    TextRenderer& output
+)
+{
+    if (layout.scale <= 0.0F) {
+        return;
+    }
+    for (size_t index = 0U; index < EXIT_CONFIRMATION_LINES.size(); ++index) {
+        TextColor const color = index == 0U ? UI_ACCENT : UI_LIGHT;
+        submitOutlined(output, EXIT_CONFIRMATION_LINES[index], color, layout.lines[index], layout.scale);
     }
 }
 

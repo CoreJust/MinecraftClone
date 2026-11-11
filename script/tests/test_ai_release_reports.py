@@ -565,6 +565,45 @@ class AiReleaseReportsTest(unittest.TestCase):
                     with self.assertRaisesRegex(ai_release_reports.ReportError, message):
                         ai_release_reports.verify_pdf(output_path, payload)
 
+    @unittest.skipUnless(
+        all(importlib.util.find_spec(name) for name in ("reportlab", "pypdf")),
+        "bundled PDF libraries are required",
+    )
+    def test_pdf_readback_ignores_verified_footer_between_wrapped_status_text(self) -> None:
+        from pypdf import PdfReader
+
+        report = draft_for(0)
+        report["progress_format"] = "development-stages-v1"
+        report["feature_state"] = [
+            {"id": "terrain", "status": "Implementing", "detail": "Terrain edits are underway."},
+            {"id": "render", "status": "Planned", "detail": ""},
+        ]
+        payload = ai_release_reports._payload(
+            {"release_id": "S7", "prefix": PREFIX},
+            report,
+            {"revision": 1, "features": FEATURES, "effective_period_index": 0, "addition_authority": None},
+            "3h",
+        )
+        output_path = Path(self.temporary_directory.name) / "wrapped-status.pdf"
+        ai_release_reports.render_pdf(payload, output_path)
+        reader = PdfReader(str(output_path))
+        page_text = [page.extract_text() or "" for page in reader.pages]
+        status_line = ai_release_reports._feature_status_line(
+            "Terrain streaming", report["feature_state"][0], "development-stages-v1"
+        )
+        self.assertIn(status_line, " ".join(" ".join(text.split()) for text in page_text))
+
+        wrapped_page_text = []
+        for content in page_text:
+            if status_line in content:
+                split_at = status_line.index(":") + 1
+                content = content.replace(status_line, f"{status_line[:split_at]} Page 1 {status_line[split_at:]}")
+            wrapped_page_text.append(content)
+        pages = [mock.Mock(extract_text=mock.Mock(return_value=text)) for text in wrapped_page_text]
+        patched_reader = mock.Mock(pages=pages, metadata=reader.metadata)
+        with mock.patch("pypdf.PdfReader", return_value=patched_reader):
+            ai_release_reports.verify_pdf(output_path, payload)
+
     def test_rendered_status_and_time_share_labels_match_report_contract(self) -> None:
         self.assertEqual(ai_release_reports._feature_status_line("Terrain streaming", {"status": "Done"}), "Terrain streaming - Done")
         self.assertEqual(

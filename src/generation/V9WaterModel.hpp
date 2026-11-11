@@ -16,6 +16,8 @@ struct V9WaterForcing final
     uint32_t resolution = 0;
     uint32_t phase_count = 0;
     double horizontal_metric_scale = 250.0;
+    // Converts the vertical bed unit into the climate-equivalent altitude used by the lapse rate.
+    double climate_equivalent_metres_per_bed_unit = 1.0;
     // Coarse static cell-centre fields, resolution squared.
     std::vector<double> ground_m;
     std::vector<double> reference_ps;
@@ -72,12 +74,12 @@ struct V9WaterResult final
     double phase_enthalpy_residual_J_m2 = 0;
 };
 
-// Exact v5 native-array computation retained by v73/v74. The source canonical
-// bed is 256 squared, with source-metre 65,536-periodic coordinates. Native
-// arrays precede water-conditioned v74 refinement and query geometry.
+// Exact native-array computation retained by V9/V21. Bed and water levels use
+// the caller's vertical unit: V9 supplies source metres; V21 supplies relative
+// game-height blocks and sets the climate-equivalent conversion to ten.
 [[nodiscard]]
 std::expected<V9WaterResult, V9WaterFailure>
-generateV9Water(std::span<double const> final_bed_vertices_m, V9WaterForcing const& forcing,
+generateV9Water(std::span<double const> bed_vertices, V9WaterForcing const& forcing,
                 std::stop_token stop_token = {}, std::function<void(V9WaterProgress)> progress = {});
 
 } // namespace generation::detail

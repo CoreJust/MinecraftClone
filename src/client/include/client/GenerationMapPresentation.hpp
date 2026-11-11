@@ -23,6 +23,10 @@ inline constexpr uint8_t GENERATION_MAP_ICE_NONE = 0U;
 inline constexpr uint8_t GENERATION_MAP_ICE_SNOW = 1U;
 inline constexpr uint8_t GENERATION_MAP_ICE_WATER = 2U;
 
+// Periodic material grain in finite source-cell coordinates; both axes tile every 256 cells.
+[[nodiscard]]
+float generationMapMaterialGrain(float x, float y) noexcept;
+
 struct GenerationMapImage final
 {
     uint32_t width = 0U;
@@ -48,8 +52,11 @@ struct GenerationMapAnimationClock final
     bool reduced_motion = false;
     // Authoritative readiness does not advance the desktop illustrative timeline.
     bool ready = false;
-    // Existing prototype consumers use five five-second phases; desktop presentation requests ten seconds.
+    // Baseline five-phase duration; presentation uses 1.5x pacing independently of readiness.
     std::chrono::milliseconds formation_duration{25'000};
+    // Finite thermal budget from the first geographic relief; provisional fields
+    // remain incandescent while evolving. Rain follows full crust and a short pause.
+    std::chrono::milliseconds cooling_duration{8'000};
 };
 
 enum class GenerationMapAnimationPhase : uint8_t
@@ -68,12 +75,24 @@ struct GenerationMapAnimationFrame final
     GenerationMapAnimationPhase phase = GenerationMapAnimationPhase::Tectonics;
     float phase_progress = 0.0F;
     GenerationMapImageHandle image;
+    // Native surface before weather strokes; exact final-map parity is independent of overlays.
+    GenerationMapImageHandle surface_image;
+};
+
+// Values from the current native surface, for deterministic thermal inspection.
+struct GenerationMapThermalSample final
+{
+    float potential = 0.0F;
+    float progress = 0.0F;
+    float elevation_m = 0.0F;
 };
 
 struct GenerationMapAnimationCache;
+struct GenerationMapNativeCache;
+struct S2MapImage;
 
-// Retains only the latest visual tick image, at 24 ticks per visible second.
-// Repeated ticks reuse the immutable image; source or display-mask changes invalidate it.
+// Retains immutable frames at 24 visual ticks per visible second. The typed native
+// path follows live scalar fields and adopts later fields within the same playback.
 class GenerationMapAnimator final
 {
 public:
@@ -93,10 +112,32 @@ public:
         GenerationMapAnimationClock const& clock
     );
 
+    // Begins with the first real progress snapshot before readiness. Later scalar
+    // fields converge from the current surface without restarting the visible clock.
+    [[nodiscard]]
+    GenerationMapAnimationFrame updateNative(
+        std::shared_ptr<generation::GenerationSnapshot const> snapshot,
+        std::shared_ptr<generation::GlobalAtlas const> atlas,
+        std::shared_ptr<S2MapImage const> final_source,
+        GenerationMapAnimationClock const& clock
+    );
+
+    // Completed-source convenience entry; ordinary loading uses live snapshots.
+    [[nodiscard]]
+    GenerationMapAnimationFrame updateNative(
+        std::shared_ptr<generation::GlobalAtlas const> atlas,
+        std::shared_ptr<S2MapImage const> final_source,
+        GenerationMapAnimationClock const& clock
+    );
+
+    [[nodiscard]]
+    std::optional<GenerationMapThermalSample> thermalSample(uint32_t x, uint32_t y) const noexcept;
+
     void reset() noexcept;
 
 private:
     std::unique_ptr<GenerationMapAnimationCache> cache_;
+    std::unique_ptr<GenerationMapNativeCache> native_cache_;
 };
 
 
@@ -120,7 +161,8 @@ std::optional<GenerationMapImage> rasterizeGenerationMap(
 [[nodiscard]]
 std::optional<GenerationMapImage> rasterizeGenerationMap(
     generation::GlobalAtlas const& atlas,
-    std::span<uint8_t const> display_ice_surface_kind = {}
+    std::span<uint8_t const> display_ice_surface_kind = {},
+    bool include_climate_tint = true
 );
 
 // Retained for the Android presentation path; desktop uses the cached animator.

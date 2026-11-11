@@ -1,5 +1,6 @@
 # Keep timed acceptance cadence tests independent from unrelated CTest work.
 foreach(serial_runtime_test IN ITEMS
+    GameServerPreviewTest.PreparedWorldStreamsConnectedNearChunksBeforeFarCoverage
     GameServerPreviewTest.ResetsPriorityCursorAfterProgressWhenHeadingChanges
     GameClientLifecycleTest.StopDuringRetryIsServicedWithoutStartingAnotherAttempt
     GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream

@@ -281,6 +281,24 @@ std::expected<V9ClimateResult, V9ClimateFailure> generateV9Climate(
                   "cloud_transport_tendency_kg_m2_s", "phase_vapor_begin_kg_m2",
                   "phase_vapor_end_kg_m2", "phase_cloud_begin_kg_m2", "phase_cloud_end_kg_m2"})
                 annual[name] = Array(P * L);
+            auto& annual_rain = annual.at("rain_kg_m2_s");
+            auto& annual_ocean_evap = annual.at("ocean_evap_kg_m2_s");
+            auto& annual_runoff = annual.at("runoff_kg_m2_s");
+            auto& annual_land_evap = annual.at("land_evap_kg_m2_s");
+            auto& annual_bucket = annual.at("bucket_kg_m2");
+            auto& phase_soil_begin = annual.at("phase_soil_begin_kg_m2");
+            auto& phase_soil_end = annual.at("phase_soil_end_kg_m2");
+            auto& annual_layer_vapor = annual.at("layer_vapor_kg_m2");
+            auto& annual_layer_cloud = annual.at("layer_cloud_kg_m2");
+            auto& annual_condensation = annual.at("condensation_kg_m2_s");
+            auto& annual_cloud_evap = annual.at("cloud_evap_kg_m2_s");
+            auto& annual_layer_rain = annual.at("layer_rain_kg_m2_s");
+            auto& vapor_transport_tendency = annual.at("vapor_transport_tendency_kg_m2_s");
+            auto& cloud_transport_tendency = annual.at("cloud_transport_tendency_kg_m2_s");
+            auto& phase_vapor_begin = annual.at("phase_vapor_begin_kg_m2");
+            auto& phase_vapor_end = annual.at("phase_vapor_end_kg_m2");
+            auto& phase_cloud_begin = annual.at("phase_cloud_begin_kg_m2");
+            auto& phase_cloud_end = annual.at("phase_cloud_end_kg_m2");
             double initial = 0.;
             for (double a : V)
                 initial += a;
@@ -299,11 +317,11 @@ std::expected<V9ClimateResult, V9ClimateFailure> generateV9Climate(
                 if (day % 45 == 0)
                 {
                     std::copy(V.begin(), V.end(),
-                              annual["phase_vapor_begin_kg_m2"].begin() + p * L);
+                              phase_vapor_begin.begin() + p * L);
                     std::copy(C.begin(), C.end(),
-                              annual["phase_cloud_begin_kg_m2"].begin() + p * L);
+                              phase_cloud_begin.begin() + p * L);
                     std::copy(soil.begin(), soil.end(),
-                              annual["phase_soil_begin_kg_m2"].begin() + p * S);
+                              phase_soil_begin.begin() + p * S);
                 }
                 for (int32_t step = 0; step < daily.substeps; ++step)
                 {
@@ -312,8 +330,8 @@ std::expected<V9ClimateResult, V9ClimateFailure> generateV9Climate(
                     {
                         V[i] += dt * tv[i];
                         C[i] += dt * tc[i];
-                        annual["vapor_transport_tendency_kg_m2_s"][p * L + i] += dt * tv[i];
-                        annual["cloud_transport_tendency_kg_m2_s"][p * L + i] += dt * tc[i];
+                        vapor_transport_tendency[p * L + i] += dt * tv[i];
+                        cloud_transport_tendency[p * L + i] += dt * tc[i];
                     }
                     Array eo(S), cond(L), evap(L), rain(S), fall(L);
                     for (int32_t i = 0; i < S; ++i)
@@ -338,23 +356,23 @@ std::expected<V9ClimateResult, V9ClimateFailure> generateV9Climate(
                         soil[i] -= drained;
                         double et = .25 * drained, runoff = .75 * drained + overflow;
                         V[i] += et;
-                        annual["rain_kg_m2_s"][p * S + i] += rain[i];
-                        annual["ocean_evap_kg_m2_s"][p * S + i] += eo[i];
-                        annual["runoff_kg_m2_s"][p * S + i] += runoff;
-                        annual["land_evap_kg_m2_s"][p * S + i] += et;
+                        annual_rain[p * S + i] += rain[i];
+                        annual_ocean_evap[p * S + i] += eo[i];
+                        annual_runoff[p * S + i] += runoff;
+                        annual_land_evap[p * S + i] += et;
                         net += eo[i] - wet[i] * rain[i] - runoff;
-                        annual["bucket_kg_m2"][p * S + i] += dt * soil[i];
+                        annual_bucket[p * S + i] += dt * soil[i];
                         result.minimum_reservoir_kg_m2 =
                             std::min(result.minimum_reservoir_kg_m2, soil[i]);
                     }
                     equilibrate(V, C, std::span(sat).subspan(p * L, L), dt / 2, cond, evap);
                     for (int32_t i = 0; i < L; ++i)
                     {
-                        annual["layer_vapor_kg_m2"][p * L + i] += dt * V[i];
-                        annual["layer_cloud_kg_m2"][p * L + i] += dt * C[i];
-                        annual["condensation_kg_m2_s"][p * L + i] += cond[i];
-                        annual["cloud_evap_kg_m2_s"][p * L + i] += evap[i];
-                        annual["layer_rain_kg_m2_s"][p * L + i] += fall[i];
+                        annual_layer_vapor[p * L + i] += dt * V[i];
+                        annual_layer_cloud[p * L + i] += dt * C[i];
+                        annual_condensation[p * L + i] += cond[i];
+                        annual_cloud_evap[p * L + i] += evap[i];
+                        annual_layer_rain[p * L + i] += fall[i];
                         result.minimum_reservoir_kg_m2 =
                             std::min({result.minimum_reservoir_kg_m2, V[i], C[i]});
                         result.max_supersaturation_ratio =
@@ -363,9 +381,9 @@ std::expected<V9ClimateResult, V9ClimateFailure> generateV9Climate(
                     result.max_cfl = std::max(result.max_cfl, dt * daily.op.rate);
                     ++result.moisture_substeps;
                 }
-                std::copy(V.begin(), V.end(), annual["phase_vapor_end_kg_m2"].begin() + p * L);
-                std::copy(C.begin(), C.end(), annual["phase_cloud_end_kg_m2"].begin() + p * L);
-                std::copy(soil.begin(), soil.end(), annual["phase_soil_end_kg_m2"].begin() + p * S);
+                std::copy(V.begin(), V.end(), phase_vapor_end.begin() + p * L);
+                std::copy(C.begin(), C.end(), phase_cloud_end.begin() + p * L);
+                std::copy(soil.begin(), soil.end(), phase_soil_end.begin() + p * S);
                 if (progress)
                     progress(
                         {V9ClimateProgress::Stage::Moisture, uint32_t(year * 360 + day + 1), 1080});
@@ -384,18 +402,18 @@ std::expected<V9ClimateResult, V9ClimateFailure> generateV9Climate(
                 for (int32_t i = 0; i < L; ++i)
                 {
                     int32_t j = p * L + i;
-                    double vr = annual["phase_vapor_end_kg_m2"][j] -
-                            annual["phase_vapor_begin_kg_m2"][j] -
-                            annual["vapor_transport_tendency_kg_m2_s"][j] +
-                            annual["condensation_kg_m2_s"][j] - annual["cloud_evap_kg_m2_s"][j];
+                    double vr = phase_vapor_end[j] -
+                            phase_vapor_begin[j] -
+                            vapor_transport_tendency[j] +
+                            annual_condensation[j] - annual_cloud_evap[j];
                     if (i < S)
-                        vr -= annual["ocean_evap_kg_m2_s"][p * S + i] +
-                              annual["land_evap_kg_m2_s"][p * S + i];
-                    double cr = annual["phase_cloud_end_kg_m2"][j] -
-                            annual["phase_cloud_begin_kg_m2"][j] -
-                            annual["cloud_transport_tendency_kg_m2_s"][j] -
-                            annual["condensation_kg_m2_s"][j] +
-                            annual["cloud_evap_kg_m2_s"][j] + annual["layer_rain_kg_m2_s"][j];
+                        vr -= annual_ocean_evap[p * S + i] +
+                              annual_land_evap[p * S + i];
+                    double cr = phase_cloud_end[j] -
+                            phase_cloud_begin[j] -
+                            cloud_transport_tendency[j] -
+                            annual_condensation[j] +
+                            annual_cloud_evap[j] + annual_layer_rain[j];
                     result.local_phase_budget_max_kg_m2_s =
                         std::max({result.local_phase_budget_max_kg_m2_s, std::abs(vr) / PHASE,
                             std::abs(cr) / PHASE});
@@ -403,10 +421,10 @@ std::expected<V9ClimateResult, V9ClimateFailure> generateV9Climate(
                 for (int32_t i = 0; i < S; ++i)
                 {
                     int32_t j = p * S + i;
-                    double sr = annual["phase_soil_end_kg_m2"][j] -
-                            annual["phase_soil_begin_kg_m2"][j] -
-                            (1 - wet[i]) * annual["rain_kg_m2_s"][j] +
-                            annual["land_evap_kg_m2_s"][j] + annual["runoff_kg_m2_s"][j];
+                    double sr = phase_soil_end[j] -
+                            phase_soil_begin[j] -
+                            (1 - wet[i]) * annual_rain[j] +
+                            annual_land_evap[j] + annual_runoff[j];
                     result.local_phase_budget_max_kg_m2_s =
                         std::max(result.local_phase_budget_max_kg_m2_s, std::abs(sr) / PHASE);
                 }

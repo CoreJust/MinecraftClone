@@ -151,6 +151,10 @@ struct RendererRuntimeInfo final {
     bool presentation_recreation_attempted = false;
     bool presentation_recreation_deferred = false;
     std::chrono::nanoseconds cpu_command_record_duration{ 0 };
+    std::chrono::nanoseconds cpu_presentation_prepare_duration{ 0 };
+    std::chrono::nanoseconds cpu_pipeline_bind_duration{ 0 };
+    std::chrono::nanoseconds cpu_context_complete_call_duration{ 0 };
+    std::chrono::nanoseconds cpu_stone_face_growth_duration{ 0 };
     std::chrono::nanoseconds cpu_visible_range_collection_duration{ 0 };
     std::chrono::nanoseconds cpu_height_tile_group_and_tile_traversal_duration{ 0 };
     std::chrono::nanoseconds cpu_height_tile_pending_range_order_duration{ 0 };
@@ -285,7 +289,8 @@ public:
     void setWorldText(std::string_view text, TextPlacement placement, TextColor color = {});
     void addWorldText(std::string_view text, TextPlacement placement, TextColor color = {});
     void clearWorldText() noexcept;
-    void setBlockInteractionTarget(std::optional<shared::BlockTarget> target, float server_progress) noexcept;
+    void setBlockInteractionTarget(std::optional<shared::BlockTarget> target, float server_progress,
+        BlockInteractionEffects::Clock::time_point now = BlockInteractionEffects::Clock::now()) noexcept;
     [[nodiscard]] bool addAcceptedBlockBreak(BlockBreakEventIdentity identity, shared::WorldCoordinate cell,
         shared::Block material, std::chrono::steady_clock::time_point observed_at);
     void clearBlockInteractionEffects() noexcept;
@@ -300,9 +305,9 @@ public:
         std::chrono::steady_clock::time_point deadline,
         TerrainLodRendererDiagnostics* diagnostics = nullptr
     );
-    // Replace existing exact groups atomically; empty group ranges remove their geometry.
+    // Replace existing exact groups atomically; return the published immutable scene after upload completes.
     [[nodiscard]]
-    bool replaceTerrainLodGroups(
+    std::shared_ptr<TerrainLodScene const> replaceTerrainLodGroups(
         std::shared_ptr<TerrainLodScene const> patch,
         std::chrono::steady_clock::time_point deadline,
         TerrainLodRendererDiagnostics* diagnostics = nullptr

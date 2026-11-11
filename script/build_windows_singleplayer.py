@@ -27,6 +27,10 @@ REQUIRED_SHADER_PATHS = frozenset(f"shaders/{name}.spv" for name in (
 MODEL_NOTICE_FILES = (
     ("third_party/platec/LICENSE", "licenses/model/platec/LICENSE"),
     ("third_party/platec/provenance.json", "licenses/model/platec/provenance.json"),
+    ("third_party/platec_v10/LICENSE", "licenses/model/platec_v10/LICENSE"),
+    ("third_party/platec_v10/provenance.json", "licenses/model/platec_v10/provenance.json"),
+    ("third_party/v10_perlin/LICENSE.txt", "licenses/model/v10_perlin/LICENSE.txt"),
+    ("third_party/v10_perlin/provenance.json", "licenses/model/v10_perlin/provenance.json"),
     ("third_party/structural/LICENSE", "licenses/model/structural/LICENSE"),
     ("third_party/structural/SOURCE_MANIFEST.json", "licenses/model/structural/SOURCE_MANIFEST.json"),
     ("third_party/superlu/License.txt", "licenses/model/superlu/License.txt"),

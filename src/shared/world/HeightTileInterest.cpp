@@ -87,6 +87,24 @@ HeightTileInterestOrders buildHeightTileOffsetOrders(uint32_t const radius)
         .radius = radius,
         .orders = {},
     };
+    std::vector<RankedHeightTileOffset> ranked;
+    ranked.reserve(heightTileInterestCount(radius));
+    for (int32_t y = -residency_radius; y <= residency_radius; ++y) {
+        for (int32_t x = -residency_radius; x <= residency_radius; ++x) {
+            int64_t const distance_squared = static_cast<int64_t>(x) * x + static_cast<int64_t>(y) * y;
+            int64_t const wide_residency_radius = residency_radius;
+            if (distance_squared > wide_residency_radius * wide_residency_radius) {
+                continue;
+            }
+            HeightTileKey const offset{.x = x, .y = y};
+            ranked.push_back({
+                .offset = offset,
+                .distance_squared = distance_squared,
+                .negative_ahead = 0.0,
+            });
+        }
+    }
+    std::ranges::sort(ranked, {}, &RankedHeightTileOffset::distance_squared);
     for (uint32_t sector = 0U; sector < result.orders.size(); ++sector) {
         double const angle = static_cast<double>(sector) * 2.0 * PI / static_cast<double>(result.orders.size());
         HeightTileHeading const heading{
@@ -96,36 +114,29 @@ HeightTileInterestOrders buildHeightTileOffsetOrders(uint32_t const radius)
         double const heading_length = std::hypot(heading.x, heading.y);
         double const forward_x = static_cast<double>(heading.x) / heading_length;
         double const forward_y = static_cast<double>(heading.y) / heading_length;
-        std::vector<RankedHeightTileOffset> ranked;
-        ranked.reserve(heightTileInterestCount(radius));
-        for (int32_t y = -residency_radius; y <= residency_radius; ++y) {
-            for (int32_t x = -residency_radius; x <= residency_radius; ++x) {
-                int64_t const distance_squared = static_cast<int64_t>(x) * x + static_cast<int64_t>(y) * y;
-                int64_t const wide_residency_radius = residency_radius;
-                if (distance_squared > wide_residency_radius * wide_residency_radius) {
-                    continue;
-                }
-                HeightTileKey const offset{.x = x, .y = y};
-                ranked.push_back({
-                    .offset = offset,
-                    .distance_squared = distance_squared,
-                    .negative_ahead = -(x * forward_x + y * forward_y),
-                });
-            }
+        for (RankedHeightTileOffset& entry : ranked) {
+            entry.negative_ahead = -(entry.offset.x * forward_x + entry.offset.y * forward_y);
         }
-        std::ranges::sort(ranked, [](RankedHeightTileOffset const& first, RankedHeightTileOffset const& second) {
-            return std::tie(
-                first.distance_squared,
-                first.negative_ahead,
-                first.offset.y,
-                first.offset.x
-            ) < std::tie(
-                second.distance_squared,
-                second.negative_ahead,
-                second.offset.y,
-                second.offset.x
-            );
-        });
+        // Distance is heading-independent; only equal-distance shells need reordering.
+        for (auto begin = ranked.begin(); begin != ranked.end();) {
+            auto const end = std::find_if(begin, ranked.end(), [&](RankedHeightTileOffset const& entry) {
+                return entry.distance_squared != begin->distance_squared;
+            });
+            std::sort(begin, end, [](RankedHeightTileOffset const& first, RankedHeightTileOffset const& second) {
+                return std::tie(
+                    first.distance_squared,
+                    first.negative_ahead,
+                    first.offset.y,
+                    first.offset.x
+                ) < std::tie(
+                    second.distance_squared,
+                    second.negative_ahead,
+                    second.offset.y,
+                    second.offset.x
+                );
+            });
+            begin = end;
+        }
         HeightTileInterest& order = result.orders[sector];
         order.heading_x = heading.x;
         order.heading_y = heading.y;

@@ -1,5 +1,6 @@
 #include "TerrainLodSource.hpp"
 
+#include <client/S2MapPresentation.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/world/TerrainLod.hpp>
 #include <shared/world/TerrainWorld.hpp>
@@ -38,7 +39,7 @@ bool isValidSession(shared::TerrainSessionIdentity const& session) noexcept
 }
 
 [[nodiscard]]
-TerrainLodProduct buildTerrainLodProduct(
+TerrainLodProduct buildTerrainLodRoot(
     shared::TerrainSessionIdentity const& session,
     std::stop_token const& cancellation,
     PreparedTerrainWorldProvider const& prepared_world_provider
@@ -98,7 +99,27 @@ TerrainLodProduct buildTerrainLodProduct(
         generation::WORLD_SIZE_BLOCKS,
         cancellation
     );
-    return { .world = world, .root = root };
+    if (cancellation.stop_requested()) {
+        throw generation::GenerationCancelled{};
+    }
+    if (!root) {
+        throw std::runtime_error{ "Terrain LOD source could not build the full L0 root." };
+    }
+    return {
+        .world = world,
+        .root = root,
+    };
+}
+
+[[nodiscard]]
+std::shared_ptr<S2MapImage const> buildDefaultMap(
+    shared::TerrainWorld const& world,
+    shared::TerrainLodArtifact const& root,
+    std::stop_token const cancellation
+)
+{
+    auto map = rasterizeS2WorldMap(world, root, S2WorldMapState{}, cancellation);
+    return map ? std::make_shared<S2MapImage const>(std::move(*map)) : nullptr;
 }
 
 [[nodiscard]]
@@ -111,8 +132,18 @@ TerrainLodSource::Builder makePreparedWorldBuilder(PreparedTerrainWorldProvider 
         shared::TerrainSessionIdentity const& session,
         std::stop_token const& cancellation
     ) {
-        return buildTerrainLodProduct(session, cancellation, provider);
+        return buildTerrainLodRoot(session, cancellation, provider);
     };
+}
+
+[[nodiscard]]
+bool isValidMap(S2MapImage const& map, shared::TerrainLodArtifact const& root)
+{
+    return map.source_identity == root.terrain_identity
+        && map.source_model_identity == root.model_identity
+        && map.width != 0U
+        && map.height != 0U
+        && map.rgba.size() == static_cast<uint64_t>(map.width) * map.height;
 }
 
 [[nodiscard]]
@@ -132,6 +163,9 @@ bool isValidProduct(
         || product.root->extent != generation::WORLD_SIZE_BLOCKS) {
         return false;
     }
+    if (product.map && !isValidMap(*product.map, *product.root)) {
+        return false;
+    }
 
     uint32_t const spacing = shared::terrainLodSpacing(
         session.configuration.resolution,
@@ -147,14 +181,23 @@ bool isValidProduct(
 } // namespace
 
 TerrainLodSource::TerrainLodSource()
-    : TerrainLodSource{ [](shared::TerrainSessionIdentity const& session, std::stop_token const& cancellation) {
-        return buildTerrainLodProduct(session, cancellation, {});
-    } }
+    : TerrainLodSource{
+        [](shared::TerrainSessionIdentity const& session, std::stop_token const& cancellation) {
+            return buildTerrainLodRoot(session, cancellation, {});
+        },
+        buildDefaultMap,
+    }
 {
 }
 
 TerrainLodSource::TerrainLodSource(Builder builder)
+    : TerrainLodSource{ std::move(builder), {} }
+{
+}
+
+TerrainLodSource::TerrainLodSource(Builder builder, MapBuilder map_builder)
     : m_builder{ std::move(builder) }
+    , m_map_builder{ std::move(map_builder) }
 {
     if (!m_builder) {
         throw std::invalid_argument{ "Terrain LOD source requires a builder." };
@@ -163,7 +206,12 @@ TerrainLodSource::TerrainLodSource(Builder builder)
 }
 
 TerrainLodSource::TerrainLodSource(PreparedTerrainWorldProvider provider)
-    : TerrainLodSource{ makePreparedWorldBuilder(std::move(provider)) }
+    : TerrainLodSource{ std::move(provider), buildDefaultMap }
+{
+}
+
+TerrainLodSource::TerrainLodSource(PreparedTerrainWorldProvider provider, MapBuilder map_builder)
+    : TerrainLodSource{ makePreparedWorldBuilder(std::move(provider)), std::move(map_builder) }
 {
 }
 
@@ -264,6 +312,22 @@ std::shared_ptr<shared::TerrainLodArtifact const> TerrainLodSource::rootFor(
     return publication ? publication->product.root : nullptr;
 }
 
+std::shared_ptr<S2MapImage const> TerrainLodSource::mapFor(
+    shared::TerrainSessionIdentity const& session
+) const noexcept
+{
+    std::shared_ptr<Publication const> const publication = publicationFor(session);
+    return publication ? publication->product.map : nullptr;
+}
+
+bool TerrainLodSource::mapUnavailableFor(shared::TerrainSessionIdentity const& session) const noexcept
+{
+    std::lock_guard lock{ m_mutex };
+    uint64_t const generation = m_latest_generation.load(std::memory_order_acquire);
+    return m_publication && m_publication->generation == generation && m_publication->session == session
+        && !m_publication->product.map && (!m_active_request || m_active_request->generation != generation);
+}
+
 void TerrainLodSource::workerLoop()
 {
     while (true) {
@@ -286,74 +350,72 @@ void TerrainLodSource::workerLoop()
         }
 
         auto const started_at = std::chrono::steady_clock::now();
+        bool root_published = false;
         try {
-            TerrainLodProduct product = m_builder(request.session, cancellation->get_token());
-            if (cancellation->stop_requested()) {
-                std::lock_guard lock{ m_mutex };
-                if (m_active_cancellation == cancellation) {
-                    m_active_cancellation.reset();
-                    m_active_request.reset();
-                }
-                continue;
+            std::stop_token const token = cancellation->get_token();
+            TerrainLodProduct product = m_builder(request.session, token);
+            if (token.stop_requested()) {
+                throw generation::GenerationCancelled{};
             }
             if (!isValidProduct(product, request.session)) {
                 throw std::runtime_error{ "Terrain LOD builder returned an incomplete or mismatched root." };
             }
 
-            auto const publication = std::make_shared<Publication const>(Publication{
-                .generation = request.generation,
-                .session = request.session,
-                .product = std::move(product),
-            });
-            bool published = false;
-            {
-                std::lock_guard lock{ m_mutex };
-                if (!m_stopping
-                    && !cancellation->stop_requested()
-                    && m_active_cancellation == cancellation
-                    && request.generation == m_latest_generation.load(std::memory_order_acquire)) {
-                    m_publication = publication;
-                    published = true;
+            publish(request, product, cancellation);
+            root_published = true;
+            auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started_at
+            );
+            CORE_INFO(
+                "Client L0 terrain source ready: seed={}, resolution={}, elapsed_ms={}",
+                request.session.terrain.seed,
+                request.session.configuration.resolution,
+                elapsed.count()
+            );
+
+            if (m_map_builder && !token.stop_requested()) {
+                auto const map_started_at = std::chrono::steady_clock::now();
+                product.map = m_map_builder(*product.world, *product.root, token);
+                if (token.stop_requested()) {
+                    throw generation::GenerationCancelled{};
                 }
-                if (m_active_cancellation == cancellation) {
-                    m_active_cancellation.reset();
-                    m_active_request.reset();
+                if (!product.map || !isValidMap(*product.map, *product.root)) {
+                    throw std::runtime_error{ "Terrain LOD source could not prepare a matching default S2 map." };
                 }
-            }
-            if (published) {
-                auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - started_at
+                publish(request, product, cancellation);
+                auto const map_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - map_started_at
                 );
                 CORE_INFO(
-                    "Client L0 terrain source ready: seed={}, resolution={}, elapsed_ms={}",
+                    "Client default S2 map ready: seed={}, resolution={}, elapsed_ms={}",
                     request.session.terrain.seed,
                     request.session.configuration.resolution,
-                    elapsed.count()
+                    map_elapsed.count()
                 );
             }
         } catch (generation::GenerationCancelled const&) {
-            std::lock_guard lock{ m_mutex };
-            if (m_active_cancellation == cancellation) {
-                m_active_cancellation.reset();
-                m_active_request.reset();
-            }
         } catch (std::exception const& error) {
-            {
-                std::lock_guard lock{ m_mutex };
-                if (m_active_cancellation == cancellation) {
-                    m_active_cancellation.reset();
-                    m_active_request.reset();
-                }
-            }
             if (!cancellation->stop_requested()
                 && request.generation == m_latest_generation.load(std::memory_order_acquire)) {
                 CORE_ERROR(
-                    "Client L0 terrain source failed for seed {}: {}",
+                    "Client {} failed for seed {}: {}",
+                    root_published ? "default S2 map" : "L0 terrain source",
                     request.session.terrain.seed,
                     error.what()
                 );
             }
         } catch (...) {
+            if (!cancellation->stop_requested()
+                && request.generation == m_latest_generation.load(std::memory_order_acquire)) {
+                CORE_ERROR(
+                    "Client {} failed for seed {} with an unknown error.",
+                    root_published ? "default S2 map" : "L0 terrain source",
+                    request.session.terrain.seed
+                );
+            }
+        }
+
+        {
             std::lock_guard lock{ m_mutex };
             if (m_active_cancellation == cancellation) {
                 m_active_cancellation.reset();
@@ -361,6 +423,27 @@ void TerrainLodSource::workerLoop()
             }
         }
     }
+}
+
+void TerrainLodSource::publish(
+    Request const& request,
+    TerrainLodProduct const& product,
+    std::shared_ptr<std::stop_source> const& cancellation
+)
+{
+    auto publication = std::make_shared<Publication const>(Publication{
+        .generation = request.generation,
+        .session = request.session,
+        .product = product,
+    });
+    std::lock_guard lock{ m_mutex };
+    if (m_stopping
+        || cancellation->stop_requested()
+        || m_active_cancellation != cancellation
+        || request.generation != m_latest_generation.load(std::memory_order_acquire)) {
+        throw generation::GenerationCancelled{};
+    }
+    m_publication = std::move(publication);
 }
 
 std::shared_ptr<TerrainLodSource::Publication const> TerrainLodSource::publicationFor(

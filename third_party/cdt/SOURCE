@@ -1,0 +1,4 @@
+Upstream: https://github.com/artem-ogre/CDT
+Commit: 15c15405329e50303481df8f33e1bb6764e30f74
+Copied unmodified from dem-river-mesh-v1/vendor/CDT.
+Licenses: MPL-2.0; predicates BSD and LLVM notices are retained alongside the source.

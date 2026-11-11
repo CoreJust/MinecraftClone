@@ -1,0 +1,252 @@
+{
+  "package": "PyPlatec1.4.3",
+  "source_distribution_sha256": "3d742526d0b867489fa61a937a53ae0504b9c2e6f1087fdfd0f4969c4ece78d8",
+  "adaptation": "Namespace isolation and qualified rebinding; explicit approved Apple noise, movement, buoyancy, crust-age and erosion-noise FMA semantics; full precision M_PI fallback",
+  "namespace": "mc_v10_platec_engine",
+  "excluded": [
+    "platecapi.cpp",
+    "platecapi.hpp",
+    "Python extensionwrapper"
+  ],
+  "files": {
+    "bounds.cpp": {
+      "upstream_sha256": "aee65514df842a45517e8555b98fa8cb084d2dc91b2696ad717210b9e2127e89",
+      "adapted_sha256": "95ab2dea9f4c44e3c37d6d6d46ac84eb178b42d58b52c7dc4bbfcf2038e2a01e",
+      "namespace_open_after_original_line": 20,
+      "namespace_close_before_original_line": 113
+    },
+    "bounds.hpp": {
+      "upstream_sha256": "e4c4f1b3f37fe11a7efa41f4672973c190662001ba607a2be73428aa80e063a9",
+      "adapted_sha256": "8952a3ec97511145d4e75fc27380385834956eedd241c735c4217a7111739749",
+      "namespace_open_after_original_line": 29,
+      "namespace_close_before_original_line": 140
+    },
+    "geometry.cpp": {
+      "upstream_sha256": "fe91e4a269b4426543d67d7bf72f1457c8a090cb759da961d082006ef62ed848",
+      "adapted_sha256": "ee4c9bafb3ea0132c92b288baab091b5f1ede4519ded13069643dbb7b1551c90",
+      "namespace_open_after_original_line": 20,
+      "namespace_close_before_original_line": 182
+    },
+    "geometry.hpp": {
+      "upstream_sha256": "19b490bf11324526acb8d01d18b17aaedc7b166249c238dfea4c38da0be88aa0",
+      "adapted_sha256": "b28a0d43ba6c991a923737037d7041ab5a767f34366f8e587dfc0c61a9d2c82e",
+      "namespace_open_after_original_line": 26,
+      "namespace_close_before_original_line": 192
+    },
+    "heightmap.cpp": {
+      "upstream_sha256": "d7208033edecbb35dc718c1baff9c14dc3b2cbd5ecf3446a462445447bbc3d59",
+      "adapted_sha256": "1a54b9ff06135ff6ba021ee9b108913af5cfdcc214e6d62077842b4dd9e31207",
+      "namespace_open_after_original_line": 22,
+      "namespace_close_before_original_line": 25
+    },
+    "heightmap.hpp": {
+      "upstream_sha256": "f27fb681db12fa124c63012a430ddcf2dc7fe5d725af0281af6ef69f317ddc1f",
+      "adapted_sha256": "79c7ca702d99a930cc7e9c3a1980b381e5f7cf1883db18c9475bb537a22319f2",
+      "namespace_open_after_original_line": 28,
+      "namespace_close_before_original_line": 142
+    },
+    "lithosphere.cpp": {
+      "upstream_sha256": "33d5d216d6cf1e86d1f2c779049866de70006ba2863954405321f8a10efd9f1d",
+      "adapted_sha256": "66a0c84ad55768cf1855a26451b93413a0ee541989665f2234dd2390da2fd76d",
+      "namespace_open_after_original_line": 32,
+      "namespace_close_before_original_line": 866,
+      "qualified_reference_rebinding": [
+        "createNoise",
+        "createSlowNoise"
+      ],
+      "platform_parity_correction": "Explicit last multiply-add in update and restart buoyancy expressions matches approved Apple fmadd/fmla; noise/movement-corrected step3 Windows bytes reproduced by only disabling Mac lithosphere contraction"
+    },
+    "lithosphere.hpp": {
+      "upstream_sha256": "70fed109bc88042a73aa7457a4d52018ed79537b2eb84e9b63e22d439e494a8b",
+      "adapted_sha256": "cadfbd7e167f4cdc4984155f4f0feb8f6a5f04cb4ec4cdd3e230d82bd741491b",
+      "namespace_open_after_original_line": 32,
+      "namespace_close_before_original_line": 198
+    },
+    "mass.cpp": {
+      "upstream_sha256": "f26b248392c29d6a4c5820a9599307ce7df5f8b9e7408542059bdee3f164eb48",
+      "adapted_sha256": "845c520b7de9453c6cebf09df2a922e3dc5389e99ff6f23602dc2ae34a0e7d52",
+      "namespace_open_after_original_line": 20,
+      "namespace_close_before_original_line": 106
+    },
+    "mass.hpp": {
+      "upstream_sha256": "9661e1f0a6ac78224f463678ccf25591cccfb918921e1eef86e627accae3c36c",
+      "adapted_sha256": "ad6e769b86b63aad11149f6dc6bba1ebd19950a15e0429997005896385334611",
+      "namespace_open_after_original_line": 31,
+      "namespace_close_before_original_line": 73
+    },
+    "movement.cpp": {
+      "upstream_sha256": "78819b02e5d9bb850918f2e738bea3e6683d4239c9e2087121677cafb68f6074",
+      "adapted_sha256": "58ed983ecfd4179827a41338b97dc0163b843ba89495fa1576d41d026b8c8900",
+      "namespace_open_after_original_line": 22,
+      "namespace_close_before_original_line": 206,
+      "platform_parity_correction": "Full precision M_PI fallback; explicit FMA for norm and both rotation components matching approved Apple scalar fmadd and vector fmla"
+    },
+    "movement.hpp": {
+      "upstream_sha256": "6af3370da01f1aec1350043bae34cc48d7f96e975984431213ff81cd5506b584",
+      "adapted_sha256": "a9f0fa05df01fc27113142ad55ed9c4613488a563457b19e497367938110e2d3",
+      "namespace_open_after_original_line": 30,
+      "namespace_close_before_original_line": 108
+    },
+    "noise.cpp": {
+      "upstream_sha256": "dd468c9aae17db46be8d202bce188d40dd8753bbbec144ff10c76fd78f9367ab",
+      "adapted_sha256": "a9057f1d802b930626e06ab473cae92ccb1dbeab99d674150e8fd89a1e8487e3",
+      "namespace_open_after_original_line": 25,
+      "namespace_close_before_original_line": 150,
+      "platform_parity_correction": "Four float std::fma coordinate operations preserve the approved Apple fmadd semantics across MSVC; constructor first-divergence isolated with contraction-off noise-only object"
+    },
+    "noise.hpp": {
+      "upstream_sha256": "07f5adee2dba61dae4079b2de092cdf952023ac26f198ef705ffa83c3a62b547",
+      "adapted_sha256": "00a3b6c84d88360a2f41b9577ae0d671543e094715b571e60c1676a6fdae0345",
+      "namespace_open_after_original_line": 27,
+      "namespace_close_before_original_line": 32
+    },
+    "plate.cpp": {
+      "upstream_sha256": "caed542f9517070cacbf853df7c19494a59c53a6860e7bba769220065cf24dfd",
+      "adapted_sha256": "5976f9e4d0388f0248639e3e584984015881ab9bd1447b8dc62f363cd9fc8b11",
+      "namespace_open_after_original_line": 35,
+      "namespace_close_before_original_line": 660,
+      "qualified_reference_rebinding": [
+        "calculateCrust"
+      ],
+      "platform_parity_correction": "Explicit FMA preserves approved Apple setCrust weighted-age numerator and erode random-noise difference; isolated contraction-off function/block reproduces Windows step21/31 earliest divergence"
+    },
+    "plate.hpp": {
+      "upstream_sha256": "0352aaf3c063d1466874aa6076f83be843a8a16777a31015e885d669f2e3d57c",
+      "adapted_sha256": "1810f2fad84ea73baf8c15a3920acb1e63f281240d2d60429eb4246aca15c9dd",
+      "namespace_open_after_original_line": 33,
+      "namespace_close_before_original_line": 306
+    },
+    "plate_functions.cpp": {
+      "upstream_sha256": "525aaa6f8cbafad34978aabbb958282da2c644d1b1dada90f73932d7a75ab19f",
+      "adapted_sha256": "c07cf8b5eb9384305ccc4d09b80bd6bd8537a3d8187c9acf4b0883e7de598fab",
+      "namespace_open_after_original_line": 20,
+      "namespace_close_before_original_line": 78
+    },
+    "plate_functions.hpp": {
+      "upstream_sha256": "2c87995fbde59c0af3a9dd50414d8bee11ffd409c8139501ed59f4663217ebf7",
+      "adapted_sha256": "061eae8dfbd2513cb92b83c1368a7e1385a4701f8631a71dd1e5f37a7d40ef28",
+      "namespace_open_after_original_line": 25,
+      "namespace_close_before_original_line": 33
+    },
+    "rectangle.cpp": {
+      "upstream_sha256": "40210f0e48555535d0a5a490afdfa0638272252f8c7ed63f99ae881647ae4ad6",
+      "adapted_sha256": "cbfbc793dedbce7456e1f220d991a9ee244de59f61d37e7ec7d3bb4654dd6588",
+      "namespace_open_after_original_line": 22,
+      "namespace_close_before_original_line": 87
+    },
+    "rectangle.hpp": {
+      "upstream_sha256": "a47bc1c8c574f164d7549479f7c4c8261be45ba15a6644d23578837b1dc6abdd",
+      "adapted_sha256": "b4683ac592d3900942d1ccc4511ce737ebf63cbb8d25018845a9982e7de29e71",
+      "namespace_open_after_original_line": 26,
+      "namespace_close_before_original_line": 128
+    },
+    "segment_creator.cpp": {
+      "upstream_sha256": "634af07aac7d10f509e3282c4590959518343daaff30df35ca05a553a5e62413",
+      "adapted_sha256": "466a7a6a0b53814b9f5e1d7c4d15cebedac2225408c0d6bb9e95a960c0b71f4a",
+      "namespace_open_after_original_line": 23,
+      "namespace_close_before_original_line": 272
+    },
+    "segment_creator.hpp": {
+      "upstream_sha256": "6f5f3c3857f26bda21d97b5ae29c51ce13ccc2e28bcaac0d22a36b711186df95",
+      "adapted_sha256": "64523638f1ea102b52e26d469946e971a777b5c639c616d432385c850ea9da39",
+      "namespace_open_after_original_line": 25,
+      "namespace_close_before_original_line": 67
+    },
+    "segment_data.cpp": {
+      "upstream_sha256": "a392d7e2eb8d8a7a3fcf97fc131e9d11b51b941ceaa8b50a2ea2fa8fcd45cb6f",
+      "adapted_sha256": "c57c653f53c94ee23354867979e6d150141de48fb789603c1d0bee180af3669e",
+      "namespace_open_after_original_line": 20,
+      "namespace_close_before_original_line": 110
+    },
+    "segment_data.hpp": {
+      "upstream_sha256": "7fab54b85a4f2d38f3083e88010cf8c833107c6856f9f5c629e2aa448432bc5a",
+      "adapted_sha256": "cc6d1f9d89bf62b27b40647804ac6f70fb476cdd2bf66d64ab1493019013fa95",
+      "namespace_open_after_original_line": 24,
+      "namespace_close_before_original_line": 80
+    },
+    "segments.cpp": {
+      "upstream_sha256": "2df63447f8604ca82b1f3db400b0c593c44708b8af4bd03c88e1740d842ecbb0",
+      "adapted_sha256": "329893d3c4891affde95e65b65f0869c54d115abeb7f2cc487ba9e730bb8f9d3",
+      "namespace_open_after_original_line": 20,
+      "namespace_close_before_original_line": 108
+    },
+    "segments.hpp": {
+      "upstream_sha256": "c0525db70daf331d500c4ee87ec803bac0aa4a0a3d872166dca44a00c3459755",
+      "adapted_sha256": "f17db5127bf1b361c604ccdeeb4292f5fe7a033e993d6cdc9bda777d860f8789",
+      "namespace_open_after_original_line": 33,
+      "namespace_close_before_original_line": 96
+    },
+    "simplerandom.cpp": {
+      "upstream_sha256": "8f8b3a308115c584dc9e1fde07b67bf98cc78e71f2e32784f2bc78d142af9018",
+      "adapted_sha256": "dbda4e1a0b564fba5c3129b2b31aaac28159869c0f0386f7b1c8556694652c04",
+      "namespace_open_after_original_line": 25,
+      "namespace_close_before_original_line": 140
+    },
+    "simplerandom.hpp": {
+      "upstream_sha256": "7a9a8b2649b413567d81b5dd0f10b8d36c47330d8e01648b258670316704fb9c",
+      "adapted_sha256": "7bbfd8034963d4bf124c6fb0927b2dd0bf9835762863d76b27b5132f28e2e1c8",
+      "namespace_open_after_original_line": 26,
+      "namespace_close_before_original_line": 50
+    },
+    "simplexnoise.cpp": {
+      "upstream_sha256": "399717a69d8121ce4ca9efbf662525d02cda9b4eab738151b8cadbb85b1ea91b",
+      "adapted_sha256": "1e92d3ce690086e7258bccf0766ef358e2b4cab2a4e93f5671d14ae8722f1595",
+      "namespace_open_after_original_line": 29,
+      "namespace_close_before_original_line": 573
+    },
+    "simplexnoise.hpp": {
+      "upstream_sha256": "c7e517be09b4cb20f0708a1338580d2f2fc3b837c2ed4b69d45b4de49c514aca",
+      "adapted_sha256": "af7fac321f3bb97cd4ddec7f099ef87c5cdef72534eaa71d8155ec78ca28c2f6",
+      "namespace_open_after_original_line": 26,
+      "namespace_close_before_original_line": 203
+    },
+    "sqrdmd.cpp": {
+      "upstream_sha256": "5313c27b9c8d991c4413f5190d4c743a58ec3f5d6ad1bae207da190c80dd6235",
+      "adapted_sha256": "6df4c3376fa8ea25cf4c0d8f1640f30b1e8260822aeffb540248d518b5585115",
+      "namespace_open_after_original_line": 34,
+      "namespace_close_before_original_line": 229
+    },
+    "sqrdmd.hpp": {
+      "upstream_sha256": "7db5ab39e713c283b40a8dddef682088732f0d9953ef2bd5fe6b3880971a677b",
+      "adapted_sha256": "267c2b827c5a47e1b0df32d27f7f200a963d93d640fe25bbebd6ca90c8046bbd",
+      "namespace_open_after_original_line": 26,
+      "namespace_close_before_original_line": 52
+    },
+    "utils.cpp": {
+      "upstream_sha256": "f0aa1765e63a3c34bcaea7399c6efa7e1df3affd549e728d14ff042a41e6aa2b",
+      "adapted_sha256": "1c3a37a45c9e8fc7ff3ab34ecaf3067589b8d33da462ddae389a59cc0433e867",
+      "namespace_open_after_original_line": 21,
+      "namespace_close_before_original_line": 38
+    },
+    "utils.hpp": {
+      "upstream_sha256": "caa314210424333e5a893517ab12815006e06a9df563d12956135a1feb10d5f4",
+      "adapted_sha256": "1a7e851032346cb021ecea8fda707f696c472df076d36558affb05392afa4f4e",
+      "namespace_open_after_original_line": 35,
+      "namespace_close_before_original_line": 72
+    },
+    "world_point.cpp": {
+      "upstream_sha256": "c9d59640833093866ca5ab0b762370463c5b715ec6438a088d56958f1bafd28a",
+      "adapted_sha256": "6a0853dcd55c3c62540d784a3cca573e319d050487301d3b6d4e822a05566ca6",
+      "namespace_open_after_original_line": 21,
+      "namespace_close_before_original_line": 49
+    },
+    "world_point.hpp": {
+      "upstream_sha256": "280ecffe50dd34c830fb47ca56d51b1b3056c377d30c573d05f4914878d9a93a",
+      "adapted_sha256": "2bc1590e175d17a5ffa00544dd67bfb8a44696665b063c762637e7a5ba705bc5",
+      "namespace_open_after_original_line": 23,
+      "namespace_close_before_original_line": 41
+    }
+  },
+  "qualified_build": {
+    "compiler": "AppleClang17.0.0.17000603",
+    "language": "C++17",
+    "flags": [
+      "-O3",
+      "-DNDEBUG",
+      "-fno-strict-overflow"
+    ],
+    "effective_fp_contract": "on",
+    "warning": "Do not inherit foundation/perlin fp-contract=off onto this independentlyqualified original engine"
+  },
+  "mechanical_patch_sha256": "8ad59e36baefd96a7d07931d2d2379462ab7d4748527063f7749c49d38c7c4c6"
+}

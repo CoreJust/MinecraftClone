@@ -7,6 +7,7 @@
 
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <expected>
@@ -162,7 +163,7 @@ std::expected<V9PlatecSourceResult, V9PlatecFailure> generateV9PlatecSource(
         return cancelled();
     }
 
-    std::lock_guard platec_source_lock{s_platec_source_mutex};
+    std::unique_lock platec_source_lock{s_platec_source_mutex};
     if (stop_token.stop_requested())
     {
         return cancelled();
@@ -183,27 +184,9 @@ std::expected<V9PlatecSourceResult, V9PlatecFailure> generateV9PlatecSource(
     };
 
     uint32_t steps_completed = 0U;
-    if (progress_callback)
-    {
-        progress_callback({
-            .steps_completed = steps_completed,
-            .step_limit = V9_PLATEC_SOURCE_STEP_LIMIT,
-            .complete = engine.isFinished(),
-        });
-    }
     // The terminal Platec restart deletes its plates but leaves the ownership map in place.
     V9PlateDirectionSnapshot final_plate_direction_snapshot;
-    while (!engine.isFinished())
-    {
-        if (stop_token.stop_requested())
-        {
-            return cancelled();
-        }
-        if (steps_completed == V9_PLATEC_SOURCE_STEP_LIMIT)
-        {
-            return std::unexpected{V9PlatecFailure::StepLimitExceeded};
-        }
-
+    auto const capture_directions = [&] {
         uint32_t const current_plate_count = engine.getPlateCount();
         final_plate_direction_snapshot.observed_after_native_step = steps_completed;
         std::vector<V9PlateDirection>& directions = final_plate_direction_snapshot.directions;
@@ -227,17 +210,75 @@ std::expected<V9PlatecSourceResult, V9PlatecFailure> generateV9PlatecSource(
                 .y = direction.y(),
             });
         }
+    };
+    capture_directions();
+    auto last_snapshot_at = std::chrono::steady_clock::time_point{};
+    auto const publish = [&] {
+        if (!progress_callback)
+        {
+            return;
+        }
+        auto const now = std::chrono::steady_clock::now();
+        bool const copy_source = steps_completed == 0U || engine.isFinished()
+            || now - last_snapshot_at >= std::chrono::milliseconds{250};
+        std::shared_ptr<V9PlatecSourceResult const> snapshot;
+        if (copy_source)
+        {
+            uint32_t const count = V9_PLATEC_SOURCE_RESOLUTION * V9_PLATEC_SOURCE_RESOLUTION;
+            float const* heights = engine.getTopography();
+            uint32_t const* plates = engine.getPlatesMap();
+            if (heights == nullptr || plates == nullptr)
+            {
+                throw std::runtime_error{"Platec returned an absent live height or plate map"};
+            }
+            snapshot = std::make_shared<V9PlatecSourceResult const>(V9PlatecSourceResult{
+                .parameters = parameters,
+                .final_step = static_cast<int32_t>(steps_completed),
+                .height_raw = std::vector<float>(heights, heights + count),
+                .current_plate_id = std::vector<uint32_t>(plates, plates + count),
+                .plate_direction_snapshot = final_plate_direction_snapshot,
+            });
+            last_snapshot_at = now;
+        }
+        V9PlatecProgress const update{
+            .steps_completed = steps_completed,
+            .step_limit = V9_PLATEC_SOURCE_STEP_LIMIT,
+            .complete = engine.isFinished(),
+            .snapshot = std::move(snapshot),
+        };
+        // Vendor scratch is serialized only while touching the engine. Consumers
+        // receive owned copies and may publish without holding the native lock.
+        platec_source_lock.unlock();
+        try
+        {
+            progress_callback(update);
+        }
+        catch (...)
+        {
+            platec_source_lock.lock();
+            throw;
+        }
+        platec_source_lock.lock();
+    };
+    publish();
+    while (!engine.isFinished())
+    {
+        if (stop_token.stop_requested())
+        {
+            return cancelled();
+        }
+        if (steps_completed == V9_PLATEC_SOURCE_STEP_LIMIT)
+        {
+            return std::unexpected{V9PlatecFailure::StepLimitExceeded};
+        }
 
         engine.update();
         ++steps_completed;
-        if (progress_callback)
+        if (!engine.isFinished())
         {
-            progress_callback({
-                .steps_completed = steps_completed,
-                .step_limit = V9_PLATEC_SOURCE_STEP_LIMIT,
-                .complete = engine.isFinished(),
-            });
+            capture_directions();
         }
+        publish();
     }
 
     if (engine.getWidth() != V9_PLATEC_SOURCE_RESOLUTION

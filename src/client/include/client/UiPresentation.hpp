@@ -4,6 +4,8 @@
 #include <client/WorldLoading.hpp>
 #include <client/render/TextRenderer.hpp>
 
+#include <shared/world/BlockInteraction.hpp>
+
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -34,6 +36,16 @@ enum class UiScreen : uint8_t
     Failed,
     Cancelled,
 };
+
+enum class UiLoadingMapSource : uint8_t
+{
+    Backdrop,
+    Legacy,
+    Native,
+};
+
+[[nodiscard]]
+UiLoadingMapSource uiLoadingMapSource(WorldLoadingState state, generation::TerrainModelTag model) noexcept;
 
 template <typename T>
 struct UiMetric final
@@ -68,6 +80,7 @@ struct UiFrame final
     std::string const progress_text;
     std::string const server_address;
     std::optional<uint64_t> const world_seed;
+    UiLoadingMapSource const loading_map_source = UiLoadingMapSource::Legacy;
     std::optional<GenerationMapAnimationPhase> const illustrative_phase;
     float const illustrative_phase_progress = 0.0F;
     UiProgress const generation_progress{};
@@ -114,16 +127,31 @@ struct UiLoadingLayout final
     std::array<UiTextPlacement, 4U> cardinals{};
 };
 
+struct UiExitConfirmationLayout final
+{
+    float scale = 0.0F;
+    std::array<UiTextPlacement, 3U> lines{};
+};
+
+[[nodiscard]] std::string_view uiBlockDisplayName(shared::Block block) noexcept;
+[[nodiscard]] std::string uiTargetBlockLabel(shared::Block block);
+[[nodiscard]] std::string uiTargetHudEntry(std::optional<shared::BlockTarget> const& target);
+[[nodiscard]] std::optional<shared::Block> uiGameplayTargetBlock(
+    bool gameplay_ui,
+    std::optional<shared::BlockTarget> const& resolved_target
+) noexcept;
+
 [[nodiscard]]
 UiFrame buildUiFrame(
     uint64_t join_epoch,
     WorldLoadingStatus const& loading,
     bool connection_attempt_started,
-    bool prompt_frame_ready,
+    bool start_scene_ready,
     UiTelemetrySnapshot telemetry = {},
     std::optional<GenerationMapAnimationFrame> animation = {},
     std::string_view server_address = {},
-    std::optional<uint64_t> world_seed = {}
+    std::optional<uint64_t> world_seed = {},
+    UiLoadingMapSource loading_map_source = UiLoadingMapSource::Legacy
 );
 
 [[nodiscard]] UiLoadingLayout layoutUiLoading(
@@ -136,6 +164,17 @@ UiFrame buildUiFrame(
 void buildUiLoadingPresentation(
     UiFrame const& frame,
     UiLoadingLayout const& layout,
+    TextRenderer& output
+);
+
+[[nodiscard]] UiExitConfirmationLayout layoutUiExitConfirmation(
+    uint32_t width,
+    uint32_t height,
+    float dpi_scale = 1.0F
+) noexcept;
+
+void buildUiExitConfirmationPresentation(
+    UiExitConfirmationLayout const& layout,
     TextRenderer& output
 );
 

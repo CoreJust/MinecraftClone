@@ -7,6 +7,7 @@
 #include <client/PlayerPresentation.hpp>
 #include <client/PreviewResidency.hpp>
 #include <client/WorldLoading.hpp>
+#include <shared/net/LocalPreparationSnapshots.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
@@ -275,6 +276,43 @@ bool isHeightTileValidForWorld(
     return true;
 }
 
+std::optional<shared::Block> groundedMaterialForPlayer(
+    shared::SparseWorld const* const world,
+    shared::WorldMode const mode,
+    shared::Player const& player
+) noexcept
+{
+    if (world == nullptr || mode != shared::WorldMode::Flight
+        || player.movement_capabilities.allows(shared::MovementCapability::Flight)
+        || player.movement_capabilities.allows(shared::MovementCapability::CollisionBypass)
+        || player.vertical_velocity_subcells != 0 || player.z <= 0 || player.z_subcell != 0U) {
+        return std::nullopt;
+    }
+    int64_t const x_subcells = static_cast<int64_t>(player.x) * shared::SUBCELLS_PER_CELL + player.x_subcell;
+    int64_t const y_subcells = static_cast<int64_t>(player.y) * shared::SUBCELLS_PER_CELL + player.y_subcell;
+    int64_t const first_x = x_subcells / shared::SUBCELLS_PER_CELL;
+    int64_t const first_y = y_subcells / shared::SUBCELLS_PER_CELL;
+    int64_t const last_x = (x_subcells + shared::World::PLAYER_WIDTH_SUBCELLS - 1U)
+        / shared::SUBCELLS_PER_CELL;
+    int64_t const last_y = (y_subcells + shared::World::PLAYER_WIDTH_SUBCELLS - 1U)
+        / shared::SUBCELLS_PER_CELL;
+    for (int64_t y = first_y; y <= last_y; ++y) {
+        for (int64_t x = first_x; x <= last_x; ++x) {
+            shared::SparseBlockQuery const query = world->queryBlock({
+                .x = x,
+                .y = y,
+                .z = static_cast<int64_t>(player.z) - 1,
+            });
+            if (query.state == shared::GenerationState::Materialized && query.block
+                && shared::isSolidBlock(*query.block)) {
+                return query.block;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+
 } // namespace
 
 GameClient::GameClient(
@@ -282,7 +320,8 @@ GameClient::GameClient(
     shared::WorldConfiguration const configuration,
     bool const wants_previews,
     std::unique_ptr<ClientAudioOutput> audio_output,
-    PreparedTerrainWorldProvider prepared_world_provider
+    PreparedTerrainWorldProvider prepared_world_provider,
+    std::shared_ptr<shared::LocalPreparationSnapshots> local_preparation_snapshots
 )
     : core::Client{ 2 }
     , m_world{ mode, configuration }
@@ -295,6 +334,7 @@ GameClient::GameClient(
 #else
     , m_world_loading{ WorldLoadingPlatform::Mac }
 #endif
+    , m_local_preparation_snapshots{ std::move(local_preparation_snapshots) }
     , m_prepared_world_provider{ std::move(prepared_world_provider) }
 {
 }
@@ -351,6 +391,19 @@ std::shared_ptr<shared::TerrainLodArtifact const> GameClient::terrainLodRoot() c
     return m_terrain_lod_source->rootFor(*m_terrain_session);
 }
 
+std::shared_ptr<S2MapImage const> GameClient::terrainLodMap() const noexcept
+{
+    if (!m_terrain_session || !m_terrain_lod_source) {
+        return nullptr;
+    }
+    return m_terrain_lod_source->mapFor(*m_terrain_session);
+}
+
+bool GameClient::terrainLodMapUnavailable() const noexcept
+{
+    return m_terrain_session && m_terrain_lod_source && m_terrain_lod_source->mapUnavailableFor(*m_terrain_session);
+}
+
 std::optional<uint64_t> GameClient::activeCoverageEpoch() const noexcept
 {
     return m_active_coverage_epoch;
@@ -399,6 +452,9 @@ bool GameClient::beginLoadingRequest(LoadingTimePoint const accepted_at)
         m_next_join_epoch = 1U;
     }
     m_terrain_session.reset();
+    if (m_local_preparation_snapshots) {
+        m_local_preparation_snapshots->clear();
+    }
     m_block_action_status.reset();
     m_accepted_block_action_results.clear();
     m_accepted_block_action_sequences.clear();
@@ -618,6 +674,7 @@ void GameClient::run(
 void GameClient::onDisconnected(core::DisconnectEvent const event) {
     CORE_INFO("Server disconnected: {}", event.peer.address());
     std::cout << "[SERVER DISCONNECTED] address " << fmt::format("{}", event.peer.address()) << '\n';
+    m_client_audio.stop();
     m_accepted = false;
     resetConnectionState();
 }
@@ -643,6 +700,7 @@ void GameClient::resetConnectionState()
     m_last_accepted_input_ack = 0U;
     m_last_accepted_position_revision = 0U;
     m_last_accepted_position_at = {};
+    resetLandingTransitions();
     m_next_input_sequence = 1U;
     m_next_block_action_sequence = 1U;
     m_block_action_status.reset();
@@ -664,6 +722,9 @@ void GameClient::resetConnectionState()
     m_resident_height_tile_keys.clear();
     m_authoritative_world.reset();
     m_terrain_session.reset();
+    if (m_local_preparation_snapshots) {
+        m_local_preparation_snapshots->clear();
+    }
     clearActiveCoverage();
     m_last_world_preparation_sequence = 0U;
     m_initial_chunk_credit_sent = false;
@@ -809,7 +870,25 @@ void GameClient::onReceived(core::ReceiveEvent event) {
         applyServerRemoval(player_removal->ch);
     } else if (auto* world_preparation = std::get_if<shared::ServerWorldPreparationMessage>(msg_ptr)) {
         auto const apply_started_at = std::chrono::steady_clock::now();
+        bool const preparation_eligible = validateSession(world_preparation->session)
+            && world_preparation->sequence != 0U
+            && world_preparation->sequence > m_last_world_preparation_sequence
+            && world_preparation->work_completed <= world_preparation->work_total
+            && static_cast<uint8_t>(world_preparation->stage)
+                <= static_cast<uint8_t>(generation::GenerationStage::V10Water);
+        bool const has_wire_snapshot = world_preparation->latest_snapshot != nullptr;
+        bool used_local_snapshot = false;
+        if (preparation_eligible && !has_wire_snapshot && m_local_preparation_snapshots) {
+            world_preparation->latest_snapshot = m_local_preparation_snapshots->take(
+                world_preparation->session, world_preparation->sequence
+            );
+            used_local_snapshot = world_preparation->latest_snapshot != nullptr;
+        }
         bool const applied = applyWorldPreparation(*world_preparation, apply_started_at);
+        if (applied && preparation_eligible && world_preparation->failure.empty()
+            && m_local_preparation_snapshots) {
+            m_local_preparation_snapshots->bind(world_preparation->session);
+        }
         auto const apply_completed_at = std::chrono::steady_clock::now();
         auto const* snapshot = world_preparation->latest_snapshot.get();
         if (snapshot != nullptr || world_preparation->sequence <= 32U || world_preparation->final_atlas_complete) {
@@ -839,14 +918,17 @@ void GameClient::onReceived(core::ReceiveEvent event) {
             uint32_t const snapshot_stage = snapshot == nullptr
                 ? std::numeric_limits<uint32_t>::max()
                 : static_cast<uint32_t>(snapshot->stage);
-            char const* const snapshot_model = snapshot == nullptr ? "none" : (snapshot->v9 ? "v9" : "r6");
+            char const* const snapshot_model = snapshot == nullptr ? "none"
+                : (snapshot->v9 ? "v9" : (snapshot->v21 ? "v21" : (snapshot->v10 ? "v10" : "r6")));
+            char const* const snapshot_source = snapshot == nullptr ? "none"
+                : (used_local_snapshot ? "local" : "wire");
             CORE_INFO("startup-boundary preparation-client sequence={} stage_id={} receive_steady_ns={} "
-                "packet_bytes={} snapshot_model={} snapshot_stage_id={} snapshot_payload_bytes={} "
+                "packet_bytes={} snapshot_source={} snapshot_model={} snapshot_stage_id={} snapshot_payload_bytes={} "
                 "decode_us={} apply_us={} applied={} final={}",
                 world_preparation->sequence,
                 static_cast<uint32_t>(world_preparation->stage),
                 std::chrono::duration_cast<std::chrono::nanoseconds>(diagnostic_receive_at.time_since_epoch()).count(),
-                event.data.size(), snapshot_model, snapshot_stage, snapshot_payload_bytes,
+                event.data.size(), snapshot_source, snapshot_model, snapshot_stage, snapshot_payload_bytes,
                 std::chrono::duration_cast<std::chrono::microseconds>(apply_started_at - diagnostic_receive_at).count(),
                 std::chrono::duration_cast<std::chrono::microseconds>(apply_completed_at - apply_started_at).count(),
                 applied, world_preparation->final_atlas_complete);
@@ -885,7 +967,7 @@ bool GameClient::applyWorldPreparation(
         || message.sequence == 0U
         || message.sequence <= m_last_world_preparation_sequence
         || message.work_completed > message.work_total
-        || static_cast<uint8_t>(message.stage) > static_cast<uint8_t>(generation::GenerationStage::Complete)) {
+        || static_cast<uint8_t>(message.stage) > static_cast<uint8_t>(generation::GenerationStage::V10Water)) {
         return false;
     }
 
@@ -1473,6 +1555,9 @@ bool GameClient::applyBlockActionResult(shared::ServerBlockActionResultMessage c
     if (!m_block_action_status || message.server_tick > m_block_action_status->server_tick
         || (message.server_tick == m_block_action_status->server_tick
             && (message.sequence == 0U || shared::isNewerSequence(message.sequence, m_block_action_status->sequence)))) {
+        if (!m_block_action_status || m_block_action_status->mode != message.mode) {
+            resetLandingTransitions();
+        }
         m_block_action_status = message;
     }
     if (message.sequence != 0U && message.status == shared::BlockActionStatus::Accepted
@@ -2185,6 +2270,13 @@ bool GameClient::applyServerPosition(
         m_last_accepted_input_ack = message.acknowledged_input_sequence;
         m_last_accepted_position_revision = message.state_revision;
         m_last_accepted_position_at = received_at;
+        if (auto const updated_player = m_world.playerByCharacter(message.ch)) {
+            std::optional<shared::GameMode> const mode = m_block_action_status
+                ? std::optional{m_block_action_status->mode} : std::nullopt;
+            if (auto const material = observeLandingTransition(*updated_player, mode)) {
+                m_pending_landing_material = material;
+            }
+        }
     }
     m_state_revisions.insert_or_assign(message.ch, message.state_revision);
     if (message.ch == m_local_character) {
@@ -2229,6 +2321,50 @@ bool GameClient::applyServerPosition(
         }
     }
     return true;
+}
+
+std::optional<shared::Block> GameClient::observeLandingTransition(
+    shared::Player const& player,
+    std::optional<shared::GameMode> const game_mode
+) noexcept
+{
+    std::optional<shared::Block> const support = groundedMaterialForPlayer(
+        authoritativeWorld(), m_world.mode(), player
+    );
+    bool const same_context = m_last_landing_player
+        && m_last_landing_player->id == player.id
+        && m_last_landing_player->ch == player.ch
+        && m_last_landing_player->movement_capabilities == player.movement_capabilities
+        && m_last_landing_game_mode == game_mode
+        && m_last_landing_join_epoch == worldLoadingJoinEpoch();
+    if (!same_context) {
+        m_pending_landing_material.reset();
+    }
+    bool const fresh_position = same_context
+        && shared::isNewerSequence(m_last_accepted_position_revision, m_last_landing_position_revision);
+    bool const landed = fresh_position
+        && !groundedMaterialForPlayer(authoritativeWorld(), m_world.mode(), *m_last_landing_player)
+        && support
+        && (!game_mode || *game_mode != shared::GameMode::Spectator);
+    m_last_landing_player = player;
+    m_last_landing_game_mode = game_mode;
+    m_last_landing_join_epoch = worldLoadingJoinEpoch();
+    m_last_landing_position_revision = m_last_accepted_position_revision;
+    return landed ? support : std::nullopt;
+}
+
+std::optional<shared::Block> GameClient::consumeLandingMaterial() noexcept
+{
+    return std::exchange(m_pending_landing_material, std::nullopt);
+}
+
+void GameClient::resetLandingTransitions() noexcept
+{
+    m_last_landing_player.reset();
+    m_last_landing_game_mode.reset();
+    m_last_landing_join_epoch = 0U;
+    m_last_landing_position_revision = 0U;
+    m_pending_landing_material.reset();
 }
 
 std::optional<shared::Player> GameClient::predictedLocalPlayer() const noexcept

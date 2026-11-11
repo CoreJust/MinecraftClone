@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <numbers>
 #include <stdexcept>
@@ -95,13 +96,17 @@ void v9Transform(std::span<const double> a, std::vector<Complex>& h, bool sine)
     for (uint64_t l = 0; l < a.size(); l += N * N)
     {
         for (int32_t k = 0; k < N; ++k)
-            for (int32_t x = 0; x < N; ++x)
+        {
+            std::array<double, N> sums{};
+            for (int32_t j = 0; j < N; ++j)
             {
-                double sum = 0.;
-                for (int32_t j = 0; j < N; ++j)
-                    sum += basis(k, j, sine) * a[l + j * N + x];
-                h[l + k * N + x] = sum;
+                double const weight = basis(k, j, sine);
+                for (int32_t x = 0; x < N; ++x)
+                    sums[static_cast<size_t>(x)] += weight * a[l + j * N + x];
             }
+            for (int32_t x = 0; x < N; ++x)
+                h[l + k * N + x] = sums[static_cast<size_t>(x)];
+        }
         for (int32_t y = 0; y < N; ++y)
             fft(h.data() + l + y * N, false);
     }
@@ -116,13 +121,17 @@ void v9Inverse(std::vector<Complex> h, std::vector<double>& a, bool sine)
         for (int32_t y = 0; y < N; ++y)
             fft(h.data() + l + y * N, true);
         for (int32_t j = 0; j < N; ++j)
-            for (int32_t x = 0; x < N; ++x)
+        {
+            std::array<double, N> sums{};
+            for (int32_t k = 0; k < N; ++k)
             {
-                double sum = 0.;
-                for (int32_t k = 0; k < N; ++k)
-                    sum += basis(k, j, sine) * h[l + k * N + x].real();
-                a[l + j * N + x] = sum;
+                double const weight = basis(k, j, sine);
+                for (int32_t x = 0; x < N; ++x)
+                    sums[static_cast<size_t>(x)] += weight * h[l + k * N + x].real();
             }
+            for (int32_t x = 0; x < N; ++x)
+                a[l + j * N + x] = sums[static_cast<size_t>(x)];
+        }
     }
 }
 void projectV9Flux(std::span<const double> fx, std::span<const double> fy, double dx,

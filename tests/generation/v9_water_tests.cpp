@@ -218,6 +218,39 @@ TEST(V9Water, LocalRiverClassificationExcludesRegisteredSnowStock)
     EXPECT_FLOAT_EQ(result->glacier_thickness_m[1], 0);
 }
 
+TEST(V9Water, V21LocalRiverSupportIncludesClosedChordEndpoints)
+{
+    V9WaterEquilibrium equilibrium;
+    equilibrium.resolution = 4U;
+    equilibrium.hydraulic_bed_m.assign(16U, 0.0);
+    equilibrium.ocean.assign(16U, 0U);
+    equilibrium.triangle_basin_owner.assign(32U, -1);
+    V9WaterFixedSupport fixed;
+    fixed.size = 8U;
+
+    V9RefinementReach reach;
+    reach.start = 17;
+    reach.a = {100.0, 100.0};
+    reach.delta = {0.0, 10.0};
+    reach.water_stage0 = 9.0;
+    reach.water_stage1 = 8.0;
+    reach.halfwidth = 6.0;
+    reach.discharge_m3_s = 1.0;
+    V9WaterQueryModel const model{{}, std::span<V9RefinementReach const>{&reach, 1U}, {}, {}};
+    std::vector<double> const bed(4U, 0.0);
+    V9WaterQueryGrid const grid{2U, 2U, 99.0, 115.0, 1.0, bed};
+
+    auto const v21 = queryV21WaterLocalSupport(equilibrium, fixed, grid, model);
+    ASSERT_TRUE(v21);
+    EXPECT_EQ(v21->river, (std::vector<uint8_t>{1U, 1U, 0U, 1U}));
+    EXPECT_EQ(v21->river_owner_id, (std::vector<int32_t>{17, 17, -1, 17}));
+    EXPECT_EQ(v21->water_level_m, (std::vector<float>{8.0F, 8.0F, 0.0F, 8.0F}));
+
+    auto const v9 = queryV9WaterLocalSupport(equilibrium, fixed, grid, model);
+    ASSERT_TRUE(v9);
+    EXPECT_EQ(v9->river, (std::vector<uint8_t>{0U, 0U, 0U, 0U}));
+}
+
 TEST(V9Water, QueryUsesBilinearSupportWithoutNativeRiverAndCancelsExplicitly)
 {
     std::vector<double> const bed = {-1, -2, -3, -4, -2, -3, -4, -5, -3, -4, -5, -6, -4, -5, -6, -7};

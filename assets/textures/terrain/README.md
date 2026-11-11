@@ -38,6 +38,17 @@ colormap. At temperature `0.8` and downfall `0.4`, Minecraft's colormap formula
 selects `(50,173)`, RGB `#91BD59`. The grass side base and its separate alpha
 overlay remain separate so the renderer can tint and composite the overlay.
 
+Sand is generated procedurally because the pinned client asset set has no Sand
+texture in this project's material atlas. Each of its six 16-by-16 face tiles
+uses the same opaque four-color palette (`#D9C692`, `#E5D3A2`, `#CDB882`,
+`#DECC9B`) selected by the fixed 32-bit coordinate hash in
+`script/generate_terrain_textures.py`. The source texture data therefore remains
+the original seven materials plus the grass overlay; generated Sand faces are
+inserted at tile indices 42–47 and the overlay remains at index 48. The atlas
+is a 49-layer RGBA8 texture array with 16-by-16 base layers and five mip extents
+per layer: 16, 8, 4, 2, and 1 pixels. It preserves the original source pixels
+byte-for-byte.
+
 Minecraft textures are copyrighted by Mojang Studios/Microsoft. This record
 identifies their source and attribution; it does not grant rights beyond those
 provided by the rights holders. The files are retained as the requested local

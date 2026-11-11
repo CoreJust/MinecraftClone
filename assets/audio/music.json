@@ -1,0 +1,18 @@
+{
+  "welcome": {
+    "source": "meadow-thoughts.ogg",
+    "duration_seconds": 24,
+    "sample_rate": 24000,
+    "peak": 1800,
+    "sha256": "baa13cdd27d70fabfe6439622c129e703a650afb5d75782a4f38c479ad52ca6c",
+    "loop_processing": "crossfaded in ClientAudio; no baked silent fades"
+  },
+  "gameplay": {
+    "source": "vaporware.mp3",
+    "duration_seconds": 60,
+    "sample_rate": 24000,
+    "peak": 1400,
+    "sha256": "8c2b84d01886a476a3e82c59b2620bc1ba76ba04e056cb81d953c4c875320578",
+    "loop_processing": "crossfaded in ClientAudio; no baked silent fades"
+  }
+}

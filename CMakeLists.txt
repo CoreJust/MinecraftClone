@@ -143,6 +143,19 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
         DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES}
         REQUIRED_FILES "${MC_VULKAN_RUNTIME_DLL}"
     )
+    set(MC_RUNTIME_AUDIO_FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/welcome.wav"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/gameplay.wav"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/README.md"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/music.json"
+    )
+    add_custom_command(TARGET mc_main POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:mc_main>/assets/audio"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${MC_RUNTIME_AUDIO_FILES} "$<TARGET_FILE_DIR:mc_main>/assets/audio"
+        VERBATIM
+    )
+    install(FILES ${MC_RUNTIME_AUDIO_FILES} DESTINATION assets/audio)
     install(TARGETS mc_main RUNTIME DESTINATION .)
     if(WIN32)
         install(FILES "${MC_VULKAN_RUNTIME_DLL}" DESTINATION .)

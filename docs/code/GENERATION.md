@@ -1,15 +1,16 @@
 # Native Terrain-v2 generation
 
-`mc_generation` owns deterministic atlas kernels/config; `mc_world_sampling` adds
-canonical regions, columns and chunks. Both are portable. `mc_world_map` exports
-the gameplay sampler; RGB diagnostics use fused multiply-add.
+`mc_generation` owns deterministic CPU kernels/configuration;
+`mc_world_sampling` adds canonical regions, columns and chunks; `mc_world_map`
+exports gameplay sampling. None requires window, renderer, network or CoreLang
+startup. RGB diagnostics use fused multiply-add.
 
-R6 snapshots tectonic/coast/drainage/climate/erosion; skipped callbacks preserve
-final fields. Validate before allocation; cancellation/failure explicit. V9 adds
-paired source wind/current vectors (m/s), expanding eight-phase climate `32²→256²`.
+R6 snapshots are immutable; skipped callbacks preserve final fields. Validate
+before allocation; cancellation/failure are explicit. V9 adds optional
+wind/current (m/s) and expands eight-phase climate from 32² to 256².
 
 Canonical regional elaboration inherits parent samples. `TerrainWorld` provides
-typed columns and builds actual chunks; [GAMEPLAY.md](GAMEPLAY.md) covers
+typed columns and builds chunks; [GAMEPLAY.md](GAMEPLAY.md) covers
 authority, replication, coverage and edits. Columns begin with Bedrock, then top
 material, four ground layers and Stone; below sea level, ground uses the four
 blocks immediately beneath it. R6 uses Grass above −2 °C and Snow otherwise.
@@ -24,85 +25,91 @@ R3 references stay frozen. R4 uses binary64 shelf exponentials then binary32,
 requiring `shelf-exp=exp64-to-f32-v1`. R5 retains atlas kernels and five regional
 stages, then adds seeded 16-block relief after the 64-block leaf. Regional
 samples stay unchanged; previews and materialization share the local kernel.
-Fixtures bind seeds and hashes; comparison tools do not approve changed
-expectations. Six-seed agreement does not prove universal host-libm equivalence.
+Fixtures bind seeds/hashes; comparisons do not approve expectations. Six-seed agreement does not prove universal host-libm equivalence.
 
 ## Nearest-land prepared spawn
 
-Without a configured spawn, prepared Flight chooses the nearest dry integer
-origin to `(32768,32768)`, ordered by wrapped distance, squared distance, Y,
-then X. Require dry `highest_solid_z + 1`, valid bounds, materialized support,
-body clearance and no overlap. Search periodic rectangles by minimum toroidal
-distance and certify only when unvisited lower bounds exceed the candidate.
-Poll at most 128 frontier/candidate items; height and collision stay
-asynchronous, and exhaustion fails without fallback.
+Prepared Flight picks the nearest dry integer origin to `(32768,32768)`, ordered
+by wrapped distance, squared distance, Y, then X. Require dry
+`highest_solid_z + 1`, valid bounds, materialized support, body clearance and
+no overlap. Toroidal lower-bound search polls at most 128 items; height/collision
+stay asynchronous. Exhaustion fails without fallback.
 
 `hasWaterPresenceThroughoutAtlasCell` prunes only complete aligned 256/512 R6
-cells. R6 selects mask pixel `floor(coordinate * resolution / 65536)` and
-carries its ocean/lake/river flag through refinements. Cells include the final
-pre-seam column; false, mixed or clipped cells require exact refinement.
+cells. R6 selects `floor(coordinate * resolution / 65536)` and carries its
+ocean/lake/river flag through refinement. The final pre-seam column is included;
+false, mixed or clipped cells require exact checks.
 
 ## Layered terrain LOD model
 
-R6 visual identity `lod-canonical-r6-height-v2` differs from Terrain-v2 R6.
-L0 spans the periodic world; L1/L2 refine 4×4 and L3 samples canonical columns.
-Triangle fans share constrained edges and seams. Complete captures replace one
-16-block L2 cell at 256 or four 8-block cells at 512; gaps retain fallback.
+R6 visual `lod-canonical-r6-height-v2` is distinct from Terrain-v2 R6.
+Periodic L0, 4×4 L1/L2 and canonical-column L3 share constrained seams.
+Complete captures replace one 16-block L2 cell at resolution 256 or four
+8-block cells at 512; gaps use fallback. V10 reuses source-bound 2 m fans;
+authority stamps rebuild separately.
 
-V9 uses Platec, terrain, climate and water. Vendor static segment/river
-scratch requires wrapper-level serialization. Cancellation is rechecked after
-locking; downstream stages run unlocked. Terrain remains in source metres;
-climate remains physical. H0–H3 return metres. L0 is coarsest for overview; L3
-is finest for surface, collision and edits. Game Z is
-`floor(384 + source_m / 10)` (0–1023); out-of-domain queries fail, never
-normalize per seed. Keep typed fields and solid columns then air; no
-caves/overhangs. Memo saturation recomputes misses into caller-owned values.
-Numeric bounds, L0–L3/seams, platform parity and performance remain MC-AI-0483
-gates.
+V9 combines Platec, terrain, climate and water. Vendor segment/river scratch is
+serialized; cancellation is rechecked after locking, then downstream stages run
+unlocked. Heights and H0–H3 stay in source metres. L0 is overview; L3 serves
+surface, collision and edits. Game Z is `floor(384 + source_m / 10)` (0–1023);
+out-of-domain queries fail. Columns retain typed fields and solids below air;
+there are no caves or overhangs. Memo misses recompute into caller storage.
+V10 [surface cover](V10_SURFACE_COVER.md) keeps shallow-ocean Sand within 20 m;
+inland/deep beds retain Dirt.
 
-No-argument LocalGame requests V9. CoreLang v2 omits its model tag and returns
-nine R6 fields: seed, resolution, epochs, erosion steps, initial/final climate
-iterations, currents, wind sign and coastal elaboration. `WorldPreparation`
-validates the fields and plan, restores V9, and checks the full configuration
-before atlas creation. LocalGame's co-located client reuses this immutable world
-for L0; remote clients prepare from their negotiated session. Failures do not
-fall back.
+LocalGame and Server enable V10 fine terrain.
+`WorldPreparation` restores the shared CoreLang R6 fields. Local clients reuse immutable L0. Remote clients prepare from session identity.
+The client worker prepares default S2 imagery and V10 rivers with world/L0
+for loading and play. The main thread uploads results. Caching and publication require
+complete rasters. Later layer selections rasterize separately.
+
+Benchmark `--terrain-model v10` selects the f775 foundation with the c8f9b851
+river field. `--terrain-model native-v10-fine` adds the fine field and appends
+`;fine=e52e2e82b3e9873e14e543e0a7583fb978a182f1555997bda6febcd9ff25061a`
+to the configuration identity. Seed-42 f775 prepares lazily with a 65,536 m period. Canonical V10 surfaces, climate, water queries, maps, tiles, chunks and
+meshes use the configured bed. See [river beds](RIVER_BEDS.md) for signed inland relief, protected contacts
+and final map composition. S2 changes the bed. S3 covers physical water and floating ice.
+
+V10 uses isolated PyPlatec 1.4.3 (seed 42/resolution 256, sea 0.65, ten plates,
+two cycles). L/O/d/R2 feed continuous LOD-vertex evaluation. Geometry is
+`floor(512 + height_m)` at depth 2048; climate uses tenfold height. Annual-mean
+stocks and same-bed water drive materials; seasonal queries remain.
+[Acceptance](../ai/tasks/MC-AI-0649.md) remains open.
 
 ## Native V9 seasonal climate
 
-Climate consumes the canonical 256×256 bed for source eight-phase seasonal
-climate, QG weather and moisture. Portable transforms, RNG and SuperLU retain
-source order and physical units without platform BLAS or Python. Wind, currents,
-precipitation and snow come from these calculations. Cancellation prevents
-partial climate publication; progress reports completed stages.
+Canonical 256×256 beds drive eight-phase climate, QG weather and moisture.
+Transforms, RNG and SuperLU preserve source order/units without BLAS/Python.
+QG reuses damping coefficients while dt is unchanged.
+Wind/current/rain/snow use these calculations; cancellation prevents partial
+publication and progress reports completed stages.
 
-MC-AI-0558 passes bounded three-seed field comparison and Windows generation
-tests; this is not universal numerical equivalence. The q-only bound does not
-qualify other fields. Untested seeds, full numeric-chain bounds, all-domain
-L0–L3, Windows/Android canonical parity, performance and game runtime remain
-MC-AI-0483 gates.
+MC-AI-0558 passes three-seed comparison and Windows tests. Other seeds, fields beyond q, numeric bounds, L0–L3, platform parity, performance and runtime remain MC-AI-0483 gates.
 
 ## Native V9 water and biome
 
-V9 water consumes seasonal forcing and a 256×256 source-metre bed for
-equilibrium, routing, marine salt/ice, snow/firn and biomes. Periodic TIN ties
-are retained; incomplete catchment or receiver closure fails. It reports
-progress and observes cancellation. The MSVC wrapper is inventoried. Six GSW
-files remain byte-identical under `third_party/gsw`; hashes and unresolved
-upstream revision are recorded. Numeric margins and actual-predecessor L0–L3
-seams remain MC-AI-0483 gates.
+V9 water uses seasonal forcing and the 256×256 source-metre bed for equilibrium,
+routing, marine salt/ice, snow/firn and biomes. Periodic TIN ties remain;
+incomplete catchment or receiver closure fails. It reports progress and observes
+cancellation. Six unchanged GSW files retain hashes and upstream revision. Numeric margins and
+actual-predecessor L0–L3 seams remain MC-AI-0483 gates.
 
 ## Bounded materialized prefetch
 
-Authoritative readiness covers 40 chunks (640 blocks) of horizontal interest:
-81×81 profiles, each describing 64 vertical chunks. Protected interest is 768
-blocks, or 97×97 profiles per client (9,409; 37,636 across four clients).
-Profiles include exact highest-solid/layer/material data and dense edits;
-eviction removes readiness. An ordered index preserves oldest-unprotected
-eviction order without full-cache scans. Dense collision/start materialization
-covers 48 blocks with a 32-block lead, bounded to 1,024 chunks per client.
-Resident lead chunks promote without retransmission; see [GAMEPLAY.md](GAMEPLAY.md).
+Readiness spans 40 horizontal chunks (640 blocks): 81×81 profiles with 128
+vertical chunks each. Protected interest is 768 blocks, or 97×97 profiles per
+client (9,409; 37,636 across four). Profiles bind exact surface/layer/material
+data and edits; eviction removes readiness. Ordered indexing avoids full-cache
+scans. Dense collision/start covers 48 blocks with a 32-block lead, capped at
+1,024 chunks per client; resident lead chunks promote without retransmission.
+See [GAMEPLAY.md](GAMEPLAY.md).
 
 ## Shared surface sampling
 
-LRU shares 8,464 immutable 16×16 tiles for preview/materialization (~83 MiB). Keys bind terrain/epoch/XY; R6 requires typed regional leaves. NativeV9 canonical tiles read the completed immutable atlas directly. Validate identity/epoch/bounds/cancellation before cache use/publication; duplicate misses possible. Unchanged dense churn ignored; edits/deletion/profile replacement change identity. Cached samples grant no collision/edit authority or Ready; accepted current-session profiles and complete sparse revisions required. Preview cancellation stays separate.
+LRU shares 8,464 immutable 16×16 tiles (~83 MiB), keyed by terrain/epoch/XY.
+R6 requires typed regional leaves; NativeV9 reads its completed atlas. Validate
+identity, epoch, bounds and cancellation before caching/publishing; duplicate
+misses may occur. Edits, deletion and profile replacement change identity.
+Cached samples grant no collision/edit authority or readiness; current-session
+profiles and complete sparse revisions remain required. Preview cancellation is
+separate.

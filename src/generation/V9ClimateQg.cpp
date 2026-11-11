@@ -262,6 +262,8 @@ V9Weather computeV9Weather(std::span<const double> theta, std::span<const double
     result.v_anomaly.reserve(180 * 2 * S);
     std::vector<double> p, u, v, rhs, p2, rhs2, mid(2 * S), total(2 * S);
     double lmin = *std::min_element(lap.begin(), lap.end());
+    std::vector<double> damping(2 * S);
+    double damping_dt = -1.;
     for (int32_t day = 0; day < 180; ++day)
     {
         check(stop);
@@ -301,8 +303,18 @@ V9Weather computeV9Weather(std::span<const double> theta, std::span<const double
                 q[i] = .5 * q[i] + .5 * (mid[i] + dt * rhs2[i]);
             std::vector<C> h;
             solver.transform(q, h);
+            if (dt != damping_dt)
+            {
+                for (int32_t i = 0; i < 2 * S; ++i)
+                {
+                    damping[i] = std::exp(-dt * std::pow(lap[i % S] / lmin, 2) / (.5 * 86'400.));
+                }
+                damping_dt = dt;
+            }
             for (int32_t i = 0; i < 2 * S; ++i)
-                h[i] *= std::exp(-dt * std::pow(lap[i % S] / lmin, 2) / (.5 * 86'400.));
+            {
+                h[i] *= damping[i];
+            }
             solver.inverse(h, q);
             for (double a : q)
                 if (!std::isfinite(a) || std::abs(a) > .1)

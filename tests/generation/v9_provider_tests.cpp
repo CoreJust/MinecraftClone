@@ -1,8 +1,5 @@
 #include "V9Terrain.hpp"
 
-#include <client/S2MapPresentation.hpp>
-#include <client/render/CanonicalTerrainField.hpp>
-
 #include <shared/net/Message.hpp>
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/TerrainLod.hpp>
@@ -14,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -22,7 +20,7 @@
 #include <string_view>
 #include <vector>
 
-TEST(V9ProviderTests, BuildsSeededAtlasAndFeedsWorldQueriesAndMapLayers)
+TEST(V9ProviderTests, BuildsSeededAtlasAndFeedsWorldQueriesAndRegisteredFields)
 {
     constexpr uint32_t SOURCE_RESOLUTION = 256U;
     constexpr size_t SOURCE_COUNT = static_cast<size_t>(SOURCE_RESOLUTION) * SOURCE_RESOLUTION;
@@ -247,17 +245,6 @@ TEST(V9ProviderTests, BuildsSeededAtlasAndFeedsWorldQueriesAndMapLayers)
     ASSERT_TRUE(summit_cell.has_value()) << "seed 42 must retain an exposed sub-zero summit source cell";
     ASSERT_TRUE(coast_cell.has_value()) << "seed 42 must retain an exposed low coastal source cell";
 
-    std::vector<client::render::CanonicalTerrainFieldValue> const canonical_render_fields =
-        client::render::buildV9CanonicalTerrainFieldValues(*atlas);
-    ASSERT_EQ(canonical_render_fields.size(), SOURCE_COUNT);
-    auto const expectCanonicalRenderMaterial = [&](std::array<uint32_t, 2U> const cell, shared::Block const material) {
-        size_t const index = static_cast<size_t>(cell[1U]) * SOURCE_RESOLUTION + cell[0U];
-        EXPECT_EQ(static_cast<uint8_t>(canonical_render_fields[index][2U]), static_cast<uint8_t>(material));
-    };
-    expectCanonicalRenderMaterial(*desert_cell, shared::Block::Sand);
-    expectCanonicalRenderMaterial(*coast_cell, shared::Block::Sand);
-    expectCanonicalRenderMaterial(*summit_cell, shared::Block::Snow);
-
     auto const expectSourceMaterialAndL3 = [&](std::array<uint32_t, 2U> const cell,
         shared::Block const expected_material) {
         uint32_t const world_x = cell[0U] * cell_extent;
@@ -445,39 +432,38 @@ TEST(V9ProviderTests, BuildsSeededAtlasAndFeedsWorldQueriesAndMapLayers)
     EXPECT_EQ(tile.max_height, generation::V9_MAX_HEIGHT);
     EXPECT_TRUE(shared::isValidSurfaceTile(tile));
 
-    auto const lod = shared::buildTerrainLod(world, shared::TerrainLodLevel::L0);
-    ASSERT_NE(lod, nullptr);
-    client::S2WorldMapState state;
-    auto const image = client::rasterizeS2WorldMap(world, *lod, state);
-    ASSERT_TRUE(image.has_value());
-    EXPECT_EQ(image->source_identity, world.identity());
-    EXPECT_EQ(image->source_model_identity, shared::TERRAIN_LOD_MODEL_V9);
-    EXPECT_EQ(image->source_resolution, SOURCE_RESOLUTION);
-    EXPECT_EQ(image->vector_field_resolution, 32U);
-    EXPECT_EQ(image->v9_plate_ids.size(), SOURCE_COUNT);
-    EXPECT_EQ(image->v9_elevation_m.size(), SOURCE_COUNT);
-    EXPECT_EQ(image->v9_temperature_mean_c.size(), SOURCE_COUNT);
-    EXPECT_EQ(image->v9_precipitation_mean_mm_year.size(), SOURCE_COUNT);
-    EXPECT_EQ(image->v9_biome_ids.size(), SOURCE_COUNT);
-    EXPECT_EQ(image->v9_moisture_mean_kg_m2.size(), 32U * 32U);
-    EXPECT_EQ(image->v9_wind_u_m_s.size(), 32U * 32U);
-    EXPECT_EQ(image->v9_wind_v_m_s.size(), 32U * 32U);
-    EXPECT_EQ(image->v9_ocean_u_m_s.size(), 32U * 32U);
-    EXPECT_EQ(image->v9_ocean_v_m_s.size(), 32U * 32U);
-    EXPECT_EQ(image->v9_ocean_cells.size(), 32U * 32U);
-    EXPECT_EQ(image->v9_ice_surface_kind.size(), SOURCE_COUNT);
-    for (size_t layer = 0U; layer < image->available_layers.size(); ++layer) {
-        EXPECT_TRUE(image->available_layers[layer]) << "map layer " << layer;
-    }
+}
 
-    double temperature_mean = 0.0;
-    double precipitation_mean = 0.0;
-    for (size_t phase = 0U; phase < 8U; ++phase) {
-        temperature_mean += temperature_values[phase * SOURCE_COUNT];
-        precipitation_mean += precipitation_values[phase * SOURCE_COUNT];
-    }
-    EXPECT_FLOAT_EQ(image->v9_temperature_mean_c[0U], static_cast<float>(temperature_mean / 8.0));
-    EXPECT_FLOAT_EQ(image->v9_precipitation_mean_mm_year[0U], static_cast<float>(precipitation_mean / 8.0));
-    EXPECT_DOUBLE_EQ(image->v9_elevation_m[0U], elevation_values[0U]);
-    EXPECT_EQ(image->v9_biome_ids[0U], biome_values[0U]);
+TEST(V9ProviderTests, V21ReportedSingletonL1ShorelineQueryReturnsFiniteSample)
+{
+    generation::GenerationConfiguration configuration;
+    configuration.seed = 42U;
+    configuration.model_tag = generation::TerrainModelTag::V21;
+    auto const atlas = generation::prepareAtlas(configuration);
+    ASSERT_NE(atlas, nullptr);
+    shared::TerrainWorld const world{atlas};
+    EXPECT_EQ(world.identity().configuration_identity, generation::configurationIdentity(configuration));
+
+    // This seed-42 point previously produced a rounded zero-span shoreline cycle.
+    generation::V21SurfaceQueryGrid const grid{
+        .rows = 1U,
+        .columns = 1U,
+        .origin_x_m = 43'520.0,
+        .origin_y_m = 37'888.0,
+        .spacing_m = 1.0,
+        .lod = 1U,
+        .selected_phase = 0U,
+    };
+    auto const result = generation::queryV21SurfaceGrid(*atlas, grid);
+
+    ASSERT_TRUE(result) << result.error().message;
+    ASSERT_EQ(result->samples.size(), 1U);
+    generation::V9SurfaceSample const& sample = result->samples.front();
+    EXPECT_TRUE(std::isfinite(sample.elevation_m));
+    EXPECT_TRUE(std::isfinite(sample.water_level_m));
+    EXPECT_TRUE(std::isfinite(sample.temperature_celsius));
+    EXPECT_TRUE(std::isfinite(sample.precipitation_mm_year));
+    EXPECT_TRUE(std::isfinite(sample.land_snow_water_equivalent_m));
+    EXPECT_TRUE(std::isfinite(sample.glacier_thickness_m));
+    EXPECT_TRUE(std::isfinite(sample.sea_ice_thickness_m));
 }

@@ -24,7 +24,11 @@ WorldPreparationProgressJournal::WorldPreparationProgressJournal()
 void WorldPreparationProgressJournal::record(WorldPreparationProgress const& update)
 {
     generation::GenerationStage const stage = update.progress.stage;
-    if (m_latest_stage && static_cast<uint8_t>(stage) < static_cast<uint8_t>(*m_latest_stage)) {
+    auto const stage_order = [](generation::GenerationStage const value) {
+        return value == generation::GenerationStage::Complete
+            ? 256U : static_cast<unsigned>(value);
+    };
+    if (m_latest_stage && stage_order(stage) < stage_order(*m_latest_stage)) {
         throw std::logic_error{ "world preparation progress stage regressed" };
     }
     if (!m_latest_stage || stage != *m_latest_stage) {
@@ -37,12 +41,20 @@ void WorldPreparationProgressJournal::record(WorldPreparationProgress const& upd
         m_latest_stage = stage;
     }
     if (update.progress.snapshot) {
+        // Preserve the first authoritative frame of every stage (including H0),
+        // then coalesce only its live tail. Consumers revisit it by sequence.
+        WorldPreparationProgressMilestone* latest_source = nullptr;
+        uint32_t source_count = 0U;
         for (WorldPreparationProgressMilestone& milestone : m_milestones) {
             if (milestone.kind == WorldPreparationProgressMilestoneKind::SourceSnapshot
                 && milestone.update.progress.stage == stage) {
-                milestone.update = update;
-                return;
+                ++source_count;
+                latest_source = &milestone;
             }
+        }
+        if (source_count == 2U) {
+            latest_source->update = update;
+            return;
         }
         m_milestones.push_back({
             .kind = WorldPreparationProgressMilestoneKind::SourceSnapshot,
@@ -172,6 +184,7 @@ void WorldPreparation::run(std::stop_token const& cancellation)
         std::string const expected_configuration_identity = generation::configurationIdentity(m_configuration);
         generation::GenerationConfiguration plan_request_configuration = m_configuration;
         plan_request_configuration.model_tag = generation::TerrainModelTag::R6;
+        plan_request_configuration.use_v10_fine_terrain = false;
         auto terrain_plan = shared::corelang::prepareTerrainPlan(
             plan_request_configuration, m_backend, cancellation
         );
@@ -182,9 +195,10 @@ void WorldPreparation::run(std::stop_token const& cancellation)
             }
             throw std::runtime_error{ "CoreLang Terrain-v2 plan failed: " + terrain_plan.error().message };
         }
-        // CoreLang's manifest serializes the shared R6 fields only. Model selection
-        // stays in the native request and is restored after that manifest validates.
+        // CoreLang's manifest serializes the shared R6 fields only. Native model
+        // selection and the V10 fine option are restored after it validates.
         terrain_plan->configuration.model_tag = m_configuration.model_tag;
+        terrain_plan->configuration.use_v10_fine_terrain = m_configuration.use_v10_fine_terrain;
         if (terrain_plan->configuration != m_configuration
             || terrain_plan->receipt.requested_backend != m_backend
             || terrain_plan->receipt.actual_backend != m_backend
@@ -251,14 +265,20 @@ void WorldPreparation::publishProgress(generation::GenerationProgress const& pro
         return;
     }
     if (progress.completed > progress.total
-        || static_cast<uint8_t>(progress.stage) > static_cast<uint8_t>(generation::GenerationStage::Complete)
+        || static_cast<uint8_t>(progress.stage) > static_cast<uint8_t>(generation::GenerationStage::V10Water)
         || (progress.snapshot
             && (progress.snapshot->stage != progress.stage
-                || progress.snapshot->resolution != (m_configuration.model_tag == generation::TerrainModelTag::V9
+                || progress.snapshot->resolution != ((m_configuration.model_tag == generation::TerrainModelTag::V9
+                    || m_configuration.model_tag == generation::TerrainModelTag::V21
+                    || m_configuration.model_tag == generation::TerrainModelTag::V10)
                     ? 256U
                     : m_configuration.resolution)
                 || progress.snapshot->v9.has_value()
                     != (m_configuration.model_tag == generation::TerrainModelTag::V9)
+                || progress.snapshot->v21.has_value()
+                    != (m_configuration.model_tag == generation::TerrainModelTag::V21)
+                || progress.snapshot->v10.has_value()
+                    != (m_configuration.model_tag == generation::TerrainModelTag::V10)
                 || !generation::isValidGenerationSnapshot(*progress.snapshot)))) {
         throw std::runtime_error{ "generation emitted malformed progress or map snapshot data" };
     }

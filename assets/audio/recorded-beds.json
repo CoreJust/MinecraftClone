@@ -1,0 +1,23 @@
+{
+  "rain": {
+    "source": "1.ogg",
+    "source_offset_seconds": 4,
+    "duration_seconds": 8,
+    "peak": 2200,
+    "sha256": "fcd84b59cf01874862f46f8ccd8e4f512b6a88ec76b61204f6fd9970cc1248d9"
+  },
+  "boiling": {
+    "source": "cooking-without-cover.ogg",
+    "source_offset_seconds": 1,
+    "duration_seconds": 8,
+    "peak": 2600,
+    "sha256": "d68c0ed29cc84673a6b9346c72db258230e78d42f455cb24f8d5e7a61f985096"
+  },
+  "ice": {
+    "source": "ice-cracking-northern87-hq.mp3",
+    "source_offset_seconds": 10,
+    "duration_seconds": 8,
+    "peak": 2400,
+    "sha256": "c0e6d1c2aecc7fae08d81f75ae217c130aa6cfd65f63a1c5d7fbe21ef543f5ab"
+  }
+}

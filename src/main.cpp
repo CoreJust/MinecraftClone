@@ -13,6 +13,7 @@
 #include <core/IO/Log.hpp>
 #include <core/net/Address.hpp>
 #include <core/net/Net.hpp>
+#include <shared/net/LocalPreparationSnapshots.hpp>
 
 #include <acceptance/ColumnMapReplay.hpp>
 #include <acceptance/EvidenceJson.hpp>
@@ -85,6 +86,7 @@ struct LaunchCommand final {
     std::filesystem::path image_path;
     client::PlayerClientCapturePreset capture_preset = client::PlayerClientCapturePreset::CentralSpike;
     std::optional<shared::PlayerPosition> spawn;
+    std::optional<std::array<int32_t, 2>> spawn_surface;
     uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS;
 };
 
@@ -99,6 +101,7 @@ struct RuntimeCommand final {
     acceptance::GameBenchmarkWorkload game_benchmark_workload =
         acceptance::GameBenchmarkWorkload::OrdinaryMovement;
     generation::TerrainModelTag terrain_model = generation::TerrainModelTag::R6;
+    bool use_v10_fine_terrain = false;
     uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS;
     std::string qualification_proof;
     std::chrono::seconds full_radius_warmup_timeout =
@@ -110,6 +113,8 @@ struct RuntimeCommand final {
     std::filesystem::path benchmark_frame_capture;
     std::string benchmark_frame_capture_phase;
     std::chrono::milliseconds benchmark_frame_capture_delay{0};
+    std::optional<int32_t> benchmark_spawn_z;
+    std::optional<acceptance::GameBenchmarkCaptureSite> benchmark_capture_site;
 };
 
 [[nodiscard]]
@@ -229,10 +234,38 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
                 radius_selected = true;
                 continue;
             }
-            if (option != "--spawn" || command.spawn || index + 3 >= argc) {
+            if (option == "--spawn-surface") {
+                if (command.spawn || command.spawn_surface || index + 2 >= argc) {
+                    return std::unexpected(
+                        "server launch syntax is '--server [--port PORT] [--spawn X Y Z | "
+                        "--spawn-surface X Y] [--render-distance CHUNKS] "
+                        "[--corelang-backend interpreter|jit|aot]'"
+                    );
+                }
+                std::array<int32_t, 2> coordinates{};
+                for (uint32_t coordinate = 0U; coordinate < coordinates.size(); ++coordinate) {
+                    std::string_view const argument{argv[++index]};
+                    auto const [end, error] = std::from_chars(
+                        argument.data(), argument.data() + argument.size(), coordinates[coordinate]
+                    );
+                    if (error != std::errc{} || end != argument.data() + argument.size()) {
+                        return std::unexpected("server surface spawn contains an invalid coordinate");
+                    }
+                }
+                auto const checked = server::GameServer::validateSpawnPoints({{
+                    .character = '@', .x = coordinates[0], .y = coordinates[1], .derive_surface_z = true,
+                }}, shared::WorldMode::Flight);
+                if (!checked.has_value()) {
+                    return std::unexpected(checked.error());
+                }
+                command.spawn_surface = coordinates;
+                continue;
+            }
+            if (option != "--spawn" || command.spawn || command.spawn_surface || index + 3 >= argc) {
                 return std::unexpected(
-                    "server launch syntax is '--server [--port PORT] [--spawn X Y Z] "
-                    "[--render-distance CHUNKS] [--corelang-backend interpreter|jit|aot]'"
+                    "server launch syntax is '--server [--port PORT] [--spawn X Y Z | "
+                    "--spawn-surface X Y] [--render-distance CHUNKS] "
+                    "[--corelang-backend interpreter|jit|aot]'"
                 );
             }
             std::array<int32_t, 3> coordinates{};
@@ -340,7 +373,8 @@ std::shared_ptr<server::WorldPreparation> prepareServerTerrain(
 {
     generation::GenerationConfiguration generation_configuration{};
     generation_configuration.seed = configuration.seed;
-    generation_configuration.model_tag = generation::TerrainModelTag::V9;
+    generation_configuration.model_tag = generation::TerrainModelTag::V10;
+    generation_configuration.use_v10_fine_terrain = true;
     return std::make_shared<server::WorldPreparation>(
         generation_configuration, configuration.algorithm_version, accepted_at, backend
     );
@@ -415,22 +449,29 @@ void runLocalGame(LaunchCommand const& command)
     auto const accepted_at = server::WorldPreparation::Clock::now();
     shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration();
     auto preparation = prepareServerTerrain(configuration, accepted_at, command.backend);
+    auto local_preparation_snapshots = std::make_shared<shared::LocalPreparationSnapshots>();
     auto player = std::make_unique<client::PlayerClient>(
         shared::WorldMode::Flight,
         std::nullopt,
         std::nullopt,
-        localPreparedTerrainWorldProvider(preparation)
+        localPreparedTerrainWorldProvider(preparation),
+        local_preparation_snapshots
     );
     std::vector<server::GameServer::SpawnPoint> spawn_points;
     if (command.spawn) {
         spawn_points.push_back({
             .character = '@', .x = command.spawn->x, .y = command.spawn->y, .z = command.spawn->z,
         });
+    } else if (command.spawn_surface) {
+        spawn_points.push_back({
+            .character = '@', .x = (*command.spawn_surface)[0], .y = (*command.spawn_surface)[1],
+            .derive_surface_z = true,
+        });
     }
     auto server = std::make_unique<server::GameServer>(
         command.address.port(), std::move(spawn_points), shared::WorldMode::Flight,
         configuration, command.render_distance, nullptr, std::move(preparation),
-        server::GameServer::BindMode::Loopback
+        server::GameServer::BindMode::Loopback, local_preparation_snapshots
     );
     if (!server->isValid()) {
         throw std::runtime_error("Cannot start the local game server");
@@ -548,7 +589,7 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         }
         return command;
     }
-    if (argc >= 4 && argc <= 26 && std::string_view{ argv[1] } == "--benchmark-game"
+    if (argc >= 4 && argc <= 32 && std::string_view{ argv[1] } == "--benchmark-game"
         && std::string_view{ argv[argc - 2] } == "--evidence") {
         RuntimeCommand command{};
         command.mode = RuntimeMode::GameBenchmark;
@@ -572,6 +613,41 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
                 if (command.benchmark_frame_capture.empty() || command.benchmark_frame_capture == "-") {
                     return std::unexpected("benchmark frame capture requires an image file path");
                 }
+            } else if (argument == "--benchmark-spawn-z" && !command.benchmark_spawn_z
+                && argument_index + 1 < argc - 2) {
+                int32_t height = 0;
+                std::string_view const value{argv[++argument_index]};
+                auto const [end, error] = std::from_chars(value.data(), value.data() + value.size(), height);
+                if (error != std::errc{} || end != value.data() + value.size()) {
+                    return std::unexpected("benchmark spawn height must be an integer");
+                }
+                command.benchmark_spawn_z = height;
+            } else if (argument == "--benchmark-capture-site" && !command.benchmark_capture_site) {
+                if (argument_index + 5 >= argc - 2) {
+                    return std::unexpected("benchmark capture site requires x y z yaw pitch");
+                }
+                std::array<int32_t, 3> position{};
+                for (size_t coordinate = 0U; coordinate < position.size(); ++coordinate) {
+                    std::string_view const value{ argv[++argument_index] };
+                    auto const [end, error] = std::from_chars(value.data(), value.data() + value.size(), position[coordinate]);
+                    if (error != std::errc{} || end != value.data() + value.size()) {
+                        return std::unexpected("benchmark capture site coordinates must be integers");
+                    }
+                }
+                std::array<double, 2> angles{};
+                for (size_t angle = 0U; angle < angles.size(); ++angle) {
+                    std::string_view const value{ argv[++argument_index] };
+                    auto const [end, error] = std::from_chars(
+                        value.data(), value.data() + value.size(), angles[angle], std::chars_format::general
+                    );
+                    if (error != std::errc{} || end != value.data() + value.size()) {
+                        return std::unexpected("benchmark capture site yaw and pitch must be numbers");
+                    }
+                }
+                command.benchmark_capture_site = acceptance::GameBenchmarkCaptureSite{
+                    .x = position[0], .y = position[1], .z = position[2],
+                    .yaw_degrees = angles[0], .pitch_degrees = angles[1],
+                };
             } else if (argument == "--benchmark-frame-capture-delay-ms" && !capture_delay_selected
                 && argument_index + 1 < argc - 2) {
                 uint32_t delay = 0U;
@@ -619,8 +695,12 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
                 } else if (name == "ordinary-turning") {
                     command.game_benchmark_workload =
                         acceptance::GameBenchmarkWorkload::OrdinaryTurningMovement;
+                } else if (name == "speed-200-turning") {
+                    command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::Speed200TurningMovement;
                 } else if (name == "speed-200") {
                     command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::Speed200Movement;
+                } else if (name == "diagnostic-stationary") {
+                    command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::DiagnosticStationary;
                 } else if (name == "wrapped-border") {
                     command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::WrappedBorder;
                 } else if (name == "permission-collision") {
@@ -639,8 +719,15 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
                     command.terrain_model = generation::TerrainModelTag::R6;
                 } else if (model == "v9") {
                     command.terrain_model = generation::TerrainModelTag::V9;
+                } else if (model == "v21") {
+                    command.terrain_model = generation::TerrainModelTag::V21;
+                } else if (model == "v10") {
+                    command.terrain_model = generation::TerrainModelTag::V10;
+                } else if (model == "native-v10-fine") {
+                    command.terrain_model = generation::TerrainModelTag::V10;
+                    command.use_v10_fine_terrain = true;
                 } else {
-                    return std::unexpected("terrain model must be r6 or v9");
+                    return std::unexpected("terrain model must be r6, v9, v21, v10, or native-v10-fine");
                 }
                 terrain_model_selected = true;
             } else if (argument == "--full-radius-warmup-seconds"
@@ -683,6 +770,20 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
             && command.benchmark_frame_capture.empty()) {
             return std::unexpected("benchmark frame capture phase requires --benchmark-frame-capture");
         }
+        if (command.benchmark_capture_site) {
+            acceptance::GameBenchmarkOptions capture_site_validation{};
+            capture_site_validation.workload = command.game_benchmark_workload;
+            capture_site_validation.qualification_proof = command.qualification_proof;
+            capture_site_validation.terrain_model = command.terrain_model;
+            capture_site_validation.frame_capture_image = command.benchmark_frame_capture;
+            capture_site_validation.frame_capture_phase = command.benchmark_frame_capture_phase.empty()
+                ? "playing" : command.benchmark_frame_capture_phase;
+            capture_site_validation.diagnostic_spawn_z = command.benchmark_spawn_z;
+            capture_site_validation.diagnostic_capture_site = command.benchmark_capture_site;
+            if (auto const error = acceptance::gameBenchmarkCaptureSiteError(capture_site_validation)) {
+                return std::unexpected(*error);
+            }
+        }
         if (!command.qualification_proof.empty()) {
             uint32_t constexpr proof_radius = 256U;
             if (radius_selected && command.render_distance != proof_radius) {
@@ -723,14 +824,16 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         "'--benchmark-render [--present-immediate] [--hud] --evidence <file>', "
         "'--benchmark-game [--present-immediate] "
         "[--corelang-backend interpreter|jit|aot] "
-        "[--workload ordinary|ordinary-turning|speed-200|speed-200-full-radius|wrapped-border|permission-collision] "
-        "[--terrain-model r6|v9] [--benchmark-live-ui] "
+        "[--workload ordinary|ordinary-turning|speed-200|speed-200-turning|speed-200-full-radius|"
+        "wrapped-border|permission-collision] "
+        "[--terrain-model r6|v9|v10|native-v10-fine|v21] [--benchmark-live-ui] "
         "[--gameplay-proof terrain-coverage|performance] "
         "[--render-distance CHUNKS] [--full-radius-warmup-seconds 1..1800] "
         "[--diagnostic-full-radius-capture] [--diagnostic-presentation-stages] "
         "[--diagnostic-indexed-stone-quads 0|1|2] [--benchmark-frame-capture <ppm>] "
         "[--benchmark-frame-capture-phase generation|playing] "
-        "[--benchmark-frame-capture-delay-ms 0..30000] --evidence <file>', "
+        "[--benchmark-frame-capture-delay-ms 0..30000] [--benchmark-spawn-z <height>] "
+        "[--benchmark-capture-site <x> <y> <z> <yaw> <pitch>] --evidence <file>', "
         "or '--capture-render --image <ppm> --evidence <file>'"
     );
 }
@@ -936,12 +1039,34 @@ int runGameBenchmarkCommand(RuntimeCommand const& command)
         .full_radius_warmup_timeout = command.full_radius_warmup_timeout,
         .diagnostic_full_radius_capture = command.diagnostic_full_radius_capture,
         .terrain_model = command.terrain_model,
+        .use_v10_fine_terrain = command.use_v10_fine_terrain,
         .enable_live_ui = command.benchmark_live_ui,
         .frame_capture_image = command.benchmark_frame_capture,
         .frame_capture_phase = command.benchmark_frame_capture_phase.empty()
             ? "playing" : command.benchmark_frame_capture_phase,
         .frame_capture_delay = command.benchmark_frame_capture_delay,
+        .diagnostic_spawn_z = command.benchmark_spawn_z,
+        .diagnostic_capture_site = command.benchmark_capture_site,
     };
+    bool const streaming_trace = [] {
+#if defined(_WIN32)
+        char* value = nullptr;
+        size_t size = 0U;
+        bool const enabled = _dupenv_s(&value, &size, "MC_DIAGNOSTIC_STREAMING_TRACE") == 0
+            && value != nullptr && std::string_view{value} == "1";
+        std::free(value);
+        return enabled;
+#else
+        char const* const value = std::getenv("MC_DIAGNOSTIC_STREAMING_TRACE");
+        return value != nullptr && std::string_view{value} == "1";
+#endif
+    }();
+    if (streaming_trace) {
+        options.cold_duration = std::chrono::seconds{2};
+        options.warm_duration = std::chrono::seconds{3};
+        options.uncapped_duration = std::chrono::seconds{25};
+        options.deadline = std::chrono::seconds{180};
+    }
     options.deadline = acceptance::gameBenchmarkDeadline(options);
     std::string const evidence_mode = options.frame_capture_image.empty()
         ? "benchmark-game" : "benchmark-game-frame-capture";
@@ -1067,6 +1192,11 @@ int main(int argc, char** argv) {
                     spawn_points.push_back({
                         .character = '@', .x = command->spawn->x,
                         .y = command->spawn->y, .z = command->spawn->z,
+                    });
+                } else if (command->spawn_surface.has_value()) {
+                    spawn_points.push_back({
+                        .character = '@', .x = (*command->spawn_surface)[0],
+                        .y = (*command->spawn_surface)[1], .derive_surface_z = true,
                     });
                 }
                 server::GameServer server{

@@ -29,7 +29,9 @@ std::expected<V9WaterResult, V9WaterFailure> generateV9Water(std::span<double co
     uint32_t const m = forcing.resolution, phases = forcing.phase_count;
     size_t const coarse_size = size_t(m) * m, phase_size = coarse_size * phases;
     if (!m || NATIVE_RESOLUTION % m || (phases != 4 && phases != 8) || bed.size() != NATIVE_SIZE ||
-        !std::isfinite(forcing.horizontal_metric_scale) || forcing.horizontal_metric_scale <= 0) {
+        !std::isfinite(forcing.horizontal_metric_scale) || forcing.horizontal_metric_scale <= 0 ||
+        !std::isfinite(forcing.climate_equivalent_metres_per_bed_unit) ||
+        forcing.climate_equivalent_metres_per_bed_unit <= 0) {
         return fail(V9WaterFailure::Kind::InvalidInput,
                     "finite 256-square bed and four/eight matching climate phases required");
     }
@@ -91,7 +93,9 @@ std::expected<V9WaterResult, V9WaterFailure> generateV9Water(std::span<double co
     for (uint32_t phase = 0; phase < phases; ++phase) {
         for (size_t i = 0; i < NATIVE_SIZE; ++i) {
             size_t const k = size_t(phase) * NATIVE_SIZE + i;
-            temperature[k] -= .0065 * (std::max(bed[i], 0.0) - ground[i]);
+            temperature[k] -= .0065 * (
+                std::max(bed[i], 0.0) * forcing.climate_equivalent_metres_per_bed_unit - ground[i]
+            );
             if (rain[k] < 0 || runoff[k] < 0) {
                 return fail(V9WaterFailure::Kind::InvalidInput, "negative supplied freshwater forcing");
             }

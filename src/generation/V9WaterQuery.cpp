@@ -1,6 +1,7 @@
 #include "V9WaterQuery.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <numeric>
@@ -22,6 +23,19 @@ double periodic(double value, double period)
         result += period;
     }
     return result < period ? result : 0;
+}
+std::pair<double, double> project(std::array<double, 2> const& a, std::array<double, 2> const& delta,
+    double x, double y, double domain_m)
+{
+    double const dx = periodic(x - a[0] + domain_m / 2, domain_m) - domain_m / 2;
+    double const dy = periodic(y - a[1] + domain_m / 2, domain_m) - domain_m / 2;
+    double const t = std::clamp(
+        (dx * delta[0] + dy * delta[1])
+            / (delta[0] * delta[0] + delta[1] * delta[1]),
+        0.0, 1.0);
+    double const distance_x = dx - t * delta[0];
+    double const distance_y = dy - t * delta[1];
+    return {t, distance_x * distance_x + distance_y * distance_y};
 }
 std::optional<int> integerCoordinate(double value)
 {
@@ -102,11 +116,12 @@ bool valid(V9WaterEquilibrium const& e)
 }
 V9WaterFailure failure(char const* text) { return {V9WaterFailure::Kind::InvalidInput, text}; }
 V9WaterFailure cancelled() { return {V9WaterFailure::Kind::Cancelled, "water query cancelled"}; }
-bool validGrid(V9WaterQueryGrid const& g)
+bool validGrid(V9WaterQueryGrid const& g, bool allow_singleton = false)
 {
     double const extent_x = (g.columns - 1.0) * g.spacing_m;
     double const extent_y = (g.rows - 1.0) * g.spacing_m;
-    return g.rows >= 2 && g.columns >= 2 && g.rows < std::numeric_limits<int>::max() &&
+    uint32_t const minimum_extent = allow_singleton ? 1U : 2U;
+    return g.rows >= minimum_extent && g.columns >= minimum_extent && g.rows < std::numeric_limits<int>::max() &&
            g.columns < std::numeric_limits<int>::max() && g.bed_m.size() == static_cast<size_t>(g.rows) * g.columns &&
            std::isfinite(g.origin_x_m) && std::isfinite(g.origin_y_m) && std::isfinite(g.spacing_m) &&
            g.spacing_m > 0 && std::isfinite(extent_x) && std::isfinite(extent_y) &&
@@ -261,10 +276,17 @@ std::expected<V9WaterFixedSupport, V9WaterFailure> buildV9WaterFixedSupport(V9Wa
     if (model.progress && !model.progress("fixed-base", 0, 4ULL * e.resolution * e.resolution)) {
         return std::unexpected(cancelled());
     }
+    struct DomainOwners final
+    {
+        std::array<int32_t, 5U> owners{};
+        uint8_t neighbor_count = 0U;
+    };
+
     int n = static_cast<int>(e.resolution), size = 2 * n;
     double step = WORLD / size;
     std::vector<double> base(size * size);
     std::vector<uint8_t> eligible(base.size()), seeds(base.size());
+    std::vector<DomainOwners> domain_owners(base.size());
     for (int y = 0; y < size; ++y) {
         for (int x = 0; x < size; ++x) {
             int p = y * size + x;
@@ -285,16 +307,47 @@ std::expected<V9WaterFixedSupport, V9WaterFailure> buildV9WaterFixedSupport(V9Wa
             }
         }
     }
+    for (int y = 0; y < size; ++y) {
+        double const world_y = periodic(y * step, WORLD);
+        for (int x = 0; x < size; ++x) {
+            int const p = y * size + x;
+            double const world_x = periodic(x * step, WORLD);
+            DomainOwners& owners = domain_owners[p];
+            owners.owners[0U] = owner(e, world_x, world_y);
+            double const xx = periodic(world_x / (WORLD / e.resolution), 1);
+            double const yy = periodic(world_y / (WORLD / e.resolution), 1);
+            if (std::min(xx, 1 - xx) < 1e-10 || std::min(yy, 1 - yy) < 1e-10 || std::abs(xx - yy) < 1e-10) {
+                size_t candidate = 1U;
+                for (int dx : {-1, 1}) {
+                    for (int dy : {-1, 1}) {
+                        owners.owners[candidate++] = owner(e, world_x + dx * 1e-5, world_y + dy * 1e-5);
+                    }
+                }
+                owners.neighbor_count = 4U;
+            }
+        }
+    }
+
     V9WaterFixedSupport result;
     result.size = size;
     auto permission = [&](int32_t id, double level, std::vector<uint8_t> const& wet, std::vector<uint8_t> const* dom) {
         V9WaterQueryPermission row{id, level, wet};
         for (int y = 0; y < size; ++y) {
+            int const previous_row = (y == 0 ? size - 1 : y - 1) * size;
+            int const next_row = (y + 1 == size ? 0 : y + 1) * size;
+            int const row_start = y * size;
             for (int x = 0; x < size; ++x) {
-                int p = y * size + x;
-                for (auto d : NEIGHBOURS) {
-                    row.permission[p] |= wet[wrap(y - d[0], size) * size + wrap(x - d[1], size)];
-                }
+                int const previous_x = x == 0 ? size - 1 : x - 1;
+                int const next_x = x + 1 == size ? 0 : x + 1;
+                int const p = row_start + x;
+                uint8_t permission_value = wet[p];
+                permission_value |= wet[previous_row + x];
+                permission_value |= wet[next_row + x];
+                permission_value |= wet[row_start + previous_x];
+                permission_value |= wet[row_start + next_x];
+                permission_value |= wet[previous_row + previous_x];
+                permission_value |= wet[next_row + next_x];
+                row.permission[p] = permission_value;
                 if (dom) {
                     row.permission[p] &= (*dom)[p];
                 }
@@ -313,7 +366,12 @@ std::expected<V9WaterFixedSupport, V9WaterFailure> buildV9WaterFixedSupport(V9Wa
         for (int y = 0; y < size; ++y) {
             for (int x = 0; x < size; ++x) {
                 int p = y * size + x;
-                dom[p] = domain(e, body.id, x * step, y * step);
+                DomainOwners const& owners = domain_owners[p];
+                bool within_domain = owners.owners[0U] == body.id;
+                for (size_t candidate = 1U; !within_domain && candidate <= owners.neighbor_count; ++candidate) {
+                    within_domain = owners.owners[candidate] == body.id;
+                }
+                dom[p] = static_cast<uint8_t>(within_domain);
                 eligible[p] = dom[p] && base[p] < body.stage_m;
                 if (eligible[p] && (lowest == base.size() || base[p] < base[lowest])) {
                     lowest = p;
@@ -359,12 +417,15 @@ std::expected<V9WaterFixedSupport, V9WaterFailure> buildV9WaterFixedSupport(V9Wa
     result.contacts_pass = result.maximum_contact_error_m <= 2e-6;
     return result;
 }
-std::expected<V9WaterLocalSupport, V9WaterFailure> queryV9WaterLocalSupport(V9WaterEquilibrium const& e,
+static std::expected<V9WaterLocalSupport, V9WaterFailure> queryLocalSupportImpl(V9WaterEquilibrium const& e,
                             V9WaterFixedSupport const& fixed,
                             V9WaterQueryGrid const& query,
-                            V9WaterQueryModel const& model)
+                            V9WaterQueryModel const& model,
+                            bool allow_singleton,
+                            bool require_float32_river_depth,
+                            bool closed_river_endpoints)
 {
-    if (!valid(e) || !validGrid(query) || fixed.size != 2 * e.resolution) {
+    if (!valid(e) || !validGrid(query, allow_singleton) || fixed.size != 2 * e.resolution) {
         return std::unexpected(failure("invalid regional support grid"));
     }
     auto const g = periodicGrid(query);
@@ -422,11 +483,23 @@ std::expected<V9WaterLocalSupport, V9WaterFailure> queryV9WaterLocalSupport(V9Wa
         s.water_level_m[p] = static_cast<float>(owners[p] >= 0 ? stages[p] : g.bed_m[p]);
         s.water_depth_m[p] = static_cast<float>(owners[p] >= 0 ? stages[p] - g.bed_m[p] : 0);
     }
-    std::vector<V9RefinementReach> reaches(model.reaches.begin(), model.reaches.end());
-    std::stable_sort(reaches.begin(), reaches.end(),
-                     [](auto const& a, auto const& b) { return a.discharge_m3_s > b.discharge_m3_s; });
-    for (auto const& r : reaches) {
-        if (model.progress && !model.progress("local-river-support", &r - reaches.data(), reaches.size())) {
+    std::vector<size_t> reach_order(model.reaches.size());
+    std::iota(reach_order.begin(), reach_order.end(), size_t{0});
+    std::stable_sort(reach_order.begin(), reach_order.end(), [&model](size_t a, size_t b) {
+        return model.reaches[a].discharge_m3_s > model.reaches[b].discharge_m3_s;
+    });
+    std::vector<double> grid_x(g.columns), grid_y(g.rows);
+    for (uint32_t column = 0U; column < g.columns; ++column)
+    {
+        grid_x[column] = g.origin_x_m + static_cast<double>(column) * g.spacing_m;
+    }
+    for (uint32_t row = 0U; row < g.rows; ++row)
+    {
+        grid_y[row] = g.origin_y_m + static_cast<double>(row) * g.spacing_m;
+    }
+    for (size_t ordered = 0U; ordered < reach_order.size(); ++ordered) {
+        V9RefinementReach const& r = model.reaches[reach_order[ordered]];
+        if (model.progress && !model.progress("local-river-support", ordered, reach_order.size())) {
             return std::unexpected(cancelled());
         }
         double length2 = r.delta[0] * r.delta[0] + r.delta[1] * r.delta[1];
@@ -444,26 +517,180 @@ std::expected<V9WaterLocalSupport, V9WaterFailure> queryV9WaterLocalSupport(V9Wa
         auto const [x0, x1, y0, y1] = *images;
         for (int iy = y0; iy <= y1; ++iy) {
             for (int ix = x0; ix <= x1; ++ix) {
-                for (size_t p = 0; p < count; ++p) {
-                    if (s.ocean[p] || s.lake[p] || s.river[p]) {
-                        continue;
-                    }
-                    double dx = g.origin_x_m + (p % g.columns) * g.spacing_m - r.a[0] - ix * WORLD,
-                           dy = g.origin_y_m + (p / g.columns) * g.spacing_m - r.a[1] - iy * WORLD,
-                           t = (dx * r.delta[0] + dy * r.delta[1]) / length2,
-                           z = r.water_stage0 + t * (r.water_stage1 - r.water_stage0);
-                    if (t >= 0 && t <= 1 && std::hypot(dx - t * r.delta[0], dy - t * r.delta[1]) <= r.halfwidth &&
-                        g.bed_m[p] < z) {
-                        s.river[p] = 1;
-                        s.river_owner_id[p] = r.start;
-                        s.water_level_m[p] = static_cast<float>(z);
-                        s.water_depth_m[p] = static_cast<float>(z - g.bed_m[p]);
+                double const image_x = static_cast<double>(ix) * WORLD;
+                double const image_y = static_cast<double>(iy) * WORLD;
+                double const xmin = std::min(r.a[0], r.a[0] + r.delta[0]) - r.halfwidth + image_x;
+                double const xmax = std::max(r.a[0], r.a[0] + r.delta[0]) + r.halfwidth + image_x;
+                double const ymin = std::min(r.a[1], r.a[1] + r.delta[1]) - r.halfwidth + image_y;
+                double const ymax = std::max(r.a[1], r.a[1] + r.delta[1]) + r.halfwidth + image_y;
+                if (xmax < grid_x.front() || xmin > grid_x.back()
+                    || ymax < grid_y.front() || ymin > grid_y.back())
+                {
+                    continue;
+                }
+                uint32_t const column_begin = static_cast<uint32_t>(std::clamp(
+                    std::ceil((xmin - g.origin_x_m) / g.spacing_m), 0.0, static_cast<double>(g.columns - 1U)));
+                uint32_t const column_end = static_cast<uint32_t>(std::clamp(
+                    std::floor((xmax - g.origin_x_m) / g.spacing_m), 0.0, static_cast<double>(g.columns - 1U)));
+                uint32_t const row_begin = static_cast<uint32_t>(std::clamp(
+                    std::ceil((ymin - g.origin_y_m) / g.spacing_m), 0.0, static_cast<double>(g.rows - 1U)));
+                uint32_t const row_end = static_cast<uint32_t>(std::clamp(
+                    std::floor((ymax - g.origin_y_m) / g.spacing_m), 0.0, static_cast<double>(g.rows - 1U)));
+                if (column_begin > column_end || row_begin > row_end)
+                {
+                    continue;
+                }
+                for (uint32_t row = row_begin; row <= row_end; ++row)
+                {
+                    for (uint32_t column = column_begin; column <= column_end; ++column)
+                    {
+                        size_t const p = static_cast<size_t>(row) * g.columns + column;
+                        if (s.ocean[p] || s.lake[p] || s.river[p])
+                        {
+                            continue;
+                        }
+                        double const dx = grid_x[column] - r.a[0] - image_x;
+                        double const dy = grid_y[row] - r.a[1] - image_y;
+                        double const projected_t = (dx * r.delta[0] + dy * r.delta[1]) / length2;
+                        double const t = closed_river_endpoints
+                            ? std::clamp(projected_t, 0.0, 1.0)
+                            : projected_t;
+                        double const z = r.water_stage0 + t * (r.water_stage1 - r.water_stage0);
+                        double const depth = z - g.bed_m[p];
+                        bool resolved = depth > 0.0;
+                        if (resolved && require_float32_river_depth)
+                        {
+                            double const magnitude = std::max({std::abs(z), std::abs(g.bed_m[p]), 1.0});
+                            float const float_magnitude = static_cast<float>(magnitude);
+                            double const ulp = static_cast<double>(std::nextafter(
+                            float_magnitude, std::numeric_limits<float>::infinity()))
+                            - static_cast<double>(float_magnitude);
+                            resolved = depth > std::max(1e-6, 2.0 * ulp);
+                        }
+                        if ((closed_river_endpoints || (t >= 0.0 && t <= 1.0))
+                            && std::hypot(dx - t * r.delta[0], dy - t * r.delta[1]) <= r.halfwidth
+                            && resolved)
+                        {
+                            s.river[p] = 1U;
+                            s.river_owner_id[p] = r.start;
+                            s.water_level_m[p] = static_cast<float>(z);
+                            s.water_depth_m[p] = static_cast<float>(depth);
+                        }
                     }
                 }
             }
         }
     }
     return s;
+}
+
+std::expected<V9WaterLocalSupport, V9WaterFailure> queryV9WaterLocalSupport(V9WaterEquilibrium const& e,
+                            V9WaterFixedSupport const& fixed,
+                            V9WaterQueryGrid const& query,
+                            V9WaterQueryModel const& model)
+{
+    return queryLocalSupportImpl(e, fixed, query, model, false, false, false);
+}
+
+std::expected<V9WaterLocalSupport, V9WaterFailure> queryV21WaterLocalSupport(V9WaterEquilibrium const& e,
+                            V9WaterFixedSupport const& fixed,
+                            V9WaterQueryGrid const& query,
+                            V9WaterQueryModel const& model)
+{
+    return queryLocalSupportImpl(e, fixed, query, model, true, true, true);
+}
+std::expected<V9WaterPointSupport, V9WaterFailure>
+queryV9WaterLocalPointSupport(V9WaterEquilibrium const& e, V9WaterFixedSupport const& fixed, double x_m,
+                              double y_m, double bed_m, std::span<V9RefinementReach const> reaches,
+                              std::span<size_t const> reach_order)
+{
+    if (!valid(e) || fixed.size != 2 * e.resolution || !std::isfinite(x_m) || !std::isfinite(y_m) ||
+        !std::isfinite(bed_m) || reach_order.size() != reaches.size()) {
+        return std::unexpected(failure("invalid local water point query"));
+    }
+    size_t const fixed_extent = static_cast<size_t>(fixed.size) * fixed.size;
+    for (auto const& body : fixed.bodies) {
+        if (body.permission.size() != fixed_extent) {
+            return std::unexpected(failure("invalid fixed permission extent"));
+        }
+    }
+    double const x = periodic(x_m, WORLD), y = periodic(y_m, WORLD);
+    int const ix = wrap(static_cast<int>(std::nearbyint(x / (WORLD / fixed.size))), fixed.size);
+    int const iy = wrap(static_cast<int>(std::nearbyint(y / (WORLD / fixed.size))), fixed.size);
+    size_t const support_index = static_cast<size_t>(iy) * fixed.size + ix;
+    int32_t water_owner = -1;
+    double water_stage = std::numeric_limits<double>::infinity();
+    for (auto const& body : fixed.bodies) {
+        if (body.permission[support_index] != 0U && (body.body_id == 0 || domain(e, body.body_id, x, y)) &&
+            bed_m < body.stage_m) {
+            water_owner = body.body_id;
+            water_stage = body.stage_m;
+            break;
+        }
+    }
+
+    double const cell = WORLD / e.resolution;
+    double const cx = x / cell, cy = y / cell;
+    size_t const native = static_cast<size_t>(wrap(static_cast<int>(std::nearbyint(cy)), e.resolution)) *
+                              e.resolution +
+                          wrap(static_cast<int>(std::nearbyint(cx)), e.resolution);
+    if (e.lake.size() == e.ocean.size() && e.lake_id.size() == e.ocean.size() &&
+        e.water_level_m.size() == e.ocean.size() && std::abs(cx - std::nearbyint(cx)) < 1e-10 &&
+        std::abs(cy - std::nearbyint(cy)) < 1e-10 && std::abs(bed_m - e.hydraulic_bed_m[native]) < 1e-8) {
+        water_owner = -1;
+        water_stage = std::numeric_limits<double>::infinity();
+        if (e.ocean[native] != 0U) {
+            water_owner = 0;
+            water_stage = 0;
+        }
+        if (e.lake[native] != 0U) {
+            water_owner = e.lake_id[native];
+            water_stage = e.water_level_m[native];
+        }
+    }
+
+    V9WaterPointSupport support;
+    support.ocean = water_owner == 0;
+    support.lake = water_owner > 0;
+    support.lake_id = std::max(water_owner, 0);
+    support.water_level_m = static_cast<float>(water_owner >= 0 ? water_stage : bed_m);
+    support.water_depth_m = static_cast<float>(water_owner >= 0 ? water_stage - bed_m : 0.0);
+
+    if (water_owner < 0) {
+        for (size_t const edge : reach_order) {
+            if (edge >= reaches.size()) {
+                return std::unexpected(failure("invalid fixed river reach order"));
+            }
+            V9RefinementReach const& reach = reaches[edge];
+            if (!(reach.length2 > 0.0)) {
+                continue;
+            }
+            auto const [t, distance_squared] = project(reach.a, reach.delta, x, y, WORLD);
+            if (distance_squared > reach.halfwidth * reach.halfwidth) {
+                continue;
+            }
+            double const stage = reach.water_stage0 + t * (reach.water_stage1 - reach.water_stage0);
+            double const depth = stage - bed_m;
+            if (!(depth > 0.0)) {
+                continue;
+            }
+            double const magnitude = std::max({std::abs(stage), std::abs(bed_m), 1.0});
+            float const float_magnitude = static_cast<float>(magnitude);
+            double const ulp = static_cast<double>(std::nextafter(
+                float_magnitude, std::numeric_limits<float>::infinity())) -
+                static_cast<double>(float_magnitude);
+            double const minimum_depth = std::max(1e-6, 2.0 * ulp);
+            if (!(depth > minimum_depth)) {
+                continue;
+            }
+            support.river = true;
+            support.river_owner_id = reach.start;
+            support.water_level_m = static_cast<float>(stage);
+            support.water_depth_m = static_cast<float>(depth);
+            break;
+        }
+    }
+    return support;
 }
 std::expected<V9WaterQueryMesh, V9WaterFailure>
 queryV9WaterMesh(V9WaterEquilibrium const& e, V9WaterFixedSupport const& fixed, V9WaterQueryGrid const& query,

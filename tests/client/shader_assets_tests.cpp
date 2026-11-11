@@ -199,6 +199,12 @@ TEST(ShaderAssetsTest, StoneMaterialInterfaceLinksBothVertexPathsToBothFragments
 TEST(ShaderAssetsTest, TerrainTextureAtlasIncludesSandFacesAndPreservesGrassOverlayAlpha)
 {
     namespace terrain_textures = client::render::terrain_textures;
+    static constexpr std::array<uint32_t, 4U> SAND_COLORS{
+        0xFF92'C6D9U,
+        0xFFA2'D3E5U,
+        0xFF82'B8CDU,
+        0xFF9B'CCDEU,
+    };
 
     EXPECT_EQ(terrain_textures::tileIndex(2U, 4U), 16U);
     EXPECT_EQ(terrain_textures::tileIndex(2U, 5U), 17U);
@@ -219,12 +225,19 @@ TEST(ShaderAssetsTest, TerrainTextureAtlasIncludesSandFacesAndPreservesGrassOver
             static_cast<uint8_t>(shared::Block::Sand), face)) * terrain_textures::PIXELS_PER_TILE;
         uint32_t const first_sand_pixel = terrain_textures::RGBA8[sand_start];
         bool has_texture_variation = false;
+        std::array<size_t, SAND_COLORS.size()> sand_color_counts{};
         for (uint32_t pixel = 0U; pixel < terrain_textures::PIXELS_PER_TILE; ++pixel) {
             uint32_t const value = terrain_textures::RGBA8[sand_start + pixel];
             EXPECT_EQ(static_cast<uint8_t>(value >> 24U), 255U);
             EXPECT_GT(static_cast<uint8_t>(value), static_cast<uint8_t>(value >> 16U));
+            auto const color = std::find(SAND_COLORS.begin(), SAND_COLORS.end(), value);
+            ASSERT_NE(color, SAND_COLORS.end()) << "face=" << face << " pixel=" << pixel;
+            ++sand_color_counts[static_cast<size_t>(color - SAND_COLORS.begin())];
             has_texture_variation |= value != first_sand_pixel;
         }
+        EXPECT_TRUE(std::all_of(sand_color_counts.begin(), sand_color_counts.end(), [](size_t count) {
+            return count > 0U;
+        })) << "face=" << face;
         EXPECT_TRUE(has_texture_variation) << "face=" << face;
     }
 
@@ -335,4 +348,16 @@ TEST(ShaderAssetsTest, PropagatesDeterministicKernelProgramDiagnostics)
         graphicsProgramDiagnostic(programStage(grid, "missing"), programStage(fragment)),
         "Program stage entry point is missing from its SPIR-V module"
     );
+}
+
+TEST(ShaderAssetsTest, InstalledClientAssetPathsShareExecutableRootAndRejectTraversal)
+{
+    auto const shader = client::installedClientAssetPath("shaders/text.frag.spv");
+    auto const music = client::installedClientAssetPath("assets/audio/welcome.wav");
+    EXPECT_TRUE(music.is_absolute());
+    EXPECT_EQ(music.filename(), "welcome.wav");
+    EXPECT_EQ(shader.parent_path().parent_path(), music.parent_path().parent_path().parent_path());
+    EXPECT_THROW(static_cast<void>(client::installedClientAssetPath({})), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(client::installedClientAssetPath("assets/../welcome.wav")), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(client::installedClientAssetPath(music)), std::invalid_argument);
 }

@@ -28,9 +28,18 @@ class V9WaterRefinement final
     create(V9WaterEquilibrium const& water, V9WaterRouting const& routing, double repose_slope = .65);
     [[nodiscard]] bool hasNativeRivers() const { return has_native_rivers_; }
     [[nodiscard]] double base(double x_m, double y_m) const;
+    // Applies the approved coarse fixed-support ridge envelope to a V21 metric
+    // plain base. Used for fixed water support and course costs, never scene terrain.
+    [[nodiscard]] double v21FixedSupportBase(double plain_base_blocks, double x_m, double y_m) const;
     [[nodiscard]] double apply(double native_zero, double native_lod, double x_m, double y_m, uint32_t lod = 3) const;
+    [[nodiscard]] std::pair<double, int32_t> standing(double x_m, double y_m) const;
     [[nodiscard]] std::span<V9RefinementReach const> reaches() const { return reaches_; }
     [[nodiscard]] std::span<V9ProtectedContact const> protectedContacts() const { return contacts_; }
+    [[nodiscard]] std::span<uint8_t const> interpolationConstraints() const { return interpolation_constraints_; }
+    [[nodiscard]] std::span<uint8_t const> v21InterpolationConstraints() const
+    {
+        return v21_interpolation_constraints_;
+    }
 
   private:
     struct Ridge
@@ -45,13 +54,14 @@ class V9WaterRefinement final
     std::vector<double> bed_, fx_, fy_, stages_;
     std::vector<int32_t> owners_, vertex_owners_;
     std::vector<Ridge> ridges_;
+    std::vector<uint8_t> interpolation_constraints_;
+    std::vector<uint8_t> v21_interpolation_constraints_;
     std::vector<V9RefinementReach> reaches_;
     std::vector<V9ProtectedContact> contacts_;
     std::map<int, std::vector<size_t>> ridge_index_, reach_index_;
     void interpolateSlopes(std::vector<int32_t> const& protected_vertices);
     [[nodiscard]] double interpolate(double x, double y) const;
     [[nodiscard]] double ridgeBarrier(double z, double x, double y) const;
-    [[nodiscard]] std::pair<double, int32_t> standing(double x, double y) const;
     [[nodiscard]] int bin(double x, double y) const;
 };
 } // namespace generation::detail

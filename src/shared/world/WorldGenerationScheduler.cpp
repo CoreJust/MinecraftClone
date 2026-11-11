@@ -814,7 +814,10 @@ std::optional<GenerationJob> WorldGenerationCoordinator::bindTerrainLeaf(Generat
         .terrain_identity = m_terrain_identity,
         .world_epoch = m_world_epoch,
     };
-    bool const native_surface = m_terrain_world->atlas()->configuration.model_tag == generation::TerrainModelTag::V9;
+    generation::TerrainModelTag const model = m_terrain_world->atlas()->configuration.model_tag;
+    bool const native_surface = model == generation::TerrainModelTag::V9
+        || model == generation::TerrainModelTag::V21
+        || model == generation::TerrainModelTag::V10;
     auto const artifact = m_regional_artifacts.find(key);
     if (!native_surface && artifact == m_regional_artifacts.end()) {
         return std::nullopt;

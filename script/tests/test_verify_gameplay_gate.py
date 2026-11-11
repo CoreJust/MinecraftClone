@@ -541,12 +541,12 @@ class VerifyGameplayGateTests(unittest.TestCase):
                     "active_coverage_epoch": epoch,
                     "active_coverage_center": dict(position if active_center is None else active_center),
                     "world_loading_center": dict(position),
-                    "ready_chunks": (419904 if ready else 209920) if is_s1 else (1000 if ready else 500),
-                    "required_chunks": 419904 if is_s1 else 1000, "ready": ready,
+                    "ready_chunks": ((6561 if ready else 3280) * self.gate.WORLD_VERTICAL_CHUNKS) if is_s1 else (1000 if ready else 500),
+                    "required_chunks": 6561 * self.gate.WORLD_VERTICAL_CHUNKS if is_s1 else 1000, "ready": ready,
                     **({"coverage_scope": "horizontal_full_volume",
                         "required_authoritative_columns": 6561,
                         "resident_authoritative_columns": 6561 if ready else 3280,
-                        "vertical_chunk_count": 64, "authoritative_columns_center": dict(position)} if is_s1 else {})}
+                        "vertical_chunk_count": self.gate.WORLD_VERTICAL_CHUNKS, "authoritative_columns_center": dict(position)} if is_s1 else {})}
 
         def visual_lod_sample():
             return {"radius_blocks": self.gate.VISUAL_LOD_RADIUS_BLOCKS,
@@ -1652,6 +1652,347 @@ class VerifyGameplayGateTests(unittest.TestCase):
         with self.assertRaisesRegex(self.gate.GameplayError, "rendered camera"):
             self.gate.verify_report(report, "macos")
 
+    def s2_turning_diagnostic(self, platform="macos"):
+        report = self.report(platform)
+        report.update(passed=False, failure="native turning is diagnostic")
+        game = report["game_benchmark"]
+        source_authority = game["s1_terrain_performance"]
+        game.update(qualification_proof="", qualification_settings_manifest=None, s1_terrain_performance=None)
+        identity = self.gate.s2_native_terrain_identity()
+        game["terrain_identity"] = identity
+        budget = game["frame_budget"]
+        budget["required_for_benchmark_pass"] = False
+        end = budget["measurement_window_end_offset_ns"]
+        # The native recorder omits the tail starting at the upper boundary.
+        frames = [frame for frame in game["raw_frames"] if frame["submitted_frame_offset_ns"] < end]
+        game["raw_frames"] = frames
+        game["raw_fence_confirmed_frames"] = [
+            fence for fence in game["raw_fence_confirmed_frames"] if fence["submitted_offset_ns"] < end
+        ]
+        for frame in frames:
+            frame["native_terrain"] = {
+                "backend": "native-v10", "terrain_identity": identity,
+                "submitted_frame_sequence_id": frame["submitted_frame_sequence_id"], "session_join_epoch": 1,
+                "coverage_epoch": 4, "active_coverage_epoch": 4,
+                "current_player_position": {"x": 0, "y": 0, "z": 520, "x_subcell": 0, "y_subcell": 0, "z_subcell": 0},
+                "scene_present": True, "session_matches": True, "coverage_matches": True, "sources_current": True,
+                "underfoot_actual_column_present": True, "underfoot_authority_source_present": True,
+                "actual_column_count": 5025, "required_actual_columns": 5025,
+                "presented_current_actual_columns": 5025, "submitted_scene_face_count": 1,
+                "renderer_submitted_frame_count": frame["loop_ordinal"],
+            }
+        anchor = next(frame for frame in frames if frame["phase"] == self.gate.S1_FILL_PHASE)
+        authority_anchor = source_authority["movement_trajectory_anchor"]
+        anchor["native_terrain"]["current_player_position"] = dict(authority_anchor["authoritative_position"])
+        anchor["native_terrain"]["active_coverage_epoch"] = authority_anchor["playable_sphere"]["active_coverage_epoch"]
+        anchor["native_terrain"]["coverage_epoch"] = anchor["native_terrain"]["active_coverage_epoch"]
+        boundary_updates = source_authority["movement_boundary_authoritative_updates"]
+        movement_updates = source_authority["movement_authoritative_sphere_updates"]
+        for update in (authority_anchor, *boundary_updates, *movement_updates):
+            update.pop("visual_lod")
+        count = budget["fence_confirmed_frame_count"]
+        game["native_terrain_diagnostics"] = {
+            "terrain_identity": identity, "qualification_profile": self.gate.S2_NATIVE_TURNING_PROFILE,
+            "qualification_complete": False, "turning_start_frame_sequence_id": anchor["submitted_frame_sequence_id"],
+            "turning_coverage": {"start_offset_ns": budget["measurement_window_start_offset_ns"],
+                                 "end_offset_ns": budget["measurement_window_end_offset_ns"],
+                                 "submitted_frames": count, "current_disk_frames": count, "window_drained": True},
+            "turning_authority": {"trajectory_anchor": authority_anchor,
+                                  "anchor_coverage_offset_ns": budget["measurement_window_start_offset_ns"],
+                                  "boundary_capture_complete": True, "boundary_updates": boundary_updates,
+                                  "movement_updates": movement_updates},
+        }
+        return report
+
+    def s2_recovery_diagnostic(self, platform="macos"):
+        gate = self.gate
+        identity = gate.s2_native_terrain_identity()
+        start = 1_000_000_000
+        end = start + 30_000_000_000
+
+        def position(x):
+            return {"x": x % 65_536, "y": 2, "z": 520, "x_subcell": 9, "y_subcell": 8, "z_subcell": 7}
+
+        def sphere(x, epoch):
+            return {"radius_blocks": 640, "ready": True, "active_coverage_epoch": epoch,
+                    "active_coverage_center": position(x), "world_loading_center": position(x),
+                    "authoritative_columns_center": position(x), "coverage_scope": "horizontal_full_volume",
+                    "required_authoritative_columns": 6_561, "resident_authoritative_columns": 6_561,
+                    "vertical_chunk_count": gate.WORLD_VERTICAL_CHUNKS,
+                    "ready_chunks": 6_561 * gate.WORLD_VERTICAL_CHUNKS,
+                    "required_chunks": 6_561 * gate.WORLD_VERTICAL_CHUNKS}
+
+        def frame(sequence, phase, offset, x, epoch):
+            return {"submitted_frame_sequence_id": sequence, "presentation_succeeded": True,
+                    "submitted_frame_phase": phase, "phase": phase, "swapchain_generation": 1,
+                    "submitted_frame_slot": (sequence - 1) % 3, "application_present_id": sequence,
+                    "started_offset_ns": offset - 100, "loop_duration_ns": 100,
+                    "submitted_frame_offset_ns": offset, "loop_ordinal": sequence, "playable_sphere": sphere(x, epoch),
+                    "native_terrain": {
+                        "backend": "native-v10", "terrain_identity": identity, "session_join_epoch": 1,
+                        "submitted_frame_sequence_id": sequence, "current_player_position": position(x),
+                        "active_coverage_epoch": epoch, "coverage_epoch": epoch,
+                        "scene_present": True, "session_matches": True, "coverage_matches": True,
+                        "sources_current": True, "underfoot_actual_column_present": True,
+                        "underfoot_authority_source_present": True, "actual_column_count": 5_025,
+                        "required_actual_columns": 5_025, "presented_current_actual_columns": 5_025,
+                        "submitted_scene_face_count": 1,
+                    }}
+
+        def update(ordinal, ack, offset, x, epoch):
+            return {"update_ordinal": ordinal, "acknowledged_input_sequence": ack, "state_revision": ordinal,
+                    "offset_ns": offset, "authoritative_position": position(x), "movement_capabilities": 3,
+                    "vertical_velocity_subcells": 0, "playable_sphere": sphere(x, epoch)}
+
+        initial_x = 65_500
+        inputs = [
+            {"input_ordinal": i + 1, "sequence": 11 + i, "sent_offset_ns": start + i * gate.SERVER_TICK_NS,
+             "scheduled_offset_ns": start + i * gate.SERVER_TICK_NS,
+             "direction": {"x": 127, "y": 0, "z": 0, "view_x": 0, "view_y": 0, "speedup": 200,
+                           "accelerated": True, "cycle_movement_capabilities": False}}
+            for i in range(300)
+        ]
+        updates = [
+            update(i + 2, entry["sequence"], entry["sent_offset_ns"] + 1_000_000,
+                   initial_x + (i + 1) * 112, i + 2)
+            for i, entry in enumerate(inputs)
+        ]
+        frames = [
+            frame(1, gate.PHASES[0], start - 300_000_000, initial_x, 1),
+            frame(2, gate.PHASES[1], start - 100_000_000, initial_x, 1),
+            frame(3, gate.PHASES[2], start + 1_000_000, initial_x, 1),
+            frame(4, gate.PHASES[3], end + 200_000_000, initial_x + len(inputs) * 112, len(inputs) + 1),
+        ]
+        return {"schema_version": "mc.runtime-evidence.v1", "mode": "benchmark-game", "passed": False,
+                "game_benchmark": {
+                    "workload": gate.COVERAGE_WORKLOAD, "build_mode": "release", "qualification_proof": "",
+                    "present_mode": "immediate" if platform == "windows" else "fifo",
+                    "diagnostic_overrides_present": False, "terrain_identity": identity, "session_join_epoch": 1,
+                    "full_radius_terrain": None, "raw_frames": frames,
+                    "raw_fence_confirmed_frames": self.raw_fence_confirmed_frames(frames),
+                    "raw_gameplay_inputs": inputs, "native_terrain_diagnostics": {
+                        "backend": "native-v10", "terrain_identity": identity, "qualification_complete": False,
+                        "qualification_profile": gate.S2_NATIVE_TURNING_PROFILE, "full_radius_recovery": {
+                            "terminal_phase": "complete", "initial_frame_sequence_id": 1,
+                            "movement_start_frame_sequence_id": 2, "recovery_frame_sequence_id": 4,
+                            "movement_start_offset_ns": start, "movement_end_offset_ns": end,
+                            "movement_window_complete": True,
+                            "movement_anchor": update(1, 10, start - 1, initial_x, 1),
+                            "movement_updates": updates,
+                        },
+                    },
+                }}
+
+    def test_s2_recovery_inspection_verifies_wrapped_motion_and_separates_cadence(self):
+        for platform in ("macos", "windows"):
+            with self.subTest(platform=platform):
+                report = self.s2_recovery_diagnostic(platform)
+                report["game_benchmark"]["frame_budget"] = {"passed": True}
+                result = self.gate.inspect_s2_recovery_report(report, platform)
+                self.assertEqual(result["status"], "diagnostic")
+                self.assertEqual(list(result["anchors"].values()), [1, 2, 4])
+                self.assertEqual(result["acknowledged_inputs"], 300)
+                self.assertTrue(result["authority_trajectory_verified"])
+                self.assertTrue(result["authority_coverage_complete"])
+                self.assertTrue(result["visual_coverage_complete"])
+                self.assertTrue(result["frame_budget_complete"])
+                self.assertFalse(result["frame_budget_met"])
+
+    def test_s2_recovery_inspection_rejects_static_ack_even_with_current_authority_sphere(self):
+        report = self.s2_recovery_diagnostic()
+        recovery = report["game_benchmark"]["native_terrain_diagnostics"]["full_radius_recovery"]
+        anchor = recovery["movement_anchor"]
+        ack = recovery["movement_updates"][0]
+        ack["authoritative_position"] = anchor["authoritative_position"]
+        ack["playable_sphere"] = anchor["playable_sphere"]
+        with self.assertRaisesRegex(self.gate.GameplayError, "wrapped .112-block"):
+            self.gate.inspect_s2_recovery_report(report, "macos")
+
+    def test_s2_recovery_inspection_rejects_wrong_fence_tuple_or_phase_order(self):
+        for field, value in (("frame_slot", 2), ("completion_observed_offset_ns", 1_010_000_000)):
+            with self.subTest(field=field):
+                report = self.s2_recovery_diagnostic()
+                report["game_benchmark"]["raw_fence_confirmed_frames"][1][field] = value
+                with self.assertRaisesRegex(self.gate.GameplayError, "exact submission|out of phase order"):
+                    self.gate.inspect_s2_recovery_report(report, "macos")
+
+    def test_s2_recovery_inspection_preserves_motion_with_missing_ack_or_current_disk(self):
+        report = self.s2_recovery_diagnostic()
+        game = report["game_benchmark"]
+        game["native_terrain_diagnostics"]["full_radius_recovery"]["movement_updates"].pop(2)
+        game["raw_frames"][2]["native_terrain"]["coverage_matches"] = False
+        result = self.gate.inspect_s2_recovery_report(report, "macos")
+        self.assertEqual(result["acknowledged_inputs"], 299)
+        self.assertEqual(result["verified_movement_steps"], 298)
+        self.assertFalse(result["authority_trajectory_verified"])
+        self.assertFalse(result["visual_coverage_complete"])
+        self.assertTrue(result["frame_budget_complete"])
+
+    def test_s2_recovery_inspection_keeps_authority_deficit_separate_from_motion_and_visual_disk(self):
+        report = self.s2_recovery_diagnostic()
+        recovery = report["game_benchmark"]["native_terrain_diagnostics"]["full_radius_recovery"]
+        sphere = recovery["movement_updates"][0]["playable_sphere"]
+        sphere.update(ready=False, resident_authoritative_columns=6_560,
+                      ready_chunks=6_560 * self.gate.WORLD_VERTICAL_CHUNKS)
+        result = self.gate.inspect_s2_recovery_report(report, "macos")
+        self.assertTrue(result["authority_trajectory_verified"])
+        self.assertFalse(result["authority_coverage_complete"])
+        self.assertTrue(result["visual_coverage_complete"])
+
+    def test_s2_recovery_inspection_rejects_short_or_late_movement_as_complete(self):
+        for short in (True, False):
+            with self.subTest(short=short):
+                report = self.s2_recovery_diagnostic()
+                game = report["game_benchmark"]
+                recovery = game["native_terrain_diagnostics"]["full_radius_recovery"]
+                updates = recovery["movement_updates"]
+                if short:
+                    del game["raw_gameplay_inputs"][2:]
+                    del updates[2:]
+                    final = game["raw_frames"][-1]
+                    final["native_terrain"]["current_player_position"] = updates[-1]["authoritative_position"]
+                    final["native_terrain"]["active_coverage_epoch"] = final["native_terrain"]["coverage_epoch"] = 3
+                    final["playable_sphere"] = updates[-1]["playable_sphere"]
+                else:
+                    updates[-1]["offset_ns"] += self.gate.SERVER_TICK_NS
+                result = self.gate.inspect_s2_recovery_report(report, "macos")
+                self.assertEqual(result["verified_movement_steps"], 2 if short else 300)
+                self.assertFalse(result["authority_trajectory_verified"])
+                self.assertFalse(result["authority_coverage_complete"])
+
+    def test_s2_recovery_inspection_rejects_input_at_exclusive_window_end(self):
+        report = self.s2_recovery_diagnostic()
+        game = report["game_benchmark"]
+        recovery = game["native_terrain_diagnostics"]["full_radius_recovery"]
+        game["raw_gameplay_inputs"][-1]["sent_offset_ns"] = recovery["movement_end_offset_ns"]
+        with self.assertRaisesRegex(self.gate.GameplayError, "first-send window boundary"):
+            self.gate.inspect_s2_recovery_report(report, "macos")
+
+    def test_s2_recovery_inspection_preserves_early_runtime_failure(self):
+        report = self.s2_recovery_diagnostic()
+        game = report["game_benchmark"]
+        diagnostics = game["native_terrain_diagnostics"]
+        recovery = diagnostics["full_radius_recovery"]
+        for field in ("initial_frame_sequence_id", "movement_start_frame_sequence_id", "recovery_frame_sequence_id",
+                      "movement_start_offset_ns", "movement_end_offset_ns", "movement_anchor"):
+            recovery[field] = None
+        recovery.update(terminal_phase="failed", movement_window_complete=False, movement_updates=[])
+        diagnostics.update(terrain_identity=None, qualification_profile=None)
+        game.update(terrain_identity=None, session_join_epoch=0, raw_frames=[], raw_fence_confirmed_frames=[],
+                    raw_gameplay_inputs=[])
+        report["failure"] = "initial terrain deadline elapsed"
+        result = self.gate.inspect_s2_recovery_report(report, "macos")
+        self.assertEqual(result["failure"], report["failure"])
+        self.assertEqual(result["terminal_phase"], "failed")
+        self.assertEqual(result["anchors"], {})
+        self.assertFalse(result["authority_trajectory_verified"])
+        self.assertFalse(result["frame_budget_complete"])
+
+    def test_s2_recovery_cli_returns_diagnostic_and_rejects_release_options(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt = Path(temporary) / "runtime.json"
+            receipt.write_text(json.dumps(self.s2_recovery_diagnostic()), encoding="utf-8")
+            args = ["--receipt", str(receipt), "--inspect-s2-recovery", "macos"]
+            with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(self.gate.main(args), 0)
+            self.assertEqual(json.loads(stdout.getvalue())["status"], "diagnostic")
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(self.gate.main([*args, "--proof", "terrain-coverage"]), 1)
+            self.assertIn("cannot be combined with release proof", stderr.getvalue())
+
+    def test_s2_turning_inspection_recomputes_coverage_and_frame_budget(self):
+        for platform in ("macos", "windows"):
+            with self.subTest(platform=platform):
+                report = self.s2_turning_diagnostic(platform)
+                result = self.gate.inspect_s2_turning_report(report, platform)
+                self.assertEqual(result["status"], "diagnostic")
+                self.assertTrue(result["coverage_complete"])
+                self.assertTrue(result["frame_budget_met"])
+                self.assertTrue(result["authority_trajectory_verified"])
+                self.assertTrue(result["authority_coverage_complete"])
+
+    def test_s2_turning_inspection_rejects_missing_movement_ack(self):
+        report = self.s2_turning_diagnostic()
+        diagnostics = report["game_benchmark"]["native_terrain_diagnostics"]
+        diagnostics["turning_authority"]["movement_updates"].pop(1)
+        with self.assertRaisesRegex(self.gate.GameplayError, "scheduled movement steps"):
+            self.gate.inspect_s2_turning_report(report, "macos")
+
+    def test_s2_turning_inspection_keeps_older_frame_receipts_diagnostic(self):
+        report = self.s2_turning_diagnostic()
+        report["game_benchmark"]["native_terrain_diagnostics"].pop("turning_authority")
+        result = self.gate.inspect_s2_turning_report(report, "macos")
+        self.assertTrue(result["coverage_complete"])
+        self.assertFalse(result["authority_trajectory_verified"])
+        self.assertFalse(result["authority_coverage_complete"])
+
+    def test_s2_turning_inspection_distinguishes_authority_deficit_from_motion_and_visual_coverage(self):
+        report = self.s2_turning_diagnostic()
+        diagnostics = report["game_benchmark"]["native_terrain_diagnostics"]
+        sphere = diagnostics["turning_authority"]["movement_updates"][0]["playable_sphere"]
+        sphere["resident_authoritative_columns"] -= 1
+        sphere["ready_chunks"] -= sphere["vertical_chunk_count"]
+        sphere["ready"] = False
+        result = self.gate.inspect_s2_turning_report(report, "macos")
+        self.assertTrue(result["authority_trajectory_verified"])
+        self.assertTrue(result["coverage_complete"])
+        self.assertFalse(result["authority_coverage_complete"])
+
+    def test_s2_turning_inspection_rejects_wrong_exact_authority_center(self):
+        report = self.s2_turning_diagnostic()
+        diagnostics = report["game_benchmark"]["native_terrain_diagnostics"]
+        sphere = diagnostics["turning_authority"]["movement_updates"][0]["playable_sphere"]
+        sphere["authoritative_columns_center"]["x_subcell"] += 1
+        with self.assertRaisesRegex(self.gate.GameplayError, "exact current player"):
+            self.gate.inspect_s2_turning_report(report, "macos")
+
+    def test_s2_turning_inspection_rejects_spoofed_coverage_summary(self):
+        report = self.s2_turning_diagnostic()
+        game = report["game_benchmark"]
+        frame = next(frame for frame in game["raw_frames"] if frame["phase"] == self.gate.S1_MOVEMENT_PHASE)
+        frame.pop("native_terrain")
+        with self.assertRaisesRegex(self.gate.GameplayError, "coverage summary disagrees"):
+            self.gate.inspect_s2_turning_report(report, "macos")
+        game["native_terrain_diagnostics"]["turning_coverage"]["current_disk_frames"] -= 1
+        result = self.gate.inspect_s2_turning_report(report, "macos")
+        self.assertFalse(result["coverage_complete"])
+        self.assertTrue(result["frame_budget_met"])
+
+    def test_s2_turning_inspection_rejects_fence_after_start_input(self):
+        report = self.s2_turning_diagnostic()
+        game = report["game_benchmark"]
+        diagnostics = game["native_terrain_diagnostics"]
+        anchor = next(fence for fence in game["raw_fence_confirmed_frames"]
+                      if fence["sequence_id"] == diagnostics["turning_start_frame_sequence_id"])
+        anchor["completion_observed_offset_ns"] = diagnostics["turning_coverage"]["start_offset_ns"] + 1
+        with self.assertRaisesRegex(self.gate.GameplayError, "pre-input fence"):
+            self.gate.inspect_s2_turning_report(report, "macos")
+
+    def test_s2_turning_inspection_rejects_missing_or_noninteger_anchor_handles(self):
+        for field, invalid in (("swapchain_generation", None), ("frame_slot", True), ("frame_slot", 3)):
+            with self.subTest(field=field, invalid=invalid):
+                report = self.s2_turning_diagnostic()
+                game = report["game_benchmark"]
+                sequence = game["native_terrain_diagnostics"]["turning_start_frame_sequence_id"]
+                frame = next(frame for frame in game["raw_frames"] if frame["submitted_frame_sequence_id"] == sequence)
+                fence = next(fence for fence in game["raw_fence_confirmed_frames"] if fence["sequence_id"] == sequence)
+                frame["submitted_frame_slot" if field == "frame_slot" else field] = invalid
+                fence[field] = invalid
+                with self.assertRaisesRegex(self.gate.GameplayError, "native .*anchor"):
+                    self.gate.inspect_s2_turning_report(report, "macos")
+
+    def test_native_terrain_diagnostics_cannot_qualify_an_r6_proof(self):
+        for proof in ("performance", "terrain-coverage"):
+            with self.subTest(proof=proof):
+                report = self.report(proof=proof)
+                report["game_benchmark"]["native_terrain_diagnostics"] = {
+                    "backend": "native-v10",
+                    "qualification_profile": "mc.s2-native-v10-fine.v1",
+                    "qualification_complete": False,
+                }
+                with self.assertRaisesRegex(self.gate.GameplayError, "cannot qualify an R6 gameplay proof"):
+                    self.gate.verify_report(report, "macos", proof)
+
     def test_s1_performance_rejects_reduced_framebuffer_and_invalid_fov(self):
         for platform in ("macos", "windows"):
             with self.subTest(platform=platform, setting="framebuffer"):
@@ -1795,6 +2136,42 @@ class VerifyGameplayGateTests(unittest.TestCase):
         full["movement_authoritative_sphere_updates"][-1]["playable_sphere"]["ready_chunks"] -= 1
         with self.assertRaisesRegex(self.gate.GameplayError, "materialized-chunk deficit"):
             self.gate.verify_report(report, "macos")
+
+    def test_s1_full_volume_accepts_upper_domain_and_rejects_legacy_half_volume(self):
+        report = self.report()
+        sphere = copy.deepcopy(next(frame["playable_sphere"] for frame in report["game_benchmark"]["raw_frames"]
+                                    if frame["phase"] == self.gate.S1_MOVEMENT_PHASE))
+        sphere.update(vertical_chunk_count=128, required_chunks=6561 * 128, ready_chunks=6561 * 128)
+        self.gate.verify_s1_full_volume_sample(sphere, "current upper domain")
+        sphere.update(vertical_chunk_count=64, required_chunks=6561 * 64, ready_chunks=6561 * 64)
+        with self.assertRaisesRegex(self.gate.GameplayError, "full-volume"):
+            self.gate.verify_s1_full_volume_sample(sphere, "legacy half volume")
+
+    def test_s1_trajectory_accepts_high_terrain_clearance_inside_entity_airspace(self):
+        def raise_positions(value, height):
+            if isinstance(value, dict):
+                if id(value) in seen:
+                    return
+                seen.add(id(value))
+                if {"x", "y", "z", "x_subcell", "y_subcell", "z_subcell"} <= value.keys():
+                    value["z"] += height - 64
+                for child in value.values():
+                    raise_positions(child, height)
+            elif isinstance(value, list):
+                for child in value:
+                    raise_positions(child, height)
+
+        for height in (1541, 2144):
+            with self.subTest(height=height):
+                report = self.report()
+                seen = set()
+                raise_positions(report, height)
+                for frame in report["game_benchmark"]["raw_frames"]:
+                    if frame.get("diagnostic_camera"):
+                        frame["diagnostic_camera"][2] += height - 64
+                    if frame.get("presented_player"):
+                        frame["presented_player"]["body"][2] += height - 64
+                self.gate.verify_report(report, "macos")
 
     def test_s1_full_volume_rejects_old_radius_scope_missing_edge_and_stale_identity(self):
         mutations = (("radius_blocks", 40), ("coverage_scope", "materialized_sphere"),

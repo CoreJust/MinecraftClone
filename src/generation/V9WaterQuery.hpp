@@ -1,6 +1,7 @@
 #pragma once
 #include "V9WaterRefinement.hpp"
 
+#include <cstddef>
 #include <functional>
 
 namespace generation::detail
@@ -32,6 +33,7 @@ struct V9WaterFixedSupport final
     uint32_t size = 0;
     std::vector<V9WaterQueryPermission> bodies;
     std::vector<V9WaterQueryEscape> escape_failures;
+    std::vector<size_t> river_reach_order;
     std::vector<double> contact_actual_height_m;
     double maximum_contact_error_m = 0;
     bool contacts_pass = true;
@@ -47,6 +49,16 @@ struct V9WaterLocalSupport final
     std::vector<uint8_t> ocean, lake, river;
     std::vector<int32_t> lake_id, river_owner_id;
     std::vector<float> water_level_m, water_depth_m;
+};
+struct V9WaterPointSupport final
+{
+    bool ocean = false;
+    bool lake = false;
+    bool river = false;
+    int32_t lake_id = 0;
+    int32_t river_owner_id = -1;
+    float water_level_m = 0;
+    float water_depth_m = 0;
 };
 struct V9WaterQueryInventory final
 {
@@ -66,6 +78,15 @@ buildV9WaterFixedSupport(V9WaterEquilibrium const&, V9WaterQueryModel const& = {
 [[nodiscard]] std::expected<V9WaterLocalSupport, V9WaterFailure>
 queryV9WaterLocalSupport(V9WaterEquilibrium const&, V9WaterFixedSupport const&, V9WaterQueryGrid const&,
                          V9WaterQueryModel const& = {});
+// V21 regional support permits point/line grids and filters river depth at
+// the exported float32 resolution; V9 query behavior remains unchanged.
+[[nodiscard]] std::expected<V9WaterLocalSupport, V9WaterFailure>
+queryV21WaterLocalSupport(V9WaterEquilibrium const&, V9WaterFixedSupport const&, V9WaterQueryGrid const&,
+                          V9WaterQueryModel const& = {});
+[[nodiscard]] std::expected<V9WaterPointSupport, V9WaterFailure>
+queryV9WaterLocalPointSupport(V9WaterEquilibrium const&, V9WaterFixedSupport const&, double x_m, double y_m,
+                              double bed_m, std::span<V9RefinementReach const> reaches,
+                              std::span<size_t const> reach_order);
 [[nodiscard]] std::expected<V9WaterQueryMesh, V9WaterFailure>
 queryV9WaterMesh(V9WaterEquilibrium const&, V9WaterFixedSupport const&, V9WaterQueryGrid const&,
                  V9WaterQueryModel const& = {}, uint64_t max_triangles = 150'000,

@@ -38,6 +38,11 @@ FACE_NAMES = ("NegativeX", "PositiveX", "NegativeY", "PositiveY", "NegativeZ", "
 BLOCK_NAMES = ("Air", "Stone", "Grass", "Dirt", "Bedrock", "Snow", "Ice")
 GRASS_TEMPERATURE = 0.8
 GRASS_DOWNFALL = 0.4
+SAND_COLORS_RGBA8 = (0xFF92C6D9, 0xFFA2D3E5, 0xFF82B8CD, 0xFF9BCCDE)
+SAND_NOISE_X = 0x9E3779B9
+SAND_NOISE_Y = 0x85EBCA6B
+SAND_NOISE_SEED = 0xC2B2AE35
+SAND_NOISE_MULTIPLIER = 0x7FEB352D
 
 
 def fail(message: str) -> None:
@@ -350,6 +355,8 @@ def generate_header(
     lines = [
         "#pragma once",
         "",
+        "#include <shared/world/Chunk.hpp>",
+        "",
         "#include <array>",
         "#include <cstdint>",
         "",
@@ -358,11 +365,14 @@ def generate_header(
         "inline constexpr uint32_t TILE_SIZE = 16U;",
         "inline constexpr uint32_t PIXELS_PER_TILE = TILE_SIZE * TILE_SIZE;",
         "inline constexpr uint32_t FACE_COUNT = 6U;",
-        "inline constexpr uint32_t MATERIAL_COUNT = 7U;",
+        "inline constexpr uint32_t MATERIAL_COUNT = static_cast<uint8_t>(shared::Block::Sand) + 1U;",
         "inline constexpr uint32_t TILE_COUNT = MATERIAL_COUNT * FACE_COUNT + 1U;",
         "inline constexpr uint32_t GRASS_SIDE_OVERLAY_TILE_INDEX = MATERIAL_COUNT * FACE_COUNT;",
         "inline constexpr uint32_t INVALID_TILE_INDEX = 0xffff'ffffU;",
         f"inline constexpr uint32_t GRASS_TINT_RGBA8 = {format_packed_rgba8(grass_tint_rgba8)};",
+        "inline constexpr uint32_t BASE_MATERIAL_COUNT = static_cast<uint8_t>(shared::Block::Ice) + 1U;",
+        "inline constexpr uint32_t BASE_OVERLAY_TILE_INDEX = BASE_MATERIAL_COUNT * FACE_COUNT;",
+        "inline constexpr uint32_t BASE_TILE_COUNT = BASE_OVERLAY_TILE_INDEX + 1U;",
         "",
         "[[nodiscard]]",
         "constexpr uint32_t tileIndex(uint32_t const block_id, uint32_t const face_direction) noexcept",
@@ -374,7 +384,8 @@ def generate_header(
         "}",
         "",
         "// Each pixel packs R in bits 0-7, G in 8-15, B in 16-23, and A in 24-31.",
-        "inline constexpr std::array<uint32_t, static_cast<uint64_t>(TILE_COUNT) * PIXELS_PER_TILE> RGBA8{",
+        "// The source atlas ends with the grass overlay; Sand is inserted before it below.",
+        "inline constexpr std::array<uint32_t, static_cast<uint64_t>(BASE_TILE_COUNT) * PIXELS_PER_TILE> BASE_RGBA8{",
     ]
     for tile_index, (description, pixels) in enumerate(tiles):
         lines.append(f"    // Tile {tile_index}: {description}.")
@@ -387,9 +398,59 @@ def generate_header(
         [
             "};",
             "",
-            "static_assert(TILE_COUNT == 43U);",
+            "[[nodiscard]]",
+            "constexpr uint32_t sandTexturePixel(uint32_t const x, uint32_t const y) noexcept",
+            "{",
+            f"    constexpr std::array<uint32_t, {len(SAND_COLORS_RGBA8)}U> SAND_COLORS{{",
+        ]
+    )
+    for index, color in enumerate(SAND_COLORS_RGBA8):
+        suffix = ","
+        lines.append(f"        {format_packed_rgba8(color)}{suffix}")
+    lines.extend(
+        [
+            "    };",
+            f"    uint32_t noise = x * {format_packed_rgba8(SAND_NOISE_X)} + y * {format_packed_rgba8(SAND_NOISE_Y)}"
+            f" + {format_packed_rgba8(SAND_NOISE_SEED)};",
+            "    noise ^= noise >> 16U;",
+            f"    noise *= {format_packed_rgba8(SAND_NOISE_MULTIPLIER)};",
+            "    noise ^= noise >> 15U;",
+            "    return SAND_COLORS[noise & 3U];",
+            "}",
+            "",
+            "[[nodiscard]]",
+            "constexpr std::array<uint32_t, static_cast<uint64_t>(TILE_COUNT) * PIXELS_PER_TILE> makeRgba8() noexcept",
+            "{",
+            "    std::array<uint32_t, static_cast<uint64_t>(TILE_COUNT) * PIXELS_PER_TILE> result{};",
+            "    for (uint32_t tile = 0U; tile < BASE_OVERLAY_TILE_INDEX; ++tile) {",
+            "        for (uint32_t pixel = 0U; pixel < PIXELS_PER_TILE; ++pixel) {",
+            "            result[static_cast<uint64_t>(tile) * PIXELS_PER_TILE + pixel]",
+            "                = BASE_RGBA8[static_cast<uint64_t>(tile) * PIXELS_PER_TILE + pixel];",
+            "        }",
+            "    }",
+            "    for (uint32_t face = 0U; face < FACE_COUNT; ++face) {",
+            "        uint64_t const sand_start = static_cast<uint64_t>(tileIndex(",
+            "            static_cast<uint8_t>(shared::Block::Sand), face)) * PIXELS_PER_TILE;",
+            "        for (uint32_t pixel = 0U; pixel < PIXELS_PER_TILE; ++pixel) {",
+            "            result[sand_start + pixel] = sandTexturePixel(pixel % TILE_SIZE, pixel / TILE_SIZE);",
+            "        }",
+            "    }",
+            "    uint64_t const overlay_start = static_cast<uint64_t>(GRASS_SIDE_OVERLAY_TILE_INDEX) * PIXELS_PER_TILE;",
+            "    uint64_t const base_overlay_start = static_cast<uint64_t>(BASE_OVERLAY_TILE_INDEX) * PIXELS_PER_TILE;",
+            "    for (uint32_t pixel = 0U; pixel < PIXELS_PER_TILE; ++pixel) {",
+            "        result[overlay_start + pixel] = BASE_RGBA8[base_overlay_start + pixel];",
+            "    }",
+            "    return result;",
+            "}",
+            "",
+            "inline constexpr std::array<uint32_t, static_cast<uint64_t>(TILE_COUNT) * PIXELS_PER_TILE> RGBA8 = makeRgba8();",
+            "",
+            "static_assert(MATERIAL_COUNT == 8U);",
+            "static_assert(BASE_TILE_COUNT == 43U);",
+            "static_assert(TILE_COUNT == 49U);",
             "static_assert(tileIndex(2U, 5U) == 17U);",
-            "static_assert(GRASS_SIDE_OVERLAY_TILE_INDEX == 42U);",
+            "static_assert(tileIndex(static_cast<uint8_t>(shared::Block::Sand), 5U) == 47U);",
+            "static_assert(GRASS_SIDE_OVERLAY_TILE_INDEX == 48U);",
             "",
             "} // namespace client::render::terrain_textures",
             "",

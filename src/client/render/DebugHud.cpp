@@ -209,6 +209,9 @@ void submitOutlined(
     float bottom = y;
     float const max_x = x + width;
     for (HudFlowEntry const& entry : entries) {
+        if (entry.value.empty()) {
+            continue;
+        }
         float const entry_width = static_cast<float>(entry.value.size())
             * DEBUG_HUD_GLYPH_WIDTH_PIXELS * scale;
         if (cursor_x > x && cursor_x + entry_width > max_x) {
@@ -243,6 +246,21 @@ void submitOutlined(
     result.push_back(' ');
     result.append(value);
     return result;
+}
+
+[[nodiscard]] std::string_view blockDisplayName(shared::Block const block) noexcept
+{
+    switch (block) {
+    case shared::Block::Air: return "Air";
+    case shared::Block::Stone: return "Stone";
+    case shared::Block::Grass: return "Grass";
+    case shared::Block::Dirt: return "Dirt";
+    case shared::Block::Bedrock: return "Bedrock";
+    case shared::Block::Snow: return "Snow";
+    case shared::Block::Ice: return "Ice";
+    case shared::Block::Sand: return "Sand";
+    }
+    return "Unknown";
 }
 
 [[nodiscard]] float submitFields(
@@ -306,9 +324,10 @@ void submitOutlined(
     std::string const orientation = "YPR " + formatNumber(input.camera_yaw_degrees, 1)
         + " / " + formatNumber(input.camera_pitch_degrees, 1)
         + " / " + formatNumber(input.camera_roll_degrees, 1);
-    return submitWrapped(output, style, orientation, HUD_FOREGROUND, x,
+    float const bottom = submitWrapped(output, style, orientation, HUD_FOREGROUND, x,
         (std::max)(y + line_advance, row_bottom + line_advance - DEBUG_HUD_GLYPH_HEIGHT_PIXELS * scale),
         width, scale, line_advance, outline_offset);
+    return bottom;
 }
 
 [[nodiscard]] float submitMovement(
@@ -363,7 +382,8 @@ DebugHudLayout layoutDebugHud(
         : 1.0F;
     float const logical_width = static_cast<float>(framebuffer_width) / dpi_scale;
     float const logical_height = static_cast<float>(framebuffer_height) / dpi_scale;
-    bool const compact = force_compact || logical_width < 1050.0F || logical_height < 520.0F;
+    bool const canvas_requires_compact_text = logical_width < 1050.0F || logical_height < 520.0F;
+    bool const compact = force_compact || canvas_requires_compact_text;
     float const logical_margin = compact ? 12.0F : 24.0F;
     float const logical_gap = compact ? 24.0F : 40.0F;
     float const logical_map_size = (std::max)(
@@ -378,14 +398,15 @@ DebugHudLayout layoutDebugHud(
         .dpi_scale = dpi_scale,
         .framebuffer_width_pixels = static_cast<float>(framebuffer_width),
         .framebuffer_height_pixels = static_cast<float>(framebuffer_height),
-        .glyph_scale = (compact ? 0.5F : 1.0F) * dpi_scale,
-        .small_glyph_scale = 0.5F * dpi_scale,
+        .glyph_scale = (canvas_requires_compact_text ? 0.75F : 1.0F) * dpi_scale,
+        .small_glyph_scale = (logical_width < 500.0F ? 0.375F : logical_width < 700.0F ? 0.625F : 0.75F)
+            * dpi_scale,
         .outline_offset_pixels = dpi_scale,
         .margin_pixels = logical_margin * dpi_scale,
         .gap_pixels = logical_gap * dpi_scale,
         .selected_block_y = (logical_height - (compact ? 80.0F : 128.0F)) * dpi_scale,
-        .controls_y = (logical_height - (compact ? 40.0F : 48.0F)) * dpi_scale,
-        .control_line_advance_pixels = 20.0F * dpi_scale,
+        .controls_y = (logical_height - (compact ? 45.0F : 53.0F)) * dpi_scale,
+        .control_line_advance_pixels = (logical_width < 500.0F ? 14.0F : 20.0F) * dpi_scale,
         .minimap = {
             .x = map_x * dpi_scale,
             .y = map_y * dpi_scale,
@@ -442,14 +463,20 @@ void buildDebugHudPresentation(
 ) {
     TextStyle const style = snapshot.input.text_style;
     output.clear();
-    if (!snapshot.input.gameplay_ui) {
+    if (!snapshot.input.gameplay_ui || !snapshot.enabled) {
         return;
     }
     float const dpi_scale = layout.dpi_scale;
     float const body_scale = layout.glyph_scale;
     float const small_scale = layout.small_glyph_scale;
     float const outline_offset = layout.outline_offset_pixels;
-    float const body_line_advance = (layout.compact ? 20.0F : 36.0F) * dpi_scale;
+    float const body_line_advance = (std::max)(
+        (layout.compact ? 20.0F : 36.0F) * dpi_scale,
+        DEBUG_HUD_GLYPH_HEIGHT_PIXELS * body_scale + 4.0F * dpi_scale
+    );
+    float const compact_heading_advance = layout.compact
+        ? body_line_advance
+        : 44.0F * dpi_scale;
     float const small_line_advance = layout.control_line_advance_pixels;
 
     if (snapshot.enabled) {
@@ -462,17 +489,16 @@ void buildDebugHudPresentation(
             (std::min)(logical_width - logical_margin, map_left) - logical_margin
         ) * dpi_scale;
         float const session_y = (layout.compact ? 8.0F : 12.0F) * dpi_scale;
-        std::string chunk_status = layout.compact ? "Chunks" : "Chunks ";
-        chunk_status += snapshot.input.current_interest_chunks_available
-            ? formatNumber(snapshot.input.current_interest_resident_chunks, 0) + "/"
-                + formatNumber(snapshot.input.current_interest_required_chunks, 0)
-            : "--";
-        if (!layout.compact && snapshot.input.current_interest_chunks_available) {
-            chunk_status += " ready";
+        std::string chunk_status;
+        if (snapshot.input.current_interest_chunks_available) {
+            chunk_status = "Chunks " + formatNumber(snapshot.input.current_interest_resident_chunks, 0);
         }
         if (snapshot.input.loaded_dense_chunks_available) {
-            chunk_status += " (" + formatNumber(static_cast<double>(snapshot.input.loaded_dense_chunks), 0)
-                + (layout.compact ? "cached)" : " cached)");
+            if (!chunk_status.empty()) {
+                chunk_status += " | ";
+            }
+            chunk_status += "Cache "
+                + formatNumber(static_cast<double>(snapshot.input.loaded_dense_chunks), 0);
         }
         std::array<HudFlowEntry, 5U> const session{
             HudFlowEntry{ "FPS " + formatNumber(snapshot.presented_fps, 0), HUD_FOREGROUND },
@@ -483,20 +509,18 @@ void buildDebugHudPresentation(
             },
             HudFlowEntry{chunk_status, HUD_FOREGROUND},
             HudFlowEntry{
-                "Terrain ready " + (snapshot.input.required_terrain_columns > 0U
-                    ? formatNumber(snapshot.input.ready_terrain_columns, 0) + "/"
+                snapshot.input.required_terrain_columns > 0U
+                    ? "Terrain " + formatNumber(snapshot.input.ready_terrain_columns, 0) + "/"
                         + formatNumber(snapshot.input.required_terrain_columns, 0)
-                    : "--"),
+                    : std::string{},
                 HUD_FOREGROUND,
             },
             HudFlowEntry{
-                std::string{ layout.compact ? "RSS " : "Memory " }
-                    + (snapshot.input.client_memory_rss_bytes.has_value()
-                        ? formatNumber(
-                            static_cast<double>(*snapshot.input.client_memory_rss_bytes) / (1024.0 * 1024.0),
-                            0
-                        ) + " MiB"
-                        : "-- MiB"),
+                snapshot.input.client_memory_rss_bytes.has_value()
+                    ? std::string{layout.compact ? "RSS " : "Memory "} + formatNumber(
+                        static_cast<double>(*snapshot.input.client_memory_rss_bytes) / (1024.0 * 1024.0), 0
+                    ) + " MiB"
+                    : std::string{},
                 HUD_FOREGROUND,
             },
         };
@@ -514,7 +538,7 @@ void buildDebugHudPresentation(
         );
         if (layout.compact) {
             float const heading_y = session_bottom + 8.0F * dpi_scale;
-            float const readout_y = heading_y + 16.0F * dpi_scale;
+            float const readout_y = heading_y + compact_heading_advance;
             submitOutlined(
                 output,
                 style,
@@ -545,21 +569,13 @@ void buildDebugHudPresentation(
                 output, style, snapshot.input, layout.right_column_x, readout_y,
                 layout.column_width_pixels, body_scale, body_line_advance, outline_offset
             );
-
             float const climate_y = (std::max)(position_bottom, movement_bottom) + 12.0F * dpi_scale;
-            std::string const temperature = snapshot.input.temperature_celsius.has_value()
-                ? formatNumber(*snapshot.input.temperature_celsius, 1) + " C"
-                : "unavailable";
-            submitOutlined(
-                output,
-                style,
-                "Temp " + temperature,
-                snapshot.input.temperature_celsius.has_value() ? HUD_FOREGROUND : HUD_INACTIVE,
-                layout.left_column_x,
-                climate_y,
-                body_scale,
-                outline_offset
-            );
+            if (snapshot.input.temperature_celsius.has_value()) {
+                submitOutlined(
+                    output, style, "Temp " + formatNumber(*snapshot.input.temperature_celsius, 1) + " C",
+                    HUD_FOREGROUND, layout.left_column_x, climate_y, body_scale, outline_offset
+                );
+            }
         } else {
             float const heading_y = session_bottom + (layout.compact ? 12.0F : 24.0F) * dpi_scale;
             float const readout_y = heading_y + (layout.compact ? 24.0F : 44.0F) * dpi_scale;
@@ -593,45 +609,38 @@ void buildDebugHudPresentation(
                 output, style, snapshot.input, layout.right_column_x, readout_y,
                 layout.column_width_pixels, body_scale, body_line_advance, outline_offset
             );
-
-            float const climate_y = (std::max)(position_bottom, movement_bottom)
-                + (layout.compact ? 16.0F : 24.0F) * dpi_scale;
-            submitOutlined(
-                output,
-                style,
-                "Local climate",
-                HUD_HEADING,
-                layout.left_column_x,
-                climate_y,
-                body_scale,
-                outline_offset
-            );
-            std::array<HudFlowEntry, 1U> const climate{
-                HudFlowEntry{
-                    makeFieldRow(
-                        "Temperature",
-                        formatNumber(
-                            snapshot.input.temperature_celsius.value_or(0.0F),
-                            1,
-                            snapshot.input.temperature_celsius.has_value()
-                        ) + " C",
-                        11U
-                    ),
-                    snapshot.input.temperature_celsius.has_value() ? HUD_FOREGROUND : HUD_INACTIVE,
-                },
-            };
-            static_cast<void>(submitFields(
-                output,
-                style,
-                climate,
-                layout.left_column_x,
-                climate_y + (layout.compact ? 24.0F : 44.0F) * dpi_scale,
-                layout.column_width_pixels,
-                body_scale,
-                body_line_advance,
-                outline_offset,
-                dpi_scale
-            ));
+            if (snapshot.input.temperature_celsius.has_value()) {
+                float const climate_y = (std::max)(position_bottom, movement_bottom)
+                    + (layout.compact ? 16.0F : 24.0F) * dpi_scale;
+                submitOutlined(
+                    output,
+                    style,
+                    "Local climate",
+                    HUD_HEADING,
+                    layout.left_column_x,
+                    climate_y,
+                    body_scale,
+                    outline_offset
+                );
+                std::array<HudFlowEntry, 1U> const climate{
+                    HudFlowEntry{
+                        makeFieldRow("Temperature", formatNumber(*snapshot.input.temperature_celsius, 1) + " C", 11U),
+                        HUD_FOREGROUND,
+                    },
+                };
+                static_cast<void>(submitFields(
+                    output,
+                    style,
+                    climate,
+                    layout.left_column_x,
+                    climate_y + (layout.compact ? 24.0F : 44.0F) * dpi_scale,
+                    layout.column_width_pixels,
+                    body_scale,
+                    body_line_advance,
+                    outline_offset,
+                    dpi_scale
+                ));
+            }
         }
     } else {
         float const movement_y = layout.selected_block_y
@@ -662,18 +671,18 @@ void buildDebugHudPresentation(
         ));
     }
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     std::array<HudFlowEntry, 4U> const primary_hints{
-        HudFlowEntry{ "M World map", HUD_HINT },
-        HudFlowEntry{ "Esc Leave game", HUD_HINT },
-        HudFlowEntry{ "F2 Copy screenshot", HUD_HINT },
-        HudFlowEntry{ style == TextStyle::Adaptive ? "F7 Colored HUD" : "F7 Adaptive HUD", HUD_HINT },
+        HudFlowEntry{ "M Map", HUD_HINT },
+        HudFlowEntry{ "Esc Leave", HUD_HINT },
+        HudFlowEntry{ "F2 Screenshot", HUD_HINT },
+        HudFlowEntry{ style == TextStyle::Adaptive ? "F7 Colored HUD" : "F7 Experimental contrast", HUD_HINT },
     };
 #else
     std::array<HudFlowEntry, 3U> const primary_hints{
-        HudFlowEntry{ "M World map", HUD_HINT },
-        HudFlowEntry{ "Esc Leave game", HUD_HINT },
-        HudFlowEntry{ style == TextStyle::Adaptive ? "F7 Colored HUD" : "F7 Adaptive HUD", HUD_HINT },
+        HudFlowEntry{ "M Map", HUD_HINT },
+        HudFlowEntry{ "Esc Leave", HUD_HINT },
+        HudFlowEntry{ style == TextStyle::Adaptive ? "F7 Colored HUD" : "F7 Experimental contrast", HUD_HINT },
     };
 #endif
     float const logical_width = layout.framebuffer_width_pixels / dpi_scale;
@@ -690,17 +699,13 @@ void buildDebugHudPresentation(
         small_line_advance,
         outline_offset
     ));
-    std::array<HudFlowEntry, 5U> const secondary_hints{
+    std::array<HudFlowEntry, 6U> const secondary_hints{
         HudFlowEntry{ snapshot.enabled ? "F1 Hide HUD" : "F1 Show HUD", HUD_HINT },
-        HudFlowEntry{ layout.compact ? "F5/5 View" : "F5/5 Change view", HUD_HINT },
-        HudFlowEntry{
-            layout.compact
-                ? (snapshot.input.touch_flight_help ? "F6/6 Up/down" : "F6/6 Movement")
-                : (snapshot.input.touch_flight_help ? "F6/6 Touch up/down" : "F6/6 Cycle movement"),
-            HUD_HINT,
-        },
-        HudFlowEntry{ layout.compact ? "+/- Speed" : "+/- Select speed", HUD_HINT },
-        HudFlowEntry{ layout.compact ? "Ctrl Accel" : "Ctrl Toggle acceleration", HUD_HINT },
+        HudFlowEntry{ "F5 View", HUD_HINT },
+        HudFlowEntry{ snapshot.input.touch_flight_help ? "F6 Up/down" : "F6 Move", HUD_HINT },
+        HudFlowEntry{ "G Mode", HUD_HINT },
+        HudFlowEntry{ "+/- Speed", HUD_HINT },
+        HudFlowEntry{ "Ctrl Accel", HUD_HINT },
     };
     static_cast<void>(submitFlow(
         output,
@@ -908,7 +913,7 @@ bool DebugHudState::formatText(DebugHudText& text) const {
     if (values.input.touch_flight_help) {
         offset = appendText(text, { .offset = offset, .limit = line_limit }, " TOUCH: UP/DOWN", hudColor(line_colors_[3]));
     } else {
-        offset = appendText(text, { .offset = offset, .limit = line_limit }, " (F6 or 6)", hudColor(line_colors_[3]));
+        offset = appendText(text, { .offset = offset, .limit = line_limit }, " (F6)", hudColor(line_colors_[3]));
     }
     offset = appendText(text, { .offset = offset, .limit = text.size() + 1U }, "\n", hudColor(line_colors_[3]));
 

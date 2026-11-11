@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "fe9a2eae2010baf807d852a7ba3127cc1cbff81877e51b9ef46c45eca1a079f3",
+      "guide_sha256": "39570b84b544ac218020da7aec18f5321ce39fa2a55d1c73d214eb19d688a365",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -37,11 +37,11 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "81a5af538a9a03cec01ebad3de9844d4aa9427e5daafa610558379d8995c59de"
+      "sources_sha256": "52075125f4f6f6f16dbc0fdfe3eedb3409491fae512e457d4ffaf883be0fcf5f"
     },
     {
       "guide": "docs/code/ANDROID.md",
-      "guide_sha256": "e318bf392ae7dc06308889d14d4762f1feafcc05ef21085d985219ef4237683d",
+      "guide_sha256": "90f743da6d6aeb670dc20eafea4433001370b446be66a3e4f627965597e7ef3d",
       "id": "android",
       "sources": [
         "src/android/AndroidInput.cpp",
@@ -57,11 +57,11 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "0bcf71804b0b001bcc9b4694146d6e65f1d35f729b7bdd8f48638ac6ced0628b"
+      "sources_sha256": "3ab6f73b587f07b4ba1f645a4f1573abd64142f8f5bf4b31fd8f4401c5bb115e"
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "8e35fa86ab48f38bb14d075851500616c6bf730e9b80ce2048572cbb08ed7831",
+      "guide_sha256": "2c257115329634e55ccdd25f9a7a4ff11f3a29b652fdb9a9dd2fedba2120976d",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -171,6 +171,7 @@
         "script/tests/test_checks_common.py",
         "script/tests/test_ci_acquire.py",
         "script/tests/test_clang_static_gate.py",
+        "script/tests/test_code_checks.py",
         "script/tests/test_cppcheck_gate.py",
         "script/tests/test_gmp_vcpkg_overlay.py",
         "script/tests/test_install_msan_libcxx.py",
@@ -210,7 +211,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "5d9f5c0038370eaff6f29d72bef08b523addb7d45524c0791cdeb74d2f986e4b"
+      "sources_sha256": "c18011585063be701664cdd1aa2f2a1ecb1ab25be5af9bf488bc8c9544f62fd0"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -247,7 +248,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "136d8ea0e95554b530108ed0c1c3f3c80891c673bd1e741393866a2c38f7db3c",
+      "guide_sha256": "2569225fc7d0a48d7e2f898cb27fe623cbffd098bd570dfea59594440acda446",
       "id": "gameplay",
       "sources": [
         "src/client/BlockActionPresentation.cpp",
@@ -268,6 +269,7 @@
         "src/client/PlayerPreviewLod.cpp",
         "src/client/PreviewMeshConnectivity.cpp",
         "src/client/PreviewResidency.cpp",
+        "src/client/RiverBedMesh.cpp",
         "src/client/S2MapPresentation.cpp",
         "src/client/ScreenshotClipboard.cpp",
         "src/client/ScreenshotClipboard.mm",
@@ -304,12 +306,14 @@
         "src/client/include/client/PreviewMeshWorkQueue.hpp",
         "src/client/include/client/PreviewMeshing.hpp",
         "src/client/include/client/PreviewResidency.hpp",
+        "src/client/include/client/RiverBedMesh.hpp",
         "src/client/include/client/S2MapPresentation.hpp",
         "src/client/include/client/TerrainLodPresentation.hpp",
         "src/client/include/client/TerrainLodRuntime.hpp",
         "src/client/include/client/TerrainLodSelection.hpp",
         "src/client/include/client/UiPresentation.hpp",
         "src/client/include/client/WorldLoading.hpp",
+        "src/client/include/client/detail/RiverFanQuantization.hpp",
         "src/client/include/client/detail/ScreenshotDibV5.hpp",
         "src/client/include/client/detail/ScreenshotPng.hpp",
         "src/main.cpp",
@@ -397,16 +401,17 @@
         "tests/core/terrain_lod_tests.cpp",
         "tests/core/terrain_world_reference_tests.cpp",
         "tests/core/terrain_world_tests.cpp",
+        "tests/core/v10_terrain_world_tests.cpp",
         "tests/core/world_coverage_tests.cpp",
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "e338fb7026c4d86b776646f0b79f6c3e52852cff59964b6798b2cb3532692c0b"
+      "sources_sha256": "a7ed69eb2180ccb9af8792c32f41db3a9db8f0a423c262b83b11b1b510f03340"
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "c177ced754fb1025b9f0f808ec9f3bf79580c57e13fcc1f57a78d49726de3c04",
+      "guide_sha256": "1b8531abeeb636518645b024ba993af2e9ec5a7f5b2a0d4378e4c6a7658a96ec",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -421,8 +426,34 @@
         "src/generation/NumpyRandom.cpp",
         "src/generation/NumpyRandom.hpp",
         "src/generation/NumpyTanh.cpp",
+        "src/generation/RiverBedField.cpp",
         "src/generation/Sha256.cpp",
         "src/generation/Sha256.hpp",
+        "src/generation/V10Climate.cpp",
+        "src/generation/V10Climate.hpp",
+        "src/generation/V10ClimatePreparation.cpp",
+        "src/generation/V10ClimatePreparation.hpp",
+        "src/generation/V10FineTerrain.cpp",
+        "src/generation/V10FineTerrain.hpp",
+        "src/generation/V10FineTerrainDraws.inc",
+        "src/generation/V10Foundation.cpp",
+        "src/generation/V10Foundation.hpp",
+        "src/generation/V10PlatecSource.cpp",
+        "src/generation/V10PlatecSource.hpp",
+        "src/generation/V10Provider.cpp",
+        "src/generation/V10ProviderInternal.hpp",
+        "src/generation/V10ReliefGuard.inc",
+        "src/generation/V10WaterPreparation.cpp",
+        "src/generation/V10WaterPreparation.hpp",
+        "src/generation/V21CourseGeometry.cpp",
+        "src/generation/V21CourseGeometry.hpp",
+        "src/generation/V21FinePlan.cpp",
+        "src/generation/V21FinePlan.hpp",
+        "src/generation/V21Geomorphology.cpp",
+        "src/generation/V21Geomorphology.hpp",
+        "src/generation/V21ProviderInternal.hpp",
+        "src/generation/V21Terrain.cpp",
+        "src/generation/V21Terrain.hpp",
         "src/generation/V9Climate.cpp",
         "src/generation/V9Climate.hpp",
         "src/generation/V9ClimateQg.cpp",
@@ -461,8 +492,30 @@
         "src/generation/V9WaterRouting.cpp",
         "src/generation/V9WaterRouting.hpp",
         "src/generation/include/generation/Generation.hpp",
+        "src/generation/include/generation/RiverBedChannel.hpp",
+        "src/generation/include/generation/RiverBedField.hpp",
+        "src/generation/include/generation/V10Provider.hpp",
         "src/generation/include/generation/V9Provider.hpp",
         "src/tools/world_map.cpp",
+        "tests/fixtures/terrain_v10/basis-L-O-d-R2.f64le",
+        "tests/fixtures/terrain_v10/climate/air.f64",
+        "tests/fixtures/terrain_v10/climate/bed.f64",
+        "tests/fixtures/terrain_v10/climate/ground.f64",
+        "tests/fixtures/terrain_v10/climate/rain.f64",
+        "tests/fixtures/terrain_v10/climate/theta.f64",
+        "tests/fixtures/terrain_v10/gaussian-sigma3-radius12.f64le",
+        "tests/fixtures/terrain_v10/height-reference.tsv",
+        "tests/fixtures/terrain_v10/height-witness.tsv",
+        "tests/fixtures/terrain_v10/kernel-reference.tsv",
+        "tests/fixtures/terrain_v10/manifest.json",
+        "tests/fixtures/terrain_v10/preprocess-primitives.json",
+        "tests/fixtures/terrain_v10/raw-height-dimensionless.npy",
+        "tests/fixtures/terrain_v10/raw-height.f32le",
+        "tests/fixtures/terrain_v10/river_q5_actual_crossing.txt",
+        "tests/fixtures/terrain_v10/river_q5_new_intersection.txt",
+        "tests/fixtures/terrain_v10/river_q5_owner_quotient.txt",
+        "tests/fixtures/terrain_v10/seed42-summit.json",
+        "tests/fixtures/terrain_v10/signed-source.f64le",
         "tests/fixtures/terrain_v2/manifest.json",
         "tests/fixtures/terrain_v2/rng_oracle_seed42.json",
         "tests/fixtures/terrain_v2/seed-0/atlas__climate_zone.raw",
@@ -1009,17 +1062,27 @@
         "tests/generation/numpy_random_tests.cpp",
         "tests/generation/platec_compat_tests.cpp",
         "tests/generation/reference_tests.cpp",
+        "tests/generation/v10_climate_preparation_tests.cpp",
+        "tests/generation/v10_climate_tests.cpp",
+        "tests/generation/v10_fine_terrain_tests.cpp",
+        "tests/generation/v10_foundation_tests.cpp",
+        "tests/generation/v10_platec_source_tests.cpp",
+        "tests/generation/v10_provider_tests.cpp",
+        "tests/generation/v10_water_preparation_tests.cpp",
+        "tests/generation/v21_course_geometry_tests.cpp",
+        "tests/generation/v21_fine_plan_tests.cpp",
+        "tests/generation/v21_terrain_tests.cpp",
         "tests/generation/v9_climate_tests.cpp",
         "tests/generation/v9_platec_source_tests.cpp",
         "tests/generation/v9_provider_tests.cpp",
         "tests/generation/v9_terrain_tests.cpp",
         "tests/generation/v9_water_tests.cpp"
       ],
-      "sources_sha256": "819787499ff0c2edc204aa47f20eebbba6af62774090a95baca0cfbcfde8027a"
+      "sources_sha256": "0aa7681965f92cce7bcf8d4cd1b5e5806b5e7935718f6dd1fa045b4f518e6c06"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "d92e2bebbfa8a82f431b3c34b70cd5a0a31091729508197611b8506f4a6a8fb2",
+      "guide_sha256": "6aee827b044cef9bf273abbe911ea00baf932b9c5bcd8ef962a09ab8acc11e31",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -1087,6 +1150,7 @@
         "tests/client/camera_controller_tests.cpp",
         "tests/client/camera_tests.cpp",
         "tests/client/client_audio_tests.cpp",
+        "tests/client/coarse_classifier_native_tests.cpp",
         "tests/client/column_map_client_integration_tests.cpp",
         "tests/client/column_map_client_tests.cpp",
         "tests/client/column_map_presentation_tests.cpp",
@@ -1097,6 +1161,7 @@
         "tests/client/game_client_benchmark_tests.cpp",
         "tests/client/game_client_lifecycle_tests.cpp",
         "tests/client/game_client_prediction_tests.cpp",
+        "tests/client/generation_history_rendering_tests.cpp",
         "tests/client/generation_map_history_tests.cpp",
         "tests/client/generation_map_presentation_tests.cpp",
         "tests/client/goldens/README.md",
@@ -1122,6 +1187,7 @@
         "tests/client/renderer_geometry_tests.cpp",
         "tests/client/renderer_golden_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
+        "tests/client/river_bed_mesh_tests.cpp",
         "tests/client/s2_map_presentation_tests.cpp",
         "tests/client/screenshot_dib_tests.cpp",
         "tests/client/shader_assets_tests.cpp",
@@ -1134,8 +1200,10 @@
         "tests/client/terrain_lod_selection_tests.cpp",
         "tests/client/terrain_lod_source_tests.cpp",
         "tests/client/terrain_lod_upload_plan_tests.cpp",
+        "tests/client/terrain_palette_native_tests.cpp",
         "tests/client/text_renderer_tests.cpp",
         "tests/client/ui_presentation_tests.cpp",
+        "tests/client/v10_terrain_field_tests.cpp",
         "tests/client/vulkan_frustum_tests.cpp",
         "tests/client/world_loading_tests.cpp",
         "tests/testsupport/AdverseTransport.cpp",
@@ -1145,7 +1213,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "9dfae00dd5fa28347fef7c59bdd955b62a765e0b9f2e968fa6de9bcf8336108b"
+      "sources_sha256": "ad1a24fa4253c9af551996d77dfbabf1d53513b4f369ba816935314590c4b8ea"
     }
   ],
   "version": 1

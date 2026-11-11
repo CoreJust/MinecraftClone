@@ -542,6 +542,30 @@ TEST(EvidenceJson, SerializesDiagnosticOverridePresenceAsBooleans)
         std::string::npos);
 }
 
+TEST(EvidenceJson, SerializesDiagnosticSpawnHeightAsNullableMetadata)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
+    EXPECT_NE(acceptance::evidenceJson(evidence).find("\"diagnostic_spawn_z\": null"),
+        std::string::npos);
+    evidence.game_benchmark->diagnostic_spawn_z = 1'600;
+    EXPECT_NE(acceptance::evidenceJson(evidence).find("\"diagnostic_spawn_z\": 1600"),
+        std::string::npos);
+    EXPECT_NE(acceptance::evidenceJson(evidence).find("\"diagnostic_capture_site\": null"),
+        std::string::npos);
+    evidence.game_benchmark->diagnostic_capture_site =
+        acceptance::GameBenchmarkEvidence::DiagnosticCaptureSite{
+            .x = 32'765,
+            .y = 41'234,
+            .z = 1'600,
+            .yaw_degrees = 153.25,
+            .pitch_degrees = -23.5,
+        };
+    EXPECT_NE(acceptance::evidenceJson(evidence).find(
+        "\"diagnostic_capture_site\": { \"x\": 32765, \"y\": 41234, \"z\": 1600, "
+        "\"yaw_degrees\": 153.25, \"pitch_degrees\": -23.5 }"), std::string::npos);
+}
+
 TEST(EvidenceJson, IncludesVersionedMetadataTimingAndCounters)
 {
     acceptance::RuntimeEvidence const evidence{
@@ -1037,6 +1061,10 @@ TEST(EvidenceJson, SerializesSeparateCpuRecordingPhasesInNanoseconds)
 {
     static constexpr uint64_t COLLECTION_NS = 1'234U;
     static constexpr uint64_t PREPARE_NS = 5'678U;
+    static constexpr uint64_t PRESENTATION_PREPARE_NS = 5'679U;
+    static constexpr uint64_t PIPELINE_BIND_NS = 5'680U;
+    static constexpr uint64_t CONTEXT_COMPLETE_NS = 5'681U;
+    static constexpr uint64_t FACE_GROWTH_NS = 5'682U;
     static constexpr uint64_t STONE_SCENE_NS = 9'012U;
     static constexpr uint64_t RESIDUAL_NS = 3'456U;
     static constexpr uint64_t TILE_TRAVERSAL_NS = 2'345U;
@@ -1048,6 +1076,10 @@ TEST(EvidenceJson, SerializesSeparateCpuRecordingPhasesInNanoseconds)
     sample.diagnostic_cpu_height_tile_pending_range_order_duration_ns = RANGE_ORDER_NS;
     sample.diagnostic_cpu_height_tile_visible_range_merge_duration_ns = RANGE_MERGE_NS;
     sample.diagnostic_cpu_indirect_prepare_duration_ns = PREPARE_NS;
+    sample.diagnostic_cpu_presentation_prepare_duration_ns = PRESENTATION_PREPARE_NS;
+    sample.diagnostic_cpu_pipeline_bind_duration_ns = PIPELINE_BIND_NS;
+    sample.diagnostic_cpu_context_complete_call_duration_ns = CONTEXT_COMPLETE_NS;
+    sample.diagnostic_cpu_stone_face_growth_duration_ns = FACE_GROWTH_NS;
     sample.diagnostic_cpu_stone_scene_record_duration_ns = STONE_SCENE_NS;
     sample.diagnostic_cpu_command_record_residual_duration_ns = RESIDUAL_NS;
     acceptance::RuntimeEvidence evidence;
@@ -1063,6 +1095,10 @@ TEST(EvidenceJson, SerializesSeparateCpuRecordingPhasesInNanoseconds)
     EXPECT_NE(json.find("\"diagnostic_cpu_height_tile_pending_range_order_duration_ns\": 3456,"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_cpu_height_tile_visible_range_merge_duration_ns\": 4567,"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_cpu_indirect_prepare_duration_ns\": 5678,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_presentation_prepare_duration_ns\": 5679,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_pipeline_bind_duration_ns\": 5680,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_context_complete_call_duration_ns\": 5681,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_stone_face_growth_duration_ns\": 5682,"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_cpu_stone_scene_record_duration_ns\": 9012,"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_cpu_command_record_residual_duration_ns\": 3456,"), std::string::npos);
 }
@@ -1505,6 +1541,13 @@ TEST(EvidenceJson, PreservesTerrainLodUpdateStageTimingsAndWorkCounts)
     static constexpr uint64_t RESIDENT_DIFF_DURATION_NS = 4'004U;
     static constexpr uint64_t PENDING_VALIDATION_DURATION_NS = 5'005U;
     static constexpr uint64_t SCENE_HANDOFF_DURATION_NS = 6'006U;
+    static constexpr uint64_t WORKER_FUTURE_GET_DURATION_NS = 6'007U;
+    static constexpr uint64_t WORKER_ADOPT_DURATION_NS = 6'008U;
+    static constexpr uint64_t WORKER_COLUMNS_COPY_DURATION_NS = 6'009U;
+    static constexpr uint64_t SCENE_ACTIVATION_LOG_DURATION_NS = 6'010U;
+    static constexpr uint64_t SCENE_PLAN_PRESENTED_DURATION_NS = 6'011U;
+    static constexpr uint64_t SCENE_COLUMN_SELECTION_DURATION_NS = 6'012U;
+    static constexpr uint64_t SCENE_PENDING_RELEASE_DURATION_NS = 6'013U;
     static constexpr uint64_t RENDERER_PLAN_DURATION_NS = 7'007U;
     static constexpr uint64_t RENDERER_BUFFER_UPDATE_DURATION_NS = 8'008U;
     static constexpr uint64_t RENDERER_PUBLISH_DURATION_NS = 9'009U;
@@ -1519,6 +1562,9 @@ TEST(EvidenceJson, PreservesTerrainLodUpdateStageTimingsAndWorkCounts)
     auto& diagnostics = evidence.game_benchmark->raw_frames.emplace_back().diagnostic_terrain_lod_update;
     diagnostics.enabled = true;
     diagnostics.report_duration_ns = REPORT_DURATION_NS;
+    diagnostics.worker_future_get_duration_ns = WORKER_FUTURE_GET_DURATION_NS;
+    diagnostics.worker_candidate_adopt_duration_ns = WORKER_ADOPT_DURATION_NS;
+    diagnostics.worker_columns_copy_duration_ns = WORKER_COLUMNS_COPY_DURATION_NS;
     diagnostics.pending_validation_duration_ns = PENDING_VALIDATION_DURATION_NS;
     diagnostics.renderer_upsert_duration_ns = RENDERER_UPSERT_DURATION_NS;
     diagnostics.renderer_plan_duration_ns = RENDERER_PLAN_DURATION_NS;
@@ -1528,6 +1574,10 @@ TEST(EvidenceJson, PreservesTerrainLodUpdateStageTimingsAndWorkCounts)
     diagnostics.prepared_draw_index_publish_count = 11U;
     diagnostics.render_thread_draw_index_build_count = 12U;
     diagnostics.scene_handoff_duration_ns = SCENE_HANDOFF_DURATION_NS;
+    diagnostics.scene_activation_log_duration_ns = SCENE_ACTIVATION_LOG_DURATION_NS;
+    diagnostics.scene_plan_presented_duration_ns = SCENE_PLAN_PRESENTED_DURATION_NS;
+    diagnostics.scene_column_selection_duration_ns = SCENE_COLUMN_SELECTION_DURATION_NS;
+    diagnostics.scene_pending_release_duration_ns = SCENE_PENDING_RELEASE_DURATION_NS;
     diagnostics.validated_column_count = VALIDATED_COLUMN_COUNT;
     diagnostics.source_validation_count = 10U;
     diagnostics.edit_lane_call_count = 3U;
@@ -1543,6 +1593,9 @@ TEST(EvidenceJson, PreservesTerrainLodUpdateStageTimingsAndWorkCounts)
     EXPECT_NE(json.find("\"report_duration_ns\": 1001"), std::string::npos);
     EXPECT_NE(json.find("\"resident_diff_duration_ns\": 4004"), std::string::npos);
     EXPECT_NE(json.find("\"pending_validation_duration_ns\": 5005"), std::string::npos);
+    EXPECT_NE(json.find("\"worker_future_get_duration_ns\": 6007"), std::string::npos);
+    EXPECT_NE(json.find("\"worker_candidate_adopt_duration_ns\": 6008"), std::string::npos);
+    EXPECT_NE(json.find("\"worker_columns_copy_duration_ns\": 6009"), std::string::npos);
     EXPECT_NE(json.find("\"renderer_upsert_duration_ns\": 5006"), std::string::npos);
     EXPECT_NE(json.find("\"renderer_plan_duration_ns\": 7007"), std::string::npos);
     EXPECT_NE(json.find("\"renderer_buffer_update_duration_ns\": 8008"), std::string::npos);
@@ -1551,6 +1604,10 @@ TEST(EvidenceJson, PreservesTerrainLodUpdateStageTimingsAndWorkCounts)
     EXPECT_NE(json.find("\"prepared_draw_index_publish_count\": 11"), std::string::npos);
     EXPECT_NE(json.find("\"render_thread_draw_index_build_count\": 12"), std::string::npos);
     EXPECT_NE(json.find("\"scene_handoff_duration_ns\": 6006"), std::string::npos);
+    EXPECT_NE(json.find("\"scene_activation_log_duration_ns\": 6010"), std::string::npos);
+    EXPECT_NE(json.find("\"scene_plan_presented_duration_ns\": 6011"), std::string::npos);
+    EXPECT_NE(json.find("\"scene_column_selection_duration_ns\": 6012"), std::string::npos);
+    EXPECT_NE(json.find("\"scene_pending_release_duration_ns\": 6013"), std::string::npos);
     EXPECT_NE(json.find("\"resident_chunk_count\": 707"), std::string::npos);
     EXPECT_NE(json.find("\"validated_column_count\": 808"), std::string::npos);
     EXPECT_NE(json.find("\"source_validation_count\": 10"), std::string::npos);

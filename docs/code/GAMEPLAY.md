@@ -1,112 +1,123 @@
-Use [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-distance CHUNKS]` and `--player-client`/`--bot-client --address IP:PORT`. No args or `--local-game` starts an ephemeral loopback server and window; explicit ports are unchanged, and T0 precedes preparation. `--player-client-2d ... --evidence DIR` records logical CPU column-map frames; graphics-free `mc_column_map` omits the selector.
+Use [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-distance CHUNKS]`, `--player-client`, or `--bot-client --address IP:PORT`. No args or `--local-game` starts a temporary loopback server/window. `--player-client-2d ... --evidence DIR` records logical CPU column-map frames. `mc_column_map` omits the selector.
 
 ## Shared simulation
 
-[World](../../src/shared/include/shared/world/World.hpp) sets 100-ms ticks, normalized XYZ, 10,000-subcell remainders, four-bit palette; it owns lifecycle/replication. Flat: 32×32. Flight wraps XY, spawns aloft. Entity Z 0–65,535; terrain 0–1,023. Empty high-flight coverage: Ready without chunks. Flight/bypass select terrain/body collision; walking adds gravity/jumps; takeoff preserves impulse. Footprints: Flat 2×2, Flight 10/16; spawns enforce separation. Shift descent defers terrain only after bounds, other-player and start-height checks; vertical sweep resolves support.
+[World](../../src/shared/include/shared/world/World.hpp) manages lifecycle/replication with 100-ms ticks, normalized XYZ, 10,000-subcell remainders and four-bit palettes. Flat: 32×32. Flight wraps XY, spawns aloft. Entity Z 0–65,535; canonical terrain 0–2,047 (2,048-cell depth). High-flight empty coverage: Ready. Flight/bypass select terrain/body collision; walking adds gravity/jumps; takeoff preserves impulse. Footprints: Flat 2×2, Flight 10/16; spawns enforce separation. Shift descent defers terrain only after bounds, other-player and start-height checks; vertical sweep resolves support.
 
 ## Deterministic scenario plans
 
-[Scenario.hpp](../../src/shared/include/shared/scenario/Scenario.hpp) defines bounded CoreLang `@version(0.1.5)` plans. Hosts validate combined backend-comparison program/resource budgets prepublication; rejection starts no runner/world mutation. `flat3d-v1` stores position/yaw/pitch/roll (Z=0; yaw 0 faces +Y, positive +X). Evidence separates replay IDs, inputs, ticks and presentation; vertical camera defaults to zero ([scripting guide](../scripting/README.md)).
+[Scenario.hpp](../../src/shared/include/shared/scenario/Scenario.hpp) defines CoreLang `@version(0.1.5)` plans. Hosts validate backend-comparison program/resource budgets prepublication; rejection starts no runner/world mutation. `flat3d-v1` stores position/yaw/pitch/roll (Z=0; yaw 0 faces +Y, positive +X). Evidence separates replay IDs, inputs, ticks and presentation; vertical camera defaults to zero ([scripting guide](../scripting/README.md)).
 
 ## Permissions
 
-Bypass requires flight ([POLICY.md](POLICY.md)). [`BlockInteraction.hpp`](../../src/shared/include/shared/world/BlockInteraction.hpp) defines preset/soft/hard effective rights and interval-counted break timing. Read-only wrapped DDA: 6-block eye reach, tied-axis steps, Unknown/Preview stops, renderer-consistent camera/curvature. Material break durations are unchanged.
+Bypass requires flight ([POLICY.md](POLICY.md)). [Interactions](BLOCK_ACTIONS.md) define permissions, reach and timed breaks.
 
 ## Wire protocol
 
-[Message.hpp](../../src/shared/include/shared/net/Message.hpp) sets
-`PROTOCOL_VERSION=25` for authoritative actions/results, revisioned deltas, sparse
-edits and manifests; v24 peers reject it. Nonce/session, epoch/token and
-profile/Z-chunk revisions fence delivery. Dense credits stay separate. Channels
-`bulk/control=1/0`; caps `49,152 B/peer`, `16,384 B/startup`; old-epoch debt is
-charged. Post-start canonical precedes dense refill and borrows spare bytes while
-preserving edit/preview reserves, interest and authority fences. Coverage
-`actual/visual=640/320`; caches `48/80`. Inputs `XYZ/heading/sequence`; positions
-`subcells/palette/ACK`. IDs `0–6`, Sand `7`. Native progress carries paired V9
-wind/current vectors; tiles carry elevation/biome/coast. Rights masks `1–7`;
-capabilities `0/1/3`; invalid input/stale ACKs cannot mutate.
+[Message.hpp](../../src/shared/include/shared/net/Message.hpp) defines protocol 28.
+Authoritative actions/results, revisioned deltas, sparse edit snapshots/manifests.
+Nonce sessions validate epoch/token. Profiles certify columns;
+edits require manifested Z-chunk revisions. Dense credits/receipts stay separate.
+Bulk/control channels `1/0`; peer cap `49,152 B`; old-epoch debt stays charged.
+Startup class windows: `16,384 B`. Post-start canonical precedes dense refill; borrowing preserves edit/preview
+reserves, interest and authority fences. Coverage actual/visual: 640/320; caches: 48/80. Inputs:
+XYZ/heading/sequence; positions: subcells/palette/ACK. IDs 0–6 fixed; Sand 7;
+Older protocols are rejected. Progress pairs wind/current; V9 tiles carry elevation/biome/coast.
+Rights allow IDs1–7; capabilities0/1/3. Invalid input/stale ACKs cannot mutate state.
 
 ## Server authority
 
 [GameServer](../../src/server/GameServer.cpp) defaults to port `20040`. Polls drain
-≤256 events/1 ms; active/idle waits are 1/5 ms. Ticks serialize one action/player;
-idle gravity advances revisions without inventing ACKs. Invalid joins, duplicate characters and pre-join inputs fail; disconnects remove players.
+≤256 events/ms; active/idle waits are 1/5 ms. One block decision/player/tick;
+eligible instant actions can commit during polling ([contract](BLOCK_ACTIONS.md)).
+Idle gravity advances revisions without ACKs. Invalid/duplicate joins and pre-join
+inputs fail; disconnects remove players.
 
-Sequenced intents check session, accepted aim, reach/visibility, mode/rights,
-version; hard vetoes win. Break credit resets on target/version/policy change,
-release or lease expiry. Each placement sequence rejects body overlap; duplicates
-cannot recommit. Loopback uses local mode grants; remote changes require
+Sequenced intents validate session, accepted eye aim, reach, visibility, mode/rights
+and cell version; hard vetoes win. Break credit resets on target/version/policy
+change, release or lease expiry. Placement rejects body overlap and duplicate
+sequences. Loopback requests use local grants; remote requests require
 `minecraft:mode.change`.
 
-Preview batches cap at 64 operations/12,678 bytes and fit a maximum 16-bit tile. Eight credits share 34,356 bytes within ENet's 65,536-byte window. Removals reserve capacity; interest, heading and ACKs reorder work. Missing entries rotate fairly. Preview cancellation excludes authority jobs; session/epoch and replay-safe credits remain separate.
+Preview batches cap at 64 operations/12,998 bytes and fit a maximum 16-bit tile.
+Eight credits share 34,356 bytes within ENet's 65,536-byte window. Removals reserve
+capacity; interest, heading and ACKs reorder work; missing entries rotate fairly.
+Preview cancellation spares authority jobs. Session/epoch and replay-safe credits stay separate.
 
 ## Terrain-v2 preparation and authority
 
-[GENERATION.md](GENERATION.md) documents atlas and regional sampling.
-`WorldPreparation` publishes an immutable `TerrainWorld` with stage snapshots.
-`HeightTileWorkerPool` shares it across previews/chunks, bounded to 128 jobs;
-`GameServer` owns scheduling, stale-result rejection and publication. LocalGame
-reuses this world for client L0; remote clients prepare against the negotiated
-session.
+[GENERATION.md](GENERATION.md) owns atlas/regional sampling. `WorldPreparation`
+publishes immutable `TerrainWorld` stage snapshots shared by `HeightTileWorkerPool`
+previews/chunks (128-job limit). `GameServer` schedules, rejects stale results and
+publishes. Ready omits replayed snapshots, retaining client data. LocalGame reuses the world for client L0; remote clients prepare the
+negotiated session.
 
-Prepared joins keep T0. Dense 48 permits prompt/start; full Ready requires 768
-startup-reserve profiles, then current 640. `startup_prefetch_primed_at` records
-priming. Begin/restart/cancel or complete-profile loss rearms it; partial reserve
-loss preserves current coverage. Session/epoch/identity fence publication. Dense
-48/80 delivery and ACK promotion stay separate. See
-[materialized prefetch](GENERATION.md#bounded-materialized-prefetch).
+Prepared joins keep T0. Dense 48 permits prompt/start. Full Ready requires 768
+startup-reserve profiles, then current 640. Begin/restart/cancel or complete-profile
+loss rearms `startup_prefetch_primed_at`. Partial loss preserves current coverage.
+Publication checks session/epoch/identity. See [materialized prefetch](GENERATION.md#bounded-materialized-prefetch).
 
-Unconfigured Flight joins choose nearest safe dry land near world center by wrapped
-distance and deterministic ties. Support stays asynchronous; explicit spawns are
-validated. See [nearest-land spawn](GENERATION.md#nearest-land-prepared-spawn).
+Default Flight joins choose nearest safe dry land by wrapped distance to world
+center, breaking ties deterministically. Asynchronous support. Explicit spawns are validated. See [nearest-land spawn](GENERATION.md#nearest-land-prepared-spawn).
 
-Preview meshes publish from connected near-camera coverage after cardinal
-neighbors are ready. Interest changes rebuild them; canonical data remains
-available for remeshing.
+Preview meshes need connected near-camera coverage and cardinal neighbors.
+Interest changes remesh from retained canonical data.
 
-Preparing/Connecting show map progress. ReadyForStart signals completed
-preparation; the 10-second formation continues while the prompt waits for final
-scene/frame readiness. Fresh input starts play after its frame; server ACK and
-focus loss gate play/capture. Pixels need matching metadata and authority, else
-Unknown.
+Preparing/Connecting overlay map progress. Ready shows the final map and prompt.
+After that frame, fresh input requests gameplay, which waits for ACK. Focus loss
+releases cursor capture. Pixels stay Unknown without matching metadata and authority.
 
-## Client and qualification
+## Client
 
-`GameClient` uses cancellable 25 ms polls, 250 ms retries and 30-second peers.
-`currentMaterializedInterestChunkAvailability()` scans active keys allocation-free;
-missing authoritative world returns unavailable.
-`FrameScheduler` preserves 100 ms ticks and skips missed ones. Interpolation holds
-gaps over a tick; flight is linear in Z, gravity/collision use velocity-continuous
-Hermite, and prediction replays pending input after ACKs.
+Creation history: [field contract](CREATION_HISTORY.md).
 
-Desktop/Android share `TerrainLodRuntime`: prioritized discovery/capture queues
-preserve useful columns across movement, fitting up to eight captures per
-deadline. Async tickets reject stale sources or missing required columns. Android
-returns from background rendering after platform events.
+`GameClient`: cancellable 25 ms polls, 250 ms retries, 30-second peers.
+Availability scans active keys allocation-free and requires authority. `FrameScheduler`: 100 ms ticks, skipping misses. Interpolation
+holds gaps over a tick; flight Z is linear; gravity/collision use velocity-continuous
+Hermite. Prediction replays pending input after ACKs.
 
-Hooks bind deadlines, inputs, accepted poses and camera. [Qualification](../ai/GAMEPLAY_QUALIFICATION.md)
+`TerrainLodRuntime` rebases concurrent local/distant jobs. Ordinary jobs admit
+targets inside the presented disk. At its edge, current-first can mix the validated
+current footprint with retained columns. A validated forward capture can extend
+it before settle rebuilds the centered disk. Unsupported layouts trigger full
+preparation. Guards check sources, epoch, current center and presented footprint.
+Edits repair transition rims. Startup and movement qualify separately.
+
+Hooks collect render timings outside benchmark mode.
+
+```cpp
+hooks.isolate_platform_input = true;
+// A null snapshot restores ordinary focus/release handling.
+hooks.block_button_snapshot = [fresh = true]() mutable -> std::optional<client::BlockButtonSnapshot> {
+    client::BlockButtonSnapshot buttons{.left_held = true};
+    buttons.left_pressed = fresh; // First sample presses; later samples keep holding.
+    fresh = false;
+    return buttons;
+};
+```
+ [Qualification](../ai/GAMEPLAY_QUALIFICATION.md)
 separates S1's turning x30/640-profile route from generic 320 geometry and x200
 stress. T0 never resets; legacy 180-second warmup is non-gating.
 
-[PlayerClient](../../src/client/PlayerClient.cpp) uses GLFW/Vulkan: cursor aiming,
-camera-relative WASD. `LMB` breaks while held; `RMB` places immediately and every
-`200 ms` at the current target. Release, focus/map/mode change or session reset
-requires a new press. `B` cycles blocks; `G` requests mode; `F5` changes views
-without changing input/interest. First-person hides the body; camera
-collision-clips; `R` reloads. Normal macOS/Windows clients enable F2 readback;
-benchmarks require diagnostic opt-in. F2 copies in-memory PNG on macOS and
-CF_DIBV5 with native window ownership on Windows.
+[PlayerClient](../../src/client/PlayerClient.cpp) uses GLFW/Vulkan. Camera-relative WASD/mouselook. LMB holds break; RMB places immediately/every 200ms.
+Held LMB resumes after target gaps. Release or focus/map/mode/session changes
+require another press. Shift+Space cancel vertical motion until either releases.
+HUD temperature polls one exact asynchronous world/session query with 250 ms
+refresh and 1 s expiry. Rendering never waits. Targets show material name/ID.
+B cycles blocks; G requests mode.
+Zero-size framebuffers keep polling until close. Mac/Windows use an unattached
+borderless work area. F2 enables readback. F5 cycles views and first-person
+hides the body. R reloads.
 
 ## Canonical chunks and mesh
 
-`Chunk` validates materials/identity. `SparseWorld` remote reads preserve Unknown
-without generation. Base profiles describe solid columns; edit manifests fence missing Z sections. Collision/support share authoritative columns and edits. Dense-cache churn leaves unedited tile identity
-stable; edits/deletion/profile replacement invalidate it.
+`Chunk` validates materials/identity. Remote `SparseWorld` reads preserve Unknown
+without generation. Profiles/edits cover 128 sections through solid 2,047;
+manifests allow 64 entries. Collision/support and LOD captures share edit-revision
+fences. Dense-cache churn preserves unedited tile identity; edits, deletion and
+replacement invalidate it.
 
-Voxels advance cell/chunk versions. Receipt-gated deltas/snapshots retain
-Air/base-reset overrides across eviction/base arrival; stale updates fail and
-bounded resync repairs gaps. The atomic 65,536-unit cap counts stored cells
-(minimum one/chunk). `ChunkMesher` suppresses seams. Terrain LOD combines edits
-with base profiles; local/boundary-neighbor revisions invalidate captures.
-
-[Creation fields](CREATION_HISTORY.md).
+Voxels advance cell/chunk versions. Receipt-gated deltas/snapshots preserve
+Air/base-reset overrides through eviction/base arrival. Stale updates fail;
+bounded resync repairs gaps. An atomic 65,536-cell cap charges at least one cell
+per chunk. Neighbor revisions invalidate captures.

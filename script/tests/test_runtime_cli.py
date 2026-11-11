@@ -50,8 +50,17 @@ class RuntimeCliTests(unittest.TestCase):
                     '(echo 2D replay seconds must be an integer from 1 to 120 1>&2 & exit /b 1)\r\n'
                     'if "%~1"=="--benchmark-game" (\r\n'
                     'if "%~2"=="--terrain-model" if "%~3"=="invalid" '
-                    "echo terrain model must be r6 or v9 1>&2\r\n"
+                    "echo terrain model must be r6, v9, v21, v10, or native-v10-fine 1>&2\r\n"
                     'if "%~2"=="--terrain-model" if "%~3"=="invalid" exit /b 1\r\n'
+                    'if "%~2"=="--terrain-model" if "%~3"=="v21" if "%~5"=="unsupported" '
+                    "echo invalid game benchmark workload: unsupported 1>&2\r\n"
+                    'if "%~2"=="--terrain-model" if "%~3"=="v21" if "%~5"=="unsupported" exit /b 1\r\n'
+                    'if "%~2"=="--terrain-model" if "%~3"=="v10" if "%~5"=="unsupported" '
+                    "echo invalid game benchmark workload: unsupported 1>&2\r\n"
+                    'if "%~2"=="--terrain-model" if "%~3"=="v10" if "%~5"=="unsupported" exit /b 1\r\n'
+                    'if "%~2"=="--terrain-model" if "%~3"=="native-v10-fine" if "%~5"=="unsupported" '
+                    "echo invalid game benchmark workload: unsupported 1>&2\r\n"
+                    'if "%~2"=="--terrain-model" if "%~3"=="native-v10-fine" if "%~5"=="unsupported" exit /b 1\r\n'
                     'if "%~2"=="--terrain-model" if "%~3"=="v9" '
                     "echo gameplay proof requires the R6 terrain model 1>&2\r\n"
                     'if "%~2"=="--terrain-model" if "%~3"=="v9" exit /b 1\r\n'
@@ -79,7 +88,13 @@ class RuntimeCliTests(unittest.TestCase):
                     "printf '%s\\n' '2D replay seconds must be an integer from 1 to 120' >&2\nexit 1\nfi\n"
                     'if [ "$1" = "--benchmark-game" ]; then\n'
                     'if [ "$2" = "--terrain-model" ] && [ "$3" = "invalid" ]; then\n'
-                    "printf '%s\\n' 'terrain model must be r6 or v9' >&2\nexit 1\nfi\n"
+                    "printf '%s\\n' 'terrain model must be r6, v9, v21, v10, or native-v10-fine' >&2\nexit 1\nfi\n"
+                    'if [ "$2" = "--terrain-model" ] && [ "$3" = "v21" ] && [ "$5" = "unsupported" ]; then\n'
+                    "printf '%s\\n' 'invalid game benchmark workload: unsupported' >&2\nexit 1\nfi\n"
+                    'if [ "$2" = "--terrain-model" ] && [ "$3" = "v10" ] && [ "$5" = "unsupported" ]; then\n'
+                    "printf '%s\\n' 'invalid game benchmark workload: unsupported' >&2\nexit 1\nfi\n"
+                    'if [ "$2" = "--terrain-model" ] && [ "$3" = "native-v10-fine" ] && [ "$5" = "unsupported" ]; then\n'
+                    "printf '%s\\n' 'invalid game benchmark workload: unsupported' >&2\nexit 1\nfi\n"
                     'if [ "$2" = "--terrain-model" ] && [ "$3" = "v9" ]; then\n'
                     "printf '%s\\n' 'gameplay proof requires the R6 terrain model' >&2\nexit 1\nfi\n"
                     'if [ "$2" = "--corelang-backend" ] && [ "$3" = "invalid" ]; then\n'

@@ -13,6 +13,13 @@ namespace shared {
 
 class SparseWorld;
 
+struct WorldExtent final {
+    static constexpr uint32_t WIDTH = 65'536U;
+    // Logical world capacity supports the approved V21 0.34 block metric with
+    // a datum offset while leaving legacy model outputs in their prior range.
+    static constexpr uint32_t DEPTH = 2'048U;
+};
+
 constexpr std::chrono::milliseconds TICK { 100 };
 constexpr uint16_t SUBCELLS_PER_CELL = 10'000;
 constexpr uint16_t MOVEMENT_SUBCELLS_PER_TICK = 5'600;
@@ -178,7 +185,7 @@ public:
     static constexpr int32_t FLIGHT_MIN_CELL = 0;
     static constexpr int32_t FLIGHT_MAX_CELL = 65'535;
     static constexpr int32_t FLIGHT_ENTITY_MAX_Z = 65'535;
-    static constexpr int32_t FLIGHT_MAX_Z = 1'023;
+    static constexpr int32_t FLIGHT_MAX_Z = static_cast<int32_t>(WorldExtent::DEPTH) - 1;
     static constexpr PlayerPosition FLIGHT_SPAWN{ .x = 32'896, .y = 32'768, .z = 410 };
 
     explicit World(

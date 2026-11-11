@@ -1,0 +1,82 @@
+{
+  "purpose": "Independent R11/V10 reference qualification only; never loaded by runtime generation",
+  "accepted_source_identity": "f775213330028b165328885c6899ac0bf9c3c0c9a93ff6e0aca591554dec6e59",
+  "handoff_checksum_list_sha256": "302e9131650d3b7916253a3e7928c2cd6c60399bf908eeae1d6f7915fe98a426",
+  "files": [
+    {
+      "file": "signed-source.f64le",
+      "sha256": "0985cb559d65f58663ed915c03ac473027636b0f11a9043b0c571ca078026b87",
+      "source": "/Users/core-just/.codex/task-evidence/mc-s2-20261027/v10-foundation-0649/fixtures/signed-source.f64le"
+    },
+    {
+      "file": "basis-L-O-d-R2.f64le",
+      "sha256": "40b76a1f2364b65f91a305ad19553ce6c2880e1fe6fc8148e4f99a6ee0a18d3d",
+      "source": "/Users/core-just/.codex/task-evidence/mc-s2-20261027/v10-foundation-0649/fixtures/basis-L-O-d-R2.f64le"
+    },
+    {
+      "file": "height-reference.tsv",
+      "sha256": "4b8fd221afb951e1e8d8e65c1852043920e0bb5cf11eec68c32907e298caffeb",
+      "source": "/Users/core-just/.codex/task-evidence/mc-s2-20261027/v10-foundation-0649/fixtures/height-reference.tsv"
+    },
+    {
+      "file": "preprocess-primitives.json",
+      "sha256": "54c40d86d73756775fba9ba4159021f655f48b801aecdde5cdad42bcb8ef5c6e",
+      "source": "/Users/core-just/.codex/task-evidence/mc-s2-20261027/v10-foundation-0649/fixtures/preprocess-primitives.json"
+    },
+    {
+      "file": "raw-height-dimensionless.npy",
+      "sha256": "a114608aa30c861e594448b448b260bfc55a686f464926f08eb3d2a981a75b38",
+      "source": "/Users/core-just/.codex/task-evidence/mc-s2-20261027/v10-foundation-0649/fixtures/raw-height-dimensionless.npy"
+    },
+    {
+      "file": "gaussian-sigma3-radius12.f64le",
+      "sha256": "6b8ba8afdfb5860f635941cc9c10ad7268cc6152f9fc95173ca629d2eeab067c",
+      "source": "/Users/core-just/.codex/task-evidence/mc-s2-20261027/v10-foundation-0649/fixtures/gaussian-sigma3-radius12.f64le"
+    },
+    {
+      "file": "kernel-reference.tsv",
+      "sha256": "9bf18794a570b640d11dce56d64fb8b90cd2b36353192b62c71593bf9cec9ab5",
+      "source": "/Users/core-just/.codex/task-evidence/mc-s2-20261027/v10-foundation-0649/fixtures/kernel-reference.tsv"
+    },
+    {
+      "file": "seed42-summit.json",
+      "sha256": "cc5204ff04387d46b551d2471a8af0da6e86fdab281af4f617dbe0317e780f55",
+      "source": "/Users/core-just/.codex/task-evidence/mc-s2-20261027/v10-foundation-0649/fixtures/seed42-summit.json"
+    },
+    {
+      "file": "height-witness.tsv",
+      "sha256": "37f9eb6bdd88f1a15a1ef20e5cbc830a43b7920f774e87cfbb90ad164408c8e8",
+      "source": "/Users/core-just/.codex/task-evidence/mc-s2-20261027/v10-foundation-0649/fixtures/height-witness.tsv"
+    },
+    {
+      "file": "raw-height.f32le",
+      "sha256": "7a0bdca9b5936f1ec7fb4bc0e571670fba72e71dd25d4e5ce5a4cc9044e7358a",
+      "source": "/Users/core-just/.codex/task-evidence/mc-s2-20261027/v10-foundation-0649/fixtures/raw-height.f32le"
+    },
+    {
+      "file": "climate/ground.f64",
+      "sha256": "0d3d6e51bfdd336c7ab4780f9b2e8ebdf4541eae2e4484116ee8b85b05ea262d",
+      "source": "/private/tmp/v10-climate-preparation/reference/ground.f64"
+    },
+    {
+      "file": "climate/rain.f64",
+      "sha256": "9cc3d3550efad4dd5457bd86610e5ffcee07e98767d9331d3902f03ee059e23f",
+      "source": "/private/tmp/v10-climate-preparation/reference/rain.f64"
+    },
+    {
+      "file": "climate/air.f64",
+      "sha256": "959d603c4d8b4c35f5ee165d25ad853483f229c39cfb0306c2dcbe55f046b362",
+      "source": "/private/tmp/v10-climate-preparation/reference/air.f64"
+    },
+    {
+      "file": "climate/bed.f64",
+      "sha256": "f6910b6ff874686352a25af0a1ba7c3ae42f791853b0571371b2aacf41bf051c",
+      "source": "/private/tmp/v10-climate-preparation/reference/bed.f64"
+    },
+    {
+      "file": "climate/theta.f64",
+      "sha256": "ef0f9023dfaedb9d857996e816576c4d4612d49c3b703deadc138d9e088e910e",
+      "source": "/private/tmp/v10-climate-preparation/reference/theta.f64"
+    }
+  ]
+}

@@ -40,7 +40,7 @@
     "cpp_src/noise.cpp": "single-Y angular wrap: 2*pi; defined signed-wrap seed square; explicit std::fma for all four 4D noise coordinates",
     "cpp_src/simplexnoise.cpp": "single-Y angular wrap: 2*pi; explicit std::fma for 4D octave accumulation and gradient dot products",
     "cpp_src/geometry.hpp": "explicit std::fma for FloatVector length and dotProduct on the v9 execution path",
-    "cpp_src/lithosphere.cpp": "explicit std::fma for initial land/sea mapping, collision ratio, buoyancy and restart blending",
+    "cpp_src/lithosphere.cpp": "explicit std::fma for initial land/sea mapping, collision ratio, buoyancy and restart blending; define zero age for empty crust during restart",
     "cpp_src/mass.cpp": "explicit std::fma for crust-weighted center accumulation",
     "cpp_src/movement.cpp": "explicit std::fma for velocity length, rotation and dot product",
     "cpp_src/plate.cpp": "explicit std::fma for subduction, age blending, erosion and crust redistribution",
@@ -341,7 +341,7 @@
     },
     {
       "path": "cpp_src/lithosphere.cpp",
-      "sha256": "3a70339cd6183f9f284096b3d4b09f87b01d6bff4faaf009e6b0300217abfa74"
+      "sha256": "d6702e73569bf1220fa3cd32c061ec723040ce6f6aa216af9b6567c39cd83a3d"
     },
     {
       "path": "cpp_src/lithosphere.hpp",

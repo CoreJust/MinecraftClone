@@ -31,6 +31,7 @@
 
 namespace shared {
 
+class LocalPreparationSnapshots;
 class TerrainWorld;
 struct TerrainLodArtifact;
 
@@ -39,6 +40,7 @@ struct TerrainLodArtifact;
 namespace client {
 
 class TerrainLodSource;
+struct S2MapImage;
 
 struct GameClientLoopSample final {
     std::chrono::steady_clock::time_point started_at;
@@ -53,6 +55,13 @@ struct GameClientLoopSample final {
     bool presentation_succeeded = false;
 };
 
+struct BlockButtonSnapshot final {
+    bool left_held = false;
+    bool left_pressed = false;
+    bool right_held = false;
+    bool right_pressed = false;
+};
+
 struct GameClientBenchmarkHooks final {
     bool isolate_platform_input = false;
     std::optional<std::chrono::steady_clock::time_point> deadline;
@@ -60,6 +69,9 @@ struct GameClientBenchmarkHooks final {
     std::function<bool()> is_uncapped_phase;
     std::function<std::optional<shared::Direction>(uint64_t)> input_override;
     std::function<bool(uint64_t)> start_input_override;
+    // An optional sample owns only block input while platform input is isolated.
+    // Returning nullopt restores the ordinary focus/ownership release path.
+    std::function<std::optional<BlockButtonSnapshot>()> block_button_snapshot;
     std::function<void(GameClientLoopSample const&)> on_loop;
     std::function<void(shared::Player const&)> on_authoritative_player;
     std::function<void(
@@ -80,6 +92,8 @@ struct GameClientBenchmarkHooks final {
         WorldLoadingStatus const&,
         WorldLoadingStatus const&
     )> on_materialized_chunk_recorded = {};
+    // Collect timings without selecting the benchmark presentation/input mode.
+    bool collect_render_stage_diagnostics = false;
 };
 
 struct MaterializedInterestChunkAvailability final {
@@ -98,7 +112,8 @@ public:
         shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration(),
         bool const wants_previews = true,
         std::unique_ptr<ClientAudioOutput> audio_output = {},
-        PreparedTerrainWorldProvider prepared_world_provider = {}
+        PreparedTerrainWorldProvider prepared_world_provider = {},
+        std::shared_ptr<shared::LocalPreparationSnapshots> local_preparation_snapshots = {}
     );
     ~GameClient() override;
 
@@ -137,6 +152,9 @@ public:
     std::shared_ptr<shared::TerrainWorld const> terrainLodWorld() const noexcept;
     [[nodiscard]]
     std::shared_ptr<shared::TerrainLodArtifact const> terrainLodRoot() const noexcept;
+    [[nodiscard]]
+    std::shared_ptr<S2MapImage const> terrainLodMap() const noexcept;
+    [[nodiscard]] bool terrainLodMapUnavailable() const noexcept;
     [[nodiscard]] std::optional<uint64_t> activeCoverageEpoch() const noexcept;
     [[nodiscard]] std::optional<shared::PlayerPosition> activeCoverageCenter() const noexcept;
     [[nodiscard]] uint32_t requiredAuthoritativeColumnCount() const noexcept;
@@ -160,6 +178,24 @@ protected:
     virtual shared::Direction input() = 0;
     virtual void render() = 0;
     [[nodiscard]] virtual bool presentationSucceeded() const { return false; }
+
+    [[nodiscard]] bool loadClientMusic(AudioAssetLoader const& loader) noexcept
+    {
+        return m_client_audio.loadMusic(loader);
+    }
+
+    void updateClientCreationAudio(CreationAudioStage stage, double now_seconds) noexcept
+    {
+        m_client_audio.updateCreationAudio(stage, now_seconds);
+    }
+    [[nodiscard]] bool playClientBlockSound(BlockSoundKind kind, shared::Block material) noexcept
+    {
+        return m_client_audio.playBlockSound(kind, material);
+    }
+    [[nodiscard]] bool playClientMapSound(bool opened) noexcept
+    {
+        return m_client_audio.playMapSound(opened);
+    }
 
     using LoadingTimePoint = WorldLoading::TimePoint;
     [[nodiscard]] bool beginLoadingRequest(LoadingTimePoint accepted_at);
@@ -215,6 +251,13 @@ protected:
         std::chrono::steady_clock::time_point received_at = std::chrono::steady_clock::now()
     );
     void applyServerRemoval(char character);
+    // Accepted positions are observed before a render can coalesce their contact transitions.
+    [[nodiscard]] std::optional<shared::Block> observeLandingTransition(
+        shared::Player const& player,
+        std::optional<shared::GameMode> game_mode
+    ) noexcept;
+    [[nodiscard]] std::optional<shared::Block> consumeLandingMaterial() noexcept;
+    void resetLandingTransitions() noexcept;
     [[nodiscard]] std::optional<shared::Player> predictedLocalPlayer() const noexcept;
     [[nodiscard]] std::optional<shared::PlayerPosition> forecastedLocalPlayerPosition() const noexcept;
     [[nodiscard]]
@@ -303,6 +346,12 @@ protected:
     uint64_t m_rejected_local_position_count = 0U;
     uint32_t m_last_accepted_input_ack = 0U;
     uint32_t m_last_accepted_position_revision = 0U;
+    std::optional<shared::Player> m_last_landing_player;
+    std::optional<shared::GameMode> m_last_landing_game_mode;
+    uint64_t m_last_landing_join_epoch = 0U;
+    uint32_t m_last_landing_position_revision = 0U;
+    // Multiple unpresented landings retain one relevant material, never an audio queue.
+    std::optional<shared::Block> m_pending_landing_material;
     std::chrono::steady_clock::time_point m_last_accepted_position_at{};
     uint32_t m_next_input_sequence = 1;
     char m_local_character = 0;
@@ -316,6 +365,7 @@ protected:
     uint64_t m_benchmark_bytes_received = 0U;
     WorldLoading m_world_loading;
     std::optional<shared::TerrainSessionIdentity> m_terrain_session;
+    std::shared_ptr<shared::LocalPreparationSnapshots> m_local_preparation_snapshots;
     PreparedTerrainWorldProvider m_prepared_world_provider;
     std::unique_ptr<TerrainLodSource> m_terrain_lod_source;
     std::unique_ptr<shared::SparseWorld> m_authoritative_world;

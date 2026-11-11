@@ -1,0 +1,11 @@
+{
+  "source_packet": "/Users/core-just/.codex/research/minecraft-worldgen-20261020/handoff/native-v10-adoption-20261027/native",
+  "upstream_package": "noise1.2.2",
+  "upstream_source_distribution_sha256": "57a2797436574391ff63a111e852e53a4164ecd81ad23639641743cd1a209b65",
+  "math_changes_from_reviewed_packet": "none; explicit fmaf retained verbatim",
+  "copied_files": {
+    "perlin2.c": "f8f61af1e82197cf552cb3d243ed576abdb321f71c1722d7e796239bdd370cec",
+    "perlin2.h": "1ea92e1e78581062d34d8723ac3bd5dac900b2166618f49ed0a955f81d8929bc",
+    "LICENSE.txt": "1c6791d99347f89108fd79f17a88245e1b00ef14a307653fe730f1e46cea7f4d"
+  }
+}

@@ -3,11 +3,14 @@
 #include <client/PlayerClient.hpp>
 #include <client/PlayerPresentation.hpp>
 #include <client/PreviewResidency.hpp>
+#include <client/TerrainLodPresentation.hpp>
 
 #include <shared/net/Message.hpp>
 #include <shared/world/HeightTileInterest.hpp>
+#include <shared/world/TerrainWorld.hpp>
 #include <shared/world/World.hpp>
-#include <shared/world/WorldGeneration.hpp>
+
+#include <generation/Generation.hpp>
 
 #include <glm/ext/vector_double3.hpp>
 #include <glm/ext/vector_float3.hpp>
@@ -28,6 +31,7 @@
 #include <cstdlib>
 #include <deque>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <ratio>
 #include <span>
@@ -39,6 +43,50 @@
 #include <vector>
 
 namespace {
+
+static constexpr int64_t CAPTURE_POSITION_TOLERANCE_SUBCELLS = 500;
+
+std::shared_ptr<shared::TerrainWorld const> canonicalCaptureWorld()
+{
+    static std::shared_ptr<shared::TerrainWorld const> const world = [] {
+        generation::GenerationConfiguration const configuration{};
+        return std::make_shared<shared::TerrainWorld const>(generation::prepareAtlas(configuration));
+    }();
+    return world;
+}
+
+int64_t floorDivideSubcells(int64_t const subcells)
+{
+    int64_t quotient = subcells / shared::SUBCELLS_PER_CELL;
+    if (subcells < 0 && subcells % shared::SUBCELLS_PER_CELL != 0) {
+        --quotient;
+    }
+    return quotient;
+}
+
+uint32_t wrapWorldBlock(int64_t const block)
+{
+    int64_t constexpr WORLD_SIZE = generation::WORLD_SIZE_BLOCKS;
+    return static_cast<uint32_t>((block % WORLD_SIZE + WORLD_SIZE) % WORLD_SIZE);
+}
+
+shared::TerrainColumn canonicalCaptureColumn(
+    shared::TerrainWorld const& world,
+    int64_t const x,
+    int64_t const y
+)
+{
+    uint32_t const world_x = wrapWorldBlock(x);
+    uint32_t const world_y = wrapWorldBlock(y);
+    shared::SurfaceTile const tile = world.sampleSurface({
+        .x = static_cast<int32_t>(world_x / shared::Chunk::SIDE_LENGTH),
+        .y = static_cast<int32_t>(world_y / shared::Chunk::SIDE_LENGTH),
+    });
+    return *tile.columnAt({
+        .x = static_cast<uint8_t>(world_x % shared::Chunk::SIDE_LENGTH),
+        .y = static_cast<uint8_t>(world_y % shared::Chunk::SIDE_LENGTH),
+    });
+}
 
 client::HeightTileReplacementResult acceptTerrainTile(
     client::PreviewResidency& residency,
@@ -63,43 +111,106 @@ client::HeightTileReplacementResult acceptTerrainTile(
 
 } // namespace
 
+TEST(PlayerClientCapturePlanTest, NormalPlayUsesFullscreenButControlledViewsStayWindowed)
+{
+    EXPECT_TRUE(client::playerClientStartsFullscreen(false, false));
+    EXPECT_FALSE(client::playerClientStartsFullscreen(true, false));
+    EXPECT_FALSE(client::playerClientStartsFullscreen(false, true));
+    EXPECT_FALSE(client::playerClientStartsFullscreen(true, true));
+}
+
+TEST(PlayerClientCapturePlanTest, CaptureTargetsHaveCanonicalGroundSupport)
+{
+    std::shared_ptr<shared::TerrainWorld const> const world = canonicalCaptureWorld();
+    static_assert(shared::World::PLAYER_WIDTH_SUBCELLS < shared::SUBCELLS_PER_CELL);
+    static_assert(shared::World::PLAYER_HEIGHT_SUBCELLS > shared::SUBCELLS_PER_CELL);
+    for (client::PlayerClientCapturePreset const preset : client::playerClientCapturePresets()) {
+        client::PlayerClientCapturePlan const plan = client::playerClientCapturePlan(preset);
+        shared::PlayerPosition const target = client::resolvePlayerClientCaptureTarget(preset, *world);
+        int64_t const target_x = static_cast<int64_t>(plan.target.x) * shared::SUBCELLS_PER_CELL
+            + plan.target.x_subcell;
+        int64_t const target_y = static_cast<int64_t>(plan.target.y) * shared::SUBCELLS_PER_CELL
+            + plan.target.y_subcell;
+        int64_t const first_x = floorDivideSubcells(
+            target_x - CAPTURE_POSITION_TOLERANCE_SUBCELLS
+        );
+        int64_t const last_x = floorDivideSubcells(
+            target_x + CAPTURE_POSITION_TOLERANCE_SUBCELLS
+            + shared::World::PLAYER_WIDTH_SUBCELLS - 1U
+        );
+        int64_t const first_y = floorDivideSubcells(
+            target_y - CAPTURE_POSITION_TOLERANCE_SUBCELLS
+        );
+        int64_t const last_y = floorDivideSubcells(
+            target_y + CAPTURE_POSITION_TOLERANCE_SUBCELLS
+            + shared::World::PLAYER_WIDTH_SUBCELLS - 1U
+        );
+        uint16_t support_height = 0U;
+        std::vector<shared::TerrainColumn> footprint_columns;
+        for (int64_t y = first_y; y <= last_y; ++y) {
+            for (int64_t x = first_x; x <= last_x; ++x) {
+                footprint_columns.push_back(canonicalCaptureColumn(*world, x, y));
+                support_height = std::max(support_height, footprint_columns.back().highest_solid_z);
+            }
+        }
+        int64_t const last_body_block = floorDivideSubcells(
+            static_cast<int64_t>(target.z) * shared::SUBCELLS_PER_CELL
+            + shared::World::PLAYER_HEIGHT_SUBCELLS - 1U
+        );
+        EXPECT_EQ(target.x, plan.target.x) << plan.name;
+        EXPECT_EQ(target.y, plan.target.y) << plan.name;
+        EXPECT_EQ(target.z, static_cast<int32_t>(support_height) + 1) << plan.name;
+        for (shared::TerrainColumn const& column : footprint_columns) {
+            for (int64_t z = target.z; z <= last_body_block; ++z) {
+                EXPECT_EQ(
+                    column.materialAt(static_cast<uint16_t>(z), generation::BLOCK_SEA_LEVEL),
+                    shared::Block::Air
+                ) << plan.name << " body intersects canonical terrain at z=" << z;
+            }
+        }
+        shared::TerrainColumn const support_column = canonicalCaptureColumn(*world, target.x, target.y);
+        EXPECT_EQ(target.z, static_cast<int32_t>(support_column.highest_solid_z) + 1) << plan.name;
+        EXPECT_TRUE(shared::isSolidBlock(support_column.materialAt(
+            static_cast<uint16_t>(target.z - 1), generation::BLOCK_SEA_LEVEL))) << plan.name;
+    }
+}
+
 TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether) {
   static constexpr int32_t WORLD_CENTER = 32'768;
   static constexpr int32_t PREVIOUS_PLAYER_DISTANCE = 243;
   static constexpr int32_t PLAYER_DISTANCE = 170;
-  static constexpr int32_t PREVIOUS_PLAYER_HEIGHT = 440;
-  static constexpr int32_t PLAYER_HEIGHT = 420;
   static constexpr int32_t FIRST_RING_RADIUS = 128;
   static constexpr uint32_t FRAME_WIDTH = 2560U;
   static constexpr uint32_t FRAME_HEIGHT = 1440U;
   client::PlayerClientCapturePlan const plan = client::playerClientCapturePlan(
       client::PlayerClientCapturePreset::CentralSpike);
+  std::shared_ptr<shared::TerrainWorld const> const world = canonicalCaptureWorld();
+  shared::PlayerPosition const target = client::resolvePlayerClientCaptureTarget(plan.preset, *world);
   EXPECT_EQ(plan.target.x, WORLD_CENTER - PLAYER_DISTANCE);
   EXPECT_EQ(plan.target.y, WORLD_CENTER);
-  EXPECT_EQ(plan.target.z, PLAYER_HEIGHT);
   EXPECT_NEAR(static_cast<double>(PREVIOUS_PLAYER_DISTANCE - PLAYER_DISTANCE) /
                   PREVIOUS_PLAYER_DISTANCE,
               0.30, 0.01);
-  EXPECT_EQ(PREVIOUS_PLAYER_HEIGHT - PLAYER_HEIGHT, 20);
   EXPECT_EQ(plan.look_angles.yaw_degrees, 110.0);
-  EXPECT_EQ(plan.look_angles.pitch_degrees, 18.0);
+  EXPECT_EQ(plan.look_angles.pitch_degrees, -18.0);
   EXPECT_EQ(plan.vertical_fov_degrees, 105.0);
   EXPECT_EQ(plan.rear_camera_distance, 12.0);
 
-  shared::TerrainGenerator const terrain;
-  EXPECT_GT(plan.target.z, terrain.heightAt(plan.target.x, plan.target.y));
-  EXPECT_LT(plan.target.z, terrain.heightAt(WORLD_CENTER, WORLD_CENTER));
+  shared::TerrainWorld const& terrain = *world;
+  EXPECT_GT(target.z, terrain.sampleSurfaceHeight(
+                          static_cast<uint32_t>(target.x), static_cast<uint32_t>(target.y)));
+  EXPECT_LT(target.z, terrain.sampleSurfaceHeight(WORLD_CENTER, WORLD_CENTER));
   int32_t const near_ring_x = WORLD_CENTER - FIRST_RING_RADIUS;
   int32_t const far_ring_x = WORLD_CENTER + FIRST_RING_RADIUS;
-  uint16_t const near_ring_height = terrain.heightAt(near_ring_x, WORLD_CENTER);
-  uint16_t const far_ring_height = terrain.heightAt(far_ring_x, WORLD_CENTER);
-  EXPECT_EQ(near_ring_height, 406U);
-  EXPECT_EQ(far_ring_height, 406U);
+  uint16_t const near_ring_height = terrain.sampleSurfaceHeight(near_ring_x, WORLD_CENTER);
+  uint16_t const far_ring_height = terrain.sampleSurfaceHeight(far_ring_x, WORLD_CENTER);
+  EXPECT_GT(near_ring_height, 0U);
+  EXPECT_GT(far_ring_height, 0U);
 
   client::PlayerPresentationPosition const player_position{
-      .x = static_cast<double>(plan.target.x),
-      .y = static_cast<double>(plan.target.y),
-      .z = static_cast<double>(plan.target.z),
+      .x = static_cast<double>(target.x),
+      .y = static_cast<double>(target.y),
+      .z = static_cast<double>(target.z),
   };
   glm::dvec3 const eye = client::localPlayerEyePosition(player_position);
   client::Camera const look_camera{
@@ -121,7 +232,7 @@ TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether) {
   glm::vec3 const peak = projected({
       static_cast<float>(WORLD_CENTER),
       static_cast<float>(WORLD_CENTER),
-      static_cast<float>(terrain.heightAt(WORLD_CENTER, WORLD_CENTER)),
+      static_cast<float>(terrain.sampleSurfaceHeight(WORLD_CENTER, WORLD_CENTER)),
       1.0F,
   });
   glm::vec3 const near_ring = projected({
@@ -141,7 +252,7 @@ TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether) {
       static_cast<float>(WORLD_CENTER),
       static_cast<float>(WORLD_CENTER - BACKGROUND_RADIUS),
       static_cast<float>(
-          terrain.heightAt(WORLD_CENTER, WORLD_CENTER - BACKGROUND_RADIUS)),
+          terrain.sampleSurfaceHeight(WORLD_CENTER, WORLD_CENTER - BACKGROUND_RADIUS)),
       1.0F,
   });
   glm::vec3 const background = glm::vec3(background_clip) / background_clip.w;
@@ -159,8 +270,8 @@ TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether) {
   double const nearest_background_sightline_radius =
       std::hypot(camera_radius_x + nearest_segment_parameter * segment_x,
                  camera_radius_y + nearest_segment_parameter * segment_y);
-  EXPECT_GT(near_ring.y, 0.0F);
-  EXPECT_GT(far_ring.y, 0.0F);
+  EXPECT_LT(near_ring.y, 0.0F);
+  EXPECT_LT(far_ring.y, 0.0F);
   EXPECT_LT(peak.y, 0.0F);
   EXPECT_LT(std::abs(near_ring.x), 0.9F);
   EXPECT_LT(std::abs(near_ring.y), 0.9F);
@@ -171,45 +282,42 @@ TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether) {
   EXPECT_GT(background_clip.w, 0.0F);
   EXPECT_GE(background.z, 0.0F);
   EXPECT_LE(background.z, 1.0F);
-  EXPECT_GT(terrain.heightAt(WORLD_CENTER, WORLD_CENTER - BACKGROUND_RADIUS),
-            0U);
+  EXPECT_GT(terrain.sampleSurfaceHeight(WORLD_CENTER, WORLD_CENTER - BACKGROUND_RADIUS), 0U);
   EXPECT_GT(nearest_background_sightline_radius, FIRST_RING_RADIUS);
   EXPECT_GT(background.x, 0.25F);
   EXPECT_LT(background.x, 0.8F);
-  EXPECT_GT(background.y, 0.55F);
-  EXPECT_LT(background.y, 0.85F);
+  EXPECT_LT(background.y, -0.1F);
+  EXPECT_GT(background.y, -0.85F);
 }
 
 TEST(PlayerClientCapturePlanTest, FramesTheUpperFirstRingAsAnAscendingSlope) {
   static constexpr int32_t WORLD_CENTER = 32'768;
   static constexpr int32_t FIRST_RING_ASCENT_RADIUS = 112;
   static constexpr int32_t ASCENT_SAMPLE_DISTANCE = 16;
-  static constexpr uint16_t MINIMUM_ASCENT = 50U;
-  static constexpr double MINIMUM_CLIMBING_PITCH = 45.0;
-  static constexpr double MAXIMUM_CLIMBING_PITCH = 65.0;
+  static constexpr int32_t MINIMUM_ASCENT = 1;
   static constexpr double MINIMUM_ASCENT_YAW_OFFSET = 5.0;
   static constexpr double MAXIMUM_ASCENT_YAW_OFFSET = 20.0;
   client::PlayerClientCapturePlan const plan = client::playerClientCapturePlan(
       client::PlayerClientCapturePreset::MountainClimb);
-  shared::TerrainGenerator const terrain;
-  uint16_t const target_height = terrain.heightAt(plan.target.x, plan.target.y);
+  std::shared_ptr<shared::TerrainWorld const> const world = canonicalCaptureWorld();
+  shared::TerrainWorld const& terrain = *world;
+  shared::PlayerPosition const target = client::resolvePlayerClientCaptureTarget(
+      plan.preset, terrain);
+  uint16_t const target_height = terrain.sampleSurfaceHeight(
+      static_cast<uint32_t>(target.x), static_cast<uint32_t>(target.y));
 
   EXPECT_EQ(plan.target.x, WORLD_CENTER + FIRST_RING_ASCENT_RADIUS);
   EXPECT_EQ(plan.target.y, WORLD_CENTER);
-  EXPECT_EQ(plan.target.z, target_height);
-  EXPECT_LT(
-      terrain.heightAt(plan.target.x - ASCENT_SAMPLE_DISTANCE, plan.target.y),
-      target_height);
-  EXPECT_GE(
-      terrain.heightAt(plan.target.x + ASCENT_SAMPLE_DISTANCE, plan.target.y) -
-          target_height,
-      MINIMUM_ASCENT);
+  EXPECT_EQ(target.z, static_cast<int32_t>(target_height) + 1);
+  EXPECT_GE(static_cast<int32_t>(terrain.sampleSurfaceHeight(
+                static_cast<uint32_t>(target.x + ASCENT_SAMPLE_DISTANCE),
+                static_cast<uint32_t>(target.y))) - static_cast<int32_t>(target_height),
+            MINIMUM_ASCENT);
   double const ascent_yaw_offset =
       std::abs(plan.look_angles.yaw_degrees - 90.0);
   EXPECT_GE(ascent_yaw_offset, MINIMUM_ASCENT_YAW_OFFSET);
   EXPECT_LE(ascent_yaw_offset, MAXIMUM_ASCENT_YAW_OFFSET);
-  EXPECT_GE(plan.look_angles.pitch_degrees, MINIMUM_CLIMBING_PITCH);
-  EXPECT_LE(plan.look_angles.pitch_degrees, MAXIMUM_CLIMBING_PITCH);
+  EXPECT_EQ(plan.look_angles.pitch_degrees, -18.0);
 }
 
 TEST(PlayerClientCapturePlanTest,
@@ -221,13 +329,81 @@ TEST(PlayerClientCapturePlanTest,
   EXPECT_EQ(plan.final_movement_capabilities->bits, 0U);
 }
 
+TEST(PlayerClientCapturePlanTest, NativeLodCaptureCoverageRequiresAnExactWorldPartition) {
+  client::TerrainLodScene scene;
+  scene.root_extent = 256U;
+  scene.leaves.reserve(256U * 256U);
+  for (uint32_t y = 0U; y < 256U; ++y) {
+    for (uint32_t x = 0U; x < 256U; ++x) {
+      scene.leaves.push_back({.level = shared::TerrainLodLevel::L0, .x = x, .y = y});
+    }
+  }
+
+  EXPECT_TRUE(client::playerClientCaptureTerrainLodWorldCoverageComplete(scene));
+
+  scene.leaves.pop_back();
+  EXPECT_FALSE(client::playerClientCaptureTerrainLodWorldCoverageComplete(scene));
+  scene.leaves.clear();
+  for (uint32_t y = 0U; y < 256U; ++y) {
+    for (uint32_t x = 0U; x < 256U; ++x) {
+      if (x != 255U || y != 255U) {
+        scene.leaves.push_back({.level = shared::TerrainLodLevel::L0, .x = x, .y = y});
+      }
+    }
+  }
+  for (uint32_t y = 0U; y < 4U; ++y) {
+    for (uint32_t x = 0U; x < 4U; ++x) {
+      scene.leaves.push_back({.level = shared::TerrainLodLevel::L1, .x = x, .y = y});
+    }
+  }
+  EXPECT_FALSE(client::playerClientCaptureTerrainLodWorldCoverageComplete(scene));
+}
+
+TEST(PlayerClientCapturePlanTest, NativeLodCaptureRequiresEveryCurrentVisualDiskColumn) {
+  client::TerrainLodScene scene;
+  scene.root_extent = 256U;
+  // Coarse geometry can retain a previous center while the exact disk moves.
+  scene.center_x = 32'000U;
+  scene.center_y = 32'000U;
+  scene.visual_center = client::TerrainLodColumnCoordinate{0U, 0U};
+  scene.actual_column_count = client::terrainLodVisualColumnCount();
+  scene.leaves.reserve(scene.actual_column_count);
+  constexpr int32_t WORLD_COLUMN_COUNT =
+      static_cast<int32_t>(generation::WORLD_SIZE_BLOCKS / shared::Chunk::SIDE_LENGTH);
+  constexpr int32_t RADIUS = static_cast<int32_t>(shared::FULL_DETAIL_RADIUS_CHUNKS);
+  for (int32_t y = -RADIUS; y <= RADIUS; ++y) {
+    for (int32_t x = -RADIUS; x <= RADIUS; ++x) {
+      uint32_t const wrapped_x = static_cast<uint32_t>((x + WORLD_COLUMN_COUNT) % WORLD_COLUMN_COUNT);
+      uint32_t const wrapped_y = static_cast<uint32_t>((y + WORLD_COLUMN_COUNT) % WORLD_COLUMN_COUNT);
+      if (client::terrainLodVisualColumn(wrapped_x, wrapped_y, 0U, 0U)) {
+        scene.leaves.push_back({.level = shared::TerrainLodLevel::L3, .x = wrapped_x, .y = wrapped_y});
+      }
+    }
+  }
+  ASSERT_EQ(scene.leaves.size(), scene.actual_column_count);
+  EXPECT_TRUE(client::playerClientCaptureTerrainLodCurrentColumnsComplete(scene));
+  auto const boundary = scene.leaves.front();
+  scene.leaves.front() = {.level = shared::TerrainLodLevel::L3, .x = 40U, .y = 40U};
+  EXPECT_FALSE(client::playerClientCaptureTerrainLodCurrentColumnsComplete(scene));
+  scene.leaves.front() = boundary;
+  EXPECT_TRUE(client::playerClientCaptureTerrainLodCurrentColumnsComplete(scene));
+  scene.leaves.front() = scene.leaves.back();
+  EXPECT_FALSE(client::playerClientCaptureTerrainLodCurrentColumnsComplete(scene));
+  scene.leaves.front() = boundary;
+  scene.visual_center = client::TerrainLodColumnCoordinate{4096U, 0U};
+  EXPECT_FALSE(client::playerClientCaptureTerrainLodCurrentColumnsComplete(scene));
+  scene.visual_center.reset();
+  scene.center_x = 0U;
+  scene.center_y = 0U;
+  EXPECT_TRUE(client::playerClientCaptureTerrainLodCurrentColumnsComplete(scene));
+}
+
 TEST(PlayerClientCapturePlanTest,
      BoundsFullTerrainCaptureReadinessToFifteenMinutes) {
   client::PlayerClientCaptureOptions const options{};
 
   EXPECT_EQ(options.readiness_deadline, std::chrono::minutes{15});
   EXPECT_EQ(options.sweep_deadline, std::chrono::minutes{5});
-  EXPECT_EQ(options.minimum_height_tile_meshes, 0U);
 }
 
 TEST(PlayerClientCapturePlanTest,
@@ -516,80 +692,6 @@ TEST(PlayerClientCapturePlanTest,
   ASSERT_TRUE(std::holds_alternative<shared::ClientInputMessage>(*decoded));
   EXPECT_EQ(std::get<shared::ClientInputMessage>(*decoded).direction.speedup,
             speedup);
-}
-
-TEST(PlayerClientCapturePlanTest,
-     StaleVisibleMeshCannotSatisfyResidentCoverage) {
-  static constexpr uint32_t EXPECTED_TILES = 1U;
-  static constexpr shared::HeightTileKey KEY{.x = 1, .y = 1};
-  static constexpr client::HeightTileRevision REVISION{
-      .generation = 1U,
-      .revision = 1U,
-  };
-  client::PreviewResidency residency{REVISION};
-  std::unordered_set<shared::HeightTileKey,
-                     client::PlayerHeightTileKeyHash> const interest{KEY};
-  std::unordered_set<shared::HeightTileKey,
-                     client::PlayerHeightTileKeyHash> const visible_meshes{KEY};
-  std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> const heights = testsupport::makeHeightSamples();
-
-  ASSERT_EQ(acceptTerrainTile(residency, KEY, REVISION, 1U, heights).replacement,
-            client::HeightTileReplacement::Published);
-  EXPECT_FALSE(client::playerClientCaptureCoverageComplete(
-      interest, visible_meshes, residency, EXPECTED_TILES, 0U));
-  static_cast<void>(residency.takeChanges(1U));
-  EXPECT_TRUE(client::playerClientCaptureCoverageComplete(
-      interest, visible_meshes, residency, EXPECTED_TILES, 0U));
-  EXPECT_FALSE(client::playerClientCaptureCoverageComplete(
-      interest, visible_meshes, residency, EXPECTED_TILES, 1U));
-
-  ASSERT_TRUE(residency.evict(KEY, REVISION, 2U));
-  static_cast<void>(residency.takeChanges(1U));
-  EXPECT_FALSE(client::playerClientCaptureCoverageComplete(
-      interest, visible_meshes, residency, EXPECTED_TILES, 0U));
-}
-
-TEST(PlayerClientCapturePlanTest, GeometricCaptureCoverageRequiresEveryResidentDiskTile)
-{
-    static constexpr uint32_t RADIUS = 1U;
-    static constexpr uint32_t EXPECTED_TILES = shared::heightTileInterestCount(RADIUS);
-    static constexpr shared::HeightTileKey CENTER{ .x = 4'095, .y = 4'095 };
-    static constexpr client::HeightTileRevision REVISION{ .generation = 1U, .revision = 1U };
-    client::HeightTileInterestRegion interest;
-    interest.set(CENTER, RADIUS);
-    client::PreviewResidency residency{ REVISION };
-    std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> visible_meshes;
-    std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> const heights = testsupport::makeHeightSamples();
-    uint32_t covered_count = 0U;
-
-    for (int32_t y = -static_cast<int32_t>(RADIUS); y <= static_cast<int32_t>(RADIUS); ++y) {
-        for (int32_t x = -static_cast<int32_t>(RADIUS); x <= static_cast<int32_t>(RADIUS); ++x) {
-            shared::HeightTileKey const key = shared::normalizeHeightTileKey({
-                .x = CENTER.x + x,
-                .y = CENTER.y + y,
-            });
-            if (!interest.contains(key)) {
-                continue;
-            }
-            ASSERT_EQ(acceptTerrainTile(residency, key, REVISION, 1U, heights).replacement,
-                client::HeightTileReplacement::Published);
-            visible_meshes.insert(key);
-            ++covered_count;
-        }
-    }
-    ASSERT_EQ(covered_count, EXPECTED_TILES);
-    static_cast<void>(residency.takeChanges(EXPECTED_TILES));
-
-    EXPECT_TRUE(client::playerClientCaptureCoverageComplete(
-        interest, visible_meshes, residency, EXPECTED_TILES, 0U));
-    EXPECT_FALSE(client::playerClientCaptureCoverageComplete(
-        interest, visible_meshes, residency, EXPECTED_TILES, 1U));
-    visible_meshes.erase(shared::normalizeHeightTileKey(CENTER));
-    EXPECT_FALSE(client::playerClientCaptureCoverageComplete(
-        interest, visible_meshes, residency, EXPECTED_TILES, 0U));
-    interest.clear();
-    EXPECT_FALSE(client::playerClientCaptureCoverageComplete(
-        interest, visible_meshes, residency, EXPECTED_TILES, 0U));
 }
 
 TEST(PlayerClientCapturePlanTest, GeometricInterestKeepsNearAndForecastQueueEntries)

@@ -101,6 +101,40 @@ duplicate actors, operation budgets, tick budgets, evidence budgets, and final
 required declarations fail before publication. See [Diagnostics](DIAGNOSTICS.md)
 for stable codes.
 
+## Bounded execution from C++
+
+Use `shared::corelang::compileBounded(source, registry, limits, stop_token,
+cancellation_requested)` to compile trusted source against its host registry.
+It checks source and bytecode bounds, records the finite-loop proof and returns
+a `CompiledProgram` with source and bytecode SHA-256 digests. Keep the compiled
+artifact and bytes together for subsequent proof and execution. The program
+overload checks that both still match the bytes validated by the compiler.
+See [Execution.hpp](../../src/shared/include/shared/corelang/Execution.hpp).
+
+Both `boundedInstructionCount` overloads take a module ID, exported entry name,
+limits and execution count. They return a static upper bound for module
+initialization and the entry call, multiplied by the requested execution count.
+The `CompiledProgram` overload includes the retained finite-loop proof. The
+raw `Artifact` overload has no source proof and rejects cycles.
+
+`executeBounded` takes an `ExecutionRequest` with the compiled program,
+module ID and a parameterless exported entry. Select `Interpreter`, `Jit` or
+`Aot` and supply the expected result type and host limits. Set
+`execution_count` to the number of calls the host is budgeting, from one
+through `limits.max_execution_count`. Each request invokes the entry once.
+Every compiled host import must have a matching `ExecutionHostCall` with a
+unique provider key, a compatible manifest and a callable handler. The bridge
+rejects unsafe, suspending or reentrant host calls.
+
+Either the stop token or the optional cancellation callback can request
+cancellation. Checks run at phase boundaries and around host calls. The
+instruction proof is static and host handlers must cooperate with cancellation.
+The successful `ExecutionResult` contains the typed value and a
+`BackendReceipt` with requested and actual backends, compiler version, target
+and artifact digests. Failure returns a `BackendError` with a code, message
+and optional source offset. See
+[ExecutionTypes.hpp](../../src/shared/include/shared/corelang/ExecutionTypes.hpp).
+
 ## Seeded world loading
 
 World generation uses separate load-time CoreLang programs and code paths;

@@ -1,6 +1,9 @@
 #include <client/render/CanonicalTerrainField.hpp>
 
 #include <shared/world/Chunk.hpp>
+#include <shared/world/TerrainLod.hpp>
+#include <shared/world/TerrainWorld.hpp>
+#include <generation/V10Provider.hpp>
 #include <generation/V9Provider.hpp>
 
 #include <algorithm>
@@ -22,6 +25,8 @@ constexpr size_t V9_SOURCE_COUNT = static_cast<size_t>(V9_SOURCE_RESOLUTION) * V
 constexpr double V9_COAST_SAND_MAX_ELEVATION_M = 20.0;
 constexpr uint8_t V9_COLD_SUMMIT_BIOME = 0U;
 constexpr uint8_t V9_HOT_DESERT_BIOME = 5U;
+constexpr uint32_t V21_SOURCE_RESOLUTION = 256U;
+constexpr size_t V21_SOURCE_COUNT = static_cast<size_t>(V21_SOURCE_RESOLUTION) * V21_SOURCE_RESOLUTION;
 
 template<typename T>
 [[nodiscard]] std::span<T const> requireV9GridField(
@@ -66,6 +71,57 @@ template<typename T>
                 % static_cast<int32_t>(V9_SOURCE_RESOLUTION)
             );
             size_t const neighbor = static_cast<size_t>(neighbor_y) * V9_SOURCE_RESOLUTION + neighbor_x;
+            if (ocean[neighbor] != 0U || lake[neighbor] != 0U) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+template<typename T>
+[[nodiscard]] std::span<T const> requireV21GridField(
+    std::span<generation::V9RegisteredFieldView const> fields,
+    std::string_view const name,
+    generation::V9FieldType const type,
+    std::vector<uint32_t> const& shape,
+    size_t const expected_size
+)
+{
+    auto const field = std::find_if(fields.begin(), fields.end(), [name](auto const& candidate) {
+        return candidate.name == name;
+    });
+    if (field == fields.end() || field->type != type || field->shape != shape) {
+        throw std::invalid_argument("V21 canonical terrain field has an unexpected type or shape");
+    }
+    auto const* const values = std::get_if<std::span<T const>>(&field->values);
+    if (values == nullptr || values->size() != expected_size) {
+        throw std::invalid_argument("V21 canonical terrain field has an unexpected value count");
+    }
+    return *values;
+}
+
+[[nodiscard]] bool v21AdjacentOceanOrLake(
+    std::span<uint8_t const> ocean,
+    std::span<uint8_t const> lake,
+    uint32_t const x,
+    uint32_t const y
+) noexcept
+{
+    for (int32_t dy = -1; dy <= 1; ++dy) {
+        for (int32_t dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dy == 0) {
+                continue;
+            }
+            uint32_t const neighbor_x = static_cast<uint32_t>(
+                (static_cast<int32_t>(x) + dx + static_cast<int32_t>(V21_SOURCE_RESOLUTION))
+                % static_cast<int32_t>(V21_SOURCE_RESOLUTION)
+            );
+            uint32_t const neighbor_y = static_cast<uint32_t>(
+                (static_cast<int32_t>(y) + dy + static_cast<int32_t>(V21_SOURCE_RESOLUTION))
+                % static_cast<int32_t>(V21_SOURCE_RESOLUTION)
+            );
+            size_t const neighbor = static_cast<size_t>(neighbor_y) * V21_SOURCE_RESOLUTION + neighbor_x;
             if (ocean[neighbor] != 0U || lake[neighbor] != 0U) {
                 return true;
             }
@@ -138,6 +194,108 @@ std::vector<CanonicalTerrainFieldValue> buildV9CanonicalTerrainFieldValues(
                 && phase_mean_temperature < 0.0) {
                 top_material = shared::Block::Snow;
             }
+
+            result[index] = {
+                static_cast<float>(phase_mean_temperature),
+                static_cast<float>(source_elevation),
+                static_cast<float>(static_cast<uint8_t>(top_material)),
+                0.0F,
+            };
+        }
+    }
+    return result;
+}
+
+std::vector<CanonicalTerrainFieldValue> buildV10CanonicalTerrainFieldValues(
+    generation::GlobalAtlas const& atlas
+)
+{
+    if (atlas.configuration.model_tag != generation::TerrainModelTag::V10) {
+        throw std::invalid_argument("canonical V10 terrain fields require a V10 atlas");
+    }
+    constexpr uint32_t RESOLUTION = 256U;
+    constexpr uint32_t SPACING = generation::WORLD_SIZE_BLOCKS / RESOLUTION;
+    std::vector<CanonicalTerrainFieldValue> result;
+    result.reserve(static_cast<size_t>(RESOLUTION) * RESOLUTION);
+    for (uint32_t y = 0U; y < RESOLUTION; ++y) {
+        for (uint32_t x = 0U; x < RESOLUTION; ++x) {
+            uint32_t const world_x = x * SPACING;
+            uint32_t const world_y = y * SPACING;
+            auto const surface = generation::sampleV10AnnualMeanSurface(atlas, world_x, world_y, 0U);
+            auto const material = shared::TerrainWorld::sampleV10TopMaterial(atlas, world_x, world_y, surface);
+            result.push_back({static_cast<float>(surface.temperature_celsius),
+                static_cast<float>(surface.elevation_m),
+                static_cast<float>(static_cast<uint8_t>(material)), 0.0F});
+        }
+    }
+    return result;
+}
+
+std::vector<CanonicalTerrainFieldValue> buildV21CanonicalTerrainFieldValues(
+    generation::GlobalAtlas const& atlas
+)
+{
+    if (atlas.configuration.model_tag != generation::TerrainModelTag::V21) {
+        throw std::invalid_argument("canonical V21 terrain fields require a V21 atlas");
+    }
+    std::vector<generation::V9RegisteredFieldView> const fields = generation::v21RegisteredFields(atlas);
+    std::span<double const> const elevation = requireV21GridField<double>(
+        fields, "elevation", generation::V9FieldType::Float64,
+        {V21_SOURCE_RESOLUTION, V21_SOURCE_RESOLUTION}, V21_SOURCE_COUNT
+    );
+    std::span<float const> const temperature = requireV21GridField<float>(
+        fields, "temperature_C", generation::V9FieldType::Float32,
+        {8U, V21_SOURCE_RESOLUTION, V21_SOURCE_RESOLUTION}, V21_SOURCE_COUNT * 8U
+    );
+    std::span<uint8_t const> const ocean = requireV21GridField<uint8_t>(
+        fields, "ocean", generation::V9FieldType::Bool,
+        {V21_SOURCE_RESOLUTION, V21_SOURCE_RESOLUTION}, V21_SOURCE_COUNT
+    );
+    std::span<uint8_t const> const lake = requireV21GridField<uint8_t>(
+        fields, "lake", generation::V9FieldType::Bool,
+        {V21_SOURCE_RESOLUTION, V21_SOURCE_RESOLUTION}, V21_SOURCE_COUNT
+    );
+
+    generation::V21SurfaceQueryGrid const grid{
+        .rows = V21_SOURCE_RESOLUTION,
+        .columns = V21_SOURCE_RESOLUTION,
+        .origin_x_m = 0.0,
+        .origin_y_m = 0.0,
+        .spacing_m = static_cast<double>(generation::WORLD_SIZE_BLOCKS) / V21_SOURCE_RESOLUTION,
+        .lod = 0U,
+        .selected_phase = 0U,
+    };
+    auto const local_surface = generation::queryV21SurfaceGrid(atlas, grid);
+    if (!local_surface) {
+        throw std::runtime_error{"V21 canonical L0 surface query failed: " + local_surface.error().message};
+    }
+
+    std::vector<CanonicalTerrainFieldValue> result(V21_SOURCE_COUNT);
+    for (uint32_t y = 0U; y < V21_SOURCE_RESOLUTION; ++y) {
+        for (uint32_t x = 0U; x < V21_SOURCE_RESOLUTION; ++x) {
+            size_t const index = static_cast<size_t>(y) * V21_SOURCE_RESOLUTION + x;
+            double phase_mean_temperature = 0.0;
+            for (uint32_t phase = 0U; phase < 8U; ++phase) {
+                phase_mean_temperature += temperature[static_cast<size_t>(phase) * V21_SOURCE_COUNT + index] / 8.0;
+            }
+            double const source_elevation = elevation[index];
+            if (!std::isfinite(phase_mean_temperature) || !std::isfinite(source_elevation)) {
+                throw std::invalid_argument("V21 canonical terrain fields contain nonfinite values");
+            }
+
+            generation::V9SurfaceSample const& surface = local_surface->samples[index];
+            shared::TerrainLodSample const sample{
+                .height = static_cast<double>(generation::mapV21ElevationToBlock(surface.elevation_m)),
+                .water_present = surface.ocean || surface.lake || surface.river,
+                .temperature = surface.temperature_celsius,
+                .source_l0_elevation_m = source_elevation,
+                .source_biome_id = surface.biome_id,
+                .source_native_coast_adjacent = v21AdjacentOceanOrLake(ocean, lake, x, y),
+                .v21_surface = true,
+                .land_snow_water_equivalent_m = surface.land_snow_water_equivalent_m,
+                .glacier_thickness_m = surface.glacier_thickness_m,
+            };
+            shared::Block const top_material = shared::terrainLodSurfaceMaterial(sample, atlas.block_sea_level);
 
             result[index] = {
                 static_cast<float>(phase_mean_temperature),

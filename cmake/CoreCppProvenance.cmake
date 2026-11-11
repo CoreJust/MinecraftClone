@@ -29,7 +29,7 @@ function(mc_check_corecpp_provenance)
     endif()
 
     string(JSON fetch_ref ERROR_VARIABLE lock_error GET "${lock_json}" dependencies CoreCpp fetch_ref)
-    if(lock_error OR NOT fetch_ref MATCHES "^refs/tags/[A-Za-z0-9][A-Za-z0-9._/-]*$")
+    if(lock_error OR (NOT fetch_ref MATCHES "^refs/tags/[A-Za-z0-9][A-Za-z0-9._/-]*$" AND NOT (MC_PREVIEW_ALLOW_UNTAGGED_CORECPP AND fetch_ref STREQUAL "refs/heads/ai-dev")))
         message(FATAL_ERROR "CoreCpp fetch_ref must be a safe full refs/tags/ name")
     endif()
     string(REPLACE "/" ";" ref_components "${fetch_ref}")

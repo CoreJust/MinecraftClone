@@ -241,7 +241,7 @@ TEST(StoneIndirectDrawsTest, PacksCanonicalMaterialsForChunkAndHeightTileVertexP
     EXPECT_EQ(tile_instance.v_extent, tile_quad.v_extent);
     EXPECT_EQ(tile_instance.material_id, static_cast<uint32_t>(shared::Block::Ice));
     EXPECT_EQ(offsetof(client::StoneFaceInstance, material_id), 24U);
-    EXPECT_EQ(sizeof(client::StoneFaceInstance), 32U);
+    EXPECT_EQ(sizeof(client::StoneFaceInstance), 48U);
 }
 
 TEST(StoneIndirectDrawsTest, RejectsAirAndUnknownMaterialIdsBeforePacking)
@@ -682,7 +682,7 @@ TEST(StoneIndirectDrawsTest, TerrainTrianglePreservesSignedOffsetsAndFractionalH
     EXPECT_EQ(static_cast<int16_t>(face.v_extent >> 16U), 8);
     EXPECT_EQ(face.reserved_1, 12'800U);
     EXPECT_EQ(face.material_id, static_cast<uint32_t>(shared::Block::Grass));
-    EXPECT_EQ(sizeof(face), 32U);
+    EXPECT_EQ(sizeof(face), 48U);
 }
 
 TEST(StoneIndirectDrawsTest, RejectsUnrepresentableTerrainTriangleHeights)
@@ -721,4 +721,137 @@ TEST(StoneIndirectDrawsTest, SurfaceTrianglePacksSignedInterpolatedClimateWithou
     EXPECT_EQ(face.z, explicit_face.z);
     EXPECT_EQ(face.u_extent, explicit_face.u_extent);
     EXPECT_EQ(face.v_extent, explicit_face.v_extent);
+}
+
+TEST(StoneIndirectDrawsTest, EveryTriangleFormatPreservesTopWorldHeightAndExistingPayload)
+{
+    for (int32_t const height : {32'767, 32'768, 65'535, 65'536}) {
+        std::array<std::array<int32_t, 3>, 3> const vertices{{{0, 0, height}, {16, 0, height}, {0, 16, height}}};
+        for (uint32_t format = 0U; format < 3U; ++format) {
+            std::optional<client::StoneFaceInstance> encoded;
+            ASSERT_NO_THROW(encoded = format == 0U
+                ? client::StoneFaceInstance::fromTerrainTriangle(vertices, shared::Block::Sand)
+                : (format == 1U
+                    ? client::StoneFaceInstance::fromTerrainSurfaceTriangle(vertices, {-16'384, 16'383, -1})
+                    : client::StoneFaceInstance::fromTerrainMaterialTriangle(vertices,
+                        {shared::Block::Sand, shared::Block::Snow, shared::Block::Ice})));
+            auto const& face = *encoded;
+            EXPECT_EQ(face.direction & 7U, 6U);
+            std::array<uint32_t, 3> const low{
+                static_cast<uint32_t>(face.z) & 0xffffU, static_cast<uint32_t>(face.z) >> 16U,
+                face.reserved_1 & 0xffffU};
+            for (uint32_t vertex = 0U; vertex < 3U; ++vertex) {
+                uint32_t const carry = ((face.direction >> (3U + vertex)) & 1U) << 16U;
+                EXPECT_EQ(low[vertex] | carry, static_cast<uint32_t>(height));
+            }
+            if (format == 1U) {
+                EXPECT_EQ((face.reserved_1 >> 16U) & 0x7fffU, 0x4000U);
+                EXPECT_EQ(static_cast<int16_t>(face.material_id), 16'383);
+                EXPECT_EQ(static_cast<int16_t>(face.material_id >> 16U), -1);
+            } else if (format == 2U) {
+                EXPECT_EQ(face.material_id, 0x0006'0507U);
+            } else {
+                EXPECT_EQ(face.material_id, 7U);
+            }
+            EXPECT_EQ(sizeof(face), 48U);
+        }
+    }
+}
+
+TEST(StoneIndirectDrawsTest, TriangleHeightCarriesAreIndependentForEveryVertex)
+{
+    for (uint32_t carries = 0U; carries < 8U; ++carries) {
+        std::array<std::array<int32_t, 3>, 3> vertices{{{0, 0, 0}, {16, 0, 0}, {0, 16, 0}}};
+        std::array<uint32_t, 3> expected{};
+        for (uint32_t vertex = 0U; vertex < 3U; ++vertex) {
+            expected[vertex] = (carries & (1U << vertex)) != 0U ? 65'536U : 32'767U + vertex;
+            vertices[vertex][2] = static_cast<int32_t>(expected[vertex]);
+        }
+        auto const face = client::StoneFaceInstance::fromTerrainSurfaceTriangle(vertices, {-16'384, 16'383, -1});
+        EXPECT_EQ(face.faceDirection(), client::StoneFaceInstance::TERRAIN_TRIANGLE);
+        EXPECT_EQ(face.terrainTriangleHeights(), expected);
+        EXPECT_EQ(face.direction >> 3U, carries);
+    }
+}
+
+TEST(StoneIndirectDrawsTest, EveryTriangleFormatRejectsHeightsOutsideTheWorldDomain)
+{
+    for (int32_t invalid : {-1, 65'537}) {
+        for (uint32_t vertex = 0U; vertex < 3U; ++vertex) {
+            std::array<std::array<int32_t, 3>, 3> vertices{{{0, 0, 32}, {16, 0, 32}, {0, 16, 32}}};
+            vertices[vertex][2] = invalid;
+            EXPECT_THROW(static_cast<void>(client::StoneFaceInstance::fromTerrainTriangle(vertices, shared::Block::Stone)),
+                std::invalid_argument);
+            EXPECT_THROW(static_cast<void>(client::StoneFaceInstance::fromTerrainSurfaceTriangle(vertices, {0, 0, 0})),
+                std::invalid_argument);
+            EXPECT_THROW(static_cast<void>(client::StoneFaceInstance::fromTerrainMaterialTriangle(vertices,
+                {shared::Block::Grass, shared::Block::Sand, shared::Block::Snow})), std::invalid_argument);
+        }
+    }
+}
+
+TEST(StoneIndirectDrawsTest, MetricMaterialTriangleRetainsFractionalCoordinatesAndMaterials)
+{
+    std::array<std::array<double, 3>, 3> const vertices{{
+        {65'535.75, -0.125, 0.0}, {65'535.25, 0.125, 2048.0}, {65'536.125, -0.625, 1.0}}};
+    auto const face = client::StoneFaceInstance::fromMetricTerrainMaterialTriangle(
+        vertices, {shared::Block::Sand, shared::Block::Snow, shared::Block::Ice});
+    EXPECT_EQ(face.direction & client::StoneFaceInstance::TERRAIN_TRIANGLE_XY_Q5, 64U);
+    EXPECT_EQ(face.faceDirection(), 6U);
+    EXPECT_EQ(face.x, 2'097'144);
+    EXPECT_EQ(face.y, -4);
+    EXPECT_EQ(static_cast<int16_t>(face.u_extent & 0xffffU), -16);
+    EXPECT_EQ(static_cast<int16_t>(face.u_extent >> 16U), 8);
+    EXPECT_EQ(static_cast<int16_t>(face.v_extent & 0xffffU), 12);
+    EXPECT_EQ(static_cast<int16_t>(face.v_extent >> 16U), -16);
+    EXPECT_EQ(face.terrainTriangleHeights(), (std::array<uint32_t, 3>{0U, 65'536U, 32U}));
+    EXPECT_EQ(face.material_id, 0x0006'0507U);
+    EXPECT_NE(face.reserved_1 & 0x4000'0000U, 0U);
+    EXPECT_EQ(sizeof(face), 48U);
+    // Shader quotient/remainder calculation preserves fractional position across the wrap.
+    int32_t relative = face.x / 32 - 0;
+    if (relative > 32'768) relative -= 65'536;
+    EXPECT_DOUBLE_EQ(static_cast<double>(relative) + static_cast<double>(face.x % 32) / 32.0, -0.25);
+}
+
+TEST(StoneIndirectDrawsTest, MetricMaterialTriangleRejectsInvalidCoordinatesAndOffsets)
+{
+    std::array<std::array<double, 3>, 3> vertices{{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}};
+    auto const make = [&] { return client::StoneFaceInstance::fromMetricTerrainMaterialTriangle(
+        vertices, {shared::Block::Sand, shared::Block::Snow, shared::Block::Ice}); };
+    vertices[1][0] = -1024.0;
+    vertices[2][0] = 1023.968'75;
+    EXPECT_NO_THROW(static_cast<void>(make()));
+    vertices[2][0] = 1024.0;
+    EXPECT_THROW(static_cast<void>(make()), std::invalid_argument);
+    vertices[2][0] = -1024.03125;
+    EXPECT_THROW(static_cast<void>(make()), std::invalid_argument);
+    vertices[2][0] = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(static_cast<void>(make()), std::invalid_argument);
+    vertices[2][0] = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(static_cast<void>(make()), std::invalid_argument);
+    vertices[2][0] = 67'108'864.0;
+    EXPECT_THROW(static_cast<void>(make()), std::invalid_argument);
+    vertices[2][0] = 0;
+    vertices[2][2] = -0.001;
+    EXPECT_THROW(static_cast<void>(make()), std::invalid_argument);
+    vertices[2][2] = 2048.001;
+    EXPECT_THROW(static_cast<void>(make()), std::invalid_argument);
+}
+
+TEST(StoneIndirectDrawsTest, ExplicitNormalPayloadPreservesOriginalMaterialLayout)
+{
+    client::StoneFaceInstance face;
+    EXPECT_EQ(sizeof(face), 48U);
+    EXPECT_EQ(alignof(client::StoneFaceInstance), 16U);
+    EXPECT_EQ(offsetof(client::StoneFaceInstance, material_id), 24U);
+    EXPECT_EQ(offsetof(client::StoneFaceInstance, reserved_1), 28U);
+    EXPECT_EQ(offsetof(client::StoneFaceInstance, terrain_normals), 32U);
+    EXPECT_EQ(face.terrain_normals, (std::array<uint32_t, 4>{}));
+    auto changed = face;
+    changed.terrain_normals = {0U, 0U, 0U, 1U};
+    EXPECT_NE(changed, face);
+    EXPECT_EQ(changed.direction, face.direction);
+    EXPECT_EQ(changed.material_id, face.material_id);
+    EXPECT_EQ(changed.reserved_1, face.reserved_1);
 }

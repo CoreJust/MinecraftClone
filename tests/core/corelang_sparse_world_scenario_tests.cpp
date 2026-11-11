@@ -87,7 +87,7 @@ TEST(CoreLangSparseWorldScenario, LowersEveryStableBlockId)
         .max_operations = 32U,
         .max_evidence = 8U,
     };
-    static constexpr std::array<shared::Block, 7> BLOCKS{
+    static constexpr std::array<shared::Block, 8> BLOCKS{
         shared::Block::Air,
         shared::Block::Stone,
         shared::Block::Grass,
@@ -95,6 +95,7 @@ TEST(CoreLangSparseWorldScenario, LowersEveryStableBlockId)
         shared::Block::Bedrock,
         shared::Block::Snow,
         shared::Block::Ice,
+        shared::Block::Sand,
     };
     static constexpr std::string_view SOURCE = R"(@version(0.1.5)
 @use minecraft
@@ -109,14 +110,15 @@ pub fn scenario() {
     expectBlockXYZ(0i64, 0i64, 4i64, 4u8)
     expectBlockXYZ(0i64, 0i64, 5i64, 5u8)
     expectBlockXYZ(0i64, 0i64, 6i64, 6u8)
+    expectBlockXYZ(0i64, 0i64, 7i64, 7u8)
 }
 )";
 
     auto const parsed = shared::parseScenarioSource("all-materials.core", SOURCE, SCENARIO_LIMITS);
 
     ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
-    ASSERT_EQ(parsed->operations().size(), 8U);
-    for (uint32_t index = 0U; index < 7U; ++index) {
+    ASSERT_EQ(parsed->operations().size(), 9U);
+    for (uint32_t index = 0U; index < 8U; ++index) {
         auto const* const block = std::get_if<shared::ScenarioExpectBlockOperation>(
             &parsed->operations()[index + 1U].data
         );
@@ -141,7 +143,7 @@ pub fn scenario() {
     profile("sparse-world-v1")
     seed(42u64)
     sparseWorldOptions(1u32, 1u64)
-    expectBlockXYZ(0i64, 0i64, 0i64, 7u8)
+    expectBlockXYZ(0i64, 0i64, 0i64, 8u8)
 }
 )";
 

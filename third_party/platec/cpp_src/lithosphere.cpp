@@ -786,10 +786,14 @@ void lithosphere::restart()
                     const uint32_t y_mod = _worldDimension.yMod(y);
                     const float h0 = hmap[_worldDimension.indexOf(x_mod, y_mod)];
                     const float h1 = this_map[j];
-                    const uint32_t a0 = amap[_worldDimension.indexOf(x_mod, y_mod)];
-                    const uint32_t a1 =  this_age[j];
-
-                    amap[_worldDimension.indexOf(x_mod, y_mod)] = (h0 *a0 +h1 *a1) /(h0 +h1);
+                    const uint32_t world_index = _worldDimension.indexOf(x_mod, y_mod);
+                    const float total_crust = h0 + h1;
+                    // Empty crust has no age and contributes no age weight.
+                    const uint32_t a0 = h0 != 0.0f ? amap[world_index] : 0U;
+                    const uint32_t a1 = h1 != 0.0f ? this_age[j] : 0U;
+                    amap[world_index] = total_crust != 0.0f
+                        ? static_cast<uint32_t>((h0 * a0 + h1 * a1) / total_crust)
+                        : 0U;
                     hmap[_worldDimension.indexOf(x_mod, y_mod)] += this_map[j];
                 }
             }

@@ -7,9 +7,7 @@ target_sources(mc
         TerrainLodRuntime.cpp
     Camera.cpp
     DepthFormat.cpp
-        GenerationMapPresentation.cpp
         UiPresentation.cpp
-        S2MapPresentation.cpp
         PlayerPreviewLod.cpp
         render/CanonicalTerrainField.cpp
         include/client/render/CanonicalTerrainField.hpp
@@ -20,7 +18,6 @@ target_sources(mc
         include/client/render/TerrainLodDrawIndex.hpp
         render/ShaderAssets.cpp
         render/StoneIndirectDraws.cpp
-        render/TextRenderer.cpp
         render/PresentationRenderer.cpp
         render/VulkanFrustum.cpp
 )

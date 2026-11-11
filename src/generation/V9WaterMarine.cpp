@@ -56,13 +56,12 @@ static std::expected<V9MarinePhase, V9MarineFailure> phaseEquilibrium(double mas
             }
             return l;
         };
-        auto residual = [&](double value) {
-            double l = liquid_at(value);
-            return (CI * mass + (CP - CI) * l) * gsw_t_freezing_poly(value, 0, 0) - LF * (mass - l) - energy;
+        auto residual = [&](double l, double freezing) {
+            return (CI * mass + (CP - CI) * l) * freezing - LF * (mass - l) - energy;
         };
         double low = sa, high = 90;
         double tolerance = 2e-6 + 2e-12 * std::max(std::abs(energy), LF * mass);
-        if (residual(high) > tolerance) {
+        if (residual(liquid_at(high), gsw_t_freezing_poly(high, 0, 0)) > tolerance) {
             return std::unexpected(
                 failure(V9MarineFailure::Kind::ChemistryDomain, "Energy requires brine above 90 g/kg."));
         }
@@ -70,7 +69,8 @@ static std::expected<V9MarinePhase, V9MarineFailure> phaseEquilibrium(double mas
         double guess_l = std::max(mass - guess_i, liquid_at(high));
         double guess = std::min(high, std::max(low, salinity(guess_l, salt)));
         for (iterations = 1; iterations <= 48; ++iterations) {
-            double r = residual(guess);
+            double l = liquid_at(guess), freezing = gsw_t_freezing_poly(guess, 0, 0);
+            double r = residual(l, freezing);
             if (std::abs(r) <= tolerance && iterations >= minimum_iterations) {
                 break;
             }
@@ -80,11 +80,11 @@ static std::expected<V9MarinePhase, V9MarineFailure> phaseEquilibrium(double mas
             if (r < 0) {
                 high = guess;
             }
-            double l = liquid_at(guess), dtf = 0;
+            double dtf = 0;
             gsw_t_freezing_first_derivatives_poly(guess, 0, 0, &dtf, nullptr);
             double dl = -1000 * salt / guess / guess;
             double derivative =
-                dl * ((CP - CI) * gsw_t_freezing_poly(guess, 0, 0) + LF) + (CI * mass + (CP - CI) * l) * dtf;
+                dl * ((CP - CI) * freezing + LF) + (CI * mass + (CP - CI) * l) * dtf;
             double next = guess - r / derivative;
             guess = next > low && next < high && std::isfinite(next) ? next : .5 * (low + high);
         }

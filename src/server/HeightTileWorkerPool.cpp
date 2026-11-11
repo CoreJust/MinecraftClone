@@ -77,7 +77,9 @@ public:
         if (cancellation.stop_requested()) {
             throw generation::GenerationCancelled{};
         }
-        bool const native_surface = terrain_world.atlas()->configuration.model_tag == generation::TerrainModelTag::V9;
+        auto const model = terrain_world.atlas()->configuration.model_tag;
+        bool const native_surface = model == generation::TerrainModelTag::V9
+            || model == generation::TerrainModelTag::V21 || model == generation::TerrainModelTag::V10;
         if (world_epoch == 0U || (!native_surface && leaf == nullptr)
             || (leaf != nullptr && (leaf->identity() != terrain_world.identity()
                 || leaf->key().extent != shared::TERRAIN_REGION_EXTENTS.back()))) {
@@ -219,7 +221,10 @@ bool matchesLeaf(
 ) noexcept
 {
     if (leaf == nullptr) {
-        return terrain_world.atlas()->configuration.model_tag == generation::TerrainModelTag::V9
+        auto const model = terrain_world.atlas()->configuration.model_tag;
+        bool const native_surface = model == generation::TerrainModelTag::V9
+            || model == generation::TerrainModelTag::V21 || model == generation::TerrainModelTag::V10;
+        return native_surface
             && job.terrain_identity == terrain_world.identity()
             && shared::WorldBounds::isValidChunk(job.coordinate);
     }

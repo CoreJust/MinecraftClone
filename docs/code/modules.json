@@ -76,7 +76,8 @@
         "tests/core/terrain_lod_tests.cpp",
         "src/client/*.mm",
         "src/client/TerrainLodSource.hpp",
-        "src/client/include/client/detail/**"
+        "src/client/include/client/detail/**",
+        "tests/core/v10_terrain_world_tests.cpp"
       ]
     },
     {
@@ -90,7 +91,8 @@
         "tests/fixtures/terrain_v2_revision_4/**",
         "tests/fixtures/terrain_v2_revision_5/**",
         "tests/fixtures/terrain_v2_revision_6/**",
-        "tests/fixtures/terrain_v9/**"
+        "tests/fixtures/terrain_v9/**",
+        "tests/fixtures/terrain_v10/**"
       ]
     },
     {

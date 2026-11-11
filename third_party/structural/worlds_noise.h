@@ -45,6 +45,7 @@ public:
 
 	double evaluateTerrain(double x, double y) const;
     double evaluateTerrainCached(double x, double y) const;
+    double evaluateTerrainUncached(double x, double y) const;
     double evaluateHierarchy(double x, double y, uint32_t level) const;
     std::array<uint64_t, 10> hierarchyEntries() const;
     uint64_t hierarchyBudgetUsed() const { return hierarchyBudget_.used(); }
@@ -142,6 +143,8 @@ private:
     std::shared_ptr<const Graph2Memo> memoGraph2(uint32_t x, uint32_t y) const;
     std::shared_ptr<const Graph3Memo> memoGraph3(uint32_t x, uint32_t y) const;
     std::shared_ptr<const PrimitiveMemo> memoPrimitives(uint32_t x, uint32_t y) const;
+    PrimitiveMemo buildPrimitiveMemo(uint32_t x, uint32_t y) const;
+    double evaluateTerrain(const Point2D& point, const PrimitiveMemo& entry) const;
     mutable BoundedCellMemo<Graph1Memo, 32> graph1Memo_{hierarchyBudget_};
     mutable BoundedCellMemo<Graph2Memo, 64> graph2Memo_{hierarchyBudget_};
     mutable BoundedCellMemo<Graph3Memo, 128> graph3Memo_{hierarchyBudget_};
@@ -949,6 +952,58 @@ std::shared_ptr<const typename Noise<I>::Graph3Memo> Noise<I>::memoGraph3(uint32
 }
 
 template <typename I>
+typename Noise<I>::PrimitiveMemo Noise<I>::buildPrimitiveMemo(uint32_t x, uint32_t y) const
+{
+    const auto graph = memoGraph3(x / 8, y / 8);
+    Cell highestCell = graph->cell;
+    Point2DArray<5> highestPoints = graph->points;
+    for (uint32_t step = 0; step < 3; ++step) {
+        const uint32_t divisor = 4 >> step;
+        const Cell next(static_cast<int32_t>(x / divisor), static_cast<int32_t>(y / divisor),
+            static_cast<int32_t>(8 << step));
+        auto nextPoints = GenerateNeighboringPoints<5>(next);
+        ReplaceNeighboringPoints(highestCell, highestPoints, next, nextPoints);
+        highestCell = next;
+        highestPoints = nextPoints;
+    }
+    PrimitiveMemo entry{};
+    entry.points = highestPoints;
+    entry.radius = 2.0 / highestCell.resolution;
+    for (uint32_t i = 0; i < highestPoints.size(); ++i) {
+        for (uint32_t j = 0; j < highestPoints[i].size(); ++j) {
+            Cell nearestCell;
+            Segment3D nearest;
+            const double distanceCenter = NearestSegmentAndCellProjectionZ(1, highestPoints[i][j],
+                nearestCell, nearest, graph->base->cell, graph->base->segments,
+                graph->parent->cell, graph->parent->segments, graph->cell, graph->segments);
+            const double u = pointLineSegmentProjection(highestPoints[i][j], ProjectionZ(nearest));
+            const double nearestHeight = lerp(nearest.a.z, nearest.b.z, u);
+            const double minimum = ControlFunctionMinimum();
+            const double maximum = ControlFunctionMaximum();
+            const double slope = EvaluateReliefSlope(highestPoints[i][j]);
+            const double amplitudeMax = m_noiseAmplitudeProportion * (maximum - minimum)
+                / graph->cell.resolution;
+            const double terrainSizeX = m_noiseBottomRight.x - m_noiseTopLeft.x;
+            const double terrainSizeY = m_noiseBottomRight.y - m_noiseTopLeft.y;
+            const double higherCellSize = std::max(terrainSizeX, terrainSizeY) / graph->cell.resolution;
+            const double highestCellSizeX = terrainSizeX / highestCell.resolution;
+            const double highestCellSizeY = terrainSizeY / highestCell.resolution;
+            const double amplitude = amplitudeMax * smootherstep(0.0, higherCellSize / 4.0, distanceCenter);
+            if (i == 0 && j == 0) {
+                entry.amplitude = amplitude;
+            } else if (amplitude != entry.amplitude
+                || std::signbit(amplitude) != std::signbit(entry.amplitude)) {
+                throw std::logic_error("frozen zero-amplitude primitive contract changed");
+            }
+            entry.wavelengthX = highestCellSizeX / 4.0;
+            entry.wavelengthY = highestCellSizeY / 4.0;
+            entry.preNoise[i][j] = nearestHeight + slope * distanceCenter;
+        }
+    }
+    return entry;
+}
+
+template <typename I>
 std::shared_ptr<const typename Noise<I>::PrimitiveMemo> Noise<I>::memoPrimitives(uint32_t x, uint32_t y) const
 {
     return primitiveMemo_.get(x, y, [&]() {
@@ -1003,6 +1058,27 @@ std::shared_ptr<const typename Noise<I>::PrimitiveMemo> Noise<I>::memoPrimitives
 }
 
 template <typename I>
+double Noise<I>::evaluateTerrain(const Point2D& point, const PrimitiveMemo& entry) const
+{
+    const double noise = entry.amplitude * Perlin(point.x / entry.wavelengthX, point.y / entry.wavelengthY)
+        + 0.5 * entry.amplitude * Perlin(point.x / (2.0 * entry.wavelengthX), point.y / (2.0 * entry.wavelengthY))
+        + 0.25 * entry.amplitude * Perlin(point.x / (4.0 * entry.wavelengthX), point.y / (4.0 * entry.wavelengthY));
+    double numerator = 0.0;
+    double denominator = 0.0;
+    for (uint32_t i = 0; i < entry.points.size(); ++i) {
+        for (uint32_t j = 0; j < entry.points[i].size(); ++j) {
+            const double distancePrimitive = dist(point, entry.points[i][j]);
+            const double alpha = WyvillGalinFunction(distancePrimitive, entry.radius, 3.0);
+            const double elevation = entry.preNoise[i][j] + noise;
+            numerator += alpha * elevation;
+            denominator += alpha;
+        }
+    }
+    assert(denominator != 0.0);
+    return numerator / denominator;
+}
+
+template <typename I>
 double Noise<I>::evaluateTerrainCached(double x, double y) const
 {
     if (m_resolution != 3 || m_primitivesResolutionSteps != 3 || m_noiseAmplitudeProportion != 0.0
@@ -1034,6 +1110,24 @@ double Noise<I>::evaluateTerrainCached(double x, double y) const
     }
     assert(denominator != 0.0);
     return numerator / denominator;
+}
+
+template <typename I>
+double Noise<I>::evaluateTerrainUncached(double x, double y) const
+{
+    if (m_resolution != 3 || m_primitivesResolutionSteps != 3 || m_noiseAmplitudeProportion != 0.0
+        || !m_displayFunction || m_displayPoints || m_displaySegments || m_displayGrid || m_displayDistance) {
+        throw std::invalid_argument("uncached evaluation supports only the frozen graph3 height field");
+    }
+    const auto canonical = [](const double value) {
+        const double result = std::fmod(value, 32.0);
+        return result < 0 ? result + 32.0 : result;
+    };
+    x = canonical(x);
+    y = canonical(y);
+    const Cell cell = GetCell(x, y, 32);
+    const PrimitiveMemo entry = buildPrimitiveMemo(static_cast<uint32_t>(cell.x), static_cast<uint32_t>(cell.y));
+    return evaluateTerrain(Point2D(x, y), entry);
 }
 
 template <typename I>

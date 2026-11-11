@@ -24,20 +24,67 @@ public:
     {
         m_bounds.clear();
         m_nodes.clear();
+        m_topology.clear();
         m_order.resize(groups.size());
         std::iota(m_order.begin(), m_order.end(), 0U);
         m_bounds.reserve(groups.size());
+        m_topology.reserve(groups.size());
         for (auto const& group : groups) {
-            m_bounds.push_back({
-                { static_cast<float>(group.origin_x), static_cast<float>(group.origin_y),
-                    static_cast<float>(group.minimum_z) },
-                { static_cast<float>(group.origin_x + group.extent),
-                    static_cast<float>(group.origin_y + group.extent), static_cast<float>(group.maximum_z) },
-            });
+            m_bounds.push_back(boundsFor(group));
+            m_topology.push_back({ group.origin_x, group.origin_y, group.extent });
         }
         if (!groups.empty()) {
             build(0U, static_cast<uint32_t>(groups.size()));
         }
+    }
+
+    // Refits exact bounds only when the ordered XY topology is unchanged.
+    [[nodiscard]] bool refit(std::span<TerrainLodDrawGroup const> groups)
+    {
+        if (m_bounds.size() != groups.size() || m_order.size() != groups.size()
+            || m_topology.size() != groups.size() || m_nodes.empty() != groups.empty()) {
+            return false;
+        }
+        for (uint32_t index = 0U; index < groups.size(); ++index) {
+            auto const& topology = m_topology[index];
+            auto const& group = groups[index];
+            if (topology.origin_x != group.origin_x || topology.origin_y != group.origin_y
+                || topology.extent != group.extent) {
+                return false;
+            }
+        }
+
+        for (uint32_t index = 0U; index < groups.size(); ++index) {
+            m_bounds[index] = boundsFor(groups[index]);
+        }
+        // build() emits each left subtree immediately after its parent, so reverse
+        // node order recomputes child bounds before their parents without repartitioning.
+        for (uint32_t remaining = static_cast<uint32_t>(m_nodes.size()); remaining > 0U; --remaining) {
+            uint32_t const ordinal = remaining - 1U;
+            Node& node = m_nodes[ordinal];
+            if (node.right == 0U) {
+                node.bounds = m_bounds[m_order[node.begin]];
+                node.minimum_center = node.maximum_center = glm::vec2(
+                    (node.bounds.minimum + node.bounds.maximum) * 0.5F);
+                for (uint32_t index = node.begin + 1U; index < node.end; ++index) {
+                    auto const& bounds = m_bounds[m_order[index]];
+                    node.bounds.minimum = glm::min(node.bounds.minimum, bounds.minimum);
+                    node.bounds.maximum = glm::max(node.bounds.maximum, bounds.maximum);
+                    glm::vec2 const center = glm::vec2((bounds.minimum + bounds.maximum) * 0.5F);
+                    node.minimum_center = glm::min(node.minimum_center, center);
+                    node.maximum_center = glm::max(node.maximum_center, center);
+                }
+                continue;
+            }
+
+            Node const& left = m_nodes[ordinal + 1U];
+            Node const& right = m_nodes[node.right];
+            node.bounds.minimum = glm::min(left.bounds.minimum, right.bounds.minimum);
+            node.bounds.maximum = glm::max(left.bounds.maximum, right.bounds.maximum);
+            node.minimum_center = glm::min(left.minimum_center, right.minimum_center);
+            node.maximum_center = glm::max(left.maximum_center, right.maximum_center);
+        }
+        return true;
     }
 
     [[nodiscard]]
@@ -62,6 +109,22 @@ private:
         uint32_t end = 0U;
         uint32_t right = 0U;
     };
+
+    struct GroupTopology final {
+        uint32_t origin_x;
+        uint32_t origin_y;
+        uint32_t extent;
+    };
+
+    static WrappedBounds boundsFor(TerrainLodDrawGroup const& group)
+    {
+        return {
+            { static_cast<float>(group.origin_x), static_cast<float>(group.origin_y),
+                static_cast<float>(group.minimum_z) },
+            { static_cast<float>(group.origin_x + group.extent),
+                static_cast<float>(group.origin_y + group.extent), static_cast<float>(group.maximum_z) },
+        };
+    }
 
     uint32_t build(uint32_t begin, uint32_t end)
     {
@@ -136,6 +199,7 @@ private:
     std::vector<WrappedBounds> m_bounds;
     std::vector<uint32_t> m_order;
     std::vector<Node> m_nodes;
+    std::vector<GroupTopology> m_topology;
 };
 
 } // namespace client

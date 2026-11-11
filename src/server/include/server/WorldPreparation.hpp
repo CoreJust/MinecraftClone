@@ -51,7 +51,7 @@ class WorldPreparationProgressJournal final
 public:
     static constexpr uint32_t MAX_STAGE_COUNT =
         static_cast<uint32_t>(generation::GenerationStage::Complete) + 1U;
-    static constexpr uint32_t MAX_MILESTONE_COUNT = 2U * MAX_STAGE_COUNT;
+    static constexpr uint32_t MAX_MILESTONE_COUNT = 3U * MAX_STAGE_COUNT;
 
     WorldPreparationProgressJournal();
 

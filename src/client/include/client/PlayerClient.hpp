@@ -51,6 +51,8 @@
 
 namespace client {
 
+struct TerrainLodScene;
+
 [[nodiscard]]
 bool playerClientContinuousLookEnabled(
     WorldLoadingState state,
@@ -90,7 +92,13 @@ struct PlayerClientCapturePlan final {
 
 [[nodiscard]] std::optional<PlayerClientCapturePreset> parsePlayerClientCapturePreset(std::string_view value) noexcept;
 [[nodiscard]] PlayerClientCapturePlan playerClientCapturePlan(PlayerClientCapturePreset preset) noexcept;
+[[nodiscard]] shared::PlayerPosition resolvePlayerClientCaptureTarget(
+    PlayerClientCapturePreset preset,
+    shared::TerrainWorld const& world
+);
 [[nodiscard]] std::array<PlayerClientCapturePreset, 4> playerClientCapturePresets() noexcept;
+[[nodiscard]] bool playerClientCaptureTerrainLodWorldCoverageComplete(TerrainLodScene const& scene);
+[[nodiscard]] bool playerClientCaptureTerrainLodCurrentColumnsComplete(TerrainLodScene const& scene);
 [[nodiscard]] uint16_t playerClientCaptureSpeedup(int64_t distance_subcells) noexcept;
 [[nodiscard]] std::chrono::milliseconds playerClientRendererFrameBudget(bool capture_enabled) noexcept;
 [[nodiscard]] std::chrono::steady_clock::time_point playerClientPresentationDeadline(
@@ -116,7 +124,6 @@ bool playerClientCaptureExtentMeetsMinimum(uint32_t width, uint32_t height) noex
 struct PlayerClientCaptureOptions final {
     std::filesystem::path image_path;
     PlayerClientCapturePreset preset = PlayerClientCapturePreset::CentralSpike;
-    uint32_t minimum_height_tile_meshes = 0U;
     std::chrono::milliseconds readiness_deadline{ std::chrono::minutes{ 15 } };
     std::chrono::milliseconds sweep_deadline{ std::chrono::minutes{ 5 } };
 };
@@ -138,6 +145,12 @@ struct PlayerClientBenchmarkOptions final {
 ) noexcept
 {
     return !benchmark || benchmark->enable_live_ui;
+}
+
+[[nodiscard]]
+inline constexpr bool playerClientStartsFullscreen(bool const capture_enabled, bool const benchmark_enabled) noexcept
+{
+    return !capture_enabled && !benchmark_enabled;
 }
 
 enum class PlayerClientDiagnosticFrameCaptureState : uint8_t {
@@ -446,22 +459,6 @@ private:
     uint32_t m_outstanding = 0U;
 };
 
-[[nodiscard]] bool playerClientCaptureCoverageComplete(
-    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& interest,
-    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& visible_meshes,
-    PreviewResidency const& residency,
-    uint32_t expected_tile_count,
-    size_t pending_preview_removals
-) noexcept;
-
-[[nodiscard]] bool playerClientCaptureCoverageComplete(
-    HeightTileInterestRegion const& interest,
-    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& visible_meshes,
-    PreviewResidency const& residency,
-    uint32_t expected_tile_count,
-    size_t pending_preview_removals
-);
-
 class PlayerPreviewMeshQueue final {
 public:
     struct StorageStats final {
@@ -579,7 +576,8 @@ public:
         shared::WorldMode mode = shared::WorldMode::Flat,
         std::optional<PlayerClientCaptureOptions> capture = std::nullopt,
         std::optional<PlayerClientBenchmarkOptions> benchmark = std::nullopt,
-        PreparedTerrainWorldProvider prepared_world_provider = {}
+        PreparedTerrainWorldProvider prepared_world_provider = {},
+        std::shared_ptr<shared::LocalPreparationSnapshots> local_preparation_snapshots = {}
     );
     ~PlayerClient();
     [[nodiscard]] RendererRuntimeInfo benchmarkRuntimeInfo() const;
@@ -603,7 +601,7 @@ public:
     ) const;
     [[nodiscard]] bool captureSucceeded() const noexcept { return m_capture_succeeded; }
     // Explicit constructor opt-in permits one ordinary loading or playing framebuffer readback.
-    [[nodiscard]] bool requestDiagnosticFrameCapture(std::filesystem::path image_path);
+    [[nodiscard]] bool requestDiagnosticFrameCapture(std::filesystem::path image_path, bool allow_sequence = false);
     [[nodiscard]] PlayerClientDiagnosticFrameCaptureState diagnosticFrameCaptureState() const noexcept
     {
         return m_diagnostic_frame_capture_state;
@@ -613,8 +611,12 @@ public:
         return m_diagnostic_frame_capture_error;
     }
 private:
+    static void onWindowCloseRequested(GLFWwindow* window) noexcept;
+
     friend struct PlayerClientTestAccess;
     friend struct PlayerClientFocusTestAccess;
+    using HudClimateQuery = std::function<shared::TerrainClimateSample(shared::TerrainWorld const&, double, double)>;
+    class HudClimateSampler;
     class PreviewMeshWorkerPool;
     class PreviewCacheRetirementReaper;
     class S2MinimapLodWorker;
@@ -670,10 +672,28 @@ private:
         double cursor_y,
         double scroll_delta = 0.0
     );
-    void setWorldMapOpen(bool open, double player_x, double player_y);
+    bool setWorldMapOpen(bool open, double player_x, double player_y);
+    [[nodiscard]] static std::optional<std::array<float, 4U>> minimapSourceCrop(
+        uint32_t origin_x,
+        uint32_t origin_y,
+        uint32_t extent,
+        double player_x,
+        double player_y
+    ) noexcept;
     void updatePlayingMapPresentation();
+    [[nodiscard]] static std::optional<shared::Block> footstepMaterialForGroundedDisplacement(
+        shared::SparseWorld const* world,
+        shared::WorldMode mode,
+        shared::Player const& player,
+        std::optional<shared::PlayerPosition> const& previous_position
+    ) noexcept;
     [[nodiscard]] std::optional<shared::VoxelRay> interactionEyeRay() const;
     [[nodiscard]] std::optional<shared::BlockTarget> resolveInteractionTarget() const;
+    [[nodiscard]] std::optional<float> hudColumnTemperature(
+        shared::Player const& player,
+        std::shared_ptr<shared::TerrainWorld const> world,
+        std::chrono::steady_clock::time_point now
+    );
     [[nodiscard]] shared::ServerBlockActionResultMessage const* currentBlockActionStatus() const noexcept;
     void updateBlockInteractionPresentation(std::chrono::steady_clock::time_point now);
     void updateBlockActionInput(
@@ -753,12 +773,10 @@ private:
     [[nodiscard]] uint64_t previewCacheRetirementOutstandingBytes() const noexcept;
     [[nodiscard]] uint64_t previewCacheRetirementFallbackCount() const noexcept;
     [[nodiscard]] uint64_t previewCacheRetirementSubmissionCount() const noexcept;
-    [[nodiscard]] bool hasCurrentPreviewMeshCoverage() const noexcept;
-    [[nodiscard]] bool hasExactCurrentPreviewMeshCoverage() const noexcept;
-    [[nodiscard]] bool hasExactCurrentRendererMeshCoverage() const;
+    [[nodiscard]] std::optional<shared::PlayerPosition> resolvedCaptureTarget() noexcept;
     [[nodiscard]] shared::Direction captureInput() noexcept;
-    [[nodiscard]] bool captureAtTarget(shared::Player const& player) const noexcept;
-    [[nodiscard]] bool captureSceneReady() const;
+    [[nodiscard]] bool captureAtTarget(shared::Player const& player) noexcept;
+    [[nodiscard]] bool captureSceneReady();
     void failCapture(std::string_view reason);
     Camera m_camera{
         { .position = { 9.0, 9.0, 13.0 } },
@@ -770,7 +788,15 @@ private:
     std::optional<PlayerClientBenchmarkOptions> m_benchmark;
     PlayerClientRenderDiagnostics m_render_diagnostics{};
     std::optional<PlayerClientBenchmarkPresentationInfo> m_benchmark_presentation;
+    std::optional<bool> m_benchmark_hud_temperature_available;
+    std::optional<WorldLoadingState> m_benchmark_hud_temperature_state;
+    std::unique_ptr<HudClimateSampler> m_hud_climate_sampler;
+    HudClimateQuery m_hud_climate_query;
     bool m_last_presentation_succeeded = false;
+#if defined(_WIN32)
+    bool m_startup_window_hidden = false;
+    std::optional<RendererFrameIdentity> m_startup_loading_frame;
+#endif
     core::platform::glfw::GlfwWindow m_window;
     InstalledShaderAssets m_shader_assets;
     void updateTerrainLod(std::chrono::steady_clock::time_point deadline, bool collect_diagnostics);
@@ -785,6 +811,8 @@ private:
     DebugHudToggleLatch m_acceleration_toggle_latch;
     DebugHudToggleLatch m_camera_perspective_latch;
     PlayerClientInputState m_input_actions;
+    PlayerClientExitConfirmationState m_exit_confirmation;
+    bool m_window_close_requested = false;
     std::optional<std::chrono::steady_clock::time_point> m_input_credit_stall_started;
     std::chrono::steady_clock::time_point m_input_credit_next_log{};
     uint32_t m_input_credit_log_count = 0U;
@@ -826,15 +854,18 @@ private:
     std::optional<RendererFrameIdentity> m_loading_prompt_frame;
     std::shared_ptr<generation::GenerationSnapshot const> m_loading_map_snapshot;
     GenerationMapAnimator m_generation_map_animator;
+    std::optional<shared::PlayerPosition> m_last_footstep_position;
+    std::chrono::steady_clock::time_point m_next_footstep_at{};
     std::shared_ptr<generation::GlobalAtlas const> m_loading_final_atlas;
     GenerationMapImageHandle m_loading_final_map_image;
+    std::shared_ptr<S2MapImage const> m_loading_final_native_map;
+    std::shared_ptr<S2MapImage const> m_prepared_s2_world_map;
     GenerationMapDisplayIceMaskHandle m_loading_final_ice_mask;
-    bool m_loading_final_map_attempted = false;
-    std::optional<uint64_t> m_loading_map_join_epoch;
+    std::shared_ptr<shared::TerrainLodArtifact const> m_loading_final_map_attempted_root;
+    std::optional<WorldLoadingIdentity> m_loading_map_identity;
     std::chrono::steady_clock::duration m_generation_map_visible_elapsed{};
     std::chrono::steady_clock::time_point m_generation_map_last_update{};
     bool m_generation_map_was_visible = false;
-    bool m_generation_map_presentation_complete = false;
     std::optional<uint64_t> m_client_memory_rss_bytes;
     std::chrono::steady_clock::time_point m_client_memory_rss_sampled_at{};
     bool m_acceleration_enabled = false;
@@ -887,12 +918,13 @@ private:
     shared::HeightTileSurfaceProjection m_preview_mesh_projection{};
     std::unique_ptr<PreviewMeshWorkerPool> m_preview_mesh_workers;
     std::unique_ptr<S2MinimapLodWorker> m_s2_minimap_lod_worker;
+    S2WorldMapRiverWorker m_s2_world_map_river_worker;
     S2WorldMapState m_s2_world_map_state{};
     std::vector<GuiVectorVertex> m_s2_map_vector_triangles;
     std::optional<std::array<double, 2U>> m_s2_world_map_drag_cursor;
     std::optional<shared::TerrainIdentity> m_s2_map_identity;
     uint64_t m_s2_map_join_epoch = 0U;
-    std::optional<S2MapImage> m_s2_world_map_image;
+    std::shared_ptr<S2MapImage const> m_s2_world_map_image;
     std::optional<S2MapImage> m_s2_minimap_image;
     std::shared_ptr<shared::TerrainLodArtifact const> m_s2_minimap_lod;
     std::array<float, 4U> m_s2_minimap_bounds{};
@@ -917,8 +949,15 @@ private:
     uint64_t m_capture_mesh_drain_micros = 0U;
     uint64_t m_capture_mesh_reprioritize_micros = 0U;
     std::optional<uint8_t> m_capture_last_capability_cycle_source;
-    HeightTileInterestRegion m_capture_interest_baseline;
-    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_capture_mesh_baseline;
+    std::optional<shared::TerrainSessionIdentity> m_capture_target_session;
+    std::shared_ptr<shared::TerrainWorld const> m_capture_target_world;
+    std::optional<PlayerClientCapturePreset> m_capture_target_preset;
+    std::optional<shared::PlayerPosition> m_capture_target;
+    std::shared_ptr<TerrainLodScene const> m_capture_lod_scene_evidence;
+    std::shared_ptr<TerrainLodScene const> m_capture_lod_scene_baseline;
+    std::optional<RendererFrameIdentity> m_capture_lod_scene_submission;
+    bool m_capture_lod_world_coverage_complete = false;
+    bool m_capture_lod_current_columns_complete = false;
     uint32_t m_capture_rotation_step = 0U;
     bool m_capture_rotation_started = false;
     bool m_capture_succeeded = false;
@@ -928,6 +967,7 @@ private:
     PlayerClientDiagnosticFrameCaptureState m_diagnostic_frame_capture_state =
         PlayerClientDiagnosticFrameCaptureState::NotRequested;
     bool m_diagnostic_frame_capture_requested = false;
+    bool m_diagnostic_frame_capture_sequence = false;
     DebugHudToggleLatch m_screenshot_capture_key_latch;
     bool m_screenshot_capture_pending = false;
     bool m_screenshot_capture_requested = false;

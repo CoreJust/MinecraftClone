@@ -61,6 +61,7 @@ HOST_ROW_IDS = {
 COMMON_INPUT_GLOBS = (
     "src/**",
     "tests/**",
+    "third_party/**",
     "testdata/**",
     "assets/**",
     "scenarios/**",

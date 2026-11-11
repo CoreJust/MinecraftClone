@@ -11,6 +11,66 @@
 #include <vector>
 
 TEST(StoneFaceCapacityTest,
+     PresentationResourceReuseRequiresCompatibleDeviceAndSwapchainConfiguration) {
+  static constexpr uint32_t WIDTH = 1'280U;
+  static constexpr uint32_t HEIGHT = 720U;
+  static constexpr uint64_t DEVICE_IDENTITY = 42U;
+  static constexpr uint64_t OTHER_DEVICE_IDENTITY = 43U;
+  static constexpr VkFormat COLOR_FORMAT = VK_FORMAT_B8G8R8A8_SRGB;
+  static constexpr VkFormat DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
+
+  client::detail::PresentationResourceCompatibility const original{
+      .presentation_info = {
+          .extent = {.width = WIDTH, .height = HEIGHT},
+          .format = COLOR_FORMAT,
+          .present_mode = VK_PRESENT_MODE_FIFO_KHR,
+          .physical_device = VK_NULL_HANDLE,
+          .api_version = VK_API_VERSION_1_2,
+          .validation_enabled = true,
+          .portability_enabled = false,
+          .mesh_shaders_enabled = false,
+          .transfer_source_enabled = true,
+          .srgb = true,
+          .surface_transform = {
+              .pre_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
+              .requires_client_orientation_compensation = false,
+          },
+          .multi_draw_indirect_enabled = true,
+          .draw_indirect_first_instance_enabled = true,
+          .presentation_history_enabled = false,
+      },
+      .device_identity = DEVICE_IDENTITY,
+      .depth_format = DEPTH_FORMAT,
+  };
+
+  EXPECT_TRUE(client::detail::canPreservePresentationResources(original, original));
+
+  client::detail::PresentationResourceCompatibility changed = original;
+  changed.device_identity = OTHER_DEVICE_IDENTITY;
+  EXPECT_FALSE(client::detail::canPreservePresentationResources(original, changed));
+
+  changed = original;
+  changed.presentation_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+  EXPECT_FALSE(client::detail::canPreservePresentationResources(original, changed));
+
+  changed = original;
+  changed.presentation_info.extent.width += 1U;
+  EXPECT_FALSE(client::detail::canPreservePresentationResources(original, changed));
+
+  changed = original;
+  changed.presentation_info.srgb = false;
+  EXPECT_FALSE(client::detail::canPreservePresentationResources(original, changed));
+
+  changed = original;
+  changed.presentation_info.surface_transform.pre_transform = VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR;
+  EXPECT_FALSE(client::detail::canPreservePresentationResources(original, changed));
+
+  changed = original;
+  changed.depth_format = VK_FORMAT_D16_UNORM;
+  EXPECT_FALSE(client::detail::canPreservePresentationResources(original, changed));
+}
+
+TEST(StoneFaceCapacityTest,
      DeferredGrowthRetainsTargetAndOldCapacityUntilRetry) {
   using Clock = client::detail::PendingStoneFaceGrowth::Clock;
   static constexpr uint32_t INITIAL_CAPACITY = 8U;

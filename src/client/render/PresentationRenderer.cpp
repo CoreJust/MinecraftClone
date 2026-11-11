@@ -233,6 +233,17 @@ private:
     std::chrono::steady_clock::time_point m_started_at;
 };
 
+void bindGraphicsPipeline(
+    VkCommandBuffer const command,
+    VkPipeline const pipeline,
+    std::chrono::nanoseconds* const duration)
+{
+    DiagnosticDurationScope timer;
+    timer.start(duration);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    timer.finish();
+}
+
 template <typename Value>
 [[nodiscard]] Value& requiredValue(std::optional<Value>& value) noexcept
 {
@@ -397,7 +408,7 @@ std::vector<StoneFaceInstance> stoneFaceInstances(shared::HeightTileSurfaceMesh 
     source_instances.reserve(mesh.quads.size());
     for (shared::HeightTileSurfaceQuad const& quad : mesh.quads) {
         StoneFaceInstance const instance = StoneFaceInstance::fromHeightTileQuad(quad);
-        ++next_instance[instance.direction];
+        ++next_instance[instance.faceDirection()];
         source_instances.push_back(instance);
     }
     uint32_t first_instance = 0U;
@@ -408,7 +419,7 @@ std::vector<StoneFaceInstance> stoneFaceInstances(shared::HeightTileSurfaceMesh 
     }
     instances.resize(mesh.quads.size());
     for (StoneFaceInstance const& instance : source_instances) {
-        instances[next_instance[instance.direction]++] = instance;
+        instances[next_instance[instance.faceDirection()]++] = instance;
     }
     return instances;
 }
@@ -449,13 +460,37 @@ public:
         }
     }
 
+    StoneFaceBuffer(StoneFaceBuffer const&) = delete;
+
+    StoneFaceBuffer(StoneFaceBuffer&& other) noexcept
+        : m_device(std::exchange(other.m_device, VK_NULL_HANDLE))
+        , m_physical_device(std::exchange(other.m_physical_device, VK_NULL_HANDLE))
+        , m_buffer(std::exchange(other.m_buffer, VK_NULL_HANDLE))
+        , m_memory(std::exchange(other.m_memory, VK_NULL_HANDLE))
+        , m_mapped(std::exchange(other.m_mapped, nullptr))
+        , m_capacity(std::exchange(other.m_capacity, 0U))
+    { }
+
     ~StoneFaceBuffer()
     {
         reset();
     }
 
-    StoneFaceBuffer(StoneFaceBuffer const&) = delete;
     StoneFaceBuffer& operator=(StoneFaceBuffer const&) = delete;
+
+    StoneFaceBuffer& operator=(StoneFaceBuffer&& other) noexcept
+    {
+        if (this != &other) {
+            reset();
+            m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
+            m_physical_device = std::exchange(other.m_physical_device, VK_NULL_HANDLE);
+            m_buffer = std::exchange(other.m_buffer, VK_NULL_HANDLE);
+            m_memory = std::exchange(other.m_memory, VK_NULL_HANDLE);
+            m_mapped = std::exchange(other.m_mapped, nullptr);
+            m_capacity = std::exchange(other.m_capacity, 0U);
+        }
+        return *this;
+    }
 
     void upload(uint32_t const first_instance, std::span<StoneFaceInstance const> const instances)
     {
@@ -547,6 +582,12 @@ std::optional<std::string> environmentVariable(char const* const name)
     }
     return std::string{ value };
 #endif
+}
+
+bool streamingTraceEnabled()
+{
+    static bool const enabled = environmentVariable("MC_DIAGNOSTIC_STREAMING_TRACE") == "1";
+    return enabled;
 }
 
 [[nodiscard]]
@@ -998,24 +1039,30 @@ public:
         static_assert(sizeof(Header) == 16U);
         uint32_t const configured_resolution = m_atlas ? m_atlas->configuration.resolution : 1U;
         bool const v9 = m_atlas && m_atlas->configuration.model_tag == generation::TerrainModelTag::V9;
-        constexpr uint32_t V9_SOURCE_RESOLUTION = 256U;
-        uint32_t const resolution = v9 ? V9_SOURCE_RESOLUTION : configured_resolution;
+        bool const v21 = m_atlas && m_atlas->configuration.model_tag == generation::TerrainModelTag::V21;
+        bool const v10 = m_atlas && m_atlas->configuration.model_tag == generation::TerrainModelTag::V10;
+        constexpr uint32_t NATIVE_SOURCE_RESOLUTION = 256U;
+        uint32_t const resolution = (v9 || v21 || v10) ? NATIVE_SOURCE_RESOLUTION : configured_resolution;
         uint64_t const count = static_cast<uint64_t>(resolution) * resolution;
         if (m_atlas && ((configured_resolution != 256U && configured_resolution != 512U)
-            || (!v9 && (m_atlas->temperature.size() != count || m_atlas->elevation.size() != count))
-            || !std::isfinite(v9 ? 0.0F : m_atlas->sea_level))) {
+            || (!(v9 || v21 || v10)
+                && (m_atlas->temperature.size() != count || m_atlas->elevation.size() != count))
+            || !std::isfinite((v9 || v21 || v10) ? 0.0F : m_atlas->sea_level))) {
             throw std::invalid_argument("Canonical terrain shading atlas is incomplete");
         }
         std::vector<std::byte> data(sizeof(Header) + count * sizeof(render::CanonicalTerrainFieldValue));
-        Header const header{resolution, static_cast<uint32_t>(count), m_atlas ? (v9 ? 0.0F : m_atlas->sea_level) : 0.0F,
-            m_atlas ? (v9 ? 2U : 1U) : 0U};
+        Header const header{resolution, static_cast<uint32_t>(count),
+            m_atlas ? ((v9 || v21 || v10) ? 0.0F : m_atlas->sea_level) : 0.0F,
+            m_atlas ? ((v9 || v21 || v10) ? 2U : 1U) : 0U};
         std::memcpy(data.data(), &header, sizeof(header));
         if (m_atlas) {
-            if (v9) {
-                std::vector<render::CanonicalTerrainFieldValue> const values =
-                    render::buildV9CanonicalTerrainFieldValues(*m_atlas);
+            if (v9 || v21 || v10) {
+                std::vector<render::CanonicalTerrainFieldValue> const values = v9
+                    ? render::buildV9CanonicalTerrainFieldValues(*m_atlas)
+                    : (v10 ? render::buildV10CanonicalTerrainFieldValues(*m_atlas)
+                        : render::buildV21CanonicalTerrainFieldValues(*m_atlas));
                 if (values.size() != count) {
-                    throw std::invalid_argument("V9 canonical terrain fields have an unexpected source count");
+                    throw std::invalid_argument("Native canonical terrain fields have an unexpected source count");
                 }
                 for (size_t i = 0U; i < count; ++i) {
                     render::CanonicalTerrainFieldValue const& value = values[i];
@@ -1199,6 +1246,19 @@ public:
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.dstSet = m_set;
         write.dstBinding = 2U;
+        write.descriptorCount = 1U;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write.pBufferInfo = &info;
+        vkUpdateDescriptorSets(m_device, 1U, &write, 0U, nullptr);
+    }
+
+    void setFaceBuffer(StoneFaceBuffer const& buffer)
+    {
+        VkDescriptorBufferInfo const info = buffer.descriptor();
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = m_set;
+        write.dstBinding = 0U;
         write.descriptorCount = 1U;
         write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         write.pBufferInfo = &info;
@@ -1908,11 +1968,12 @@ void recordPlayers(
     VkPipelineLayout const player_layout,
     glm::mat4 const& projection_view,
     std::span<PlayerRenderData const> const players,
-    std::optional<glm::dvec3> const curved_camera = std::nullopt
+    std::optional<glm::dvec3> const curved_camera = std::nullopt,
+    std::chrono::nanoseconds* const pipeline_bind_duration = nullptr
 )
 {
     auto const draw = [&](VkPipeline const pipeline, bool const overlay) {
-        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        bindGraphicsPipeline(command, pipeline, pipeline_bind_duration);
         for (PlayerRenderData const& player : players) {
             if (player.render_on_top != overlay) {
                 continue;
@@ -1959,7 +2020,8 @@ void recordPlayers(
 void recordBlockEffects(
     VkCommandBuffer command, VkPipeline pipeline, VkPipelineLayout layout,
     Camera const& camera, VkExtent2D extent, bool curved_world,
-    std::span<BlockEffectBox const> boxes
+    std::span<BlockEffectBox const> boxes,
+    std::chrono::nanoseconds* const pipeline_bind_duration = nullptr
 )
 {
     if (boxes.empty()) {
@@ -1969,23 +2031,28 @@ void recordBlockEffects(
     if (!projection) {
         return;
     }
-    glm::mat4 const projection_view = curved_world ? *projection * glm::lookAtRH(
-        glm::vec3{0.0F}, glm::vec3{camera.forward()}, glm::vec3{camera.up()}
-    ) : *projection * camera.viewMatrix();
-    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    CameraPose const camera_pose = camera.pose();
+    // Use the same integer origin and relative view as the terrain. Absolute float
+    // coordinates lose the small separation between cracks and the block surface.
+    glm::dvec3 const world_origin = glm::floor(camera_pose.position);
+    glm::vec3 const relative_eye{camera_pose.position - world_origin};
+    glm::mat4 const projection_view = *projection * glm::lookAtRH(
+        relative_eye, relative_eye + glm::vec3{camera.forward()}, glm::vec3{camera.up()});
+    bindGraphicsPipeline(command, pipeline, pipeline_bind_duration);
     for (BlockEffectBox const& box : boxes) {
-        glm::vec3 origin{box.origin};
-        if (curved_world) {
-            origin = boundsNearestToCamera(origin, origin, camera.pose().position).minimum
-                - glm::vec3{camera.pose().position};
-        }
+        glm::dvec3 const relative_origin = detail::cameraRelativeBlockEffectOrigin(box.origin, world_origin);
+        glm::vec3 const origin{relative_origin};
+        // The 24-bit cell seed rides in the unused fourth origin component; push size stays 128 bytes.
+        float const crack_seed = box.kind == BlockEffectBox::Kind::ProceduralCrack
+            ? static_cast<float>(box.crack_seed) / 16'777'215.0F
+            : 0.0F;
         BoxPushConstants const push{
             .projection_view = projection_view,
-            .origin = {origin.x, origin.y, origin.z, 0.0F},
+            .origin = {origin.x, origin.y, origin.z, crack_seed},
             .extent = {box.extent.x, box.extent.y, box.extent.z, 0.0F},
             .color = {box.color.r, box.color.g, box.color.b, box.color.a},
-            .curvature = {0.0F, 0.0F, curved_world ? 1.0F : 0.0F,
-                curved_world ? worldVisibilityRadius(camera.pose().position.z) : MIN_WORLD_VISIBILITY_RADIUS},
+            .curvature = {relative_eye.x, relative_eye.y, curved_world ? 1.0F : 0.0F,
+                curved_world ? worldVisibilityRadius(camera_pose.position.z) : MIN_WORLD_VISIBILITY_RADIUS},
         };
         vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(push), &push);
         vkCmdDraw(command, BOX_VERTEX_COUNT, 1U, 0U, 0U);
@@ -2001,7 +2068,8 @@ void recordFlat3dScene(
     VkPipelineLayout const player_layout,
     Camera const& camera,
     std::span<PlayerRenderData const> const players,
-    VkExtent2D const extent
+    VkExtent2D const extent,
+    std::chrono::nanoseconds* const pipeline_bind_duration = nullptr
 )
 {
     std::optional<glm::mat4> const projection = camera.projectionMatrix(extent.width, extent.height);
@@ -2015,7 +2083,7 @@ void recordFlat3dScene(
         .extent = { 32.0F, 32.0F, 1.0F, 1.0F },
         .color = { 0.2F, 0.22F, 0.26F, 1.0F },
     };
-    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, player_pipeline);
+    bindGraphicsPipeline(command, player_pipeline, pipeline_bind_duration);
     vkCmdPushConstants(
         command,
         player_layout,
@@ -2027,7 +2095,7 @@ void recordFlat3dScene(
     vkCmdDraw(command, BOX_VERTEX_COUNT, 1U, 0U, 0U);
 
     GridPushConstants const grid_push{ .projection_view = projection_view };
-    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, grid_pipeline);
+    bindGraphicsPipeline(command, grid_pipeline, pipeline_bind_duration);
     vkCmdPushConstants(
         command,
         grid_layout,
@@ -2038,7 +2106,10 @@ void recordFlat3dScene(
     );
     vkCmdDraw(command, GRID_VERTEX_COUNT, GRID_WORKGROUPS_X * GRID_WORKGROUPS_Y, 0U, 0U);
 
-    recordPlayers(command, player_pipeline, player_overlay_pipeline, player_layout, projection_view, players);
+    recordPlayers(
+        command, player_pipeline, player_overlay_pipeline, player_layout, projection_view, players,
+        std::nullopt, pipeline_bind_duration
+    );
 }
 
 [[nodiscard]]
@@ -2063,7 +2134,8 @@ uint32_t recordStoneScene(
     StoneIndirectDraws::QuadMode const quad_mode = StoneIndirectDraws::QuadMode::SixVertex,
     VkQueryPool const occlusion_query_pool = VK_NULL_HANDLE,
     bool const curved_world = false,
-    float const block_sea_level = 0.0F
+    float const block_sea_level = 0.0F,
+    std::chrono::nanoseconds* const pipeline_bind_duration = nullptr
 )
 {
     std::optional<glm::mat4> const projection = sceneProjection(camera, extent, curved_world);
@@ -2144,7 +2216,7 @@ uint32_t recordStoneScene(
     };
     uint32_t draw_count = 0U;
     if (!draw_ranges.empty()) {
-        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        bindGraphicsPipeline(command, pipeline, pipeline_bind_duration);
         vkCmdBindDescriptorSets(
             command,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -2171,7 +2243,7 @@ uint32_t recordStoneScene(
         }
     }
     if (!solid_draw_ranges.empty()) {
-        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, solid_pipeline);
+        bindGraphicsPipeline(command, solid_pipeline, pipeline_bind_duration);
         vkCmdBindDescriptorSets(
             command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0U, 1U, &descriptor_set, 0U, nullptr
         );
@@ -2206,7 +2278,8 @@ uint32_t recordStoneScene(
             glm::vec3(0.0F), glm::vec3(camera.forward()), glm::vec3(camera.up())
         ) : *projection * camera.viewMatrix(),
         players,
-        curved_world ? std::optional<glm::dvec3>{ camera_pose.position } : std::nullopt
+        curved_world ? std::optional<glm::dvec3>{ camera_pose.position } : std::nullopt,
+        pipeline_bind_duration
     );
     return draw_count;
 }
@@ -2244,7 +2317,8 @@ void recordText(
     uint32_t& draw_count,
     glm::vec4 const curvature_camera = {},
     VkDescriptorSet const scene_descriptor = VK_NULL_HANDLE,
-    bool const encoded_scene = false
+    bool const encoded_scene = false,
+    std::chrono::nanoseconds* const pipeline_bind_duration = nullptr
 )
 {
     size_t const count = batch.glyphs.size();
@@ -2254,7 +2328,7 @@ void recordText(
     if (count > MAXIMUM_TEXT_GLYPH_COUNT) {
         throw std::invalid_argument("text batch exceeds its bounded GPU buffer");
     }
-    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    bindGraphicsPipeline(command, pipeline, pipeline_bind_duration);
     vkCmdBindDescriptorSets(
         command,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -2449,10 +2523,14 @@ public:
             0U, 0U, nullptr, 1U, &barrier, 0U, nullptr);
     }
 
-    void draw(VkCommandBuffer const command, VkExtent2D const extent, uint32_t const count) const
+    void draw(
+        VkCommandBuffer const command,
+        VkExtent2D const extent,
+        uint32_t const count,
+        std::chrono::nanoseconds* const pipeline_bind_duration = nullptr) const
     {
         if (count == 0U) { return; }
-        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, requiredValue(m_pipeline).handle());
+        bindGraphicsPipeline(command, requiredValue(m_pipeline).handle(), pipeline_bind_duration);
         VkDescriptorSet const descriptor = m_descriptors.set();
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout, 0U, 1U, &descriptor, 0U, nullptr);
         std::array<float, 2> const resolution{ static_cast<float>(extent.width), static_cast<float>(extent.height) };
@@ -2715,6 +2793,11 @@ struct VulkanRenderer::Impl final {
         VkImageLayout recorded_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     };
 
+    struct StoneFaceGrowthRecreationState final {
+        Impl& renderer;
+        detail::PresentationResourceCompatibility previous_resources;
+    };
+
     struct SceneTarget final {
         std::unique_ptr<MapImageTexture> texture;
         std::unique_ptr<MapImageTexture> linear_overlay;
@@ -2833,13 +2916,20 @@ struct VulkanRenderer::Impl final {
         m_cpu_indirect_prepare_duration = std::chrono::nanoseconds::zero();
         m_cpu_stone_scene_record_duration = std::chrono::nanoseconds::zero();
         m_cpu_command_record_residual_duration = std::chrono::nanoseconds::zero();
+        m_cpu_presentation_prepare_duration = std::chrono::nanoseconds::zero();
+        m_cpu_pipeline_bind_duration = std::chrono::nanoseconds::zero();
+        m_cpu_context_complete_call_duration = std::chrono::nanoseconds::zero();
+        m_cpu_stone_face_growth_duration = std::chrono::nanoseconds::zero();
         m_cpu_complete_present_wait_duration = std::chrono::nanoseconds::zero();
         m_cpu_frame_duration = std::chrono::nanoseconds::zero();
         bool const presented = m_pending_stone_face_growth.render(
             requiredValue(m_stone_face_buffer).capacity(),
             deadline,
             [this](uint32_t const target_capacity, std::chrono::steady_clock::time_point const frame_deadline) {
+                DiagnosticDurationScope growth_timer;
+                growth_timer.start(m_diagnostic_presentation_stages ? &m_cpu_stone_face_growth_duration : nullptr);
                 static_cast<void>(growStoneFaceCapacity(target_capacity, frame_deadline));
+                growth_timer.finish();
                 return requiredValue(m_stone_face_buffer).capacity();
             },
             std::chrono::steady_clock::now(),
@@ -2860,6 +2950,10 @@ struct VulkanRenderer::Impl final {
         std::chrono::steady_clock::time_point const deadline
     )
     {
+        DiagnosticDurationScope presentation_prepare_timer;
+        presentation_prepare_timer.start(
+            m_diagnostic_presentation_stages ? &m_cpu_presentation_prepare_duration : nullptr
+        );
         pollFrameCapture(remaining(deadline));
         if (m_capture_requested && m_capture_readback_eligible
             && m_submitted_frame_count > m_capture_requested_after_submission) {
@@ -2911,6 +3005,7 @@ struct VulkanRenderer::Impl final {
             remaining_text_capacity -= batch.glyphs.size();
         }
 
+        presentation_prepare_timer.finish();
         std::chrono::steady_clock::time_point const acquire_started_at = std::chrono::steady_clock::now();
         std::optional<PresentationContext::Frame> frame;
         std::chrono::nanoseconds const acquire_deadline = remaining(deadline);
@@ -2994,7 +3089,12 @@ struct VulkanRenderer::Impl final {
         );
         std::chrono::steady_clock::time_point const complete_present_started_at =
             std::chrono::steady_clock::now();
+        DiagnosticDurationScope context_complete_timer;
+        context_complete_timer.start(
+            m_diagnostic_presentation_stages ? &m_cpu_context_complete_call_duration : nullptr
+        );
         m_context->complete(*frame);
+        context_complete_timer.finish();
         requiredValue(m_stone_texture_buffer).markUploaded();
         m_capture_readback_eligible = !m_occlusion_oracle_frame;
         m_capture_readback_slot = frame->slotIndex();
@@ -3013,6 +3113,14 @@ struct VulkanRenderer::Impl final {
                 frame->slotIndex(),
                 frame->swapchainGeneration()
             );
+        }
+        if (streamingTraceEnabled()) {
+            auto const progress = m_frame_progress_tracker.progress();
+            CORE_INFO("stream_trace event=frame ns={} scene={} submitted={} completed={} generation={}",
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(),
+                reinterpret_cast<uintptr_t>(m_terrain_lod_scene.get()),
+                progress.submitted ? progress.submitted->sequence : 0U,
+                progress.completed ? progress.completed->sequence : 0U, frame->swapchainGeneration());
         }
         m_successful_presentation_id = frame->presentationId();
         m_successful_presentation_swapchain_generation = frame->swapchainGeneration();
@@ -3149,9 +3257,10 @@ struct VulkanRenderer::Impl final {
         m_world_text.clear();
     }
 
-    void setBlockInteractionTarget(std::optional<shared::BlockTarget> target, float server_progress) noexcept
+    void setBlockInteractionTarget(std::optional<shared::BlockTarget> target, float server_progress,
+        BlockInteractionEffects::Clock::time_point now) noexcept
     {
-        m_block_effects.setTarget(target, server_progress);
+        m_block_effects.setTarget(target, server_progress, now);
     }
 
     bool addAcceptedBlockBreak(BlockBreakEventIdentity identity, shared::WorldCoordinate cell,
@@ -3228,10 +3337,10 @@ struct VulkanRenderer::Impl final {
         TerrainLodRendererDiagnostics* const diagnostics
     )
     {
-        if (!scene || scene->faces.empty()) {
+        if (!scene || terrainLodSceneFaceCount(*scene) == 0U) {
             return false;
         }
-        if (scene->faces.size() > MAXIMUM_RENDERED_STONE_FACE_COUNT) {
+        if (terrainLodSceneFaceCount(*scene) > MAXIMUM_RENDERED_STONE_FACE_COUNT) {
             throw std::invalid_argument("terrain LOD scene exceeds the renderer face capacity");
         }
         if (scene == m_terrain_lod_scene) {
@@ -3250,7 +3359,7 @@ struct VulkanRenderer::Impl final {
         return uploadPendingTerrainLodScene(deadline, diagnostics);
     }
 
-    [[nodiscard]] bool replaceTerrainLodGroups(
+    [[nodiscard]] std::shared_ptr<TerrainLodScene const> replaceTerrainLodGroups(
         std::shared_ptr<TerrainLodScene const> patch,
         std::chrono::steady_clock::time_point const deadline,
         TerrainLodRendererDiagnostics* const diagnostics
@@ -3259,23 +3368,41 @@ struct VulkanRenderer::Impl final {
         if (!patch || !m_terrain_lod_scene || patch->identity != m_terrain_lod_scene->identity
             || patch->session_join_epoch != m_terrain_lod_scene->session_join_epoch
             || patch->coverage_epoch != m_terrain_lod_scene->coverage_epoch) {
-            return false;
+            return {};
         }
         if (patch != m_pending_terrain_lod_patch || m_terrain_lod_patch_base != m_terrain_lod_scene) {
-            auto plan = detail::terrainLodReplacementPlan(*m_terrain_lod_scene, m_terrain_lod_ranges, *patch);
-            if (plan.scene->faces.size() > MAXIMUM_RENDERED_STONE_FACE_COUNT) {
+            discardPendingTerrainLodScene();
+            m_pending_terrain_lod_patch = patch;
+            m_terrain_lod_patch_base = m_terrain_lod_scene;
+        }
+        if (!m_pending_terrain_lod_scene) {
+            DiagnosticDurationScope plan_timer;
+            plan_timer.start(diagnostics != nullptr ? &diagnostics->plan_duration : nullptr);
+            auto plan = m_terrain_lod_replacement_planner.poll(
+                m_terrain_lod_scene, m_terrain_lod_ranges, m_pending_terrain_lod_patch);
+            plan_timer.finish();
+            if (!plan) {
+                return {};
+            }
+            if (m_pending_terrain_lod_patch != patch || m_terrain_lod_patch_base != m_terrain_lod_scene
+                || patch->identity != m_terrain_lod_scene->identity
+                || patch->session_join_epoch != m_terrain_lod_scene->session_join_epoch
+                || patch->coverage_epoch != m_terrain_lod_scene->coverage_epoch) {
+                return {};
+            }
+            if (terrainLodSceneFaceCount(*plan->scene) > MAXIMUM_RENDERED_STONE_FACE_COUNT) {
                 throw std::invalid_argument("terrain LOD replacement exceeds renderer face capacity");
             }
-            discardPendingTerrainLodScene();
-            m_pending_terrain_lod_patch = std::move(patch);
-            m_terrain_lod_patch_base = m_terrain_lod_scene;
             m_pending_terrain_field = m_active_terrain_field;
-            m_pending_terrain_lod_scene = std::move(plan.scene);
-            m_pending_terrain_lod_ranges = std::move(plan.ranges);
-            m_pending_terrain_lod_reusable = std::move(plan.reusable);
-            m_pending_terrain_lod_uploaded = std::move(plan.uploaded);
+            m_pending_terrain_lod_scene = std::move(plan->scene);
+            m_pending_terrain_lod_ranges = std::move(plan->ranges);
+            m_pending_terrain_lod_reusable = std::move(plan->reusable);
+            m_pending_terrain_lod_uploaded = std::move(plan->uploaded);
         }
-        return uploadPendingTerrainLodScene(deadline, diagnostics);
+        if (!uploadPendingTerrainLodScene(deadline, diagnostics)) {
+            return {};
+        }
+        return m_terrain_lod_scene;
     }
 
     [[nodiscard]] bool uploadPendingTerrainLodScene(
@@ -3283,18 +3410,38 @@ struct VulkanRenderer::Impl final {
         TerrainLodRendererDiagnostics* const diagnostics = nullptr
     )
     {
+        // Earlier frame work and scene planning may consume the caller's budget.
+        // Reserve a bounded upload slice so repeated expired frames still progress.
+        static constexpr auto UPLOAD_RESERVE = std::chrono::milliseconds{ 1 };
+        auto const upload_deadline = std::max(deadline, std::chrono::steady_clock::now() + UPLOAD_RESERVE);
+        static bool const trace = streamingTraceEnabled();
+        if (trace) {
+            CORE_INFO("stream_trace event=upload ns={} scene={} center_x={} center_y={} "
+                "cursor={} groups={} cursor_uploaded={} cursor_required={}",
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(),
+                reinterpret_cast<uintptr_t>(m_pending_terrain_lod_scene.get()), m_pending_terrain_lod_scene->center_x,
+                m_pending_terrain_lod_scene->center_y, m_pending_terrain_lod_cursor, m_pending_terrain_lod_ranges.size(),
+                m_pending_terrain_lod_cursor < m_pending_terrain_lod_uploaded.size()
+                    ? m_pending_terrain_lod_uploaded[m_pending_terrain_lod_cursor] : 0U,
+                m_pending_terrain_lod_cursor < m_pending_terrain_lod_scene->groups.size()
+                    ? m_pending_terrain_lod_scene->groups[m_pending_terrain_lod_cursor].range.instance_count : 0U);
+        }
         static constexpr uint32_t UPLOAD_FACE_BUDGET = 32'768U;
         uint32_t remaining_budget = UPLOAD_FACE_BUDGET;
         DiagnosticDurationScope buffer_update_timer;
         buffer_update_timer.start(
             diagnostics != nullptr ? &diagnostics->buffer_update_duration : nullptr
         );
-        for (uint32_t index = 0U; index < m_pending_terrain_lod_ranges.size(); ++index) {
-            auto const& group = m_pending_terrain_lod_scene->groups[index];
-            if (m_pending_terrain_lod_uploaded[index] == group.range.instance_count) {
-                continue;
+        while (true) {
+            detail::advanceTerrainLodUploadCursor(
+                *m_pending_terrain_lod_scene, m_pending_terrain_lod_uploaded, m_pending_terrain_lod_cursor
+            );
+            if (m_pending_terrain_lod_cursor == m_pending_terrain_lod_ranges.size()) {
+                break;
             }
-            if (remaining_budget == 0U || std::chrono::steady_clock::now() >= deadline) {
+            size_t const index = m_pending_terrain_lod_cursor;
+            auto const& group = m_pending_terrain_lod_scene->groups[index];
+            if (remaining_budget == 0U || std::chrono::steady_clock::now() >= upload_deadline) {
                 return false;
             }
             auto& range = m_pending_terrain_lod_ranges[index];
@@ -3303,8 +3450,8 @@ struct VulkanRenderer::Impl final {
             }
             uint32_t const required_capacity = range.first_instance + range.instance_count;
             recordStoneFaceCapacityRequest(required_capacity);
-            if (!tryEnsureStoneFaceCapacity(required_capacity, deadline)
-                || std::chrono::steady_clock::now() >= deadline) {
+            if (!tryEnsureStoneFaceCapacity(required_capacity, upload_deadline)
+                || std::chrono::steady_clock::now() >= upload_deadline) {
                 return false;
             }
             uint32_t const count = std::min(
@@ -3350,6 +3497,12 @@ struct VulkanRenderer::Impl final {
         m_pending_terrain_lod_reusable = std::move(plan->reusable);
         m_pending_terrain_lod_ranges = std::move(plan->ranges);
         m_pending_terrain_lod_uploaded = std::move(plan->uploaded);
+        if (streamingTraceEnabled()) {
+            CORE_INFO("stream_trace event=plan_ready ns={} scene={} center_x={} center_y={} groups={}",
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(),
+                reinterpret_cast<uintptr_t>(m_pending_terrain_lod_scene.get()), m_pending_terrain_lod_scene->center_x,
+                m_pending_terrain_lod_scene->center_y, m_pending_terrain_lod_ranges.size());
+        }
         return true;
     }
 
@@ -3388,6 +3541,7 @@ struct VulkanRenderer::Impl final {
     void publishPendingTerrainLodScene(TerrainLodRendererDiagnostics* const diagnostics)
     {
         m_terrain_lod_upload_planner.invalidate();
+        m_terrain_lod_replacement_planner.invalidate();
         std::vector<bool> retained(m_terrain_lod_ranges.size());
         m_terrain_lod_reused_group_count = 0U;
         for (auto const previous : m_pending_terrain_lod_reusable) {
@@ -3403,6 +3557,12 @@ struct VulkanRenderer::Impl final {
         }
         m_active_terrain_field = std::move(m_pending_terrain_field);
         m_terrain_lod_scene = std::move(m_pending_terrain_lod_scene);
+        if (streamingTraceEnabled()) {
+            CORE_INFO("stream_trace event=publish ns={} scene={} center_x={} center_y={} join={} coverage={}",
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(),
+                reinterpret_cast<uintptr_t>(m_terrain_lod_scene.get()), m_terrain_lod_scene->center_x,
+                m_terrain_lod_scene->center_y, m_terrain_lod_scene->session_join_epoch, m_terrain_lod_scene->coverage_epoch);
+        }
         m_terrain_lod_ranges = std::move(m_pending_terrain_lod_ranges);
         if (m_terrain_lod_scene->draw_index) {
             m_terrain_lod_draw_index = m_terrain_lod_scene->draw_index;
@@ -3420,6 +3580,7 @@ struct VulkanRenderer::Impl final {
         m_pending_terrain_lod_ranges.clear();
         m_pending_terrain_lod_reusable.clear();
         m_pending_terrain_lod_uploaded.clear();
+        m_pending_terrain_lod_cursor = 0U;
         m_pending_terrain_lod_patch.reset();
         m_terrain_lod_patch_base.reset();
         m_chunk_scene_enabled = true;
@@ -3429,6 +3590,7 @@ struct VulkanRenderer::Impl final {
     void discardPendingTerrainLodScene()
     {
         m_terrain_lod_upload_planner.invalidate();
+        m_terrain_lod_replacement_planner.invalidate();
         for (uint32_t index = 0U; index < m_pending_terrain_lod_ranges.size(); ++index) {
             if (!m_pending_terrain_lod_reusable[index]
                 && m_pending_terrain_lod_ranges[index].instance_count != 0U) {
@@ -3440,6 +3602,7 @@ struct VulkanRenderer::Impl final {
         m_pending_terrain_lod_ranges.clear();
         m_pending_terrain_lod_reusable.clear();
         m_pending_terrain_lod_uploaded.clear();
+        m_pending_terrain_lod_cursor = 0U;
         m_pending_terrain_lod_patch.reset();
         m_terrain_lod_patch_base.reset();
     }
@@ -3511,9 +3674,9 @@ struct VulkanRenderer::Impl final {
                 static_cast<float>(instance.z),
             };
             glm::vec3 extent{ 0.0F };
-            if (instance.direction <= 1U) {
+            if (instance.faceDirection() <= 1U) {
                 extent = { 1.0F, static_cast<float>(instance.u_extent), static_cast<float>(instance.v_extent) };
-            } else if (instance.direction <= 3U) {
+            } else if (instance.faceDirection() <= 3U) {
                 extent = { static_cast<float>(instance.u_extent), 1.0F, static_cast<float>(instance.v_extent) };
             } else {
                 extent = { static_cast<float>(instance.u_extent), static_cast<float>(instance.v_extent), 1.0F };
@@ -3629,9 +3792,9 @@ struct VulkanRenderer::Impl final {
                     static_cast<float>(instance.z),
                 };
                 glm::vec3 extent{ 0.0F };
-                if (instance.direction <= 1U) {
+                if (instance.faceDirection() <= 1U) {
                     extent = { 1.0F, static_cast<float>(instance.u_extent), static_cast<float>(instance.v_extent) };
-                } else if (instance.direction <= 3U) {
+                } else if (instance.faceDirection() <= 3U) {
                     extent = { static_cast<float>(instance.u_extent), 1.0F, static_cast<float>(instance.v_extent) };
                 } else {
                     extent = { static_cast<float>(instance.u_extent), static_cast<float>(instance.v_extent), 1.0F };
@@ -3922,6 +4085,10 @@ struct VulkanRenderer::Impl final {
             .presentation_recreation_attempted = m_presentation_recreation_attempted,
             .presentation_recreation_deferred = m_presentation_recreation_deferred,
             .cpu_command_record_duration = m_cpu_command_record_duration,
+            .cpu_presentation_prepare_duration = m_cpu_presentation_prepare_duration,
+            .cpu_pipeline_bind_duration = m_cpu_pipeline_bind_duration,
+            .cpu_context_complete_call_duration = m_cpu_context_complete_call_duration,
+            .cpu_stone_face_growth_duration = m_cpu_stone_face_growth_duration,
             .cpu_visible_range_collection_duration = m_cpu_visible_range_collection_duration,
             .cpu_height_tile_group_and_tile_traversal_duration = m_cpu_height_tile_group_and_tile_traversal_duration,
             .cpu_height_tile_pending_range_order_duration = m_cpu_height_tile_pending_range_order_duration,
@@ -3935,7 +4102,7 @@ struct VulkanRenderer::Impl final {
             .submitted_frame_count = m_submitted_frame_count,
             .debug_hud_enabled = m_last_submitted_debug_hud_enabled,
             .debug_hud_draw_count = m_debug_hud_draw_count,
-            .chunk_face_count = m_terrain_lod_scene ? static_cast<uint32_t>(m_terrain_lod_scene->faces.size())
+            .chunk_face_count = m_terrain_lod_scene ? static_cast<uint32_t>(terrainLodSceneFaceCount(*m_terrain_lod_scene))
                 : m_height_tile_slots.empty() ? static_cast<uint32_t>(m_stone_faces.size()) : m_height_tile_face_count,
             .chunk_draw_count = m_chunk_draw_count,
             .chunk_draw_face_count = m_chunk_draw_face_count,
@@ -3948,7 +4115,8 @@ struct VulkanRenderer::Impl final {
             .terrain_lod_actual_column_count = m_terrain_lod_scene ? m_terrain_lod_scene->actual_column_count : 0U,
             .terrain_lod_uploaded_face_count = m_terrain_lod_uploaded_face_count,
             .terrain_lod_reused_group_count = m_terrain_lod_reused_group_count,
-            .terrain_lod_upload_pending = m_pending_terrain_lod_scene != nullptr || m_terrain_lod_upload_planner.pending(),
+            .terrain_lod_upload_pending = m_pending_terrain_lod_scene != nullptr
+                || m_terrain_lod_upload_planner.pending() || m_terrain_lod_replacement_planner.pending(),
             .diagnostic_height_tile_removal = m_diagnostic_height_tile_removal,
             .stone_face_capacity = requiredValue(m_stone_face_buffer).capacity(),
             .stone_face_growth = m_stone_face_growth,
@@ -4001,6 +4169,39 @@ struct VulkanRenderer::Impl final {
                 .before = &Impl::beforeRecreate,
                 .after = &Impl::afterRecreate,
                 .user_data = this,
+            },
+            remaining(deadline)
+        );
+    }
+
+    [[nodiscard]] detail::PresentationResourceCompatibility presentationResourceCompatibility(
+        core::graphics::vulkan::PresentationInfo const& info,
+        ResourceScope const& resources
+    ) const
+    {
+        return {
+            .presentation_info = info,
+            .device_identity = resources.deviceReference().identity(),
+            .depth_format = m_depth_format,
+        };
+    }
+
+    void recreateForStoneFaceGrowth(
+        VkExtent2D const extent,
+        std::chrono::steady_clock::time_point const deadline
+    )
+    {
+        StoneFaceGrowthRecreationState state{
+            .renderer = *this,
+            .previous_resources = presentationResourceCompatibility(m_context->info(), requiredValue(m_resources)),
+        };
+        m_recreation_resources_destroyed = false;
+        m_context->recreate(
+            extent,
+            {
+                .before = &Impl::beforeStoneFaceGrowthRecreate,
+                .after = &Impl::afterStoneFaceGrowthRecreate,
+                .user_data = &state,
             },
             remaining(deadline)
         );
@@ -4302,7 +4503,11 @@ private:
                 rollback_required = false;
                 m_stone_face_growth_in_progress = true;
                 try {
-                    recreate(m_context->info().extent, frame_deadline);
+                    if (target_attempt) {
+                        recreateForStoneFaceGrowth(m_context->info().extent, frame_deadline);
+                    } else {
+                        recreate(m_context->info().extent, frame_deadline);
+                    }
                     m_stone_face_growth_in_progress = false;
                     if (!m_stone_face_buffer.has_value()
                         || requiredValue(m_stone_face_buffer).capacity() != m_stone_face_capacity) {
@@ -4366,18 +4571,43 @@ private:
         }
     }
 
+    void observePresentationRecreationCompletion()
+    {
+        if (m_stone_face_growth_in_progress) {
+            ++m_stone_face_growth.before_recreate_count;
+        }
+        if (m_frame_completion_tracking) {
+            // CoreCpp invokes this hook only after every submitted frame fence completed.
+            m_frame_progress_tracker.observeRecreationCompleted(std::chrono::steady_clock::now());
+        }
+    }
+
+    void destroySwapchainTargets() noexcept
+    {
+        if (m_resources.has_value()) {
+            destroyDepthTargets(requiredValue(m_resources).device());
+        }
+        m_current_scene_target = nullptr;
+        m_scene_targets.clear();
+        m_image_view = VK_NULL_HANDLE;
+    }
+
     static void beforeRecreate(void* const user_data)
     {
         Impl& self = *static_cast<Impl*>(user_data);
-        if (self.m_stone_face_growth_in_progress) {
-            ++self.m_stone_face_growth.before_recreate_count;
-        }
-        if (self.m_frame_completion_tracking) {
-            // CoreCpp invokes this hook only after every submitted frame fence completed.
-            self.m_frame_progress_tracker.observeRecreationCompleted(std::chrono::steady_clock::now());
-        }
+        self.observePresentationRecreationCompletion();
         self.m_recreation_resources_destroyed = true;
         self.destroyResources();
+    }
+
+    static void beforeStoneFaceGrowthRecreate(void* const user_data)
+    {
+        StoneFaceGrowthRecreationState& state = *static_cast<StoneFaceGrowthRecreationState*>(user_data);
+        Impl& self = state.renderer;
+        self.observePresentationRecreationCompletion();
+        self.m_recreation_resources_destroyed = true;
+        self.destroySwapchainTargets();
+        self.m_stone_frame_descriptors.clear();
     }
 
     static void afterRecreate(
@@ -4391,6 +4621,34 @@ private:
         self.m_recreation_resources_destroyed = false;
     }
 
+    static void afterStoneFaceGrowthRecreate(
+        core::graphics::vulkan::PresentationInfo const& info,
+        void* const user_data
+    )
+    {
+        StoneFaceGrowthRecreationState& state = *static_cast<StoneFaceGrowthRecreationState*>(user_data);
+        Impl& self = state.renderer;
+        bool const compatible = [&] {
+            ResourceScope resources = self.m_context->resources();
+            detail::PresentationResourceCompatibility const current_resources =
+                self.presentationResourceCompatibility(info, resources);
+            if (!detail::canPreservePresentationResources(state.previous_resources, current_resources)) {
+                return false;
+            }
+            self.m_resources.emplace(std::move(resources));
+            return true;
+        }();
+        if (compatible) {
+            self.createStoneFaceBuffer();
+            self.uploadStoredMeshes();
+        } else {
+            self.destroyResources();
+            self.createResources();
+        }
+        self.refreshCaptureState();
+        self.m_recreation_resources_destroyed = false;
+    }
+
     static void recordFrame(VkCommandBuffer const command, void* const user_data)
     {
         static_cast<Impl*>(user_data)->record(command);
@@ -4398,6 +4656,8 @@ private:
 
     void record(VkCommandBuffer const command)
     {
+        std::chrono::nanoseconds* const pipeline_bind_duration = m_diagnostic_presentation_stages
+            ? &m_cpu_pipeline_bind_duration : nullptr;
         requiredValue(m_stone_texture_buffer).recordUpload(command);
         prepareOcclusionQueries(command);
         if (m_current_diagnostic_query_pool != VK_NULL_HANDLE) {
@@ -4466,7 +4726,7 @@ private:
         vkCmdSetViewport(command, 0U, 1U, &viewport);
         vkCmdSetScissor(command, 0U, 1U, &scissor);
 
-        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_sky_pipeline);
+        bindGraphicsPipeline(command, m_sky_pipeline, pipeline_bind_duration);
         vkCmdDraw(command, 3U, 1U, 0U, 0U);
 
 
@@ -4602,7 +4862,8 @@ private:
                 m_stone_quad_mode,
                 VK_NULL_HANDLE,
                 m_terrain_lod_scene != nullptr,
-                m_terrain_lod_scene ? static_cast<float>(m_terrain_lod_scene->block_sea_level) : 0.0F
+                m_terrain_lod_scene ? static_cast<float>(m_terrain_lod_scene->block_sea_level) : 0.0F,
+                pipeline_bind_duration
             );
             if (m_occlusion_oracle_frame) {
                 m_end_rendering(command);
@@ -4628,7 +4889,8 @@ private:
                     {},
                     m_stone_quad_indices ? m_stone_quad_indices->handle() : VK_NULL_HANDLE,
                     VK_NULL_HANDLE, m_stone_quad_mode, m_current_occlusion_pool, m_terrain_lod_scene != nullptr,
-                    m_terrain_lod_scene ? static_cast<float>(m_terrain_lod_scene->block_sea_level) : 0.0F
+                    m_terrain_lod_scene ? static_cast<float>(m_terrain_lod_scene->block_sea_level) : 0.0F,
+                    pipeline_bind_duration
                 ));
             }
             m_cpu_stone_scene_record_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -4644,13 +4906,14 @@ private:
                 m_player_layout,
                 m_camera,
                 m_players,
-                extent
+                extent,
+                pipeline_bind_duration
             );
         }
         if (!m_occlusion_oracle_frame) {
             auto const effects = m_block_effects.boxes(std::chrono::steady_clock::now());
             recordBlockEffects(command, m_player_pipeline, m_player_layout, m_camera,
-                extent, m_terrain_lod_scene != nullptr, effects);
+                extent, m_terrain_lod_scene != nullptr, effects, pipeline_bind_duration);
         }
         if (!m_world_text_batch.glyphs.empty()) {
             std::optional<glm::mat4> const projection = sceneProjection(m_camera, extent, m_terrain_lod_scene != nullptr);
@@ -4669,11 +4932,14 @@ private:
                     textShaderMode(m_world_text_batch.space),
                     0U,
                     world_text_draw_count,
-                    glm::vec4(glm::vec3(m_camera.pose().position), m_terrain_lod_scene ? 1.0F : 0.0F)
+                    glm::vec4(glm::vec3(m_camera.pose().position), m_terrain_lod_scene ? 1.0F : 0.0F),
+                    VK_NULL_HANDLE,
+                    false,
+                    pipeline_bind_duration
                 );
             }
         }
-        recordMapImage(command, extent);
+        recordMapImage(command, extent, pipeline_bind_duration);
         m_end_rendering(command);
         if (m_current_scene_target != nullptr) {
             recordSceneBarrier(command, m_current_scene_target->texture->image(), true, true);
@@ -4725,9 +4991,12 @@ private:
                     .decode_srgb = m_context->info().srgb ? 0U : 1U,
                 };
                 recordSceneComposite(command, *m_current_scene_target->texture,
-                    linear_overlay != nullptr ? m_overlay_composite_pipeline : m_scene_composite_pipeline, scene_copy);
+                    linear_overlay != nullptr ? m_overlay_composite_pipeline : m_scene_composite_pipeline,
+                    scene_copy, pipeline_bind_duration);
             }
-            requiredValue(m_gui_vectors).draw(command, extent, static_cast<uint32_t>(m_gui_vector_triangles.size()));
+            requiredValue(m_gui_vectors).draw(
+                command, extent, static_cast<uint32_t>(m_gui_vector_triangles.size()), pipeline_bind_duration
+            );
             uint32_t first_instance = gui_text_first_instance;
             for (TextBatch const& text : m_gui_renderer.batches()) {
                 bool const adaptive = hasAdaptiveGlyphs(std::span<TextBatch const>{ &text, 1U });
@@ -4746,7 +5015,8 @@ private:
                     m_debug_hud_draw_count,
                     {},
                     adaptive || converted_fixed ? m_current_scene_target->texture->set() : VK_NULL_HANDLE,
-                    linear_overlay != nullptr
+                    linear_overlay != nullptr,
+                    pipeline_bind_duration
                 );
                 first_instance += static_cast<uint32_t>(text.glyphs.size());
             }
@@ -4762,16 +5032,18 @@ private:
                     .image_size = { extent.width, extent.height },
                     .encode_srgb = 1U,
                 };
-                recordSceneComposite(command, *linear_overlay, m_scene_composite_pipeline, output_copy);
+                recordSceneComposite(command, *linear_overlay, m_scene_composite_pipeline, output_copy,
+                    pipeline_bind_duration);
                 m_end_rendering(command);
             }
         }
     }
 
     void recordSceneComposite(VkCommandBuffer const command, MapImageTexture const& texture,
-        VkPipeline const pipeline, MapImagePushConstants const& push)
+        VkPipeline const pipeline, MapImagePushConstants const& push,
+        std::chrono::nanoseconds* const pipeline_bind_duration = nullptr)
     {
-        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        bindGraphicsPipeline(command, pipeline, pipeline_bind_duration);
         VkDescriptorSet const descriptor = texture.set();
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_map_image_pipeline_layout,
             0U, 1U, &descriptor, 0U, nullptr);
@@ -4780,12 +5052,15 @@ private:
         vkCmdDraw(command, 3U, 1U, 0U, 0U);
     }
 
-    void recordMapImage(VkCommandBuffer const command, VkExtent2D const extent)
+    void recordMapImage(
+        VkCommandBuffer const command,
+        VkExtent2D const extent,
+        std::chrono::nanoseconds* const pipeline_bind_duration = nullptr)
     {
         auto draw = [&](uint32_t const image, MapImageDraw const* const region) {
             MapStream const& map = m_map_images[image];
             if (map.data.empty()) { return; }
-            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_map_image_pipeline);
+            bindGraphicsPipeline(command, m_map_image_pipeline, pipeline_bind_duration);
             VkDescriptorSet const descriptor = requiredValue(map.texture).set();
             vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_map_image_pipeline_layout,
                 0U, 1U, &descriptor, 0U, nullptr);
@@ -5102,6 +5377,23 @@ private:
         m_current_diagnostic_query_pool = slot.pool;
     }
 
+    void createStoneFaceBuffer()
+    {
+        StoneFaceBuffer replacement(
+            requiredValue(m_resources).device(),
+            requiredValue(m_resources).physicalDevice(),
+            m_stone_face_capacity
+        );
+        if (m_stone_descriptors.has_value()) {
+            requiredValue(m_stone_descriptors).setFaceBuffer(replacement);
+        }
+        m_stone_face_buffer = std::move(replacement);
+        m_stone_face_growth.actual_capacity = requiredValue(m_stone_face_buffer).capacity();
+        m_stone_face_growth.actual_capacity_high_water = std::max(
+            m_stone_face_growth.actual_capacity_high_water, m_stone_face_growth.actual_capacity
+        );
+    }
+
     void createResources()
     {
         m_resources.emplace(m_context->resources());
@@ -5141,15 +5433,7 @@ private:
             throw std::runtime_error("Vulkan presentation device does not expose dynamic rendering commands");
         }
         selectDepthFormat();
-        m_stone_face_buffer.emplace(
-            requiredValue(m_resources).device(),
-            requiredValue(m_resources).physicalDevice(),
-            m_stone_face_capacity
-        );
-        m_stone_face_growth.actual_capacity = requiredValue(m_stone_face_buffer).capacity();
-        m_stone_face_growth.actual_capacity_high_water = std::max(
-            m_stone_face_growth.actual_capacity_high_water, m_stone_face_growth.actual_capacity
-        );
+        createStoneFaceBuffer();
         m_stone_texture_buffer.emplace(requiredValue(m_resources).device(), requiredValue(m_resources).physicalDevice());
         m_disabled_terrain_field = std::make_shared<CanonicalTerrainFieldBuffer>(
             requiredValue(m_resources).device(), requiredValue(m_resources).physicalDevice());
@@ -5408,9 +5692,7 @@ private:
             return;
         }
         VkDevice const device = requiredValue(m_resources).device();
-        destroyDepthTargets(device);
-        m_current_scene_target = nullptr;
-        m_scene_targets.clear();
+        destroySwapchainTargets();
         m_gui_vectors.reset();
         m_adaptive_text_pipeline.reset();
         if (m_kernel_cache.has_value()) {
@@ -5766,6 +6048,10 @@ private:
     bool m_presentation_recreation_attempted = false;
     bool m_presentation_recreation_deferred = false;
     std::chrono::nanoseconds m_cpu_command_record_duration{ 0 };
+    std::chrono::nanoseconds m_cpu_presentation_prepare_duration{ 0 };
+    std::chrono::nanoseconds m_cpu_pipeline_bind_duration{ 0 };
+    std::chrono::nanoseconds m_cpu_context_complete_call_duration{ 0 };
+    std::chrono::nanoseconds m_cpu_stone_face_growth_duration{ 0 };
     std::chrono::nanoseconds m_cpu_visible_range_collection_duration{ 0 };
     std::chrono::nanoseconds m_cpu_height_tile_group_and_tile_traversal_duration{ 0 };
     std::chrono::nanoseconds m_cpu_height_tile_pending_range_order_duration{ 0 };
@@ -5810,12 +6096,14 @@ private:
     std::shared_ptr<TerrainLodDrawIndex const> m_terrain_lod_draw_index;
     std::vector<uint32_t> m_visible_terrain_lod_groups;
     detail::TerrainLodUploadPlanner m_terrain_lod_upload_planner;
+    detail::TerrainLodReplacementPlanner m_terrain_lod_replacement_planner;
     std::shared_ptr<TerrainLodScene const> m_pending_terrain_lod_scene;
     std::shared_ptr<TerrainLodScene const> m_pending_terrain_lod_patch;
     std::shared_ptr<TerrainLodScene const> m_terrain_lod_patch_base;
     std::vector<StoneDrawRange> m_pending_terrain_lod_ranges;
     std::vector<std::optional<uint32_t>> m_pending_terrain_lod_reusable;
     std::vector<uint32_t> m_pending_terrain_lod_uploaded;
+    size_t m_pending_terrain_lod_cursor = 0U;
     uint64_t m_terrain_lod_uploaded_face_count = 0U;
     uint32_t m_terrain_lod_reused_group_count = 0U;
     HeightTileSlots m_height_tile_slots;
@@ -6445,10 +6733,20 @@ struct VulkanOffscreenRenderer::Impl final {
 
     void setTerrainLodScene(std::shared_ptr<TerrainLodScene const> scene)
     {
+        if (scene) {
+            detail::validateTerrainLodGroups(*scene);
+        }
         m_resources->setTerrainAtlas(scene ? scene->shading_atlas : nullptr);
-        m_resources->uploadStoneFaces(scene ? std::span<StoneFaceInstance const>{scene->faces}
-            : std::span<StoneFaceInstance const>{});
-        m_stone_faces = scene ? scene->faces : std::vector<StoneFaceInstance>{};
+        std::vector<StoneFaceInstance> faces;
+        if (scene) {
+            faces.resize(terrainLodSceneFaceCount(*scene));
+            for (TerrainLodDrawGroup const& group : scene->groups) {
+                auto const group_faces = detail::terrainLodGroupFaces(*scene, group);
+                std::copy(group_faces.begin(), group_faces.end(), faces.begin() + group.range.first_instance);
+            }
+        }
+        m_resources->uploadStoneFaces(faces);
+        m_stone_faces = std::move(faces);
         m_terrain_lod_scene = std::move(scene);
         m_chunk_scene_enabled = true;
     }
@@ -6843,9 +7141,9 @@ void VulkanRenderer::clearWorldText() noexcept
 }
 
 void VulkanRenderer::setBlockInteractionTarget(std::optional<shared::BlockTarget> target,
-    float server_progress) noexcept
+    float server_progress, BlockInteractionEffects::Clock::time_point now) noexcept
 {
-    m_impl->setBlockInteractionTarget(target, server_progress);
+    m_impl->setBlockInteractionTarget(target, server_progress, now);
 }
 
 bool VulkanRenderer::addAcceptedBlockBreak(BlockBreakEventIdentity identity, shared::WorldCoordinate cell,
@@ -6888,7 +7186,7 @@ bool VulkanRenderer::upsertTerrainLodScene(
     return m_impl->upsertTerrainLodScene(std::move(scene), deadline, diagnostics);
 }
 
-bool VulkanRenderer::replaceTerrainLodGroups(
+std::shared_ptr<TerrainLodScene const> VulkanRenderer::replaceTerrainLodGroups(
     std::shared_ptr<TerrainLodScene const> patch,
     std::chrono::steady_clock::time_point const deadline,
     TerrainLodRendererDiagnostics* const diagnostics

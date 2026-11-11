@@ -23,6 +23,47 @@ else()
         "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/gsw/gsw_oceanographic_toolbox.c")
 endif()
 
+# The approved V10 source uses an isolated, unmodified-math PyPlatec 1.4.3 engine.
+# Its reference compiler contracts expressions; the point Perlin kernel instead
+# spells fused operations explicitly and must disable implicit contraction.
+add_library(mc_v10_platec STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/bridge.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/bounds.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/geometry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/heightmap.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/lithosphere.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/mass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/movement.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/noise.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/plate.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/plate_functions.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/rectangle.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/segment_creator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/segment_data.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/segments.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/simplerandom.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/simplexnoise.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/sqrdmd.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/utils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/platec_v10/src/world_point.cpp
+)
+set_target_properties(mc_v10_platec PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_compile_definitions(mc_v10_platec PRIVATE NDEBUG)
+if(MSVC)
+    target_compile_options(mc_v10_platec PRIVATE /O2 /fp:precise /fp:contract)
+else()
+    target_compile_options(mc_v10_platec PRIVATE -O3 -ffp-contract=on -fno-strict-overflow)
+endif()
+
+add_library(mc_v10_perlin STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/v10_perlin/perlin2.c
+)
+if(MSVC)
+    target_compile_options(mc_v10_perlin PRIVATE /fp:strict)
+else()
+    target_compile_options(mc_v10_perlin PRIVATE -fno-fast-math -ffp-contract=off)
+endif()
+
 add_library(mc_generation STATIC
     Coastal.cpp
     Climate.cpp
@@ -34,6 +75,16 @@ add_library(mc_generation STATIC
     NumpyTanh.cpp
     Sha256.cpp
     V9PlatecSource.cpp
+    V10PlatecSource.cpp
+    V10Foundation.cpp
+    V10FineTerrain.cpp
+    V10Climate.cpp
+    V10ClimatePreparation.cpp
+    V10WaterPreparation.cpp
+    V10Provider.cpp
+    RiverBedField.cpp
+    include/generation/RiverBedChannel.hpp
+    include/generation/RiverBedField.hpp
     V9Terrain.cpp
     V9TerrainMorphology.cpp
     V9Climate.cpp
@@ -41,6 +92,10 @@ add_library(mc_generation STATIC
     V9ClimateThermal.cpp
     V9ClimateSparseSolver.cpp
     V9Provider.cpp
+    V21FinePlan.cpp
+    V21CourseGeometry.cpp
+    V21Geomorphology.cpp
+    V21Terrain.cpp
     V9Numerics.cpp
     V9Random.cpp
     V9Water.cpp
@@ -83,6 +138,7 @@ target_sources(mc_generation
         FILE_SET public_headers TYPE HEADERS
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
         FILES include/generation/Generation.hpp
+            include/generation/V10Provider.hpp
             include/generation/V9Provider.hpp
     PRIVATE
         FILE_SET private_headers TYPE HEADERS
@@ -93,6 +149,13 @@ target_sources(mc_generation
             Numerics.hpp
             Sha256.hpp
             V9PlatecSource.hpp
+            V10PlatecSource.hpp
+            V10Foundation.hpp
+            V10FineTerrain.hpp
+            V10Climate.hpp
+            V10ClimatePreparation.hpp
+            V10WaterPreparation.hpp
+            V10ProviderInternal.hpp
             V9Terrain.hpp
             V9TerrainMorphology.hpp
             V9Climate.hpp
@@ -100,6 +163,11 @@ target_sources(mc_generation
             V9ClimateThermal.hpp
             V9ClimateSparseSolver.hpp
             V9ProviderInternal.hpp
+            V21ProviderInternal.hpp
+            V21FinePlan.hpp
+            V21CourseGeometry.hpp
+            V21Geomorphology.hpp
+            V21Terrain.hpp
             V9Numerics.hpp
             V9Random.hpp
             V9Water.hpp
@@ -128,7 +196,7 @@ target_include_directories(mc_generation SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/structural/NoiseLib/include
 )
 target_compile_features(mc_generation PUBLIC cxx_std_23)
-target_link_libraries(mc_generation PRIVATE mc_v9_superlu)
+target_link_libraries(mc_generation PRIVATE mc_v9_superlu mc_v10_platec mc_v10_perlin)
 if(ANDROID)
     # NDK 27 libc++ gates C++20 cancellation APIs behind its experimental-library option.
     target_compile_options(mc_generation PUBLIC -fexperimental-library)
@@ -250,6 +318,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND MC_GENERATION_BUILD_TE
         "${MC_REPOSITORY_ROOT}/tests/generation/v9_terrain_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/v9_climate_tests.cpp"
         "${MC_REPOSITORY_ROOT}/tests/generation/v9_water_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/v21_fine_plan_tests.cpp"
+        "${MC_REPOSITORY_ROOT}/tests/generation/v21_course_geometry_tests.cpp"
     )
     target_link_libraries(mc_generation_tests PRIVATE mc_generation GTest::gtest_main)
     target_include_directories(mc_generation_tests PRIVATE

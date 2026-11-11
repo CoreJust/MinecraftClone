@@ -1,3 +1,4 @@
+#include <client/CameraController.hpp>
 #include <client/GameClient.hpp>
 #include <client/PlayerClientInputState.hpp>
 
@@ -110,6 +111,68 @@ TEST(PlayerClientInputStateTest, JumpPulseSurvivesBlockedCreditAndUnrelatedSubmi
     state.submitted(shared::Direction{ .x = 0U, .y = 0U, .z = 1U });
     EXPECT_FALSE(state.jumpRequested(false));
     EXPECT_TRUE(state.jumpRequested(true));
+}
+
+TEST(PlayerClientInputStateTest, VerticalChordReevaluatesBothKeysInEitherReleaseOrder)
+{
+    PlayerClientInputState state;
+    auto const vertical = [&state](bool const space_held, bool const shift_held) {
+        state.observeJump(space_held, shift_held);
+        int8_t const direction = CameraController::verticalMovement(
+            state.jumpRequested(space_held), shift_held
+        );
+        state.submitted(shared::Direction{ .x = 0U, .y = 0U, .z = static_cast<uint8_t>(direction) });
+        return direction;
+    };
+
+    EXPECT_EQ(vertical(true, false), 127);
+    EXPECT_EQ(vertical(true, true), 0);
+    EXPECT_EQ(vertical(false, true), -127);
+    EXPECT_EQ(vertical(false, false), 0);
+
+    state.reset();
+    EXPECT_EQ(vertical(false, true), -127);
+    EXPECT_EQ(vertical(true, true), 0);
+    EXPECT_EQ(vertical(true, false), 127);
+    EXPECT_EQ(vertical(false, false), 0);
+
+    state.reset(); // Focus loss discards any queued jump before keys are resampled.
+    EXPECT_EQ(vertical(false, true), -127);
+    EXPECT_EQ(vertical(false, false), 0);
+}
+
+TEST(PlayerClientInputStateTest, HeldBreakIntentResumesOnlyAfterTargetReturns)
+{
+    PlayerClientInputState state;
+
+    EXPECT_FALSE(state.observeBreakTarget(true, true));
+    EXPECT_FALSE(state.observeBreakTarget(true, false));
+    EXPECT_TRUE(state.observeBreakTarget(true, true));
+    EXPECT_FALSE(state.observeBreakTarget(false, false));
+    EXPECT_FALSE(state.observeBreakTarget(true, true));
+
+    EXPECT_FALSE(state.observeBreakTarget(true, false));
+    state.cancelBreakTargetIntent();
+    EXPECT_FALSE(state.observeBreakTarget(true, true));
+}
+
+TEST(PlayerClientInputStateTest, EscapeClosesMapOrRequiresExplicitExitConfirmation)
+{
+    PlayerClientExitConfirmationState state;
+
+    EXPECT_EQ(state.observe(true, true, true), PlayerClientExitInputAction::CloseMap);
+    EXPECT_FALSE(state.pending());
+    EXPECT_EQ(state.observe(false, false, false), PlayerClientExitInputAction::None);
+
+    EXPECT_EQ(state.observe(false, true, false), PlayerClientExitInputAction::OpenConfirmation);
+    EXPECT_TRUE(state.pending());
+    EXPECT_EQ(state.observe(false, false, false), PlayerClientExitInputAction::None);
+    EXPECT_EQ(state.observe(false, true, false), PlayerClientExitInputAction::CancelConfirmation);
+    EXPECT_FALSE(state.pending());
+
+    state.request();
+    EXPECT_EQ(state.observe(false, false, true), PlayerClientExitInputAction::ConfirmExit);
+    EXPECT_FALSE(state.pending());
 }
 
 TEST(PlayerClientInputStateTest, ResetClearsPendingActionsAndHeldLatch)

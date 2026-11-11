@@ -8,6 +8,7 @@
 #include <android_native_app_glue.h>
 
 #include <charconv>
+#include <cstdlib>
 #include <exception>
 #include <limits>
 #include <optional>
@@ -31,6 +32,7 @@ core::Address defaultServerAddress()
 struct LaunchOptions final {
     core::Address server = defaultServerAddress();
     char character = '@';
+    bool river_first_failure = false;
 };
 
 class JniEnvironment final {
@@ -144,6 +146,9 @@ LaunchOptions launchOptions(android_app const& app)
         }
         options.character = character->front();
     }
+    if (auto const diagnostic = stringExtra(env, app.activity->clazz, "river_diagnostic")) {
+        options.river_first_failure = *diagnostic == "first_failure";
+    }
     return options;
 }
 
@@ -168,6 +173,17 @@ extern "C" void android_main(android_app* const app)
 
     try {
         LaunchOptions const options = launchOptions(*app);
+        if (options.river_first_failure && app->activity->internalDataPath != nullptr) {
+            std::string const evidence = std::string(app->activity->internalDataPath) + "/river-first-failure";
+            if (setenv("MC_RIVER_SCENE_FIRST_FAILURE_ONLY", "1", 1) == 0
+                && setenv("MC_RIVER_SCENE_EVIDENCE", evidence.c_str(), 1) == 0) {
+                CORE_INFO("River first-failure evidence enabled at {}", evidence);
+            } else {
+                unsetenv("MC_RIVER_SCENE_FIRST_FAILURE_ONLY");
+                unsetenv("MC_RIVER_SCENE_EVIDENCE");
+                CORE_ERROR("Cannot enable optional river first-failure evidence");
+            }
+        }
         CORE_INFO("Starting Android client {} as {}", options.server, options.character);
         game_android::AndroidPlayerClient client{ *app, shared::WorldMode::Flight };
         client.run(options.server, options.character);

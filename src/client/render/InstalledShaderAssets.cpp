@@ -52,6 +52,19 @@ std::filesystem::path executablePath()
 
 } // namespace
 
+std::filesystem::path installedClientAssetPath(std::filesystem::path const& relative_path)
+{
+    if (relative_path.empty() || relative_path.is_absolute()) {
+        throw std::invalid_argument("Client asset must have a relative path");
+    }
+    for (auto const& component : relative_path) {
+        if (component == "..") {
+            throw std::invalid_argument("Client asset cannot escape its installation directory");
+        }
+    }
+    return executablePath().parent_path() / relative_path;
+}
+
 core::kernel::SpirvModule InstalledShaderAssets::load(std::string_view const name) const
 {
     std::filesystem::path const shader_name{ name };
@@ -59,7 +72,7 @@ core::kernel::SpirvModule InstalledShaderAssets::load(std::string_view const nam
         throw std::invalid_argument("Shader asset must be a .spv filename");
     }
 
-    std::filesystem::path const asset = executablePath().parent_path() / "shaders" / shader_name;
+    std::filesystem::path const asset = installedClientAssetPath(std::filesystem::path{"shaders"} / shader_name);
     if (!std::filesystem::is_regular_file(asset)) {
         throw std::runtime_error("Missing shader asset: " + asset.string());
     }

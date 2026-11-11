@@ -626,6 +626,7 @@ class AnalysisMatrixTests(unittest.TestCase):
             "src/owned.cpp",
             "src/shared/include/shared/public.hpp",
             "tests/owned_test.cpp",
+            "third_party/platec/cpp_src/lithosphere.cpp",
             "testdata/fixture.json",
             "assets/asset.txt",
             "scenarios/scenario.json",
@@ -685,6 +686,28 @@ class AnalysisMatrixTests(unittest.TestCase):
                             before[row_id],
                             self.matrix.row_source_input_sha256(root, row),
                         )
+
+    def test_vendored_terrain_change_invalidates_row_and_per_tu_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_input_scope_fixture(root)
+            rows = self.manifest["rows"]
+            row_before = {
+                row["id"]: self.matrix.row_source_input_sha256(root, row)
+                for row in rows
+            }
+            project_before = self.matrix.project_analysis_input_sha256(root)
+
+            platec = root / "third_party/platec/cpp_src/lithosphere.cpp"
+            platec.write_text("changed plate restart\n", encoding="utf-8")
+
+            for row in rows:
+                with self.subTest(row=row["id"]):
+                    self.assertNotEqual(
+                        row_before[row["id"]],
+                        self.matrix.row_source_input_sha256(root, row),
+                    )
+            self.assertNotEqual(project_before, self.matrix.project_analysis_input_sha256(root))
 
     def test_platform_specific_triplet_and_overlay_changes_leave_other_rows_reusable(self):
         with tempfile.TemporaryDirectory() as directory:

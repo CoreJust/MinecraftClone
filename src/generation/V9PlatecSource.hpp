@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <expected>
 #include <functional>
+#include <memory>
 #include <stop_token>
 #include <vector>
 
@@ -62,6 +63,8 @@ struct V9PlatecProgress final
     uint32_t steps_completed = 0U;
     uint32_t step_limit = V9_PLATEC_SOURCE_STEP_LIMIT;
     bool complete = false;
+    // Owned cell-centre native fields; never borrows the running engine.
+    std::shared_ptr<V9PlatecSourceResult const> snapshot;
 };
 
 enum class V9PlatecFailure : uint8_t
@@ -77,6 +80,8 @@ V9PlatecParameters deriveV9PlatecParameters(uint64_t user_seed);
 
 // Cancellation is observed between native updates. Progress reports completed updates
 // against the frozen step bound, with completion carried separately from the ratio.
+// Initial/live/terminal owned snapshots are copied at most every 250 ms between
+// endpoints. The consumer callback runs without holding the native source mutex.
 [[nodiscard]]
 std::expected<V9PlatecSourceResult, V9PlatecFailure> generateV9PlatecSource(
     uint64_t user_seed,

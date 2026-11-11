@@ -56,13 +56,16 @@ TEST(WorldCoverageTest, ExactChunkCornerIncludesEveryClosedNeighborInStableOrder
 
 TEST(WorldCoverageTest, ClosedSphereKeepsPointTangentCornerChunks)
 {
-    static constexpr shared::PlayerPosition CENTER{ .x = 32'768, .y = 32'768, .z = 1'072 };
     static constexpr uint32_t RADIUS_BLOCKS = 48U;
+    static constexpr int32_t TOP_SECTION = shared::WorldExtent::DEPTH / shared::Chunk::SIDE_LENGTH - 1U;
+    static constexpr shared::PlayerPosition CENTER{
+        .x = 32'768, .y = 32'768, .z = static_cast<int32_t>(shared::WorldExtent::DEPTH + RADIUS_BLOCKS),
+    };
     static constexpr std::array<shared::ChunkCoordinate, 4U> EXPECTED{
-        shared::ChunkCoordinate{ .x = 2'047, .y = 2'047, .z = 63 },
-        shared::ChunkCoordinate{ .x = 2'048, .y = 2'047, .z = 63 },
-        shared::ChunkCoordinate{ .x = 2'047, .y = 2'048, .z = 63 },
-        shared::ChunkCoordinate{ .x = 2'048, .y = 2'048, .z = 63 },
+        shared::ChunkCoordinate{ .x = 2'047, .y = 2'047, .z = TOP_SECTION },
+        shared::ChunkCoordinate{ .x = 2'048, .y = 2'047, .z = TOP_SECTION },
+        shared::ChunkCoordinate{ .x = 2'047, .y = 2'048, .z = TOP_SECTION },
+        shared::ChunkCoordinate{ .x = 2'048, .y = 2'048, .z = TOP_SECTION },
     };
 
     std::vector<shared::ChunkCoordinate> const keys = shared::requiredChunkKeys(CENTER, RADIUS_BLOCKS);
@@ -200,11 +203,12 @@ TEST(WorldCoverageTest, KeepsTerrainCoverageClippedWhileHighEntityPositionsRemai
     static constexpr uint32_t RADIUS_BLOCKS = 0U;
     static constexpr int32_t X = 32'768;
     static constexpr int32_t Y = 32'768;
-    static constexpr shared::PlayerPosition LAST_TERRAIN_CELL{ .x = X, .y = Y, .z = 1'023 };
-    static constexpr shared::PlayerPosition TERRAIN_CEILING{ .x = X, .y = Y, .z = 1'024 };
-    static constexpr shared::PlayerPosition ABOVE_TERRAIN_BOUNDARY{ .x = X, .y = Y, .z = 1'025 };
-    static constexpr shared::PlayerPosition VISUAL_ONLY{ .x = X, .y = Y, .z = 1'080 };
-    static constexpr shared::PlayerPosition ABOVE_TERRAIN{ .x = X, .y = Y, .z = 1'400 };
+    static constexpr int32_t TERRAIN_TOP = static_cast<int32_t>(shared::WorldExtent::DEPTH);
+    static constexpr shared::PlayerPosition LAST_TERRAIN_CELL{ .x = X, .y = Y, .z = TERRAIN_TOP - 1 };
+    static constexpr shared::PlayerPosition TERRAIN_CEILING{ .x = X, .y = Y, .z = TERRAIN_TOP };
+    static constexpr shared::PlayerPosition ABOVE_TERRAIN_BOUNDARY{ .x = X, .y = Y, .z = TERRAIN_TOP + 1 };
+    static constexpr shared::PlayerPosition VISUAL_ONLY{ .x = X, .y = Y, .z = TERRAIN_TOP + 56 };
+    static constexpr shared::PlayerPosition ABOVE_TERRAIN{ .x = X, .y = Y, .z = TERRAIN_TOP + 376 };
     static constexpr shared::PlayerPosition ENTITY_LIMIT{ .x = X, .y = Y, .z = 65'535 };
 
     EXPECT_FALSE(shared::requiredChunkKeys(LAST_TERRAIN_CELL, RADIUS_BLOCKS).empty());

@@ -52,6 +52,8 @@ def run_client(arguments, timeout=1200):
             elapsed = time.monotonic() - started
             print(f"capture client still running after {elapsed:.0f}s", flush=True)
         else:
+            print(stdout[reported_stdout:], end="", flush=True)
+            print(stderr[reported_stderr:], end="", flush=True)
             return subprocess.CompletedProcess(command, client.returncode, stdout, stderr)
 
 
@@ -69,14 +71,22 @@ def read_ppm(path):
 
 
 class PlayerPlaytestCaptureTest(unittest.TestCase):
-    def assert_full_radius_sweep(self, client, expected_tiles=205861):
+    def assert_native_lod_sweep(self, client):
         output = client.stdout + client.stderr
         started = re.search(
-            rf"Capture sweep started: readiness_elapsed=(\d+)s step=1/16 required={expected_tiles}",
+            r"Capture sweep started: readiness_elapsed=(\d+)s step=1/16 "
+            r"world_partition=complete world_extent=65536 native_columns=(\d+)/(\d+) "
+            r"lod_leaves=(\d+) uploaded_faces=(\d+) fence_submitted=(\d+) fence_completed=(\d+)",
             output,
         )
         self.assertIsNotNone(started, output)
         self.assertLessEqual(int(started.group(1)), 900)
+        self.assertEqual((int(started.group(2)), int(started.group(3))), (6889, 6889))
+        self.assertGreater(int(started.group(4)), 0)
+        self.assertGreater(int(started.group(5)), 0)
+        self.assertGreater(int(started.group(6)), 0)
+        self.assertGreater(int(started.group(7)), 0)
+        self.assertGreaterEqual(int(started.group(7)), int(started.group(6)))
         self.assertIn("Capture sweep complete: headings=16", output)
 
     def assert_labeled_terrain_capture(self, image, require_background_terrain=False):
@@ -88,7 +98,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
             self.assertGreaterEqual(height, 600)
         colors = set()
         terrain_pixels = 0
-        white_hud_pixels = 0
+        contrasting_hud_pixels = 0
         title_pixels = 0
         beyond_ring_terrain_pixels = 0
         for pixel_index, offset in enumerate(range(0, len(pixels), 3)):
@@ -105,8 +115,10 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                     and 78 * height // 100 <= y < 94 * height // 100
                 ):
                     beyond_ring_terrain_pixels += 1
-            if x < width // 3 and y < height // 3 and red > 220 and green > 220 and blue > 220:
-                white_hud_pixels += 1
+            if x < width // 3 and y < height // 5 and (
+                max(red, green, blue) < 80 or min(red, green, blue) > 220
+            ):
+                contrasting_hud_pixels += 1
             if red > 200 and green > 150 and blue < 180:
                 if y >= 2 * height // 3 and width // 5 <= x < 4 * width // 5:
                     title_pixels += 1
@@ -114,7 +126,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
         self.assertGreater(terrain_fraction, 0.05)
         self.assertLess(terrain_fraction, 0.95)
         self.assertGreater(len(colors), 24)
-        self.assertGreater(white_hud_pixels, 100)
+        self.assertGreater(contrasting_hud_pixels, 100)
         self.assertGreater(title_pixels, 100)
         if require_background_terrain:
             background_region_area = (width - 3 * width // 4) * (
@@ -132,12 +144,9 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                 else Path(directory) / "playtest.ppm"
             )
             image.parent.mkdir(parents=True, exist_ok=True)
-            server = subprocess.Popen(
-                [str(binary), "--server", "--port", str(port), "--render-distance", "72"],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            server_arguments = [str(binary), "--server", "--port", str(port), "--spawn-surface", "32598", "32768", "--render-distance", "72"]
+            print("capture server command:", server_arguments, flush=True)
+            server = subprocess.Popen(server_arguments, stdin=subprocess.DEVNULL)
             try:
                 time.sleep(0.2)
                 started = time.monotonic()
@@ -154,7 +163,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                 )
                 self.assertEqual(client.returncode, 0, client.stdout + client.stderr)
                 self.assertLess(time.monotonic() - started, 1200.0)
-                self.assert_full_radius_sweep(client, expected_tiles=16241)
+                self.assert_native_lod_sweep(client)
                 self.assert_labeled_terrain_capture(image, require_background_terrain=True)
             finally:
                 if server.poll() is None:
@@ -171,21 +180,9 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                 else Path(directory) / "origin.ppm"
             )
             image.parent.mkdir(parents=True, exist_ok=True)
-            server = subprocess.Popen(
-                [
-                    str(binary),
-                    "--server",
-                    "--port",
-                    str(port),
-                    "--spawn",
-                    "0",
-                    "0",
-                    "8",
-                ],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            server_arguments = [str(binary), "--server", "--port", str(port), "--spawn-surface", "0", "0"]
+            print("capture server command:", server_arguments, flush=True)
+            server = subprocess.Popen(server_arguments, stdin=subprocess.DEVNULL)
             try:
                 time.sleep(0.2)
                 client = run_client(
@@ -200,7 +197,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                     ],
                 )
                 self.assertEqual(client.returncode, 0, client.stdout + client.stderr)
-                self.assert_full_radius_sweep(client)
+                self.assert_native_lod_sweep(client)
                 self.assert_labeled_terrain_capture(image)
             finally:
                 if server.poll() is None:
@@ -217,12 +214,9 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                 else Path(directory) / "trench.ppm"
             )
             image.parent.mkdir(parents=True, exist_ok=True)
-            server = subprocess.Popen(
-                [str(binary), "--server", "--port", str(port)],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            server_arguments = [str(binary), "--server", "--port", str(port), "--spawn-surface", "32864", "32768"]
+            print("capture server command:", server_arguments, flush=True)
+            server = subprocess.Popen(server_arguments, stdin=subprocess.DEVNULL)
             try:
                 time.sleep(0.2)
                 client = run_client(
@@ -237,7 +231,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                     ],
                 )
                 self.assertEqual(client.returncode, 0, client.stdout + client.stderr)
-                self.assert_full_radius_sweep(client)
+                self.assert_native_lod_sweep(client)
                 self.assert_labeled_terrain_capture(image)
             finally:
                 if server.poll() is None:
@@ -254,12 +248,9 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                 else Path(directory) / "mountain.ppm"
             )
             image.parent.mkdir(parents=True, exist_ok=True)
-            server = subprocess.Popen(
-                [str(binary), "--server", "--port", str(port)],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            server_arguments = [str(binary), "--server", "--port", str(port), "--spawn-surface", "32880", "32768"]
+            print("capture server command:", server_arguments, flush=True)
+            server = subprocess.Popen(server_arguments, stdin=subprocess.DEVNULL)
             try:
                 time.sleep(0.2)
                 client = run_client(
@@ -274,7 +265,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                     ],
                 )
                 self.assertEqual(client.returncode, 0, client.stdout + client.stderr)
-                self.assert_full_radius_sweep(client)
+                self.assert_native_lod_sweep(client)
                 self.assert_labeled_terrain_capture(image)
             finally:
                 if server.poll() is None:

@@ -467,6 +467,19 @@ TEST(TerrainWorldTest, UniformChunkMaterializationMatchesCanonicalBlocksAndHashe
     EXPECT_EQ(below_chunk_top.blockAt({ .x = BOUNDARY_COLUMN_X, .y = 0U, .z = TOP_BLOCK_Z }), shared::Block::Air);
 }
 
+TEST(TerrainWorldTest, R6MaterializesCanonicalAirAboveModelDepthWithinLogicalWorld)
+{
+    static constexpr int32_t FIRST_UPPER_SECTION = generation::WORLD_DEPTH_BLOCKS / shared::Chunk::SIDE_LENGTH;
+    static constexpr int32_t LAST_LOGICAL_SECTION = shared::WorldExtent::DEPTH / shared::Chunk::SIDE_LENGTH - 1;
+    auto const world = makeWorld(384);
+    auto const tile = sampleTile(*world);
+
+    for (int32_t const section : {FIRST_UPPER_SECTION, LAST_LOGICAL_SECTION}) {
+        auto const chunk = expectMaterializedChunkMatchesReference(*world, tile, { .x = 0, .y = 0, .z = section });
+        EXPECT_EQ(chunk.coordinate().z, section);
+    }
+}
+
 TEST(TerrainWorldTest, MaterializesFiveTypedLevelsAndPreservesSharedEdgesAndOrder)
 {
     auto atlas = std::make_shared<generation::GlobalAtlas>(*makeAtlas(384));
@@ -674,7 +687,9 @@ TEST(TerrainWorldTest, RejectsInvalidAtlasRegionAndMaterializationKeys)
         std::invalid_argument
     );
     EXPECT_THROW(
-        static_cast<void>(world.materializeChunk(tile, { .x = 0, .y = 0, .z = 64 })),
+        static_cast<void>(world.materializeChunk(tile, {
+            .x = 0, .y = 0, .z = shared::WorldExtent::DEPTH / shared::Chunk::SIDE_LENGTH,
+        })),
         std::invalid_argument
     );
 }

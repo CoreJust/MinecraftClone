@@ -927,7 +927,7 @@ def _report_story(payload: dict[str, Any]):
     report = payload["draft"]
     features = payload["features"]
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="ReportSection", parent=styles["Heading2"], fontSize=11, leading=14, spaceBefore=7, spaceAfter=4))
+    styles.add(ParagraphStyle(name="ReportSection", parent=styles["Heading2"], fontSize=11, leading=14, spaceBefore=7, spaceAfter=4, keepWithNext=1))
     styles.add(ParagraphStyle(name="ReportBody", parent=styles["BodyText"], fontSize=9, leading=12, alignment=TA_LEFT, spaceAfter=2))
     story: list[Any] = [Paragraph(f"{payload['prefix']} release report", styles["Title"])]
 
@@ -988,10 +988,11 @@ def _report_story(payload: dict[str, Any]):
         progress_lines.extend(f"{feature_name}: {line}" for line in item["lines"])
     add_section(SECTION_TITLES[3], progress_lines)
     add_section(SECTION_TITLES[4], report["other_progress"])
+    # Keep the heading attached to its chart description; place the gap before it.
+    story.append(Spacer(1, 3))
     story.append(Paragraph(SECTION_TITLES[5], styles["ReportSection"]))
     spent = report["time_spent"]
     hours = _period_duration_hours(period)
-    story.append(Spacer(1, 3))
     allocations = spent["allocations"]
     story.append(paragraph_text("Time-share chart: proportional activity hours; labels show hours, share, and basis."))
     story.append(TimeShareChart(allocations, hours))
@@ -1122,15 +1123,20 @@ def verify_pdf(path: Path, payload: dict[str, Any]) -> None:
         metadata = reader.metadata
         if metadata is None or metadata.get("/ReleaseReportData") != _canonical_json(_pdf_payload(payload)):
             raise ReportError("rendered PDF payload metadata does not match the validated draft")
-        text = " ".join(" ".join((page.extract_text() or "").split()) for page in reader.pages)
+        page_text = [(page.extract_text() or "") for page in reader.pages]
+        text = " ".join(" ".join(page.split()) for page in page_text)
         missing = [title for title in SECTION_TITLES if title not in text]
         if missing:
             raise ReportError(f"rendered PDF is missing report sections: {', '.join(missing)}")
         if "Time-share chart" not in text:
             raise ReportError("rendered PDF is missing the time-share chart")
-        for index, page in enumerate(reader.pages, start=1):
-            if f"Page {index}" not in (page.extract_text() or ""):
+        for index, page_content in enumerate(page_text, start=1):
+            if f"Page {index}" not in page_content:
                 raise ReportError("rendered PDF is missing a page number")
+        # Extracted text can interleave a page footer when a paragraph crosses
+        # the page break. Remove only the verified footer tokens before checking
+        # long feature-status paragraphs and other report content.
+        text = " ".join(re.sub(r"\bPage\s+\d+\b", "", text).split())
         period = payload["draft"]["period"]
         if period["start"] not in text or period["end"] not in text:
             raise ReportError("rendered PDF period is not visible")

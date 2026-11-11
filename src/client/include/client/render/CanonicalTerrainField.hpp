@@ -17,4 +17,16 @@ std::vector<CanonicalTerrainFieldValue> buildV9CanonicalTerrainFieldValues(
     generation::GlobalAtlas const& atlas
 );
 
+// V10 uploads exact canonical point-query values in metres above sea level.
+[[nodiscard]]
+std::vector<CanonicalTerrainFieldValue> buildV10CanonicalTerrainFieldValues(
+    generation::GlobalAtlas const& atlas
+);
+
+// V21 fields use their native provider and the approved 0.34 m/block mapping.
+[[nodiscard]]
+std::vector<CanonicalTerrainFieldValue> buildV21CanonicalTerrainFieldValues(
+    generation::GlobalAtlas const& atlas
+);
+
 } // namespace client::render

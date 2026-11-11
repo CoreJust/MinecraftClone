@@ -10,6 +10,7 @@
 #include <array>
 #include <bitset>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <memory>
 #include <optional>
@@ -29,10 +30,7 @@ struct WorldCoordinate final {
     constexpr bool operator==(WorldCoordinate const&) const noexcept = default;
 };
 
-struct WorldExtent final {
-    static constexpr uint32_t WIDTH = 65'536U;
-    static constexpr uint32_t DEPTH = 1'024U;
-};
+using DenseSectionMask = std::bitset<WorldExtent::DEPTH / Chunk::SIDE_LENGTH>;
 
 class WorldBounds final {
 public:
@@ -191,7 +189,7 @@ struct AuthoritativeTerrainColumn final {
     TerrainIdentity identity;
     uint64_t revision = 0U;
     uint64_t content_hash = 0U;
-    uint64_t dense_section_mask = 0U;
+    DenseSectionMask dense_section_mask;
     std::shared_ptr<std::array<Block, WorldExtent::DEPTH> const> dense_blocks = nullptr;
 
     [[nodiscard]] Block materialAt(uint16_t z) const noexcept;
@@ -402,13 +400,23 @@ private:
         uint32_t max_height = WorldExtent::DEPTH - 1U;
         std::array<SurfaceMaterialProfile, Chunk::FACE_BLOCK_COUNT> columns{};
         uint64_t revision = 0U;
-        uint64_t dense_mask = 0U;
+        DenseSectionMask dense_mask;
         bool edited = false;
     };
 
     struct AuthoritativeTileHashes final {
         uint64_t content_hash = 0U;
         uint64_t dense_content_hash = 0U;
+    };
+
+    struct RetiredAuthoritativeVersionToken final {
+        ChunkCoordinate coordinate{};
+        uint64_t revision = 0U;
+    };
+
+    struct RetiredAuthoritativeVersion final {
+        AuthoritativeTileVersionState state;
+        DenseSectionMask dense_mask;
     };
 
     struct SurfaceMetadata final {
@@ -451,7 +459,7 @@ private:
     >;
 
     [[nodiscard]]
-    uint64_t authoritativeDenseSectionMask(
+    DenseSectionMask authoritativeDenseSectionMask(
         ChunkCoordinate coordinate,
         AuthoritativeSurface const& tile,
         uint8_t local_x,
@@ -460,7 +468,7 @@ private:
     [[nodiscard]]
     AuthoritativeTileHashes authoritativeTileContentHashes(
         ChunkCoordinate coordinate,
-        AuthoritativeSurface const& tile,
+        DenseSectionMask const& dense_mask,
         bool include_sparse_edits
     ) const;
     [[nodiscard]] std::optional<Chunk> makeBaseChunk(ChunkCoordinate coordinate) const;
@@ -469,6 +477,7 @@ private:
     [[nodiscard]] bool editChunkRequirementSatisfied(ChunkCoordinate coordinate) const noexcept;
     [[nodiscard]] bool canAdmitResidentChunk() const noexcept;
     void recordAuthoritativeColumnChange(ChunkCoordinate coordinate) noexcept;
+    void rememberRetiredAuthoritativeVersion(ChunkCoordinate coordinate, AuthoritativeSurface const& tile) noexcept;
     void resetAuthoritativeColumnChanges() noexcept;
     void pinAuthoritativeSurface(ChunkCoordinate coordinate) noexcept;
     void advanceAccessClock() noexcept;
@@ -496,6 +505,9 @@ private:
     ResidentEvictionCandidates m_evictable_residents;
     mutable SurfaceMetadataTiles m_surface_metadata;
     std::unordered_map<ChunkCoordinate, AuthoritativeSurface, ChunkCoordinateHash> m_authoritative_surfaces;
+    std::unordered_map<ChunkCoordinate, RetiredAuthoritativeVersion, ChunkCoordinateHash>
+        m_retired_authoritative_versions;
+    std::deque<RetiredAuthoritativeVersionToken> m_retired_authoritative_version_order;
     SparseChunkEditsMap m_sparse_edits;
     uint64_t m_retained_edit_capacity_units = 0U;
     uint64_t m_sparse_edit_revision = 0U;

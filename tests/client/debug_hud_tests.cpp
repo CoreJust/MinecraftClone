@@ -54,7 +54,7 @@ TEST(DebugHudTest, FormatsCompactTelemetryAndPreservesCameraHelpWithoutViewReado
     EXPECT_EQ(
         std::string_view(text.value),
         "FPS:0.0 UPTIME:0.0s\nSPEED:1x (5x selected)\nCAMERA: F5 or 5\n"
-        "FLIGHT: OFF BYPASS: OFF (F6 or 6)\nXYZ: 1.2 4.6 -2.3\nYPR deg: 45.0 -10.0 3.0\n"
+        "FLIGHT: OFF BYPASS: OFF (F6)\nXYZ: 1.2 4.6 -2.3\nYPR deg: 45.0 -10.0 3.0\n"
         "DENSE CHUNKS: 0\nCLIENT MEMORY (RSS): 1.5 MiB  CLIMATE: --"
     );
     EXPECT_EQ(text.value.find("VIEW:"), std::string::npos);
@@ -120,7 +120,7 @@ TEST(DebugHudTest, HidesCameraViewAndPreservesEffectiveMovementRights)
     std::string_view const formatted(text.value);
     EXPECT_NE(formatted.find("CAMERA: F5 or 5"), std::string_view::npos);
     EXPECT_EQ(formatted.find("VIEW:"), std::string_view::npos);
-    EXPECT_NE(formatted.find("FLIGHT: ON BYPASS: ON (F6 or 6)"), std::string_view::npos);
+    EXPECT_NE(formatted.find("FLIGHT: ON BYPASS: ON (F6)"), std::string_view::npos);
     EXPECT_EQ(formatted.find("SURVIVAL"), std::string_view::npos);
     EXPECT_EQ(formatted.find("CREATIVE"), std::string_view::npos);
     EXPECT_EQ(formatted.find("SPECTATOR"), std::string_view::npos);
@@ -286,11 +286,13 @@ TEST(DebugHudTest, MatchesPrototypeMapAndColumnGeometryAcrossViewportAndDpi)
     EXPECT_FLOAT_EQ(desktop.heading.x, 1198.0F);
     EXPECT_FLOAT_EQ(desktop.heading.y, 16.0F);
     EXPECT_FLOAT_EQ(desktop.selected_block_y, 548.0F);
-    EXPECT_FLOAT_EQ(desktop.controls_y, 628.0F);
+    EXPECT_FLOAT_EQ(desktop.controls_y, 623.0F);
 
     client::DebugHudLayout const windowed = client::layoutDebugHud(1280U, 676U, 1.0F, true);
     EXPECT_TRUE(windowed.compact);
-    EXPECT_FLOAT_EQ(windowed.glyph_scale, 0.5F);
+    EXPECT_FLOAT_EQ(windowed.controls_y, 631.0F);
+    // Compact placement preserves full-size text when the logical canvas is roomy.
+    EXPECT_FLOAT_EQ(windowed.glyph_scale, 1.0F);
     EXPECT_FLOAT_EQ(windowed.minimap.x, desktop.minimap.x);
     EXPECT_FLOAT_EQ(windowed.minimap.y, desktop.minimap.y);
     EXPECT_FLOAT_EQ(windowed.minimap.width, desktop.minimap.width);
@@ -299,7 +301,8 @@ TEST(DebugHudTest, MatchesPrototypeMapAndColumnGeometryAcrossViewportAndDpi)
     client::DebugHudLayout const compact = client::layoutDebugHud(844U, 346U, 1.0F);
     EXPECT_TRUE(compact.compact);
     EXPECT_FLOAT_EQ(compact.margin_pixels, 12.0F);
-    EXPECT_FLOAT_EQ(compact.glyph_scale, 0.5F);
+    EXPECT_FLOAT_EQ(compact.controls_y, 301.0F);
+    EXPECT_FLOAT_EQ(compact.glyph_scale, 0.75F);
     EXPECT_FLOAT_EQ(compact.minimap.x, 682.0F);
     EXPECT_FLOAT_EQ(compact.minimap.y, 44.0F);
     EXPECT_FLOAT_EQ(compact.minimap.width, 128.0F);
@@ -371,7 +374,7 @@ TEST(DebugHudTest, BuildsPrototypeReadoutGroupsFromAvailableRuntimeValues)
     };
     EXPECT_TRUE(hasLabel("FPS 60"));
     EXPECT_TRUE(hasLabel("Uptime 02:14"));
-    EXPECT_TRUE(hasLabel("Chunks -- (18 cached)"));
+    EXPECT_TRUE(hasLabel("Cache 18"));
     EXPECT_TRUE(hasLabel("Memory 42 MiB"));
     EXPECT_TRUE(hasLabel("Position"));
     EXPECT_TRUE(hasLabel("Movement"));
@@ -382,11 +385,11 @@ TEST(DebugHudTest, BuildsPrototypeReadoutGroupsFromAvailableRuntimeValues)
     }));
     EXPECT_TRUE(std::none_of(labels.labels().begin(), labels.labels().end(), [](auto const& label) {
         return label.value.find("Selected block") != std::string::npos
-            || label.value.find("Mode") != std::string::npos
+            || label.value.starts_with("Mode:")
             || label.value.find("Break") != std::string::npos
             || label.value.find("Place") != std::string::npos;
     }));
-    EXPECT_TRUE(hasLabel("F5/5 Change view"));
+    EXPECT_TRUE(hasLabel("F5 View"));
     EXPECT_TRUE(std::none_of(labels.labels().begin(), labels.labels().end(), [](auto const& label) {
         return label.value.find("View:") != std::string::npos;
     }));
@@ -394,6 +397,47 @@ TEST(DebugHudTest, BuildsPrototypeReadoutGroupsFromAvailableRuntimeValues)
         return label.value == "N" || label.value == "E" || label.value == "S" || label.value == "W"
             || label.value.ends_with("deg");
     }));
+}
+
+TEST(DebugHudTest, DoesNotEmitDuplicateTargetMaterialEntry)
+{
+    client::DebugHudSnapshot const snapshot{
+        .input = {
+            .target_block = shared::Block::Ice,
+        },
+        .enabled = true,
+    };
+    client::TextRenderer labels;
+    client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(1280U, 676U, 1.0F), labels);
+
+    EXPECT_TRUE(std::none_of(labels.labels().begin(), labels.labels().end(), [](auto const& label) {
+        return label.value.starts_with("Target block ");
+    }));
+}
+
+TEST(DebugHudTest, ShowsSpacedChunkTelemetryAndCurrentControls)
+{
+    client::DebugHudSnapshot const snapshot{
+        .input = {
+            .loaded_dense_chunks_available = true,
+            .loaded_dense_chunks = 1024U,
+            .current_interest_chunks_available = true,
+            .current_interest_resident_chunks = 0U,
+            .current_interest_required_chunks = 0U,
+        },
+        .enabled = true,
+    };
+    client::TextRenderer labels;
+    client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(1280U, 676U, 1.0F), labels);
+
+    auto const hasLabel = [&labels](std::string_view const value) {
+        return std::any_of(labels.labels().begin(), labels.labels().end(), [value](auto const& label) {
+            return label.value == value;
+        });
+    };
+    EXPECT_TRUE(hasLabel("Chunks 0 | Cache 1024"));
+    EXPECT_TRUE(hasLabel("G Mode"));
+    EXPECT_FALSE(hasLabel("F6/6 Movement"));
 }
 
 TEST(DebugHudTest, PrototypeReadoutsRemainInsideDesktopCompactAndHiDpiCanvases)
@@ -417,12 +461,15 @@ TEST(DebugHudTest, PrototypeReadoutsRemainInsideDesktopCompactAndHiDpiCanvases)
             .loaded_dense_chunks = 513U,
             .client_memory_rss_bytes = 44'040'192U,
             .temperature_celsius = 16.6F,
+            .target_block = shared::Block::Bedrock,
         },
         .enabled = true,
     };
-    std::array<std::array<uint32_t, 3U>, 3U> const viewports{{
+    std::array<std::array<uint32_t, 3U>, 5U> const viewports{{
         { 1280U, 676U, 1U },
         { 844U, 346U, 1U },
+        { 640U, 360U, 1U },
+        { 400U, 600U, 1U },
         { 2560U, 1352U, 2U },
     }};
 
@@ -453,6 +500,53 @@ TEST(DebugHudTest, PrototypeReadoutsRemainInsideDesktopCompactAndHiDpiCanvases)
     }
 }
 
+TEST(DebugHudTest, FullResolutionCompactLayoutPreservesReadableBodyText)
+{
+    std::array<std::array<uint32_t, 2U>, 2U> const viewports{{
+        { 1920U, 1080U },
+        { 960U, 540U },
+    }};
+    client::DebugHudSnapshot const snapshot{
+        .presented_fps = 60.0,
+        .input = {
+            .player_x = 37'888.0F,
+            .player_y = 28'672.0F,
+            .player_z = 84.1F,
+        },
+        .enabled = true,
+    };
+    std::array<float, 2U> glyph_heights{};
+
+    for (size_t index = 0U; index < viewports.size(); ++index) {
+        uint32_t const width = viewports[index][0U];
+        uint32_t const height = viewports[index][1U];
+        client::DebugHudLayout const layout = client::layoutDebugHud(width, height, 1.0F, true);
+        ASSERT_TRUE(layout.compact);
+
+        client::TextRenderer labels;
+        client::buildDebugHudPresentation(snapshot, layout, labels);
+        auto const fps = std::find_if(labels.labels().begin(), labels.labels().end(), [](auto const& label) {
+            return label.value == "FPS 60";
+        });
+        ASSERT_NE(fps, labels.labels().end());
+        glyph_heights[index] = client::DEBUG_HUD_GLYPH_HEIGHT_PIXELS * fps->placement.scale;
+
+        for (client::TextLabel const& label : labels.labels()) {
+            float const text_width = static_cast<float>(label.value.size())
+                * client::DEBUG_HUD_GLYPH_WIDTH_PIXELS * label.placement.scale;
+            float const text_height = client::DEBUG_HUD_GLYPH_HEIGHT_PIXELS * label.placement.scale;
+            EXPECT_GE(label.placement.position[0U], 0.0F) << label.value;
+            EXPECT_GE(label.placement.position[1U], 0.0F) << label.value;
+            EXPECT_LE(label.placement.position[0U] + text_width, static_cast<float>(width)) << label.value;
+            EXPECT_LE(label.placement.position[1U] + text_height, static_cast<float>(height)) << label.value;
+        }
+    }
+
+    EXPECT_FLOAT_EQ(glyph_heights[0U], 32.0F);
+    // The compact 960px viewport keeps the requested 1.5x scale over the old 0.5 baseline.
+    EXPECT_FLOAT_EQ(glyph_heights[1U], 24.0F);
+}
+
 TEST(DebugHudTest, CompactWindowKeepsTelemetryReadableWithinHalfTheCanvas)
 {
     struct Viewport final {
@@ -461,33 +555,59 @@ TEST(DebugHudTest, CompactWindowKeepsTelemetryReadableWithinHalfTheCanvas)
         float dpi_scale;
         bool force_compact;
     };
-    struct Bounds final {
-        bool populated = false;
-        float left = 0.0F;
-        float top = 0.0F;
-        float right = 0.0F;
-        float bottom = 0.0F;
+    struct Footprint final {
+        float left;
+        float top;
+        float right;
+        float bottom;
+    };
+    auto const unionArea = [](std::vector<Footprint> const& footprints) {
+        struct VerticalInterval final { float top; float bottom; };
+        std::vector<float> x_edges;
+        x_edges.reserve(footprints.size() * 2U);
+        for (Footprint const& footprint : footprints) {
+            x_edges.push_back(footprint.left);
+            x_edges.push_back(footprint.right);
+        }
+        std::sort(x_edges.begin(), x_edges.end());
+        x_edges.erase(std::unique(x_edges.begin(), x_edges.end()), x_edges.end());
 
-        void include(float const x, float const y, float const width, float const height)
-        {
-            if (!populated) {
-                left = x;
-                top = y;
-                right = x + width;
-                bottom = y + height;
-                populated = true;
-                return;
+        float area = 0.0F;
+        for (size_t edge = 1U; edge < x_edges.size(); ++edge) {
+            float const left = x_edges[edge - 1U];
+            float const right = x_edges[edge];
+            std::vector<VerticalInterval> intervals;
+            for (Footprint const& footprint : footprints) {
+                if (footprint.left < right && footprint.right > left) {
+                    intervals.push_back({ footprint.top, footprint.bottom });
+                }
             }
-            left = (std::min)(left, x);
-            top = (std::min)(top, y);
-            right = (std::max)(right, x + width);
-            bottom = (std::max)(bottom, y + height);
+            std::sort(intervals.begin(), intervals.end(), [](auto const& lhs, auto const& rhs) {
+                return lhs.top < rhs.top;
+            });
+            float covered_height = 0.0F;
+            float interval_top = 0.0F;
+            float interval_bottom = 0.0F;
+            bool have_interval = false;
+            for (VerticalInterval const& interval : intervals) {
+                if (!have_interval) {
+                    interval_top = interval.top;
+                    interval_bottom = interval.bottom;
+                    have_interval = true;
+                } else if (interval.top <= interval_bottom) {
+                    interval_bottom = (std::max)(interval_bottom, interval.bottom);
+                } else {
+                    covered_height += interval_bottom - interval_top;
+                    interval_top = interval.top;
+                    interval_bottom = interval.bottom;
+                }
+            }
+            if (have_interval) {
+                covered_height += interval_bottom - interval_top;
+            }
+            area += (right - left) * covered_height;
         }
-
-        [[nodiscard]] float area() const
-        {
-            return populated ? (right - left) * (bottom - top) : 0.0F;
-        }
+        return area;
     };
     std::array<Viewport, 4U> const viewports{{
         { 1280U, 676U, 1.0F, true },
@@ -514,6 +634,7 @@ TEST(DebugHudTest, CompactWindowKeepsTelemetryReadableWithinHalfTheCanvas)
             .loaded_dense_chunks = 513U,
             .client_memory_rss_bytes = 44'040'192U,
             .temperature_celsius = 16.6F,
+            .target_block = shared::Block::Bedrock,
         },
         .enabled = true,
     };
@@ -526,7 +647,12 @@ TEST(DebugHudTest, CompactWindowKeepsTelemetryReadableWithinHalfTheCanvas)
             viewport.force_compact
         );
         ASSERT_TRUE(layout.compact);
-        EXPECT_FLOAT_EQ(layout.glyph_scale / viewport.dpi_scale, 0.5F);
+        float const logical_width = static_cast<float>(viewport.width) / viewport.dpi_scale;
+        float const logical_height = static_cast<float>(viewport.height) / viewport.dpi_scale;
+        float const expected_font_scale = logical_width < 1050.0F || logical_height < 520.0F
+            ? 0.75F
+            : 1.0F;
+        EXPECT_FLOAT_EQ(layout.glyph_scale / viewport.dpi_scale, expected_font_scale);
 
         client::TextRenderer labels;
         client::buildDebugHudPresentation(snapshot, layout, labels);
@@ -542,7 +668,7 @@ TEST(DebugHudTest, CompactWindowKeepsTelemetryReadableWithinHalfTheCanvas)
         };
         EXPECT_TRUE(hasLabel("FPS 60"));
         EXPECT_TRUE(hasLabel("Up 1440:00"));
-        EXPECT_TRUE(hasLabel("Chunks-- (513cached)"));
+        EXPECT_TRUE(hasLabel("Cache 513"));
         EXPECT_TRUE(hasLabel("RSS 42 MiB"));
         EXPECT_TRUE(hasLabel("Position"));
         EXPECT_TRUE(hasLabel("X 37888.0"));
@@ -551,22 +677,29 @@ TEST(DebugHudTest, CompactWindowKeepsTelemetryReadableWithinHalfTheCanvas)
         EXPECT_TRUE(hasText("X 37888.0"));
         EXPECT_TRUE(hasText("Z 28672.0"));
         EXPECT_TRUE(hasText("84.1"));
-        EXPECT_TRUE(hasLabel("YPR 180.0 / -42.0 / 0.0"));
+        EXPECT_FALSE(hasText("Target block Bedrock"));
+        EXPECT_TRUE(hasText("YPR 180.0"));
         EXPECT_TRUE(hasLabel("Speed 1x"));
         EXPECT_TRUE(hasLabel("Selected 99x"));
         EXPECT_TRUE(hasLabel("Accel ON"));
         EXPECT_TRUE(hasLabel("Bypass ON"));
         EXPECT_TRUE(hasLabel("Flight ON"));
         EXPECT_TRUE(hasLabel("Temp 16.6 C"));
-        EXPECT_TRUE(hasLabel("F5/5 View"));
-        EXPECT_TRUE(hasLabel("F6/6 Movement"));
+        EXPECT_TRUE(hasLabel("F5 View"));
+        EXPECT_TRUE(hasLabel("F6 Move"));
+        EXPECT_TRUE(hasLabel("G Mode"));
         EXPECT_TRUE(hasLabel("+/- Speed"));
         EXPECT_TRUE(hasLabel("Ctrl Accel"));
         EXPECT_FALSE(hasLabel("Game position example"));
         EXPECT_FALSE(hasLabel("Local climate"));
 
-        Bounds telemetry;
-        Bounds footer;
+        std::vector<Footprint> footprints;
+        footprints.push_back({
+            layout.minimap.x,
+            layout.minimap.y,
+            layout.minimap.x + layout.minimap.width,
+            layout.minimap.y + layout.minimap.height,
+        });
         for (client::TextLabel const& label : labels.labels()) {
             float const text_width = static_cast<float>(label.value.size())
                 * client::DEBUG_HUD_GLYPH_WIDTH_PIXELS * label.placement.scale;
@@ -578,17 +711,14 @@ TEST(DebugHudTest, CompactWindowKeepsTelemetryReadableWithinHalfTheCanvas)
             EXPECT_LE(label.placement.position[1U] + text_height, static_cast<float>(viewport.height))
                 << label.value;
 
-            float const center_y = label.placement.position[1U] + text_height * 0.5F;
-            if (center_y < layout.controls_y
-                && label.placement.position[0U] < layout.minimap_interactive.x) {
-                telemetry.include(label.placement.position[0U], label.placement.position[1U], text_width, text_height);
-            } else if (center_y >= layout.controls_y) {
-                footer.include(label.placement.position[0U], label.placement.position[1U], text_width, text_height);
-            }
+            footprints.push_back({
+                label.placement.position[0U],
+                label.placement.position[1U],
+                label.placement.position[0U] + text_width,
+                label.placement.position[1U] + text_height,
+            });
         }
-        float const covered_area = telemetry.area()
-            + layout.minimap.width * layout.minimap.height
-            + footer.area();
+        float const covered_area = unionArea(footprints);
         float const canvas_area = static_cast<float>(viewport.width) * static_cast<float>(viewport.height);
         EXPECT_LT(covered_area, canvas_area * 0.5F);
     }
@@ -608,14 +738,31 @@ TEST(DebugHudTest, OutsideGameplayTheBuilderEmitsNoHudText)
     EXPECT_TRUE(labels.labels().empty());
 }
 
-TEST(DebugHudTest, HiddenGameplayHudRetainsOnlyGameControlHints)
+TEST(DebugHudTest, HiddenGameplayHudEmitsNoLabels)
+{
+    client::DebugHudSnapshot const snapshot{
+        .input = {
+            .gameplay_ui = true,
+            .flight_enabled = true,
+            .collision_bypass_enabled = false,
+            .target_block = shared::Block::Stone,
+        },
+        .enabled = false,
+    };
+    client::TextRenderer labels;
+    client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(1280U, 676U, 1.0F), labels);
+
+    EXPECT_TRUE(labels.labels().empty());
+}
+
+TEST(DebugHudTest, EnabledGameplayHudKeepsGameControlHintsVisible)
 {
     client::DebugHudSnapshot const snapshot{
         .input = {
             .flight_enabled = true,
             .collision_bypass_enabled = false,
         },
-        .enabled = false,
+        .enabled = true,
     };
     client::TextRenderer labels;
     client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(1280U, 676U, 1.0F), labels);
@@ -626,16 +773,14 @@ TEST(DebugHudTest, HiddenGameplayHudRetainsOnlyGameControlHints)
         });
     };
     EXPECT_TRUE(hasLabel("Flight ON"));
-    EXPECT_TRUE(hasLabel("Collision bypass OFF"));
-    EXPECT_TRUE(hasLabel("F1 Show HUD"));
-    EXPECT_TRUE(hasLabel("M World map"));
-#if defined(__APPLE__)
-    EXPECT_TRUE(hasLabel("F2 Copy screenshot"));
+    EXPECT_TRUE(hasLabel("Bypass OFF"));
+    EXPECT_TRUE(hasLabel("F1 Hide HUD"));
+    EXPECT_TRUE(hasLabel("M Map"));
+#if defined(__APPLE__) || defined(_WIN32)
+    EXPECT_TRUE(hasLabel("F2 Screenshot"));
 #else
-    EXPECT_FALSE(hasLabel("F2 Copy screenshot"));
+    EXPECT_FALSE(hasLabel("F2 Screenshot"));
 #endif
-    EXPECT_FALSE(hasLabel("FPS 0"));
-    EXPECT_FALSE(hasLabel("Game position example"));
 }
 
 
@@ -672,18 +817,23 @@ TEST(DebugHudTest, AdaptivePrototypeUsesOneFacePerLabelAndPreservesMixedStyleGly
     ASSERT_FALSE(adaptive.labels().empty());
     EXPECT_EQ(fixed.labels().size(), adaptive.labels().size() * 5U);
     bool found_style_hint = false;
-    for (size_t index = 0U; index < adaptive.labels().size(); ++index) {
-        auto const& face = adaptive.labels()[index];
-        auto const& fixed_face = fixed.labels()[index * 5U + 4U];
-        if (fixed_face.value == "F7 Adaptive HUD") {
-            EXPECT_EQ(face.value, "F7 Colored HUD");
+    for (auto const& face : adaptive.labels()) {
+        std::string_view const fixed_value = face.value == "F7 Colored HUD"
+            ? "F7 Experimental contrast"
+            : std::string_view{face.value};
+        auto const fixed_face = std::find_if(
+            fixed.labels().begin(), fixed.labels().end(), [fixed_value, &face](auto const& label) {
+                return label.value == fixed_value && label.placement.style == client::TextStyle::Fixed
+                    && label.color.packed() == face.placement.light_color.packed();
+            }
+        );
+        ASSERT_NE(fixed_face, fixed.labels().end());
+        if (face.value == "F7 Colored HUD") {
             found_style_hint = true;
-        } else {
-            EXPECT_EQ(face.value, fixed_face.value);
         }
-        EXPECT_EQ(face.placement.position, fixed_face.placement.position);
+        EXPECT_EQ(face.placement.position, fixed_face->placement.position);
         EXPECT_EQ(face.placement.style, client::TextStyle::Adaptive);
-        EXPECT_EQ(face.placement.light_color.packed(), fixed_face.color.packed());
+        EXPECT_EQ(face.placement.light_color.packed(), fixed_face->color.packed());
         EXPECT_EQ(face.placement.dark_color.packed(), 0xFF2D'2414U);
     }
     EXPECT_TRUE(found_style_hint);
@@ -725,11 +875,16 @@ TEST(DebugHudTest, DefaultColoredContrastShowsCurrentInterestAndCachedTotal)
         if (label.value.starts_with("X ")) { axes[0] = label.color.packed(); }
         if (label.value.starts_with("Y ")) { axes[1] = label.color.packed(); }
         if (label.value.starts_with("Z ")) { axes[2] = label.color.packed(); }
-        chunk_status = chunk_status || label.value == "Chunks 37/72 ready (1024 cached)";
+        chunk_status = chunk_status || label.value == "Chunks 37 | Cache 1024";
     }
     EXPECT_TRUE(chunk_status);
     EXPECT_TRUE(std::any_of(output.labels().begin(), output.labels().end(), [](auto const& label) {
-        return label.value == "Terrain ready 2786/6561";
+        return label.value == "Terrain 2786/6561";
+    }));
+    EXPECT_FALSE(std::any_of(output.labels().begin(), output.labels().end(), [](auto const& label) {
+        return label.value.find("Active interest") != std::string::npos
+            || label.value.find("ready/required") != std::string::npos
+            || label.value.find("Terrain ready") != std::string::npos;
     }));
     EXPECT_NE(axes[0], 0U);
     EXPECT_NE(axes[1], 0U);
@@ -784,6 +939,7 @@ TEST(DebugHudTest, WrappedSessionCountersDoNotOverlapInNarrowCompactWindow)
 TEST(DebugHudTest, ColoredAxesShareOneRowAndUnavailableHumidityIsOmitted)
 {
     client::DebugHudSnapshot snapshot{.enabled = true};
+    snapshot.input.text_style = client::TextStyle::ColoredAdaptive;
     snapshot.input.player_x = 12'345.6F;
     snapshot.input.player_y = -12'345.6F;
     snapshot.input.player_z = 123.4F;
@@ -793,9 +949,10 @@ TEST(DebugHudTest, ColoredAxesShareOneRowAndUnavailableHumidityIsOmitted)
         std::array<float, 3U> row_y{};
         std::array<float, 3U> speed_y{};
         std::array<uint32_t, 3U> colors{};
+        std::array<bool, 3U> axes_found{};
         for (auto const& label : output.labels()) {
             EXPECT_EQ(label.value.find("Humidity"), std::string::npos);
-            if (label.placement.style != client::TextStyle::ColoredAdaptive) { continue; }
+            if (label.color.packed() == 0xFF2D'2414U) { continue; }
             if (label.value.starts_with("Speed ")) { speed_y[0] = label.placement.position[1]; }
             if (label.value.starts_with("Selected ")) { speed_y[1] = label.placement.position[1]; }
             if (label.value.starts_with("Accel ")) { speed_y[2] = label.placement.position[1]; }
@@ -803,14 +960,21 @@ TEST(DebugHudTest, ColoredAxesShareOneRowAndUnavailableHumidityIsOmitted)
                 if (label.value.starts_with(std::string{static_cast<char>('X' + axis)} + " ")) {
                     row_y[axis] = label.placement.position[1];
                     colors[axis] = label.color.packed();
+                    axes_found[axis] = true;
                 }
             }
         }
-        if (width >= 844U) {
+        if (width >= 1280U) {
+            EXPECT_TRUE(std::all_of(axes_found.begin(), axes_found.end(), [](bool const found) {
+                return found;
+            }));
             EXPECT_FLOAT_EQ(speed_y[0], speed_y[1]);
             EXPECT_FLOAT_EQ(speed_y[1], speed_y[2]);
             EXPECT_FLOAT_EQ(row_y[0], row_y[1]);
             EXPECT_FLOAT_EQ(row_y[1], row_y[2]);
+            EXPECT_NE(colors[0], colors[1]);
+            EXPECT_NE(colors[0], colors[2]);
+            EXPECT_NE(colors[1], colors[2]);
         }
         for (auto const& label : output.labels()) {
             bool const readout = label.value.starts_with("X ") || label.value.starts_with("Y ")
@@ -820,8 +984,35 @@ TEST(DebugHudTest, ColoredAxesShareOneRowAndUnavailableHumidityIsOmitted)
                 EXPECT_GE(label.placement.scale, width < 900U ? 0.375F : 0.75F);
             }
         }
-        EXPECT_NE(colors[0], colors[1]);
-        EXPECT_NE(colors[0], colors[2]);
-        EXPECT_NE(colors[1], colors[2]);
     }
+}
+
+TEST(DebugHudTest, OmitsUnavailableGameplayTelemetryButPreservesKnownZeroValues)
+{
+    client::DebugHudSnapshot snapshot{};
+    snapshot.enabled = true;
+    for (auto const size : std::array<std::array<uint32_t, 2U>, 2U>{{{844U, 346U}, {1920U, 1080U}}}) {
+        auto const layout = client::layoutDebugHud(size[0], size[1], 1.0F, false);
+        client::TextRenderer labels;
+        client::buildDebugHudPresentation(snapshot, layout, labels);
+        for (auto const& label : labels.labels()) {
+            EXPECT_EQ(label.value.find("Chunks"), std::string::npos);
+            EXPECT_EQ(label.value.find("Terrain ready"), std::string::npos);
+            EXPECT_EQ(label.value.find("RSS"), std::string::npos);
+            EXPECT_EQ(label.value.find("Memory"), std::string::npos);
+            EXPECT_EQ(label.value.find("Temp"), std::string::npos);
+            EXPECT_EQ(label.value.find("unavailable"), std::string::npos);
+        }
+    }
+    snapshot.input.loaded_dense_chunks_available = true;
+    snapshot.input.client_memory_rss_bytes = 0U;
+    snapshot.input.temperature_celsius = 0.0F;
+    client::TextRenderer labels;
+    client::buildDebugHudPresentation(snapshot, client::layoutDebugHud(844U, 346U, 1.0F, false), labels);
+    auto const contains = [&labels](std::string_view value) {
+        return std::ranges::any_of(labels.labels(), [value](auto const& label) { return label.value == value; });
+    };
+    EXPECT_TRUE(contains("Cache 0"));
+    EXPECT_TRUE(contains("RSS 0 MiB"));
+    EXPECT_TRUE(contains("Temp 0.0 C"));
 }

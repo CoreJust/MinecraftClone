@@ -2,6 +2,7 @@
 
 #include <client/render/PresentationFrameProgress.hpp>
 #include <client/render/TextRenderer.hpp>
+#include <shared/world/Chunk.hpp>
 
 #include <array>
 #include <chrono>
@@ -98,6 +99,8 @@ struct DebugHudInput {
     uint32_t required_terrain_columns = 0U;
     std::optional<uint64_t> client_memory_rss_bytes;
     std::optional<float> temperature_celsius;
+    // Crosshair hit material, distinct from the selected placement material.
+    std::optional<shared::Block> target_block = std::nullopt;
 };
 
 using DebugHudText = TextDocument;

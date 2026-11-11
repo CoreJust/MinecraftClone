@@ -44,25 +44,54 @@
 
 namespace {
 
+void setSceneFaces(client::TerrainLodScene& scene, std::vector<client::StoneFaceInstance> faces)
+{
+    scene.logical_face_count = faces.size();
+    for (client::TerrainLodDrawGroup& group : scene.groups) {
+        group.face_storage.reset();
+        group.face_storage_first_instance = 0U;
+        if (group.range.instance_count == 0U) {
+            continue;
+        }
+        if (group.range.first_instance > faces.size()
+            || group.range.instance_count > faces.size() - group.range.first_instance) {
+            continue;
+        }
+        auto const first = faces.begin() + group.range.first_instance;
+        group.face_storage = std::make_shared<std::vector<client::StoneFaceInstance> const>(
+            first, first + group.range.instance_count);
+    }
+}
+
+std::vector<client::StoneFaceInstance> sceneFaces(client::TerrainLodScene const& scene)
+{
+    std::vector<client::StoneFaceInstance> faces(client::terrainLodSceneFaceCount(scene));
+    for (client::TerrainLodDrawGroup const& group : scene.groups) {
+        auto const group_faces = client::terrainLodGroupFaces(group);
+        std::copy(group_faces.begin(), group_faces.end(), faces.begin() + group.range.first_instance);
+    }
+    return faces;
+}
+
 TEST(RendererSmokeTest, ExactTerrainReplacementPreservesUnrelatedRangesAndRemovesEmptyGroup)
 {
     client::TerrainLodScene active;
-    active.faces = {{.z = 1}, {.z = 2}, {.z = 3}};
     active.groups = {
         {.range = {0U, 1U}, .extent = 16U},
         {.range = {1U, 1U}, .origin_x = 16U, .extent = 16U},
         {.range = {2U, 1U}, .origin_x = 32U, .extent = 32U},
     };
+    setSceneFaces(active, {{.z = 1}, {.z = 2}, {.z = 3}});
     std::array<client::StoneIndirectDraws::Range, 3> const ranges{{{10U, 1U}, {20U, 1U}, {30U, 1U}}};
     client::TerrainLodScene patch;
-    patch.faces = {{.z = 4}, {.z = 5}};
     patch.groups = {
         {.range = {0U, 2U}, .extent = 16U},
         {.range = {2U, 0U}, .origin_x = 16U, .extent = 16U},
     };
+    setSceneFaces(patch, {{.z = 4}, {.z = 5}});
     auto const plan = client::detail::terrainLodReplacementPlan(active, ranges, patch);
     ASSERT_TRUE(plan.scene);
-    EXPECT_EQ(plan.scene->faces, (std::vector<client::StoneFaceInstance>{{.z = 4}, {.z = 5}, {.z = 3}}));
+    EXPECT_EQ(sceneFaces(*plan.scene), (std::vector<client::StoneFaceInstance>{{.z = 4}, {.z = 5}, {.z = 3}}));
     EXPECT_EQ(plan.scene->groups[1].range.instance_count, 0U);
     EXPECT_FALSE(plan.reusable[0]);
     EXPECT_FALSE(plan.reusable[1]);
@@ -71,7 +100,7 @@ TEST(RendererSmokeTest, ExactTerrainReplacementPreservesUnrelatedRangesAndRemove
     EXPECT_EQ(plan.ranges[2].instance_count, 1U);
     EXPECT_EQ(plan.uploaded, (std::vector<uint32_t>{0U, 0U, 1U}));
     client::detail::validateTerrainLodGroups(*plan.scene);
-    EXPECT_EQ(active.faces[0].z, 1);
+    EXPECT_EQ(sceneFaces(active)[0].z, 1);
 }
 
 TEST(RendererSmokeTest, ExactTerrainReplacementRejectsStaleCoverageAndUnknownKeys)
@@ -1009,6 +1038,7 @@ TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
     static constexpr uint32_t LOGICAL_HEIGHT = 240U;
     static constexpr uint32_t TILE_COUNT = 65U;
     static constexpr uint32_t INITIAL_CAPACITY = 65'536U;
+    static constexpr int32_t TARGET_TILE_X = static_cast<int32_t>(TILE_COUNT - 1U);
     static constexpr double CAMERA_Y = -20.0;
     static constexpr double CAMERA_Z = 18.0;
     static constexpr double CAMERA_X_OFFSET = 8.0;
@@ -1025,47 +1055,81 @@ TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
     client::VulkanRenderer renderer{
         client::VulkanRenderer::createPresentationContext(
             window,
-            { .require_validation = true }
+            { .require_validation = true, .enable_frame_capture = true }
         ),
         shader_assets,
-        { .require_validation = true },
+        { .require_validation = true, .enable_frame_capture = true },
     };
-    EXPECT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
-    std::chrono::steady_clock::time_point const arena_deadline = std::chrono::steady_clock::now() + TIMEOUT;
-    for (uint32_t tile_index = 0U; tile_index < TILE_COUNT; ++tile_index) {
+    ASSERT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
+    shared::HeightTileSurfaceMesh target{
+        .coordinate = { .x = TARGET_TILE_X, .y = 0 },
+        .quads = {},
+        .identity = {},
+    };
+    target.quads.push_back({
+        .x = TARGET_TILE_X * static_cast<int32_t>(shared::HeightTile::SIDE_LENGTH),
+        .y = 0,
+        .z = 6,
+        .direction = shared::HeightTileSurfaceDirection::PositiveZ,
+    });
+    auto const deadline = [] { return std::chrono::steady_clock::now() + TIMEOUT; };
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(target, deadline()));
+    renderer.setDebugHudEnabled(false);
+    renderer.setCamera({
+        .position = {
+            static_cast<double>(TARGET_TILE_X * static_cast<int32_t>(shared::HeightTile::SIDE_LENGTH))
+                + CAMERA_X_OFFSET,
+            CAMERA_Y,
+            CAMERA_Z,
+        },
+        .angles = { .pitch_degrees = CAMERA_PITCH_DEGREES },
+    });
+    auto const captureInstalled = [&renderer, &window] {
+        renderer.requestFrameCapture();
+        auto const capture_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+        for (uint32_t frame = 0U; frame < 32U && std::chrono::steady_clock::now() < capture_deadline; ++frame) {
+            if (!window.nextFrame()) {
+                break;
+            }
+            static_cast<void>(renderer.render({}, capture_deadline));
+            if (renderer.captureState() == client::FrameCaptureState::Completed) {
+                break;
+            }
+        }
+        return renderer.takeFrameCapture();
+    };
+    auto const original_capture = captureInstalled();
+    ASSERT_TRUE(original_capture.has_value());
+    ASSERT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
+
+    std::chrono::steady_clock::time_point const arena_deadline = deadline();
+    for (uint32_t tile_index = 0U; tile_index < TILE_COUNT - 1U; ++tile_index) {
         ASSERT_TRUE(renderer.upsertHeightTileMesh(
-            denseHeightTileMesh(static_cast<int32_t>(tile_index)),
-            arena_deadline
+            denseHeightTileMesh(static_cast<int32_t>(tile_index)), arena_deadline
         ));
     }
     EXPECT_GT(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
-
-    for (uint32_t tile_index = 1U; tile_index < TILE_COUNT - 1U; ++tile_index) {
+    EXPECT_GT(renderer.runtimeInfo().stone_face_growth.growth_success_count, 0U);
+    for (uint32_t tile_index = 0U; tile_index < TILE_COUNT - 1U; ++tile_index) {
         EXPECT_TRUE(renderer.removeHeightTileMesh({ .x = static_cast<int32_t>(tile_index), .y = 0 }));
     }
+    ASSERT_EQ(renderer.runtimeInfo().height_tile_mesh_count, 1U);
+    auto const retained_capture = captureInstalled();
+    ASSERT_TRUE(retained_capture.has_value());
+    EXPECT_EQ(retained_capture->rgba8, original_capture->rgba8)
+        << "The existing tile must still render after arena growth and filler removal.";
 
-    auto const renderVisibleTile = [&renderer, &window](int32_t const tile_x) {
-        renderer.setCamera({
-            .position = {
-                static_cast<double>(tile_x * static_cast<int32_t>(shared::HeightTile::SIDE_LENGTH))
-                    + CAMERA_X_OFFSET,
-                CAMERA_Y,
-                CAMERA_Z,
-            },
-            .angles = { .pitch_degrees = CAMERA_PITCH_DEGREES },
-        });
-        ASSERT_TRUE(window.nextFrame());
-        EXPECT_TRUE(renderer.render(
-            {},
-            client::DebugHudInput{},
-            1.0F,
-            std::chrono::steady_clock::now() + TIMEOUT
-        ));
-        EXPECT_GT(renderer.runtimeInfo().chunk_draw_count, 0U);
-        EXPECT_EQ(renderer.runtimeInfo().chunk_draw_face_count, shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT);
-    };
-    renderVisibleTile(0);
-    renderVisibleTile(static_cast<int32_t>(TILE_COUNT - 1U));
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(denseHeightTileMesh(TARGET_TILE_X), deadline()));
+    auto const grown_capture = captureInstalled();
+    ASSERT_TRUE(grown_capture.has_value());
+    EXPECT_EQ(grown_capture->width, original_capture->width);
+    EXPECT_EQ(grown_capture->height, original_capture->height);
+    EXPECT_NE(grown_capture->rgba8, original_capture->rgba8)
+        << "The replacement mesh must be visible after the stone-face buffer grows.";
+    EXPECT_GT(renderer.runtimeInfo().chunk_draw_count, 0U);
+    EXPECT_GT(renderer.runtimeInfo().chunk_draw_face_count, 0U);
+    EXPECT_EQ(renderer.runtimeInfo().height_tile_mesh_count, 1U);
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT);
     EXPECT_EQ(renderer.validationErrorCount(), 0U);
 }
 
@@ -1445,13 +1509,15 @@ TEST(RendererSmokeTest, RuntimeSceneAndHudReceiptAdvanceOnlyAfterSubmission)
     };
     renderer.setDebugHudEnabled(false);
     auto first = std::make_shared<client::TerrainLodScene>();
-    first->faces = { client::StoneFaceInstance::fromHeightTileQuad({
+    first->groups = { { .range = { 0U, 1U }, .extent = 16U } };
+    setSceneFaces(*first, { client::StoneFaceInstance::fromHeightTileQuad({
         .z = 6,
         .direction = shared::HeightTileSurfaceDirection::PositiveZ,
-    }) };
-    first->groups = { { .range = { 0U, 1U }, .extent = 16U } };
+    }) });
     auto second = std::make_shared<client::TerrainLodScene>(*first);
-    second->faces[0].z += 1;
+    auto second_faces = sceneFaces(*second);
+    second_faces[0].z += 1;
+    setSceneFaces(*second, std::move(second_faces));
     auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
     auto publish = [&](std::shared_ptr<client::TerrainLodScene const> const& scene) {
         while (std::chrono::steady_clock::now() < deadline) {
@@ -1494,7 +1560,7 @@ TEST(RendererSmokeTest, RuntimeSceneAndHudReceiptAdvanceOnlyAfterSubmission)
     auto const second_receipt = renderer.runtimeInfo();
     EXPECT_GT(second_receipt.submitted_frame_count, first_receipt.submitted_frame_count);
     ASSERT_TRUE(second_receipt.terrain_lod_scene);
-    EXPECT_EQ(second_receipt.terrain_lod_scene->faces, second->faces);
+    EXPECT_EQ(sceneFaces(*second_receipt.terrain_lod_scene), sceneFaces(*second));
     EXPECT_TRUE(second_receipt.debug_hud_enabled);
     EXPECT_EQ(first_receipt.terrain_lod_scene, first);
     EXPECT_EQ(renderer.validationErrorCount(), 0U);
@@ -3248,6 +3314,169 @@ TEST(RendererSmokeTest, BlockEffectsShowTargetCracksAndAcceptedParticlesWithScen
     EXPECT_EQ(renderer.validationErrorCount(), 0U);
 }
 
+TEST(RendererSmokeTest, CracksRemainStableAcrossWrappedHighCoordinateCamera)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 320U, .height = 240U, .title = "Wrapped block interaction effects",
+        },
+    };
+    client::InstalledShaderAssets const shaders;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window, {.require_validation = true, .enable_frame_capture = true}),
+        shaders, {.require_validation = true, .enable_frame_capture = true},
+    };
+    renderer.setDebugHudEnabled(false);
+    renderer.setFallbackSceneEnabled(false);
+    shared::ChunkMesh wall{
+        .coordinate = {}, .content_identity = {.revision = 1U, .content_hash = 1U}, .faces = {},
+    };
+    for (uint8_t x = 0U; x < 5U; ++x) {
+        for (uint8_t z = 0U; z < 5U; ++z) {
+            wall.faces.push_back({.local_origin = {x, 0U, z},
+                .direction = shared::FaceDirection::NegativeY, .material = shared::Block::Stone});
+        }
+    }
+    renderer.setChunkMesh(wall);
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+    auto capture = [&]() -> std::optional<client::RendererFrameCapture> {
+        renderer.requestFrameCapture();
+        for (uint32_t attempt = 0U; attempt < 20U && std::chrono::steady_clock::now() < deadline; ++attempt) {
+            if (!window.nextFrame()) {
+                return std::nullopt;
+            }
+            static_cast<void>(renderer.render({}, deadline));
+            auto result = renderer.takeFrameCapture();
+            if (result) {
+                return result;
+            }
+        }
+        return std::nullopt;
+    };
+    shared::BlockTarget const visible{.cell = {2, 0, 2}, .block = shared::Block::Stone};
+    shared::BlockTarget const occluded{.cell = {2, 2, 2}, .block = shared::Block::Stone};
+    // The old timestamp expires hold particles, leaving only the stable target and crack.
+    client::BlockInteractionEffects::Clock::time_point const target_time{};
+    renderer.setCamera({.position = {2.5, -3.0, 2.5}});
+    renderer.setBlockInteractionTarget(visible, 0.0F, target_time);
+    auto const low_outline = capture();
+    ASSERT_TRUE(low_outline);
+    renderer.setBlockInteractionTarget(visible, 0.75F, target_time);
+    auto const low_cracks = capture();
+    ASSERT_TRUE(low_cracks);
+    ASSERT_NE(low_cracks->rgba8, low_outline->rgba8);
+
+    // The same canonical block and seed are seen one world circumference away.
+    renderer.setCamera({.position = {65'538.5, -3.0, 2.5}});
+    renderer.setBlockInteractionTarget(visible, 0.0F, target_time);
+    auto const high_outline = capture();
+    ASSERT_TRUE(high_outline);
+    renderer.setBlockInteractionTarget(visible, 0.75F, target_time);
+    auto const high_cracks = capture();
+    ASSERT_TRUE(high_cracks);
+    auto save = [](client::RendererFrameCapture const& image, char const* name) {
+        if (char const* const directory = std::getenv("MC_BLOCK_CRACK_CAPTURE_DIRECTORY")) {
+            EXPECT_TRUE(testsupport::writePpm(
+                {.width = image.width, .height = image.height, .srgb_encoded = image.srgb_encoded,
+                    .pixels = image.rgba8},
+                std::filesystem::path{directory} / name, "Wrapped block crack regression"));
+        }
+    };
+    save(*low_outline, "low-outline.ppm");
+    save(*low_cracks, "low-cracks.ppm");
+    save(*high_outline, "high-outline.ppm");
+    save(*high_cracks, "high-cracks.ppm");
+    EXPECT_EQ(high_outline->rgba8, low_outline->rgba8);
+    EXPECT_EQ(high_cracks->rgba8, low_cracks->rgba8);
+
+    renderer.setBlockInteractionTarget(std::nullopt, 0.0F, target_time);
+    auto const baseline = capture();
+    ASSERT_TRUE(baseline);
+    renderer.setBlockInteractionTarget(occluded, 0.75F, target_time);
+    auto const behind_wall = capture();
+    ASSERT_TRUE(behind_wall);
+    EXPECT_EQ(behind_wall->rgba8, baseline->rgba8);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, CurvedGroundCracksAtPlaytestCamera)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 640U, .height = 480U, .title = "Curved ground crack capture",
+        },
+    };
+    client::InstalledShaderAssets const shaders;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window, {.require_validation = true, .enable_frame_capture = true}),
+        shaders, {.require_validation = true, .enable_frame_capture = true},
+    };
+    renderer.setDebugHudEnabled(false);
+    renderer.setFallbackSceneEnabled(false);
+    // HUD coordinates report the player's lower corner; the first-person eye
+    // is centered in the body and 1.625 blocks above the player's feet.
+    renderer.setCamera({.position = {32'763.9125, 32'781.8125, 705.625},
+        .angles = {.yaw_degrees = 336.8, .pitch_degrees = -68.1}});
+    auto scene = std::make_shared<client::TerrainLodScene>();
+    auto const face = client::StoneFaceInstance::fromChunkFace({2'047, 2'048, 43}, {
+        .local_origin = {11U, 14U, 15U}, .direction = shared::FaceDirection::PositiveZ,
+        .material = shared::Block::Grass,
+    });
+    scene->groups = {{.range = {0U, 1U}, .origin_x = 32'752U, .origin_y = 32'768U,
+        .extent = 16U, .minimum_z = 703, .maximum_z = 704}};
+    setSceneFaces(*scene, {face});
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{20};
+    while (!renderer.upsertTerrainLodScene(scene, deadline)) {
+        ASSERT_LT(std::chrono::steady_clock::now(), deadline);
+        std::this_thread::yield();
+    }
+    auto capture = [&]() -> std::optional<client::RendererFrameCapture> {
+        renderer.requestFrameCapture();
+        for (uint32_t attempt = 0U; attempt < 20U && std::chrono::steady_clock::now() < deadline; ++attempt) {
+            if (!window.nextFrame()) {
+                return std::nullopt;
+            }
+            static_cast<void>(renderer.render({}, deadline));
+            if (auto image = renderer.takeFrameCapture()) { return image; }
+        }
+        return std::nullopt;
+    };
+    auto save = [](client::RendererFrameCapture const& image, char const* name) {
+        if (char const* const directory = std::getenv("MC_BLOCK_CRACK_CAPTURE_DIRECTORY")) {
+            EXPECT_TRUE(testsupport::writePpm(
+                {.width = image.width, .height = image.height, .srgb_encoded = image.srgb_encoded,
+                    .pixels = image.rgba8},
+                std::filesystem::path{directory} / name, "Curved ground crack regression"));
+        }
+    };
+    shared::BlockTarget const target{.cell = {32'763, 32'782, 703}, .block = shared::Block::Grass};
+    client::BlockInteractionEffects::Clock::time_point const target_time{};
+    renderer.setBlockInteractionTarget(target, 0.0F, target_time);
+    auto const outline = capture();
+    ASSERT_TRUE(outline);
+    save(*outline, "curved-outline.ppm");
+    std::array<float, 3U> const progress{0.55F, 0.75F, 1.0F};
+    std::array<char const*, 3U> const names{"curved-055.ppm", "curved-075.ppm", "curved-100.ppm"};
+    for (size_t index = 0U; index < progress.size(); ++index) {
+        renderer.setBlockInteractionTarget(target, progress[index], target_time);
+        auto const cracks = capture();
+        ASSERT_TRUE(cracks);
+        save(*cracks, names[index]);
+        size_t changed_center_pixels = 0U;
+        for (uint32_t y = outline->height / 4U; y < outline->height * 3U / 4U; ++y) {
+            for (uint32_t x = outline->width / 4U; x < outline->width * 3U / 4U; ++x) {
+                size_t const offset = (static_cast<size_t>(y) * outline->width + x) * 4U;
+                changed_center_pixels += !std::equal(outline->rgba8.begin() + offset,
+                    outline->rgba8.begin() + offset + 3U, cracks->rgba8.begin() + offset);
+            }
+        }
+        EXPECT_GT(changed_center_pixels, 0U) << "progress " << progress[index];
+    }
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
 TEST(RendererSmokeTest, ExactTerrainReplacementRemovesAndRestoresVisibleGeometry)
 {
     core::platform::glfw::GlfwWindow window{
@@ -3265,12 +3494,13 @@ TEST(RendererSmokeTest, ExactTerrainReplacementRemovesAndRestoresVisibleGeometry
     renderer.setFallbackSceneEnabled(false);
     renderer.setCamera({.position = {32'768.5, 32'768.0, 64.5}}, {.vertical_fov_degrees = 1.0});
     auto scene = std::make_shared<client::TerrainLodScene>();
-    scene->faces = {client::StoneFaceInstance::fromChunkFace({2'048, 2'064, 4}, {
+    std::vector<client::StoneFaceInstance> faces{client::StoneFaceInstance::fromChunkFace({2'048, 2'064, 4}, {
         .local_origin = {0U, 0U, 0U}, .direction = shared::FaceDirection::NegativeY,
         .material = shared::Block::Stone,
     })};
     scene->groups = {{.range = {0U, 1U}, .origin_x = 32'768U, .origin_y = 33'024U,
         .extent = 16U, .minimum_z = 64, .maximum_z = 65}};
+    setSceneFaces(*scene, std::move(faces));
     auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
     while (!renderer.upsertTerrainLodScene(scene, deadline)) {
         ASSERT_LT(std::chrono::steady_clock::now(), deadline);
@@ -3289,8 +3519,9 @@ TEST(RendererSmokeTest, ExactTerrainReplacementRemovesAndRestoresVisibleGeometry
     auto const before = capture();
     ASSERT_TRUE(before);
     auto empty = std::make_shared<client::TerrainLodScene>(*scene);
-    empty->faces.clear();
     empty->groups[0].range.instance_count = 0U;
+    empty->logical_face_count = 0U;
+    empty->groups[0].face_storage.reset();
     ASSERT_TRUE(renderer.replaceTerrainLodGroups(empty, deadline));
     auto const removed = capture();
     ASSERT_TRUE(removed);
@@ -3303,6 +3534,133 @@ TEST(RendererSmokeTest, ExactTerrainReplacementRemovesAndRestoresVisibleGeometry
     auto const restored = capture();
     ASSERT_TRUE(restored);
     EXPECT_EQ(restored->rgba8, before->rgba8);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, ExactTerrainReplacementCompletesWithExpiredFrameDeadlines)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 320U, .height = 240U, .title = "Expired terrain replacement budget",
+        },
+    };
+    client::InstalledShaderAssets const shaders;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window, {.require_validation = true, .enable_frame_capture = true}),
+        shaders, {.require_validation = true, .enable_frame_capture = true},
+    };
+    renderer.setDebugHudEnabled(false);
+    renderer.setFallbackSceneEnabled(false);
+    renderer.setCamera({.position = {32'768.5, 32'768.0, 64.5}}, {.vertical_fov_degrees = 1.0});
+    auto scene = std::make_shared<client::TerrainLodScene>();
+    std::vector<client::StoneFaceInstance> faces{client::StoneFaceInstance::fromChunkFace({2'048, 2'064, 4}, {
+        .local_origin = {0U, 0U, 0U}, .direction = shared::FaceDirection::NegativeY,
+        .material = shared::Block::Stone,
+    })};
+    scene->groups = {{.range = {0U, 1U}, .origin_x = 32'768U, .origin_y = 33'024U,
+        .extent = 16U, .minimum_z = 64, .maximum_z = 65}};
+    setSceneFaces(*scene, std::move(faces));
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+    while (!renderer.upsertTerrainLodScene(scene, deadline)) {
+        ASSERT_LT(std::chrono::steady_clock::now(), deadline);
+        std::this_thread::yield();
+    }
+    auto capture = [&]() -> std::optional<client::RendererFrameCapture> {
+        renderer.requestFrameCapture();
+        for (uint32_t attempt = 0U; attempt < 20U && std::chrono::steady_clock::now() < deadline; ++attempt) {
+            if (!window.nextFrame()) { return std::nullopt; }
+            static_cast<void>(renderer.render({}, deadline));
+            auto result = renderer.takeFrameCapture();
+            if (result) { return result; }
+        }
+        return std::nullopt;
+    };
+    auto const before = capture();
+    ASSERT_TRUE(before);
+    auto empty = std::make_shared<client::TerrainLodScene>(*scene);
+    empty->groups[0].range.instance_count = 0U;
+    empty->logical_face_count = 0U;
+    empty->groups[0].face_storage.reset();
+    ASSERT_TRUE(renderer.replaceTerrainLodGroups(empty, deadline));
+    auto const removed = capture();
+    ASSERT_TRUE(removed);
+    EXPECT_NE(removed->rgba8, before->rgba8);
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, 0U);
+    std::shared_ptr<client::TerrainLodScene const> restored_upload;
+    for (uint32_t attempt = 0U; attempt < 20U && std::chrono::steady_clock::now() < deadline; ++attempt) {
+        restored_upload = renderer.replaceTerrainLodGroups(scene, std::chrono::steady_clock::now());
+        if (restored_upload) { break; }
+        ASSERT_TRUE(window.nextFrame());
+        static_cast<void>(renderer.render({}, deadline));
+    }
+    ASSERT_TRUE(restored_upload)
+        << "Authoritative terrain edits must make bounded progress after earlier frame work consumes the budget.";
+    auto const restored = capture();
+    ASSERT_TRUE(restored);
+    EXPECT_EQ(renderer.runtimeInfo().terrain_lod_scene, restored_upload);
+    EXPECT_EQ(restored->rgba8, before->rgba8);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, FullTerrainSceneCompletesWithExpiredFrameDeadlines)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 320U, .height = 240U, .title = "Expired full terrain upload budget",
+        },
+    };
+    client::InstalledShaderAssets const shaders;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window, {.require_validation = true, .enable_frame_capture = true}),
+        shaders, {.require_validation = true, .enable_frame_capture = true},
+    };
+    renderer.setDebugHudEnabled(false);
+    renderer.setFallbackSceneEnabled(false);
+    renderer.setCamera({.position = {32'768.5, 32'768.0, 64.5}}, {.vertical_fov_degrees = 1.0});
+    auto scene = std::make_shared<client::TerrainLodScene>();
+    std::vector<client::StoneFaceInstance> faces{client::StoneFaceInstance::fromChunkFace({2'048, 2'064, 4}, {
+        .local_origin = {0U, 0U, 0U}, .direction = shared::FaceDirection::NegativeY,
+        .material = shared::Block::Stone,
+    })};
+    scene->groups = {{.range = {0U, 1U}, .origin_x = 32'768U, .origin_y = 33'024U,
+        .extent = 16U, .minimum_z = 64, .maximum_z = 65}};
+    setSceneFaces(*scene, std::move(faces));
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+    while (!renderer.upsertTerrainLodScene(scene, deadline)) {
+        ASSERT_LT(std::chrono::steady_clock::now(), deadline);
+        std::this_thread::yield();
+    }
+    auto capture = [&]() -> std::optional<client::RendererFrameCapture> {
+        renderer.requestFrameCapture();
+        for (uint32_t attempt = 0U; attempt < 20U && std::chrono::steady_clock::now() < deadline; ++attempt) {
+            if (!window.nextFrame()) { return std::nullopt; }
+            static_cast<void>(renderer.render({}, deadline));
+            auto result = renderer.takeFrameCapture();
+            if (result) { return result; }
+        }
+        return std::nullopt;
+    };
+    auto const before = capture();
+    ASSERT_TRUE(before);
+    auto replacement = std::make_shared<client::TerrainLodScene>(*scene);
+    setSceneFaces(*replacement, {client::StoneFaceInstance::fromChunkFace({2'048, 2'064, 4}, {
+        .local_origin = {0U, 0U, 0U}, .direction = shared::FaceDirection::NegativeY,
+        .material = shared::Block::Snow,
+    })});
+    bool replacement_uploaded = false;
+    for (uint32_t attempt = 0U; attempt < 20U && std::chrono::steady_clock::now() < deadline; ++attempt) {
+        replacement_uploaded = renderer.upsertTerrainLodScene(replacement, std::chrono::steady_clock::now());
+        if (replacement_uploaded) { break; }
+        ASSERT_TRUE(window.nextFrame());
+        static_cast<void>(renderer.render({}, deadline));
+    }
+    ASSERT_TRUE(replacement_uploaded)
+        << "Pending terrain scenes must make bounded progress after earlier frame work consumes the budget.";
+    auto const restored = capture();
+    ASSERT_TRUE(restored);
+    EXPECT_NE(restored->rgba8, before->rgba8);
     EXPECT_EQ(renderer.validationErrorCount(), 0U);
 }
 
@@ -3326,12 +3684,13 @@ TEST(RendererSmokeTest, CurvedBlockOutlineAlignsWithTerrainInsteadOfFlatWorldPos
     client::CameraProjection const lens{.vertical_fov_degrees = 1.0};
     renderer.setCamera({.position = {32'768.5, 32'768.0, 64.5}}, lens);
     auto scene = std::make_shared<client::TerrainLodScene>();
-    scene->faces = {client::StoneFaceInstance::fromChunkFace({2'048, 2'064, 4}, {
+    std::vector<client::StoneFaceInstance> faces{client::StoneFaceInstance::fromChunkFace({2'048, 2'064, 4}, {
         .local_origin = {0U, 0U, 0U}, .direction = shared::FaceDirection::NegativeY,
         .material = shared::Block::Stone,
     })};
     scene->groups = {{.range = {0U, 1U}, .origin_x = 32'768U, .origin_y = 33'024U,
         .extent = 16U, .minimum_z = 64, .maximum_z = 65}};
+    setSceneFaces(*scene, std::move(faces));
     auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
     while (!renderer.upsertTerrainLodScene(scene, deadline)) {
         ASSERT_LT(std::chrono::steady_clock::now(), deadline);
@@ -3400,21 +3759,23 @@ TEST(RendererSmokeTest, ColoredHudKeepsStableInkOverMovingTexturedStone)
     renderer.setDebugHudEnabled(true);
     renderer.setFallbackSceneEnabled(false);
     auto scene = std::make_shared<client::TerrainLodScene>();
+    scene->groups = {{.range = {0U, 1'024U}, .origin_x = 32'752U, .origin_y = 32'768U,
+        .extent = 32U, .minimum_z = 48, .maximum_z = 80}};
     auto build_wall = [&](shared::Block const material) {
-        scene->faces.clear();
+        std::vector<client::StoneFaceInstance> faces;
+        faces.reserve(1'024U);
         for (uint8_t z = 0U; z < 32U; ++z) {
             for (uint8_t x = 0U; x < 32U; ++x) {
-                scene->faces.push_back(client::StoneFaceInstance::fromChunkFace(
+                faces.push_back(client::StoneFaceInstance::fromChunkFace(
                     {2'047 + x / 16, 2'048, 3 + z / 16}, {
                         .local_origin = {static_cast<uint8_t>(x % 16U), 0U, static_cast<uint8_t>(z % 16U)},
                         .direction = shared::FaceDirection::NegativeY, .material = material,
                     }));
             }
         }
+        setSceneFaces(*scene, std::move(faces));
     };
     build_wall(shared::Block::Stone);
-    scene->groups = {{.range = {0U, 1'024U}, .origin_x = 32'752U, .origin_y = 32'768U,
-        .extent = 32U, .minimum_z = 48, .maximum_z = 80}};
     auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{20};
     while (!renderer.upsertTerrainLodScene(scene, deadline)) {
         ASSERT_LT(std::chrono::steady_clock::now(), deadline);
@@ -3496,5 +3857,80 @@ TEST(RendererSmokeTest, ColoredHudKeepsStableInkOverMovingTexturedStone)
             ASSERT_TRUE(written) << written.error();
         }
     }
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, CurvedTerrainHasVisibleFogBeforeTheHorizon)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 320U, .height = 240U, .title = "Terrain distance fog",
+        },
+    };
+    client::InstalledShaderAssets const shaders;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window, {.require_validation = true, .enable_frame_capture = true}),
+        shaders, {.require_validation = true, .enable_frame_capture = true},
+    };
+    renderer.setDebugHudEnabled(false);
+    renderer.setFallbackSceneEnabled(false);
+    renderer.setCamera({.position = {32'768.0, 16'384.0, 1'024.0}},
+        {.vertical_fov_degrees = 1.0, .far_plane = 32'768.0});
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{20};
+    auto captureAtDistance = [&](uint32_t distance) -> std::optional<client::RendererFrameCapture> {
+        auto scene = std::make_shared<client::TerrainLodScene>();
+        auto face = client::StoneFaceInstance::fromChunkFace(
+            {1'923, static_cast<int32_t>((16'384U + distance) / 16U), 0},
+            {.local_origin = {0U, 0U, 0U}, .direction = shared::FaceDirection::NegativeY,
+                .material = shared::Block::Stone});
+        face.u_extent = 4'000U;
+        face.v_extent = 8'192U;
+        scene->groups = {{.range = {0U, 1U}, .origin_x = 30'768U,
+            .origin_y = 16'384U + distance, .extent = 4'000U, .minimum_z = 0, .maximum_z = 8'192}};
+        setSceneFaces(*scene, {face});
+        while (!renderer.upsertTerrainLodScene(scene, deadline)) {
+            if (std::chrono::steady_clock::now() >= deadline) { return std::nullopt; }
+        }
+        renderer.requestFrameCapture();
+        for (uint32_t frame = 0U; frame < 30U && std::chrono::steady_clock::now() < deadline; ++frame) {
+            if (!window.nextFrame()) { return std::nullopt; }
+            static_cast<void>(renderer.render({}, deadline));
+            if (auto image = renderer.takeFrameCapture()) { return image; }
+        }
+        return std::nullopt;
+    };
+    auto const near = captureAtDistance(1'024U);
+    auto const far = captureAtDistance(12'288U);
+    ASSERT_TRUE(near);
+    ASSERT_TRUE(far);
+    auto center = [](client::RendererFrameCapture const& image, size_t channel) {
+        return image.rgba8[(static_cast<size_t>(image.height / 2U) * image.width + image.width / 2U) * 4U + channel];
+    };
+    auto save = [&](client::RendererFrameCapture const& image, char const* name) {
+        if (auto const directory = std::getenv("MC_TERRAIN_FOG_CAPTURE_DIRECTORY")) {
+            EXPECT_TRUE(testsupport::writePpm(
+                {.width = image.width, .height = image.height, .srgb_encoded = image.srgb_encoded,
+                    .pixels = image.rgba8},
+                std::filesystem::path{directory} / name, "Native curved terrain fog regression"));
+        }
+    };
+    save(*near, "near.ppm");
+    save(*far, "far.ppm");
+    for (uint32_t altitude : {2'048U, 4'096U}) {
+        renderer.setCamera({.position = {32'768.0, 16'384.0, static_cast<double>(altitude)}},
+            {.vertical_fov_degrees = 1.0, .far_plane = 32'768.0});
+        auto const ascent_near = captureAtDistance(1'024U);
+        auto const ascent_far = captureAtDistance(altitude == 2'048U ? 16'384U : 24'576U);
+        ASSERT_TRUE(ascent_near);
+        ASSERT_TRUE(ascent_far);
+        EXPECT_GT(center(*ascent_far, 2U), center(*ascent_near, 2U) + 35U) << altitude;
+        save(*ascent_near, altitude == 2'048U ? "ascent-2048-near.ppm" : "ascent-4096-near.ppm");
+        save(*ascent_far, altitude == 2'048U ? "ascent-2048.ppm" : "ascent-4096.ppm");
+    }
+    // Distance fog must affect terrain well before the final culling band. Near
+    // magnified blocks keep their texture; distant stone moves toward blue sky.
+    EXPECT_GT(center(*far, 2U), center(*near, 2U) + 35U);
+    EXPECT_GT(center(*far, 0U), center(*near, 0U) + 20U);
     EXPECT_EQ(renderer.validationErrorCount(), 0U);
 }

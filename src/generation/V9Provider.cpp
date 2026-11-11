@@ -1,9 +1,15 @@
 #include <generation/V9Provider.hpp>
 
+#include "V21CourseGeometry.hpp"
+#include "V21FinePlan.hpp"
+#include "V21Geomorphology.hpp"
+#include "V21ProviderInternal.hpp"
+#include "V21Terrain.hpp"
 #include "V9Climate.hpp"
 #include "V9PlatecSource.hpp"
 #include "V9ProviderInternal.hpp"
 #include "V9Terrain.hpp"
+#include "V9TerrainMorphology.hpp"
 #include "V9WaterFields.hpp"
 #include "V9WaterModel.hpp"
 #include "V9WaterQuery.hpp"
@@ -16,6 +22,8 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <numeric>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -70,6 +78,64 @@ struct V9ProviderState final
     }
 };
 
+struct V21ProviderState final
+{
+    V9PlatecSourceResult platec;
+    std::vector<generation::V9PlateDirection> public_plate_directions;
+    V9TerrainResult terrain;
+    std::vector<double> canonical_h0_vertices_m;
+    std::vector<double> evolved_bed_vertices_m;
+    std::vector<V21PlainFeature> plains;
+    V9StructuralSurface structural;
+    V9ClimateResult climate;
+    V9WaterResult water;
+    V9WaterRefinement refinement;
+    V9WaterFixedSupport fixed_water_support;
+    std::vector<V21CourseContact> scene_contacts;
+    std::unique_ptr<V21FineProvider> fine_provider = nullptr;
+    std::optional<V21SurfaceQueryFailure> fine_provider_failure;
+
+    V21ProviderState(
+        V9PlatecSourceResult platec_source,
+        V9TerrainResult terrain_result,
+        std::vector<double> canonical_h0,
+        std::vector<double> evolved_bed,
+        std::vector<V21PlainFeature> plain_features,
+        V9ClimateResult climate_result,
+        V9WaterResult water_result,
+        V9WaterRefinement water_refinement
+    )
+        : platec{std::move(platec_source)}
+        , terrain{std::move(terrain_result)}
+        , canonical_h0_vertices_m{std::move(canonical_h0)}
+        , evolved_bed_vertices_m{std::move(evolved_bed)}
+        , plains{std::move(plain_features)}
+        , structural{terrain}
+        , climate{std::move(climate_result)}
+        , water{std::move(water_result)}
+        , refinement{std::move(water_refinement)}
+    {
+        public_plate_directions.reserve(platec.plate_direction_snapshot.directions.size());
+        for (V9PlateDirection const& direction : platec.plate_direction_snapshot.directions)
+        {
+            public_plate_directions.push_back({
+                .plate_id = direction.plate_id,
+                .x = direction.x,
+                .y = direction.y,
+            });
+        }
+    }
+
+    [[nodiscard]]
+    double plainBase(double x_m, double y_m) const;
+
+    [[nodiscard]]
+    double protect(double profile_m, double x_m, double y_m) const;
+
+    [[nodiscard]]
+    double surface(double x_m, double y_m, uint32_t lod) const;
+};
+
 namespace
 {
 
@@ -116,6 +182,50 @@ void checkCancelled(std::stop_token const& cancellation)
     {
         throw GenerationCancelled{};
     }
+}
+
+[[nodiscard]]
+double periodicCubic(std::span<double const> values, double world_x_m, double world_y_m)
+{
+    if (values.size() != NATIVE_CELL_COUNT)
+    {
+        throw std::logic_error{"V21 periodic cubic input must be a 256-square vertex field"};
+    }
+    auto wrap = [](double coordinate) {
+        double result = std::fmod(coordinate, WORLD_METRES);
+        return result < 0.0 ? result + WORLD_METRES : result;
+    };
+    double const px = wrap(world_x_m) / 256.0;
+    double const py = wrap(world_y_m) / 256.0;
+    int32_t const ix = static_cast<int32_t>(std::floor(px));
+    int32_t const iy = static_cast<int32_t>(std::floor(py));
+    double const tx = px - ix;
+    double const ty = py - iy;
+    auto weights = [](double const t) {
+        double const t2 = t * t;
+        double const t3 = t2 * t;
+        return std::array<double, 4U>{
+            -.5 * t + t2 - .5 * t3,
+            1.0 - 2.5 * t2 + 1.5 * t3,
+            .5 * t + 2.0 * t2 - 1.5 * t3,
+            -.5 * t2 + .5 * t3,
+        };
+    };
+    auto const wx = weights(tx);
+    auto const wy = weights(ty);
+    double result = 0.0;
+    for (int32_t j = 0; j < 4; ++j)
+    {
+        double row = 0.0;
+        for (int32_t i = 0; i < 4; ++i)
+        {
+            uint32_t const x = static_cast<uint32_t>((ix + i - 1 + NATIVE_RESOLUTION) % NATIVE_RESOLUTION);
+            uint32_t const y = static_cast<uint32_t>((iy + j - 1 + NATIVE_RESOLUTION) % NATIVE_RESOLUTION);
+            row += wx[i] * values[static_cast<size_t>(y) * NATIVE_RESOLUTION + x];
+        }
+        result += wy[j] * row;
+    }
+    return result;
 }
 
 void reportProgress(
@@ -228,6 +338,216 @@ std::vector<float> meanClimateGrid(V9ClimateField const& field)
         }
     }
     return native_mean;
+}
+
+[[nodiscard]]
+std::vector<float> expandPhaseClimateGrid(V9ClimateField const& field)
+{
+    if (field.shape != std::vector<uint32_t>{PHASE_COUNT, CLIMATE_RESOLUTION, CLIMATE_RESOLUTION}
+        || field.values.size() != static_cast<size_t>(PHASE_COUNT) * CLIMATE_CELL_COUNT)
+    {
+        throw std::logic_error{"V21 phase climate snapshot field has an unexpected source shape"};
+    }
+    std::vector<float> native_phase(PHASE_COUNT * NATIVE_CELL_COUNT);
+    for (uint32_t phase = 0U; phase < PHASE_COUNT; ++phase)
+    {
+        size_t const phase_offset = static_cast<size_t>(phase) * CLIMATE_CELL_COUNT;
+        size_t const native_phase_offset = static_cast<size_t>(phase) * NATIVE_CELL_COUNT;
+        for (uint32_t y = 0U; y < NATIVE_RESOLUTION; ++y)
+        {
+            for (uint32_t x = 0U; x < NATIVE_RESOLUTION; ++x)
+            {
+                size_t const native_index = static_cast<size_t>(y) * NATIVE_RESOLUTION + x;
+                size_t const climate_index = static_cast<size_t>(y / 8U) * CLIMATE_RESOLUTION + x / 8U;
+                native_phase[native_phase_offset + native_index] =
+                    static_cast<float>(field.values[phase_offset + climate_index]);
+            }
+        }
+    }
+    return native_phase;
+}
+
+[[nodiscard]]
+std::vector<float> meanNativePhaseField(std::span<float const> values)
+{
+    if (values.size() != static_cast<size_t>(PHASE_COUNT) * NATIVE_CELL_COUNT)
+    {
+        throw std::logic_error{"V21 native phase climate field does not match the eight-phase source grid"};
+    }
+    std::vector<float> mean(NATIVE_CELL_COUNT);
+    for (size_t index = 0U; index < NATIVE_CELL_COUNT; ++index)
+    {
+        double sum = 0.0;
+        for (uint32_t phase = 0U; phase < PHASE_COUNT; ++phase)
+        {
+            sum += static_cast<double>(values[static_cast<size_t>(phase) * NATIVE_CELL_COUNT + index]);
+        }
+        mean[index] = static_cast<float>(sum / static_cast<double>(PHASE_COUNT));
+    }
+    return mean;
+}
+
+[[nodiscard]]
+V21GenerationSnapshotFields makeV21BaseSnapshotFields(
+    V9PlatecSourceResult const& platec,
+    std::span<double const> elevation_m
+)
+{
+    if (elevation_m.size() != NATIVE_CELL_COUNT)
+    {
+        throw std::logic_error{"V21 progress snapshot elevation does not match the native source grid"};
+    }
+    V21GenerationSnapshotFields fields;
+    fields.source_elevation_m.reserve(NATIVE_CELL_COUNT);
+    for (double const value : elevation_m)
+    {
+        fields.source_elevation_m.push_back(static_cast<float>(value));
+    }
+    fields.plate_ids = platec.current_plate_id;
+    fields.plate_directions.reserve(platec.plate_direction_snapshot.directions.size());
+    for (V9PlateDirection const& direction : platec.plate_direction_snapshot.directions)
+    {
+        fields.plate_directions.push_back({
+            .plate_id = direction.plate_id,
+            .x = direction.x,
+            .y = direction.y,
+        });
+    }
+    fields.plate_directions_observed_after_native_step =
+        platec.plate_direction_snapshot.observed_after_native_step;
+    return fields;
+}
+
+void addV21ClimateSnapshotFields(V21GenerationSnapshotFields& fields, V9ClimateResult const& climate)
+{
+    auto const temperature = climate.fields.find("theta_C");
+    auto const wind_u = climate.fields.find("u");
+    auto const wind_v = climate.fields.find("v");
+    if (temperature == climate.fields.end() || wind_u == climate.fields.end() || wind_v == climate.fields.end())
+    {
+        throw std::logic_error{"V21 climate progress snapshot is missing temperature or wind fields"};
+    }
+    fields.temperature_celsius = meanClimateGrid(temperature->second);
+    fields.wind_u = meanClimateGrid(wind_u->second);
+    fields.wind_v = meanClimateGrid(wind_v->second);
+    fields.phase_temperature_celsius = expandPhaseClimateGrid(temperature->second);
+
+    auto const precipitation = climate.fields.find("precipitation_mm_year");
+    if (precipitation != climate.fields.end())
+    {
+        fields.precipitation_mm_year = meanClimateGrid(precipitation->second);
+        fields.phase_precipitation_mm_year = expandPhaseClimateGrid(precipitation->second);
+    }
+    auto const current_u = climate.fields.find("ocean_u");
+    auto const current_v = climate.fields.find("ocean_v");
+    if ((current_u == climate.fields.end()) != (current_v == climate.fields.end()))
+    {
+        throw std::logic_error{"V21 climate progress snapshot has only one ocean-current component"};
+    }
+    if (current_u != climate.fields.end())
+    {
+        fields.current_u = meanClimateGrid(current_u->second);
+        fields.current_v = meanClimateGrid(current_v->second);
+    }
+}
+
+[[nodiscard]]
+std::shared_ptr<GenerationSnapshot const> makeV21PlatecSnapshot(V9PlatecSourceResult const& platec)
+{
+    if (platec.height_raw.size() != NATIVE_CELL_COUNT)
+    {
+        throw std::logic_error{"V21 Platec preview does not match the native source grid"};
+    }
+    std::vector<double> source_elevation_m;
+    source_elevation_m.reserve(NATIVE_CELL_COUNT);
+    for (float const raw_height : platec.height_raw)
+    {
+        source_elevation_m.push_back(v9PlatecHeightToSourceMetres(raw_height));
+    }
+    auto snapshot = std::make_shared<GenerationSnapshot>();
+    snapshot->stage = GenerationStage::V21Platec;
+    snapshot->resolution = NATIVE_RESOLUTION;
+    snapshot->v21 = makeV21BaseSnapshotFields(platec, source_elevation_m);
+    return snapshot;
+}
+
+[[nodiscard]]
+std::shared_ptr<GenerationSnapshot const> makeV21TerrainSnapshot(
+    V9PlatecSourceResult const& platec,
+    std::span<double const> source_elevation_m
+)
+{
+    auto snapshot = std::make_shared<GenerationSnapshot>();
+    snapshot->stage = GenerationStage::V21Terrain;
+    snapshot->resolution = NATIVE_RESOLUTION;
+    snapshot->v21 = makeV21BaseSnapshotFields(platec, source_elevation_m);
+    return snapshot;
+}
+
+[[nodiscard]]
+std::shared_ptr<GenerationSnapshot const> makeV21ClimateSnapshot(
+    V9PlatecSourceResult const& platec,
+    std::span<double const> source_elevation_m,
+    V9ClimateResult const& climate
+)
+{
+    auto snapshot = std::make_shared<GenerationSnapshot>();
+    snapshot->stage = GenerationStage::V21Climate;
+    snapshot->resolution = NATIVE_RESOLUTION;
+    snapshot->v21 = makeV21BaseSnapshotFields(platec, source_elevation_m);
+    addV21ClimateSnapshotFields(*snapshot->v21, climate);
+    return snapshot;
+}
+
+[[nodiscard]]
+std::shared_ptr<GenerationSnapshot const> makeV21WaterSnapshot(
+    V9PlatecSourceResult const& platec,
+    std::span<double const> source_elevation_m,
+    V9WaterResult const& water,
+    V9ClimateResult const& climate
+)
+{
+    auto snapshot = std::make_shared<GenerationSnapshot>();
+    snapshot->stage = GenerationStage::V21Water;
+    snapshot->resolution = NATIVE_RESOLUTION;
+    snapshot->v21 = makeV21BaseSnapshotFields(platec, source_elevation_m);
+    addV21ClimateSnapshotFields(*snapshot->v21, climate);
+    V21GenerationSnapshotFields& fields = *snapshot->v21;
+    fields.temperature_celsius = meanNativePhaseField(water.temperature_C);
+    fields.precipitation_mm_year = meanNativePhaseField(water.precipitation_mm_year);
+    fields.water_level_blocks = water.water_level_m;
+    fields.ocean_mask = water.equilibrium.ocean;
+    fields.lake_mask = water.equilibrium.lake;
+    fields.river_mask = water.routing.river;
+    fields.biome_id = water.land_inventory.biome_id;
+    fields.phase_temperature_celsius = water.temperature_C;
+    fields.phase_precipitation_mm_year = water.precipitation_mm_year;
+    fields.land_snow_water_equivalent_m = water.land_inventory.snow_water_equivalent_m;
+    fields.glacier_thickness_m = water.land_inventory.glacier_thickness_m;
+    fields.sea_ice_thickness_m = water.sea_ice_thickness_m;
+    fields.ice_surface_kind.resize(NATIVE_CELL_COUNT,
+        static_cast<uint8_t>(V21GenerationIceSurfaceKind::None));
+    constexpr float DISPLAY_ICE_CUTOFF_M = 0.1F;
+    for (size_t index = 0U; index < NATIVE_CELL_COUNT; ++index)
+    {
+        size_t const phase_zero = index;
+        if (fields.ocean_mask[index] != 0U)
+        {
+            if (fields.sea_ice_thickness_m[phase_zero] >= DISPLAY_ICE_CUTOFF_M)
+            {
+                fields.ice_surface_kind[index] = static_cast<uint8_t>(V21GenerationIceSurfaceKind::SeaIce);
+            }
+        }
+        else if (fields.land_snow_water_equivalent_m[phase_zero] >= DISPLAY_ICE_CUTOFF_M)
+        {
+            fields.ice_surface_kind[index] = static_cast<uint8_t>(V21GenerationIceSurfaceKind::Snow);
+        }
+        else if (fields.glacier_thickness_m[phase_zero] >= DISPLAY_ICE_CUTOFF_M)
+        {
+            fields.ice_surface_kind[index] = static_cast<uint8_t>(V21GenerationIceSurfaceKind::GlacierIce);
+        }
+    }
+    return snapshot;
 }
 
 void addV9SnapshotWeather(V9GenerationSnapshotFields& fields, V9ClimateResult const& climate)
@@ -460,8 +780,9 @@ V9FieldValues waterValues(V9WaterFieldView const& field)
     throw std::logic_error{"unsupported v9 water field dtype"};
 }
 
+template <typename ProviderState>
 [[nodiscard]]
-std::vector<V9RegisteredFieldView> makeRegisteredFields(V9ProviderState const& state)
+std::vector<V9RegisteredFieldView> makeRegisteredFields(ProviderState const& state)
 {
     std::vector<V9WaterFieldView> water_fields = v9WaterNativeFields(state.water);
     std::vector<V9RegisteredFieldView> views;
@@ -499,7 +820,7 @@ std::vector<V9RegisteredFieldView> makeRegisteredFields(V9ProviderState const& s
         });
         if (water == water_fields.end())
         {
-            throw std::runtime_error{"v9 production field registry is missing source field " + std::string{name}};
+            throw std::runtime_error{"native production field registry is missing source field " + std::string{name}};
         }
         std::vector<uint32_t> shape;
         shape.reserve(water->shape.size());
@@ -521,9 +842,64 @@ std::vector<V9RegisteredFieldView> makeRegisteredFields(V9ProviderState const& s
     }
     if (views.size() != REGISTERED_FIELD_NAMES.size())
     {
-        throw std::logic_error{"v9 production registry count differs from the frozen 95-field contract"};
+        throw std::logic_error{"native production registry count differs from the frozen 95-field contract"};
     }
     return views;
+}
+
+[[nodiscard]]
+std::shared_ptr<GlobalAtlas const> makeV21Atlas(
+    GenerationConfiguration const& configuration,
+    std::shared_ptr<V21ProviderState const> provider
+)
+{
+    GlobalAtlas atlas;
+    atlas.configuration = configuration;
+    atlas.v21_provider = std::move(provider);
+    atlas.block_sea_level = V21_BLOCK_SEA_LEVEL;
+    atlas.max_height = V21_MAX_HEIGHT;
+    return std::make_shared<GlobalAtlas const>(std::move(atlas));
+}
+
+void verifyV21MappedDomain(GlobalAtlas const& atlas, std::stop_token const& cancellation)
+{
+    auto const& provider = *atlas.v21_provider;
+    for (size_t index = 0U; index < NATIVE_CELL_COUNT; ++index)
+    {
+        if ((index & 255U) == 0U)
+        {
+            checkCancelled(cancellation);
+        }
+        static_cast<void>(mapV21ElevationToBlock(provider.terrain.final_bed_vertices_m[index]));
+        static_cast<void>(mapV21WaterLevelToBlock(provider.water.water_level_m[index] / 0.34));
+        if (provider.water.routing.river[index] != 0U)
+        {
+            static_cast<void>(mapV21WaterLevelToBlock(provider.water.routing.river_stage_m[index] / 0.34));
+        }
+    }
+    for (V9WaterBody const& body : provider.water.equilibrium.bodies)
+    {
+        checkCancelled(cancellation);
+        static_cast<void>(mapV21WaterLevelToBlock(body.stage_m / 0.34));
+        static_cast<void>(mapV21WaterLevelToBlock(body.spill_m / 0.34));
+    }
+    constexpr std::array<std::array<uint32_t, 2U>, 4U> QUERY_POINTS{{
+        {0U, 0U}, {NATIVE_RESOLUTION / 4U, NATIVE_RESOLUTION / 4U},
+        {NATIVE_RESOLUTION / 2U, NATIVE_RESOLUTION / 2U},
+        {3U * NATIVE_RESOLUTION / 4U, 3U * NATIVE_RESOLUTION / 4U},
+    }};
+    for (auto const& point : QUERY_POINTS)
+    {
+        checkCancelled(cancellation);
+        uint32_t const x = point[0U] * 256U;
+        uint32_t const y = point[1U] * 256U;
+        for (uint32_t lod = 0U; lod < 4U; ++lod)
+        {
+            V9SurfaceSample const sample = sampleV21Surface(atlas, x, y, lod);
+            static_cast<void>(mapV21ElevationToBlock(sample.elevation_m));
+            static_cast<void>(mapV21WaterLevelToBlock(sample.water_level_m));
+        }
+    }
 }
 
 [[nodiscard]]
@@ -589,6 +965,437 @@ void verifyMappedDomain(GlobalAtlas const& atlas, std::stop_token const& cancell
 }
 
 } // namespace
+
+double V21ProviderState::plainBase(double x_m, double y_m) const
+{
+    return v21PlainComposedBase(
+        evolved_bed_vertices_m, plains, x_m, y_m, refinement.v21InterpolationConstraints()
+    );
+}
+
+double V21ProviderState::protect(double profile_m, double x_m, double y_m) const
+{
+    double contact_weight = 1.0;
+    auto periodic_delta = [](double coordinate) {
+        double wrapped = std::fmod(coordinate + WORLD_METRES / 2.0, WORLD_METRES);
+        if (wrapped < 0.0)
+        {
+            wrapped += WORLD_METRES;
+        }
+        return wrapped - WORLD_METRES / 2.0;
+    };
+    for (V21CourseContact const& contact : scene_contacts)
+    {
+        double const dx = periodic_delta(x_m - contact.xy_m[0U]);
+        double const dy = periodic_delta(y_m - contact.xy_m[1U]);
+        double const u = std::clamp(std::hypot(dx, dy) / contact.radius_m, 0.0, 1.0);
+        double const remaining = 1.0 - u * u;
+        contact_weight *= 1.0 - remaining * remaining * remaining;
+    }
+    double const base = plainBase(x_m, y_m);
+    return base + (profile_m - base) * contact_weight;
+}
+
+double V21ProviderState::surface(double x_m, double y_m, uint32_t lod) const
+{
+    auto const native_levels = structural.evaluate(x_m, y_m, lod);
+    double const plain_composed_base = plainBase(x_m, y_m);
+    double const transformed_h0 = periodicCubic(canonical_h0_vertices_m, x_m, y_m);
+    double const source_detail = native_levels[lod] - transformed_h0;
+    double const detail = v21PlainResidual(plains, source_detail, x_m, y_m);
+    return protect(plain_composed_base + detail, x_m, y_m);
+}
+
+[[nodiscard]]
+std::expected<std::unique_ptr<V21FineProvider>, V21SurfaceQueryFailure> makeV21FineProvider(
+    std::shared_ptr<V21ProviderState> const& provider,
+    std::stop_token cancellation
+)
+{
+    std::weak_ptr<V21ProviderState> const weak_provider = provider;
+    auto const standing = [weak_provider](std::span<V21FinePoint const> points) {
+        auto locked = weak_provider.lock();
+        if (!locked)
+        {
+            throw std::runtime_error{"V21 provider expired during regional geometry setup"};
+        }
+        std::vector<V21FineStanding> result;
+        result.reserve(points.size());
+        for (V21FinePoint const& point : points)
+        {
+            auto const authority = locked->refinement.standing(point[0U], point[1U]);
+            result.push_back({authority.first, authority.second});
+        }
+        return result;
+    };
+    auto const plain_base = [weak_provider](std::span<V21FinePoint const> points, bool reference) {
+        auto locked = weak_provider.lock();
+        if (!locked)
+        {
+            throw std::runtime_error{"V21 provider expired during regional geometry setup"};
+        }
+        std::vector<double> result;
+        result.reserve(points.size());
+        for (V21FinePoint const& point : points)
+        {
+            double const base = 0.34 * locked->plainBase(point[0U], point[1U]);
+            result.push_back(reference
+                ? locked->refinement.v21FixedSupportBase(base, point[0U], point[1U])
+                : base);
+        }
+        return result;
+    };
+
+    std::vector<double> discharge(provider->water.routing.river_discharge_m3_s.size());
+    std::transform(
+        provider->water.routing.river_discharge_m3_s.begin(),
+        provider->water.routing.river_discharge_m3_s.end(),
+        discharge.begin(),
+        [](float value) { return static_cast<double>(value); }
+    );
+    std::vector<int32_t> critical_spill_vertices;
+    std::span<double const> const canonical_bed = provider->water.equilibrium.hydraulic_bed_m;
+    for (V9WaterBody const& body : provider->water.equilibrium.bodies)
+    {
+        for (size_t index = 0U; index < canonical_bed.size(); ++index)
+        {
+            if (std::abs(canonical_bed[index] - body.spill_m) < 1e-9)
+            {
+                critical_spill_vertices.push_back(static_cast<int32_t>(index));
+            }
+        }
+    }
+    std::sort(critical_spill_vertices.begin(), critical_spill_vertices.end());
+    critical_spill_vertices.erase(
+        std::unique(critical_spill_vertices.begin(), critical_spill_vertices.end()),
+        critical_spill_vertices.end()
+    );
+    V21CourseInput const course_input{
+        .canonical_bed = provider->water.equilibrium.hydraulic_bed_m,
+        .discharge_m3_s = discharge,
+        .downstream = provider->water.routing.downstream,
+        .river = provider->water.routing.river,
+        .virtual_through_lake = provider->water.routing.river_virtual_through_lake,
+        .reference_stage = provider->water.routing.river_stage_m,
+        .critical_spill_vertices = critical_spill_vertices,
+    };
+    V21CourseCallbacks const course_callbacks{
+        .scene_base = [plain_base](std::span<V21FinePoint const> points) { return plain_base(points, false); },
+        .reference_base = [plain_base](std::span<V21FinePoint const> points) { return plain_base(points, true); },
+        .standing = standing,
+    };
+    auto courses = buildV21CourseGeometry(course_input, course_callbacks, cancellation);
+    if (!courses)
+    {
+        V21SurfaceQueryFailure failure;
+        failure.kind = courses.error().kind == V21CourseFailure::Kind::Cancelled
+            ? V21SurfaceQueryFailureKind::Cancelled
+            : V21SurfaceQueryFailureKind::FinePlan;
+        failure.message = "V21 course geometry failed";
+        if (courses.error().source_vertex >= 0)
+        {
+            failure.message += " at source vertex " + std::to_string(courses.error().source_vertex);
+        }
+        failure.message += ": " + courses.error().message;
+        return std::unexpected{std::move(failure)};
+    }
+    provider->scene_contacts = courses->contacts;
+
+    V21FineGeometry geometry;
+    geometry.immutable_identity = std::string{V21_MODEL_IDENTITY}
+        + ";course=approved-coarse-c1;fine=approved-metric-fine-thalweg-v21;shore-contact=v1";
+    geometry.chords = std::move(courses->chords);
+    geometry.vertex_owner = provider->water.equilibrium.vertex_basin_owner;
+    geometry.bank_fraction = 0.1;
+    geometry.repose_slope = 0.65;
+
+    V21FineCallbacks fine_callbacks;
+    fine_callbacks.substrate = [weak_provider](std::span<V21FinePoint const> points) {
+        auto locked = weak_provider.lock();
+        if (!locked)
+        {
+            throw std::runtime_error{"V21 provider expired during fine profile query"};
+        }
+        std::vector<double> result;
+        result.reserve(points.size());
+        for (V21FinePoint const& point : points)
+        {
+            result.push_back(0.34 * locked->surface(point[0U], point[1U], 3U));
+        }
+        return result;
+    };
+    fine_callbacks.base = [weak_provider](std::span<V21FinePoint const> points) {
+        auto locked = weak_provider.lock();
+        if (!locked)
+        {
+            throw std::runtime_error{"V21 provider expired during fine profile query"};
+        }
+        std::vector<double> result;
+        result.reserve(points.size());
+        for (V21FinePoint const& point : points)
+        {
+            result.push_back(0.34 * locked->plainBase(point[0U], point[1U]));
+        }
+        return result;
+    };
+    fine_callbacks.standing = standing;
+    fine_callbacks.protect = [weak_provider](
+        std::span<double const> profile, std::span<V21FinePoint const> points
+    ) {
+        auto locked = weak_provider.lock();
+        if (!locked || profile.size() != points.size())
+        {
+            throw std::runtime_error{"V21 protected profile requires a live provider and matching coordinates"};
+        }
+        std::vector<double> result;
+        result.reserve(profile.size());
+        for (size_t index = 0U; index < profile.size(); ++index)
+        {
+            result.push_back(0.34 * locked->protect(
+                profile[index] / 0.34, points[index][0U], points[index][1U]
+            ));
+        }
+        return result;
+    };
+    return std::make_unique<V21FineProvider>(std::move(geometry), std::move(fine_callbacks));
+}
+
+std::shared_ptr<GlobalAtlas const> prepareV21GlobalAtlas(
+    GenerationConfiguration const& configuration,
+    std::stop_token cancellation,
+    ProgressCallback progress
+)
+{
+    if (configuration.model_tag != TerrainModelTag::V21
+        || (configuration.resolution != 256U && configuration.resolution != 512U))
+    {
+        throw std::invalid_argument{"V21 provider requires the V21 model tag and 256/512 display resolution"};
+    }
+    checkCancelled(cancellation);
+    auto platec = generateV9PlatecSource(
+        configuration.seed,
+        cancellation,
+        [&progress](V9PlatecProgress const update)
+        {
+            if (update.snapshot || update.steps_completed % 24U == 0U)
+            {
+                // Platec is a periodic 256-square row-major cell-centre grid at
+                // 256 m spacing, mapped to source metres, not canonical H0 vertices.
+                reportProgress(progress, GenerationStage::V21Platec,
+                    update.steps_completed, update.step_limit,
+                    update.snapshot ? makeV21PlatecSnapshot(*update.snapshot) : nullptr);
+            }
+        }
+    );
+    if (!platec)
+    {
+        if (platec.error() == V9PlatecFailure::Cancelled)
+        {
+            throw GenerationCancelled{};
+        }
+        throw std::runtime_error{"V21 Platec source exceeded its frozen native update bound"};
+    }
+    checkCancelled(cancellation);
+
+    V21TerrainPreparation preparation = prepareV21Terrain(
+        configuration.seed,
+        *platec,
+        cancellation,
+        [&progress](V9TerrainStage const stage)
+        {
+            reportProgress(progress, GenerationStage::V21Terrain,
+                stage == V9TerrainStage::Complete ? 3U : static_cast<uint32_t>(stage), 4U);
+        }
+    );
+    checkCancelled(cancellation);
+
+    // H0 is immutable on the periodic 256-square vertex grid at 256 m spacing,
+    // in source metres (the snapshot field stores float). Publish before geomorphology.
+    reportProgress(progress, GenerationStage::V21Terrain, 3U, 4U,
+        makeV21TerrainSnapshot(*platec, preparation.canonical_h0_vertices_m));
+
+    V21GeomorphologyResult geomorphology = prepareV21Geomorphology(
+        preparation.canonical_h0_vertices_m,
+        cancellation
+    );
+    V9TerrainResult terrain = std::move(preparation.native);
+    terrain.final_bed_vertices_m = std::move(geomorphology.source_proxy_bed_m);
+    reportProgress(
+        progress,
+        GenerationStage::V21Terrain,
+        4U,
+        4U,
+        makeV21TerrainSnapshot(*platec, terrain.final_bed_vertices_m)
+    );
+
+    constexpr uint32_t CLIMATE_WORK_TOTAL = 1U + 180U + 1'080U;
+    std::vector<double> climate_equivalent_bed(NATIVE_CELL_COUNT);
+    for (size_t index = 0U; index < climate_equivalent_bed.size(); ++index)
+    {
+        if ((index & 255U) == 0U)
+        {
+            checkCancelled(cancellation);
+        }
+        climate_equivalent_bed[index] = 3.4 * terrain.final_bed_vertices_m[index];
+        if (!std::isfinite(climate_equivalent_bed[index]))
+        {
+            throw std::runtime_error{"V21 climate-equivalent terrain mapping is nonfinite"};
+        }
+    }
+    auto climate = generateV9Climate(
+        climate_equivalent_bed,
+        configuration.seed,
+        cancellation,
+        [&progress](V9ClimateProgress const update)
+        {
+            reportProgress(progress, GenerationStage::V21Climate,
+                climateProgressPosition(update), CLIMATE_WORK_TOTAL);
+        }
+    );
+    if (!climate)
+    {
+        if (climate.error() == V9ClimateFailure::Cancelled)
+        {
+            throw GenerationCancelled{};
+        }
+        throw std::runtime_error{"V21 native climate stage failed its source numerical gates"};
+    }
+    checkCancelled(cancellation);
+    reportProgress(
+        progress,
+        GenerationStage::V21Climate,
+        CLIMATE_WORK_TOTAL,
+        CLIMATE_WORK_TOTAL,
+        makeV21ClimateSnapshot(*platec, terrain.final_bed_vertices_m, *climate)
+    );
+
+    V9WaterForcing forcing = makeWaterForcing(*climate);
+    forcing.climate_equivalent_metres_per_bed_unit = 10.0;
+    std::vector<double> water_bed_game_blocks(NATIVE_CELL_COUNT);
+    for (size_t index = 0; index < water_bed_game_blocks.size(); ++index)
+    {
+        water_bed_game_blocks[index] = 0.34 * terrain.final_bed_vertices_m[index];
+    }
+    auto water = generateV9Water(
+        water_bed_game_blocks,
+        forcing,
+        cancellation,
+        [&progress](V9WaterProgress const update)
+        {
+            uint32_t completed = 0U;
+            switch (update.phase)
+            {
+            case V9WaterPhase::Routing:
+                completed = 0U;
+                break;
+            case V9WaterPhase::MarineSalt:
+                completed = 1U;
+                break;
+            case V9WaterPhase::SnowAndIce:
+                completed = 2U + std::min(update.completed_items, 8U);
+                break;
+            case V9WaterPhase::Complete:
+                completed = 10U;
+                break;
+            }
+            reportProgress(progress, GenerationStage::V21Water, completed, 12U);
+        }
+    );
+    if (!water)
+    {
+        if (water.error().kind == V9WaterFailure::Kind::Cancelled)
+        {
+            throw GenerationCancelled{};
+        }
+        throw std::runtime_error{"V21 water/ice stage failed: " + water.error().message};
+    }
+    for (size_t index = 0U; index < NATIVE_CELL_COUNT; ++index)
+    {
+        if (water->routing.river[index] != 0U
+            && water->equilibrium.ocean[index] == 0U
+            && water->equilibrium.lake[index] == 0U)
+        {
+            water->land_inventory.biome_id[index] = 12U;
+        }
+    }
+    checkCancelled(cancellation);
+    reportProgress(
+        progress,
+        GenerationStage::V21Water,
+        10U,
+        12U,
+        makeV21WaterSnapshot(*platec, terrain.final_bed_vertices_m, *water, *climate)
+    );
+
+    auto refinement = V9WaterRefinement::create(water->equilibrium, water->routing);
+    if (!refinement)
+    {
+        throw std::runtime_error{"V21 protected water-contact setup failed: " + refinement.error().message};
+    }
+
+    auto provider = std::make_shared<V21ProviderState>(
+        std::move(*platec),
+        std::move(terrain),
+        std::move(preparation.canonical_h0_vertices_m),
+        std::move(geomorphology.evolved_bed_m),
+        std::move(geomorphology.plains),
+        std::move(*climate),
+        std::move(*water),
+        std::move(*refinement)
+    );
+    V9WaterQueryModel const query_model{
+        .base = [provider](double x_m, double y_m) {
+            return provider->refinement.v21FixedSupportBase(
+                0.34 * provider->plainBase(x_m, y_m), x_m, y_m
+            );
+        },
+        .reaches = provider->refinement.reaches(),
+        .contacts = provider->refinement.protectedContacts(),
+        .progress = [&cancellation](char const*, uint64_t, uint64_t) { return !cancellation.stop_requested(); },
+    };
+    auto fixed_support = buildV9WaterFixedSupport(provider->water.equilibrium, query_model);
+    if (!fixed_support)
+    {
+        if (fixed_support.error().kind == V9WaterFailure::Kind::Cancelled)
+        {
+            throw GenerationCancelled{};
+        }
+        throw std::runtime_error{"V21 fixed local-water support failed: " + fixed_support.error().message};
+    }
+    std::span<V9RefinementReach const> const v21_reaches = provider->refinement.reaches();
+    fixed_support->river_reach_order.resize(v21_reaches.size());
+    std::iota(fixed_support->river_reach_order.begin(), fixed_support->river_reach_order.end(), size_t{0});
+    std::stable_sort(
+        fixed_support->river_reach_order.begin(),
+        fixed_support->river_reach_order.end(),
+        [&v21_reaches](size_t a, size_t b) {
+            return v21_reaches[a].discharge_m3_s > v21_reaches[b].discharge_m3_s;
+        }
+    );
+    provider->fixed_water_support = std::move(*fixed_support);
+    reportProgress(progress, GenerationStage::V21Water, 11U, 12U);
+
+    auto fine_provider = makeV21FineProvider(provider, cancellation);
+    if (!fine_provider)
+    {
+        if (fine_provider.error().kind == V21SurfaceQueryFailureKind::Cancelled)
+        {
+            throw GenerationCancelled{};
+        }
+        provider->fine_provider_failure = std::move(fine_provider.error());
+    }
+    else
+    {
+        provider->fine_provider = std::move(*fine_provider);
+    }
+    std::shared_ptr<GlobalAtlas const> atlas = makeV21Atlas(configuration, std::move(provider));
+    static_cast<void>(makeRegisteredFields(*atlas->v21_provider));
+    verifyV21MappedDomain(*atlas, cancellation);
+    checkCancelled(cancellation);
+    reportProgress(progress, GenerationStage::V21Water, 12U, 12U);
+    reportProgress(progress, GenerationStage::Complete, 1U, 1U);
+    return atlas;
+}
 
 std::shared_ptr<GlobalAtlas const> prepareV9GlobalAtlas(
     GenerationConfiguration const& configuration,
@@ -777,6 +1584,16 @@ detail::V9ProviderState const& requireProvider(GlobalAtlas const& atlas)
 }
 
 [[nodiscard]]
+detail::V21ProviderState const& requireV21Provider(GlobalAtlas const& atlas)
+{
+    if (atlas.configuration.model_tag != TerrainModelTag::V21 || !atlas.v21_provider)
+    {
+        throw std::invalid_argument{"operation requires an immutable V21 provider atlas"};
+    }
+    return *atlas.v21_provider;
+}
+
+[[nodiscard]]
 double periodic(double coordinate, double period)
 {
     double wrapped = std::fmod(coordinate, period);
@@ -834,6 +1651,18 @@ double bilinear(std::span<float const> values, GridCoordinate const& at)
 }
 
 [[nodiscard]]
+double bilinear(std::span<double const> values, GridCoordinate const& at)
+{
+    auto const value = [&values](uint32_t x, uint32_t y)
+    {
+        return values[static_cast<size_t>(y) * NATIVE_RESOLUTION + x];
+    };
+    double const south = value(at.x0, at.y0) * (1.0 - at.fx) + value(at.x1, at.y0) * at.fx;
+    double const north = value(at.x0, at.y1) * (1.0 - at.fx) + value(at.x1, at.y1) * at.fx;
+    return south * (1.0 - at.fy) + north * at.fy;
+}
+
+[[nodiscard]]
 double meanPhaseField(
     std::span<float const> values,
     GridCoordinate const& at
@@ -853,6 +1682,46 @@ double meanPhaseField(
 std::vector<V9RegisteredFieldView> v9RegisteredFields(GlobalAtlas const& atlas)
 {
     return detail::makeRegisteredFields(requireProvider(atlas));
+}
+
+std::vector<V9RegisteredFieldView> v21RegisteredFields(GlobalAtlas const& atlas)
+{
+    return detail::makeRegisteredFields(requireV21Provider(atlas));
+}
+
+std::span<uint32_t const> v21CurrentPlateIds(GlobalAtlas const& atlas)
+{
+    return requireV21Provider(atlas).platec.current_plate_id;
+}
+
+std::span<V9PlateDirection const> v21PlateDirections(GlobalAtlas const& atlas)
+{
+    return requireV21Provider(atlas).public_plate_directions;
+}
+
+double v21L0ElevationAt(GlobalAtlas const& atlas, double const world_x_m, double const world_y_m)
+{
+    if (!std::isfinite(world_x_m) || !std::isfinite(world_y_m))
+    {
+        throw std::invalid_argument{"V21 L0 elevation query requires finite source metres"};
+    }
+    detail::V21ProviderState const& provider = requireV21Provider(atlas);
+    auto wrap = [](double coordinate) {
+        double wrapped = std::fmod(coordinate, WORLD_METRES);
+        return wrapped < 0.0 ? wrapped + WORLD_METRES : wrapped;
+    };
+    double const wrapped_x = wrap(world_x_m);
+    double const wrapped_y = wrap(world_y_m);
+    uint32_t const vertex_x = static_cast<uint32_t>(std::llround(wrapped_x / 256.0));
+    uint32_t const vertex_y = static_cast<uint32_t>(std::llround(wrapped_y / 256.0));
+    if (vertex_x < NATIVE_RESOLUTION && vertex_y < NATIVE_RESOLUTION
+        && wrapped_x == static_cast<double>(vertex_x) * 256.0
+        && wrapped_y == static_cast<double>(vertex_y) * 256.0)
+    {
+        return provider.terrain.final_bed_vertices_m[
+            static_cast<size_t>(vertex_y) * NATIVE_RESOLUTION + vertex_x];
+    }
+    return provider.surface(world_x_m, world_y_m, 0U);
 }
 
 std::span<uint32_t const> v9CurrentPlateIds(GlobalAtlas const& atlas)
@@ -892,6 +1761,300 @@ V9SurfaceSample sampleV9Surface(GlobalAtlas const& atlas, double world_x_m, doub
     };
 }
 
+std::expected<V21SurfaceQueryResult, V21SurfaceQueryFailure> queryV21SurfaceGrid(
+    GlobalAtlas const& atlas,
+    V21SurfaceQueryGrid const& grid,
+    std::stop_token cancellation
+)
+{
+    auto invalid = [](std::string message) {
+        return std::unexpected{V21SurfaceQueryFailure{
+            V21SurfaceQueryFailureKind::InvalidInput, std::move(message), {}}};
+    };
+    if (atlas.configuration.model_tag != TerrainModelTag::V21 || !atlas.v21_provider)
+    {
+        return invalid("V21 regional query requires a V21 provider atlas");
+    }
+    uint64_t const point_count = static_cast<uint64_t>(grid.rows) * grid.columns;
+    double const extent_x = grid.columns > 0U ? static_cast<double>(grid.columns - 1U) * grid.spacing_m : 0.0;
+    double const extent_y = grid.rows > 0U ? static_cast<double>(grid.rows - 1U) * grid.spacing_m : 0.0;
+    if (grid.rows == 0U || grid.columns == 0U || point_count > 1'048'576U
+        || grid.lod > 3U || grid.selected_phase >= PHASE_COUNT
+        || !std::isfinite(grid.origin_x_m) || !std::isfinite(grid.origin_y_m)
+        || !std::isfinite(grid.spacing_m) || grid.spacing_m <= 0.0
+        || !std::isfinite(extent_x) || !std::isfinite(extent_y)
+        || !std::isfinite(grid.origin_x_m + extent_x) || !std::isfinite(grid.origin_y_m + extent_y))
+    {
+        return invalid("V21 regional query requires a finite nonempty grid, lod0..3, phase0..7, and at most1048576 points");
+    }
+    if (cancellation.stop_requested())
+    {
+        return std::unexpected{V21SurfaceQueryFailure{
+            V21SurfaceQueryFailureKind::Cancelled, "V21 regional query cancelled", {}}};
+    }
+    detail::V21ProviderState const& provider = *atlas.v21_provider;
+    if (provider.fine_provider_failure)
+    {
+        return std::unexpected{*provider.fine_provider_failure};
+    }
+    if (!provider.fine_provider)
+    {
+        return invalid("V21 immutable course/fine provider is unavailable");
+    }
+    size_t const count = static_cast<size_t>(point_count);
+    std::vector<double> x(count), y(count), background(count);
+    for (uint32_t row = 0U; row < grid.rows; ++row)
+    {
+        if (cancellation.stop_requested())
+        {
+            return std::unexpected{V21SurfaceQueryFailure{
+                V21SurfaceQueryFailureKind::Cancelled, "V21 background sampling cancelled", {}}};
+        }
+        for (uint32_t column = 0U; column < grid.columns; ++column)
+        {
+            size_t const index = static_cast<size_t>(row) * grid.columns + column;
+            x[index] = grid.origin_x_m + static_cast<double>(column) * grid.spacing_m;
+            y[index] = grid.origin_y_m + static_cast<double>(row) * grid.spacing_m;
+            background[index] = 0.34 * provider.surface(x[index], y[index], grid.lod);
+        }
+    }
+    detail::V21FineGrid const fine_grid{
+        .origin_x_m = grid.origin_x_m,
+        .origin_y_m = grid.origin_y_m,
+        .spacing_m = grid.spacing_m,
+        .rows = grid.rows,
+        .columns = grid.columns,
+    };
+    auto plan = provider.fine_provider->forRegion(fine_grid, grid.lod, cancellation);
+    if (!plan)
+    {
+        V21SurfaceQueryFailure failure;
+        failure.kind = plan.error().kind == detail::V21FineFailureKind::Cancelled
+            ? V21SurfaceQueryFailureKind::Cancelled
+            : V21SurfaceQueryFailureKind::FinePlan;
+        failure.message = plan.error().reason;
+        failure.witnesses.reserve(plan.error().witnesses.size());
+        for (detail::V21FineWitness const& witness : plan.error().witnesses)
+        {
+            failure.witnesses.push_back({
+                .edge = witness.edge,
+                .node = witness.node,
+                .source_vertex = witness.source_vertex,
+                .side = witness.side,
+                .required_stage_blocks = witness.required_stage,
+                .maximum_cut_only_stage_blocks = witness.maximum_cut_only_stage,
+                .deficit_blocks = witness.deficit,
+                .xy0_m = witness.xy0,
+                .xy1_m = witness.xy1,
+            });
+        }
+        return std::unexpected{std::move(failure)};
+    }
+    auto profiled = (*plan)->applyProfile(background, x, y, grid.lod, cancellation);
+    if (!profiled)
+    {
+        V21SurfaceQueryFailure failure;
+        failure.kind = profiled.error().kind == detail::V21FineFailureKind::Cancelled
+            ? V21SurfaceQueryFailureKind::Cancelled
+            : V21SurfaceQueryFailureKind::FinePlan;
+        failure.message = profiled.error().reason;
+        failure.witnesses.reserve(profiled.error().witnesses.size());
+        for (detail::V21FineWitness const& witness : profiled.error().witnesses)
+        {
+            failure.witnesses.push_back({
+                .edge = witness.edge,
+                .node = witness.node,
+                .source_vertex = witness.source_vertex,
+                .side = witness.side,
+                .required_stage_blocks = witness.required_stage,
+                .maximum_cut_only_stage_blocks = witness.maximum_cut_only_stage,
+                .deficit_blocks = witness.deficit,
+                .xy0_m = witness.xy0,
+                .xy1_m = witness.xy1,
+            });
+        }
+        return std::unexpected{std::move(failure)};
+    }
+
+    if (provider.water.land_inventory.snow_water_equivalent_m.size() != PHASE_COUNT * NATIVE_CELL_COUNT
+        || provider.water.land_inventory.glacier_thickness_m.size() != PHASE_COUNT * NATIVE_CELL_COUNT
+        || provider.water.sea_ice_thickness_m.size() != PHASE_COUNT * NATIVE_CELL_COUNT)
+    {
+        return invalid("V21 phase-resolved ice fields do not match the pinned 8x256-square contract");
+    }
+    std::vector<detail::V9RefinementReach> reaches;
+    reaches.reserve((*plan)->chords().size());
+    for (detail::V21FineChord const& chord : (*plan)->chords())
+    {
+        reaches.push_back({
+            .start = chord.start,
+            .target = chord.target,
+            .a = chord.a,
+            .delta = chord.delta,
+            .length2 = chord.delta[0U] * chord.delta[0U] + chord.delta[1U] * chord.delta[1U],
+            .grade0 = chord.grade0,
+            .grade1 = chord.grade1,
+            .water_stage0 = chord.water_stage0,
+            .water_stage1 = chord.water_stage1,
+            .halfwidth = chord.halfwidth,
+            .support = chord.support_m,
+            .discharge_m3_s = chord.discharge_m3_s,
+            .shore_truncated = chord.shore_truncated,
+        });
+    }
+    detail::V9WaterQueryModel const water_model{
+        .base = {},
+        .reaches = reaches,
+        .contacts = {},
+        .progress = [&cancellation](char const*, uint64_t, uint64_t) {
+            return !cancellation.stop_requested();
+        },
+    };
+    detail::V9WaterQueryGrid const water_grid{
+        .rows = grid.rows,
+        .columns = grid.columns,
+        .origin_x_m = grid.origin_x_m,
+        .origin_y_m = grid.origin_y_m,
+        .spacing_m = grid.spacing_m,
+        .bed_m = *profiled,
+    };
+    auto water = detail::queryV21WaterLocalSupport(
+        provider.water.equilibrium, provider.fixed_water_support, water_grid, water_model
+    );
+    if (!water)
+    {
+        return std::unexpected{V21SurfaceQueryFailure{
+            water.error().kind == detail::V9WaterFailure::Kind::Cancelled
+                ? V21SurfaceQueryFailureKind::Cancelled
+                : V21SurfaceQueryFailureKind::Water,
+            water.error().message,
+            {}}};
+    }
+
+    detail::V9WaterLandClimate local_climate;
+    local_climate.phase_count = PHASE_COUNT;
+    local_climate.temperature_C.resize(static_cast<size_t>(PHASE_COUNT) * count);
+    local_climate.precipitation_mm_year.resize(static_cast<size_t>(PHASE_COUNT) * count);
+    std::vector<double> local_snow(static_cast<size_t>(PHASE_COUNT) * count);
+    std::vector<double> local_glacier(static_cast<size_t>(PHASE_COUNT) * count);
+    std::vector<double> mean_temperature(count, 0.0), mean_precipitation(count, 0.0);
+    for (size_t index = 0U; index < count; ++index)
+    {
+        GridCoordinate const at = coordinate(x[index], y[index]);
+        double const local_source_height = (*profiled)[index] / 0.34;
+        double const climate_equivalent_height = std::max(3.4 * local_source_height, 0.0);
+        double const canonical_source_height = bilinear(
+            std::span<double const>{provider.terrain.final_bed_vertices_m}, at
+        );
+        double const canonical_equivalent_height = std::max(3.4 * canonical_source_height, 0.0);
+        double const local_lapse = 0.0065 * (climate_equivalent_height - canonical_equivalent_height);
+        for (uint32_t phase = 0U; phase < PHASE_COUNT; ++phase)
+        {
+            size_t const phase_offset = static_cast<size_t>(phase) * NATIVE_CELL_COUNT;
+            size_t const local_offset = static_cast<size_t>(phase) * count + index;
+            double const temperature = bilinear(
+                std::span<float const>{provider.water.temperature_C}.subspan(phase_offset, NATIVE_CELL_COUNT), at
+            ) - local_lapse;
+            double const precipitation = bilinear(
+                std::span<float const>{provider.water.precipitation_mm_year}.subspan(phase_offset, NATIVE_CELL_COUNT), at
+            );
+            local_climate.temperature_C[local_offset] = temperature;
+            local_climate.precipitation_mm_year[local_offset] = precipitation;
+            local_snow[local_offset] = bilinear(
+                std::span<float const>{provider.water.land_inventory.snow_water_equivalent_m}
+                    .subspan(phase_offset, NATIVE_CELL_COUNT), at
+            );
+            local_glacier[local_offset] = bilinear(
+                std::span<float const>{provider.water.land_inventory.glacier_thickness_m}
+                    .subspan(phase_offset, NATIVE_CELL_COUNT), at
+            );
+            mean_temperature[index] += temperature / static_cast<double>(PHASE_COUNT);
+            mean_precipitation[index] += precipitation / static_cast<double>(PHASE_COUNT);
+        }
+    }
+    auto local_classification = detail::classifyV9WaterLocalBiomes(
+        local_climate, local_snow, local_glacier, water->ocean, water->lake, water->river
+    );
+    if (!local_classification)
+    {
+        return std::unexpected{V21SurfaceQueryFailure{
+            V21SurfaceQueryFailureKind::Water, local_classification.error().message, {}}};
+    }
+
+    V21SurfaceQueryResult result;
+    result.rows = grid.rows;
+    result.columns = grid.columns;
+    result.samples.resize(count);
+    size_t const selected_phase_offset = static_cast<size_t>(grid.selected_phase) * count;
+    size_t const native_phase_offset = static_cast<size_t>(grid.selected_phase) * NATIVE_CELL_COUNT;
+    for (size_t index = 0U; index < count; ++index)
+    {
+        if (cancellation.stop_requested())
+        {
+            return std::unexpected{V21SurfaceQueryFailure{
+                V21SurfaceQueryFailureKind::Cancelled, "V21 result materialization cancelled", {}}};
+        }
+        try
+        {
+            static_cast<void>(mapV21ElevationToBlock((*profiled)[index] / 0.34));
+            static_cast<void>(mapV21WaterLevelToBlock(water->water_level_m[index] / 0.34));
+        }
+        catch (std::exception const& error)
+        {
+            return std::unexpected{V21SurfaceQueryFailure{
+                V21SurfaceQueryFailureKind::InvalidInput,
+                std::string{"V21 surface exceeds the declared block-height domain: "} + error.what(),
+                {}}};
+        }
+        GridCoordinate const at = coordinate(x[index], y[index]);
+        double const sea_ice = water->ocean[index] != 0U
+            ? bilinear(std::span<float const>{provider.water.sea_ice_thickness_m}
+                .subspan(native_phase_offset, NATIVE_CELL_COUNT), at)
+            : 0.0;
+        result.samples[index] = {
+            .elevation_m = (*profiled)[index] / 0.34,
+            .water_level_m = water->water_level_m[index] / 0.34,
+            .temperature_celsius = mean_temperature[index],
+            .precipitation_mm_year = mean_precipitation[index],
+            .biome_id = local_classification->biome_id[index],
+            .ocean = water->ocean[index] != 0U,
+            .lake = water->lake[index] != 0U,
+            .river = water->river[index] != 0U,
+            .land_snow_water_equivalent_m = local_classification->snow_water_equivalent_m
+                [selected_phase_offset + index],
+            .glacier_thickness_m = local_classification->glacier_thickness_m
+                [selected_phase_offset + index],
+            .sea_ice_thickness_m = sea_ice,
+        };
+    }
+    return result;
+}
+
+V9SurfaceSample sampleV21Surface(
+    GlobalAtlas const& atlas,
+    double world_x_m,
+    double world_y_m,
+    uint32_t lod,
+    uint32_t selected_phase
+)
+{
+    V21SurfaceQueryGrid const grid{
+        .rows = 1U,
+        .columns = 1U,
+        .origin_x_m = world_x_m,
+        .origin_y_m = world_y_m,
+        .spacing_m = 1.0,
+        .lod = lod,
+        .selected_phase = selected_phase,
+    };
+    auto result = queryV21SurfaceGrid(atlas, grid);
+    if (!result)
+    {
+        throw std::runtime_error{"V21 surface query failed: " + result.error().message};
+    }
+    return result->samples.front();
+}
+
 bool v9WaterCoversIntegerBlockCell(
     GlobalAtlas const& atlas,
     uint32_t const origin_x,
@@ -926,6 +2089,61 @@ bool v9WaterCoversIntegerBlockCell(
         uint32_t const cell = coordinate / source_cell_extent;
         uint32_t const offset = coordinate % source_cell_extent;
         return (cell + static_cast<uint32_t>(offset * 2U >= source_cell_extent)) % NATIVE_RESOLUTION;
+    };
+    std::array<uint32_t, 2U> const xs{
+        nearest_source_cell(origin_x),
+        nearest_source_cell(origin_x + extent - 1U),
+    };
+    std::array<uint32_t, 2U> const ys{
+        nearest_source_cell(origin_y),
+        nearest_source_cell(origin_y + extent - 1U),
+    };
+    for (uint32_t const y : ys)
+    {
+        for (uint32_t const x : xs)
+        {
+            size_t const index = static_cast<size_t>(y) * NATIVE_RESOLUTION + x;
+            if (water.ocean[index] == 0U && water.lake[index] == 0U && river[index] == 0U)
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool v21WaterCoversIntegerBlockCell(
+    GlobalAtlas const& atlas,
+    uint32_t const origin_x,
+    uint32_t const origin_y,
+    uint32_t const extent
+) noexcept
+{
+    if (atlas.configuration.model_tag != TerrainModelTag::V21 || !atlas.v21_provider
+        || (atlas.configuration.resolution != 256U && atlas.configuration.resolution != 512U)
+        || WORLD_SIZE_BLOCKS % atlas.configuration.resolution != 0U
+        || extent != WORLD_SIZE_BLOCKS / atlas.configuration.resolution
+        || origin_x >= WORLD_SIZE_BLOCKS || origin_y >= WORLD_SIZE_BLOCKS
+        || origin_x % extent != 0U || origin_y % extent != 0U
+        || static_cast<uint64_t>(origin_x) + extent > WORLD_SIZE_BLOCKS
+        || static_cast<uint64_t>(origin_y) + extent > WORLD_SIZE_BLOCKS)
+    {
+        return false;
+    }
+    detail::V21ProviderState const& provider = *atlas.v21_provider;
+    auto const& water = provider.water.equilibrium;
+    auto const& river = provider.water.routing.river;
+    if (water.resolution != NATIVE_RESOLUTION || water.ocean.size() != NATIVE_CELL_COUNT
+        || water.lake.size() != NATIVE_CELL_COUNT || river.size() != NATIVE_CELL_COUNT
+        || WORLD_SIZE_BLOCKS % NATIVE_RESOLUTION != 0U)
+    {
+        return false;
+    }
+    constexpr uint32_t SOURCE_CELL_EXTENT = WORLD_SIZE_BLOCKS / NATIVE_RESOLUTION;
+    auto const nearest_source_cell = [](uint32_t const coordinate) {
+        uint32_t const cell = coordinate / SOURCE_CELL_EXTENT;
+        uint32_t const offset = coordinate % SOURCE_CELL_EXTENT;
+        return (cell + static_cast<uint32_t>(offset * 2U >= SOURCE_CELL_EXTENT)) % NATIVE_RESOLUTION;
     };
     std::array<uint32_t, 2U> const xs{
         nearest_source_cell(origin_x),
@@ -1008,6 +2226,32 @@ uint16_t mapV9ElevationToBlock(double source_elevation_m)
 uint16_t mapV9WaterLevelToBlock(double source_water_level_m)
 {
     return mapV9ElevationToBlock(source_water_level_m);
+}
+
+uint16_t mapV21ElevationToBlock(double const source_elevation_m)
+{
+    double const mapped = static_cast<double>(V21_BLOCK_SEA_LEVEL)
+        + 0.34 * source_elevation_m;
+    double const height = std::floor(mapped);
+    if (!std::isfinite(source_elevation_m) || !std::isfinite(mapped)
+        || height < 1.0 || height > static_cast<double>(V21_MAX_HEIGHT))
+    {
+        throw std::out_of_range{"V21 source elevation is outside its 0.34 block metric and 2048-block domain"};
+    }
+    return static_cast<uint16_t>(height);
+}
+
+uint16_t mapV21WaterLevelToBlock(double const source_water_level_m)
+{
+    double const mapped = static_cast<double>(V21_BLOCK_SEA_LEVEL)
+        + 0.34 * source_water_level_m;
+    double const height = std::floor(mapped);
+    if (!std::isfinite(source_water_level_m) || !std::isfinite(mapped)
+        || height < 0.0 || height > static_cast<double>(V21_MAX_HEIGHT))
+    {
+        throw std::out_of_range{"V21 source water level is outside its 0.34 block metric and 2048-block domain"};
+    }
+    return static_cast<uint16_t>(height);
 }
 
 } // namespace generation

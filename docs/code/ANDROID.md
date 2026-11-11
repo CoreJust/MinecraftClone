@@ -1,12 +1,11 @@
 # Android NativeActivity bridge
 
-The Android application is a NativeActivity packaged by the Gradle module in
-[`android/`](../../android). Its shared object is `mc_android`; the manifest
-loads it through the `android.app.lib_name` metadata entry. The source target
-is declared in [`src/CMakeLists.txt`](../../src/CMakeLists.txt) and augmented
-by [`src/android/CMakeLists.txt`](../../src/android/CMakeLists.txt). It links
-the NDK native app glue plus the Android system libraries, while the portable
-game, Vulkan, networking, and renderer code remain in `mc`.
+The [`android/`](../../android) Gradle module packages NativeActivity and loads
+`mc_android` through manifest `android.app.lib_name`. Targets are declared in
+[`src/CMakeLists.txt`](../../src/CMakeLists.txt) and
+[`src/android/CMakeLists.txt`](../../src/android/CMakeLists.txt). They link NDK app
+glue and Android libraries; portable game, Vulkan and networking code remains in `mc`.
+The `river_diagnostic=first_failure` extra enables [private river diagnostics](RIVER_BEDS.md).
 
 `android_main` creates an [`AndroidPlayerClient`](../../src/android/AndroidPlayerClient.hpp).
 The client translates app commands into Vulkan surface lifetime, focus, and
@@ -21,12 +20,26 @@ before an authoritative join. The shared connection attempt retains one ENet
 peer for 30 seconds, with lifecycle servicing between transport waits of at
 most 25 ms; retry and join waits also service cancellation.
 
-Network messages are serviced only while the render loop is active. Pause or
-focus loss clears input before blocking; losing the native window destroys the
-renderer. The client recreates rendering on resume but does not reconnect if
+Network messages are serviced only while the render loop is active. Pause,
+focus loss and native-window teardown clear movement, held vertical input and
+queued actions. Focus loss and window teardown also release keys consumed by
+the loading screen. Gameplay resumes on a fresh key press, with automatic
+key repeats reserved for map navigation. Window teardown destroys the renderer
+and retains the connection and session. The client recreates rendering on resume but does not reconnect if
 the server times out during a long background interval. This protocol sends one
 normalized movement intent per fixed server tick, so cleared input cannot leave
 motion active.
+
+Loading uses the shared native generation animator and `UiPresentation`, including
+V10's typed snapshots and stage labels. A matching session/world/L0 supplies the
+canonical final S2 map; no legacy elevation-array fallback is used. Its visible
+clock pauses without a window or focus and survives window replacement; a new
+loading identity resets it. Readiness still requires authoritative state, a fresh
+completed prompt frame and a new input edge. `S2MapPresentation` supplies a centered
+L0 minimap and world map. Android submits break and place actions through the
+shared client. Accepted actions play their material sounds, and tracked break
+progress can play chip sounds. Generation audio follows the visible phase.
+Touch actions use rendered 48 dp bounds and retain pointer ownership through release/cancel.
 
 `AndroidPlayerClient` creates a CoreCpp `VulkanInstance`, Android surface, and
 `PresentationContext` through `RuntimeGraphicsVulkanAndroid`. The Client keeps
@@ -43,20 +56,19 @@ portable controller lowers left-half intent at the current yaw into the same
 normalized authoritative direction packet used by desktop. Server positions
 carry fixed-point subcell remainders and are converted to floats only for
 camera and rendering presentation.
-Back/Escape requests client shutdown; a debounced F1 key-down toggles the
+Back/Escape closes an open map before shutdown; a debounced F1 key-down toggles the
 performance HUD and hardware F5 cycles first, rear-third, and front-third
 perspectives. R retains its shader-reload action; holding any of these keys
 does not repeat its action. The Android client uses the portable vertex path
 because `RuntimeKernel::SpirvModule` currently exposes vertex/fragment modules
 only.
 
-[`AndroidShaderAssets`](../../src/android/AndroidShaderAssets.hpp) reads
-bare `.spv` names from the APK asset manager under `shaders/`, validates their
-SPIR-V word alignment and magic, and returns the portable renderer input. The
-Gradle source set stages the scene and text shaders, including `text.vert`
-and `text.frag`, so the APK contains their
-compiled `shaders/*.spv` assets; see the Android section of [the build
-guide](../BUILD.md) for packaging and environment requirements.
+[`AndroidShaderAssets`](../../src/android/AndroidShaderAssets.hpp) loads `shaders/*.spv` from APK assets and validates SPIR-V alignment and magic.
+Gradle stages scene and text shaders, stages the four [runtime audio files](../BUILD.md),
+and verifies the audio entries in the debug APK. The ordinary Release variant
+passes CMake `Release` and `-O3 -DNDEBUG` for native C and C++ compilation.
+Android CMake builds exclude the desktop CTest targets. APK startup evidence
+and moving-gameplay performance measurements have separate criteria.
 
 S7's revised release scope requires local Android tests, basic runtime evidence
 and the ordinary development APK. Hosted HWASan qualification is suspended.
@@ -71,14 +83,12 @@ ID, packaging, and build type.
 Diagnostic tooling preflights the packaged wrapper and instrumented AArch64
 library before diagnostic startup. It is not the ordinary APK release gate.
 
-The retained candidate-bound HWASan diagnostic tooling runs only on an authorized macOS ARM64 host
-with usable Hypervisor.Framework acceleration. It validates Java 21, creates a
-unique AVD and Android user/configuration homes under the job's private
-`RUNNER_TEMP` subtree, installs the pinned Android SDK inside that same
-run-owned subtree, and refuses to reuse the default AVD home. The emulator
-must start with acceleration enabled on console port 5558 (ADB serial
-`emulator-5558`); the job fails closed if that serial or either reserved port is
-already occupied. Device commands always select that serial explicitly. An
+The candidate-bound HWASan diagnostic requires authorized macOS ARM64 and
+usable Hypervisor.Framework acceleration. It checks Java 21 and provisions a
+unique AVD, Android user/configuration homes and pinned SDK under its private
+`RUNNER_TEMP`. The emulator requires acceleration on console port 5558. The
+job rejects an occupied `emulator-5558` serial or either reserved port and
+explicitly targets that serial. An
 overall runtime deadline caps every in-loop PID and process-map ADB timeout to
 the remaining budget; the verifier fails closed without issuing another device
 command after that budget expires. Only successful stdout can provide mapping

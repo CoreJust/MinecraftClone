@@ -3,6 +3,7 @@
 #include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/TerrainWorld.hpp>
+#include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
 #include <shared/world/WorldGenerationScheduler.hpp>
 #include <generation/Generation.hpp>
@@ -24,6 +25,7 @@ namespace {
 
 using Palette = client::ColumnMapPalette;
 using Rgba = client::ColumnMapRgba8;
+constexpr int32_t VERTICAL_CHUNK_COUNT = shared::WorldExtent::DEPTH / shared::Chunk::SIDE_LENGTH;
 
 [[nodiscard]] Palette testPalette()
 {
@@ -35,7 +37,7 @@ using Rgba = client::ColumnMapRgba8;
 
 void publishVerticalColumn(shared::SparseWorld& world, int32_t const solid_z)
 {
-    for (int32_t chunk_z = 0; chunk_z < 64; ++chunk_z) {
+    for (int32_t chunk_z = 0; chunk_z < VERTICAL_CHUNK_COUNT; ++chunk_z) {
         shared::Chunk chunk{ { .x = 0, .y = 0, .z = chunk_z } };
         if (solid_z >= 0 && solid_z / shared::Chunk::SIDE_LENGTH == chunk_z) {
             static_cast<void>(chunk.setBlock({
@@ -44,7 +46,7 @@ void publishVerticalColumn(shared::SparseWorld& world, int32_t const solid_z)
                 .z = static_cast<uint8_t>(solid_z % shared::Chunk::SIDE_LENGTH),
             }, shared::Block::Stone));
         }
-        static_cast<void>(world.publishMaterializedChunk(chunk, 7U, 42U));
+        ASSERT_TRUE(world.publishMaterializedChunk(chunk, 7U, 42U));
     }
 }
 
@@ -93,7 +95,7 @@ TEST(ColumnMapPresentationTest, PixelUsesHighestMaterializedSolidAndCanonicalCol
     shared::SparseWorld world{
         shared::SparseWorldOptions{
             .seed = 42U,
-            .max_resident_chunks = 80U,
+            .max_resident_chunks = VERTICAL_CHUNK_COUNT,
             .revision = 7U,
         },
     };
@@ -352,7 +354,7 @@ TEST(ColumnMapPresentationTest, WorldAlignedColumnPixelDoesNotChangeWithCameraOr
     shared::SparseWorld world{
         shared::SparseWorldOptions{
             .seed = 42U,
-            .max_resident_chunks = 80U,
+            .max_resident_chunks = VERTICAL_CHUNK_COUNT,
             .revision = 7U,
         },
     };

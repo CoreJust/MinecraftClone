@@ -64,6 +64,12 @@ bool isValidGenerationConfiguration(generation::GenerationConfiguration const& c
 }
 
 [[nodiscard]]
+constexpr unsigned generationStageOrder(generation::GenerationStage const stage) noexcept
+{
+    return stage == generation::GenerationStage::Complete ? 256U : static_cast<unsigned>(stage);
+}
+
+[[nodiscard]]
 bool isValidSnapshot(
     generation::GenerationSnapshot const& snapshot,
     uint32_t const expected_resolution,
@@ -71,12 +77,15 @@ bool isValidSnapshot(
     generation::TerrainModelTag const model_tag
 ) noexcept
 {
-    uint32_t const source_resolution = model_tag == generation::TerrainModelTag::V9
-        ? 256U
-        : expected_resolution;
-    return static_cast<uint8_t>(snapshot.stage) <= static_cast<uint8_t>(latest_stage)
+    bool const native_source = model_tag == generation::TerrainModelTag::V9
+        || model_tag == generation::TerrainModelTag::V21
+        || model_tag == generation::TerrainModelTag::V10;
+    uint32_t const source_resolution = native_source ? 256U : expected_resolution;
+    return generationStageOrder(snapshot.stage) <= generationStageOrder(latest_stage)
         && snapshot.resolution == source_resolution
         && snapshot.v9.has_value() == (model_tag == generation::TerrainModelTag::V9)
+        && snapshot.v21.has_value() == (model_tag == generation::TerrainModelTag::V21)
+        && snapshot.v10.has_value() == (model_tag == generation::TerrainModelTag::V10)
         && generation::isValidGenerationSnapshot(snapshot);
 }
 
@@ -207,9 +216,9 @@ bool WorldLoading::publishGenerationProgress(
     std::lock_guard const lock{ m_mutex };
     if (!acceptsIdentityAndTime(identity, published_at)
         || m_atlas_ready
-        || static_cast<uint8_t>(progress.stage) > static_cast<uint8_t>(generation::GenerationStage::Complete)
+        || static_cast<uint8_t>(progress.stage) > static_cast<uint8_t>(generation::GenerationStage::V10Water)
         || progress.completed > progress.total
-        || static_cast<uint8_t>(progress.stage) < static_cast<uint8_t>(m_generation_stage)
+        || generationStageOrder(progress.stage) < generationStageOrder(m_generation_stage)
         || (m_has_generation_progress && progress.stage == m_generation_stage
             && (progress.total != m_generation_total || progress.completed < m_generation_completed))
         || (progress.snapshot

@@ -217,6 +217,9 @@ struct GameBenchmarkFrameSample final {
         uint64_t world_reset_duration_ns = 0U;
         uint64_t interest_prune_duration_ns = 0U;
         uint64_t worker_handoff_duration_ns = 0U;
+        uint64_t worker_future_get_duration_ns = 0U;
+        uint64_t worker_candidate_adopt_duration_ns = 0U;
+        uint64_t worker_columns_copy_duration_ns = 0U;
         uint64_t edit_lane_duration_ns = 0U;
         uint64_t pending_validation_duration_ns = 0U;
         uint64_t renderer_upsert_duration_ns = 0U;
@@ -227,6 +230,10 @@ struct GameBenchmarkFrameSample final {
         uint64_t prepared_draw_index_publish_count = 0U;
         uint64_t render_thread_draw_index_build_count = 0U;
         uint64_t scene_handoff_duration_ns = 0U;
+        uint64_t scene_activation_log_duration_ns = 0U;
+        uint64_t scene_plan_presented_duration_ns = 0U;
+        uint64_t scene_column_selection_duration_ns = 0U;
+        uint64_t scene_pending_release_duration_ns = 0U;
         uint64_t source_refresh_duration_ns = 0U;
         uint64_t source_validation_duration_ns = 0U;
         uint64_t discovery_capture_duration_ns = 0U;
@@ -325,6 +332,30 @@ struct GameBenchmarkFrameSample final {
         bool sources_current = false;
     };
     std::optional<VisualLod> visual_lod = std::nullopt;
+    struct NativeTerrain final {
+        std::string backend = "native-v9";
+        uint64_t submitted_frame_sequence_id = 0U;
+        uint64_t renderer_submitted_frame_count = 0U;
+        bool scene_present = false;
+        std::optional<shared::TerrainIdentity> terrain_identity;
+        uint64_t session_join_epoch = 0U;
+        uint64_t coverage_epoch = 0U;
+        std::optional<uint64_t> active_coverage_epoch = std::nullopt;
+        uint32_t scene_center_x = 0U;
+        uint32_t scene_center_y = 0U;
+        uint32_t actual_column_count = 0U;
+        uint32_t required_actual_columns = 0U;
+        std::optional<uint32_t> presented_current_actual_columns = std::nullopt;
+        uint32_t submitted_scene_face_count = 0U;
+        std::optional<shared::PlayerPosition> current_player_position;
+        bool session_matches = false;
+        bool coverage_matches = false;
+        bool sources_current = false;
+        bool underfoot_actual_column_present = false;
+        bool underfoot_authority_source_present = false;
+        std::optional<bool> underfoot_mesh_query_agrees = std::nullopt;
+    };
+    std::optional<NativeTerrain> native_terrain = std::nullopt;
     struct QualificationSettings final {
         uint32_t framebuffer_width = 0U;
         uint32_t framebuffer_height = 0U;
@@ -394,6 +425,10 @@ struct GameBenchmarkFrameSample final {
     bool diagnostic_presentation_recreation_attempted = false;
     bool diagnostic_presentation_recreation_deferred = false;
     uint64_t diagnostic_cpu_command_record_duration_ns = 0U;
+    uint64_t diagnostic_cpu_presentation_prepare_duration_ns = 0U;
+    uint64_t diagnostic_cpu_pipeline_bind_duration_ns = 0U;
+    uint64_t diagnostic_cpu_context_complete_call_duration_ns = 0U;
+    uint64_t diagnostic_cpu_stone_face_growth_duration_ns = 0U;
     uint64_t diagnostic_cpu_visible_range_collection_duration_ns = 0U;
     uint64_t diagnostic_cpu_height_tile_group_and_tile_traversal_duration_ns = 0U;
     uint64_t diagnostic_cpu_height_tile_pending_range_order_duration_ns = 0U;
@@ -486,6 +521,67 @@ struct GameBenchmarkTerrainReadinessEvidence final {
     bool complete = false;
 };
 
+struct GameBenchmarkNativeTurningCoverage final {
+    uint64_t start_offset_ns = 0U;
+    uint64_t end_offset_ns = 0U;
+    uint64_t submitted_frames = 0U;
+    uint64_t current_disk_frames = 0U;
+    bool window_drained = false;
+};
+
+struct GameBenchmarkAuthoritativePlayableSphereUpdate final {
+    uint64_t update_ordinal = 0U;
+    uint64_t offset_ns = 0U;
+    uint32_t state_revision = 0U;
+    uint32_t acknowledged_input_sequence = 0U;
+    shared::PlayerPosition authoritative_position{};
+    uint8_t movement_capabilities = 0U;
+    int32_t vertical_velocity_subcells = 0;
+    GameBenchmarkFrameSample::PlayableSphere playable_sphere;
+    std::optional<GameBenchmarkFrameSample::VisualLod> visual_lod = std::nullopt;
+};
+
+struct GameBenchmarkNativeTurningAuthority final {
+    std::optional<GameBenchmarkAuthoritativePlayableSphereUpdate> trajectory_anchor = std::nullopt;
+    std::optional<uint64_t> anchor_coverage_offset_ns = std::nullopt;
+    bool boundary_capture_complete = false;
+    std::vector<GameBenchmarkAuthoritativePlayableSphereUpdate> boundary_updates;
+    std::vector<GameBenchmarkAuthoritativePlayableSphereUpdate> movement_updates;
+};
+
+struct GameBenchmarkNativeFullRadiusRecovery final {
+    std::string_view terminal_phase;
+    std::optional<uint64_t> initial_frame_sequence_id = std::nullopt;
+    std::optional<uint64_t> movement_start_frame_sequence_id = std::nullopt;
+    std::optional<uint64_t> recovery_frame_sequence_id = std::nullopt;
+    std::optional<uint64_t> movement_start_offset_ns = std::nullopt;
+    std::optional<uint64_t> movement_end_offset_ns = std::nullopt;
+    bool movement_window_complete = false;
+    std::optional<GameBenchmarkAuthoritativePlayableSphereUpdate> movement_anchor = std::nullopt;
+    std::vector<GameBenchmarkAuthoritativePlayableSphereUpdate> movement_updates;
+};
+
+struct GameBenchmarkNativeTerrainDiagnostics final {
+    std::string backend = "native-v9";
+    std::string status = "diagnostic-only-not-qualified";
+    std::optional<shared::TerrainIdentity> terrain_identity = std::nullopt;
+    std::string_view qualification_profile;
+    std::optional<uint64_t> turning_start_frame_sequence_id = std::nullopt;
+    std::optional<GameBenchmarkNativeTurningCoverage> turning_coverage = std::nullopt;
+    std::optional<GameBenchmarkNativeTurningAuthority> turning_authority = std::nullopt;
+    std::optional<GameBenchmarkNativeFullRadiusRecovery> full_radius_recovery = std::nullopt;
+    uint64_t sample_count = 0U;
+    uint64_t submitted_frame_count = 0U;
+    uint64_t fence_confirmed_frame_count = 0U;
+    uint64_t session_match_count = 0U;
+    uint64_t coverage_match_count = 0U;
+    uint64_t source_current_count = 0U;
+    uint64_t underfoot_actual_column_count = 0U;
+    uint64_t underfoot_authority_source_count = 0U;
+    bool qualification_complete = false;
+    std::string underfoot_mesh_query_agreement = "unknown-no-per-column-mesh-handle";
+};
+
 struct GameBenchmarkFullTerrainSnapshot final {
     struct RadialBand final {
         uint32_t desired_count = 0U;
@@ -569,17 +665,7 @@ struct GameBenchmarkFullRadiusEvidence final {
     bool movement_end_center_valid = false;
     int32_t movement_end_center_x = 0;
     int32_t movement_end_center_y = 0;
-    struct AuthoritativePlayableSphereUpdate final {
-        uint64_t update_ordinal = 0U;
-        uint64_t offset_ns = 0U;
-        uint32_t state_revision = 0U;
-        uint32_t acknowledged_input_sequence = 0U;
-        shared::PlayerPosition authoritative_position{};
-        uint8_t movement_capabilities = 0U;
-        int32_t vertical_velocity_subcells = 0;
-        GameBenchmarkFrameSample::PlayableSphere playable_sphere;
-        std::optional<GameBenchmarkFrameSample::VisualLod> visual_lod = std::nullopt;
-    };
+    using AuthoritativePlayableSphereUpdate = GameBenchmarkAuthoritativePlayableSphereUpdate;
     uint64_t movement_authoritative_update_count = 0U;
     std::optional<AuthoritativePlayableSphereUpdate> movement_trajectory_anchor = std::nullopt;
     bool movement_playable_sphere_complete = false;
@@ -699,6 +785,15 @@ struct GameBenchmarkEvidence final {
     std::optional<shared::TerrainIdentity> terrain_identity;
     uint64_t session_join_epoch = 0U;
     bool diagnostic_overrides_present = false;
+    std::optional<int32_t> diagnostic_spawn_z = std::nullopt;
+    struct DiagnosticCaptureSite final {
+        int32_t x = 0;
+        int32_t y = 0;
+        int32_t z = 0;
+        double yaw_degrees = 0.0;
+        double pitch_degrees = 0.0;
+    };
+    std::optional<DiagnosticCaptureSite> diagnostic_capture_site = std::nullopt;
     uint64_t cold_duration_ms = 0U;
     uint64_t warm_duration_ms = 0U;
     uint64_t uncapped_duration_ms = 0U;
@@ -724,6 +819,7 @@ struct GameBenchmarkEvidence final {
     FrameTimingSummary permission_publish_timings;
     std::optional<GameBenchmarkFrameBudgetEvidence> frame_budget = std::nullopt;
     std::optional<GameBenchmarkTerrainReadinessEvidence> terrain_readiness = std::nullopt;
+    std::optional<GameBenchmarkNativeTerrainDiagnostics> native_terrain_diagnostics = std::nullopt;
     std::optional<GameBenchmarkFullRadiusEvidence> full_radius_terrain = std::nullopt;
     std::optional<GameBenchmarkS1TerrainPerformanceEvidence> s1_terrain_performance = std::nullopt;
     std::optional<GameBenchmarkPresentationTimingEvidence> presentation_timing = std::nullopt;

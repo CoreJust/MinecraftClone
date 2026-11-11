@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -102,7 +103,7 @@ std::shared_ptr<generation::GenerationSnapshot const> makeV9Snapshot(
 TEST(WorldPreparationTest, CoalescesSnapshotFloodAndEncodesBoundedSourceFramesInOrder)
 {
     static constexpr uint32_t CLIMATE_UPDATE_COUNT = 1'317U;
-    static constexpr uint64_t MAX_ENCODED_BYTES = 6'000'000U;
+    static constexpr uint64_t MAX_ENCODED_BYTES = 8'000'000U;
     static constexpr std::array<generation::GenerationStage, 4U> SOURCE_STAGES{{
         generation::GenerationStage::V9Platec,
         generation::GenerationStage::V9Terrain,
@@ -124,15 +125,13 @@ TEST(WorldPreparationTest, CoalescesSnapshotFloodAndEncodesBoundedSourceFramesIn
         generation::GenerationStage const stage = SOURCE_STAGES[stage_index];
         record({ .stage = stage, .completed = 0U, .total = 1U });
         if (stage == generation::GenerationStage::V9Climate) {
+            auto const intermediate = makeV9Snapshot(stage, 0.0F);
             for (uint32_t completed = 1U; completed <= CLIMATE_UPDATE_COUNT; ++completed) {
-                auto intermediate = std::make_shared<generation::GenerationSnapshot>();
-                intermediate->stage = stage;
-                intermediate->resolution = 256U;
                 record({
                     .stage = stage,
                     .completed = completed,
                     .total = CLIMATE_UPDATE_COUNT,
-                    .snapshot = std::move(intermediate),
+                    .snapshot = intermediate,
                 });
             }
         }
@@ -142,7 +141,7 @@ TEST(WorldPreparationTest, CoalescesSnapshotFloodAndEncodesBoundedSourceFramesIn
     record({ .stage = generation::GenerationStage::Complete, .completed = 1U, .total = 1U });
 
     auto const& milestones = journal.milestones();
-    ASSERT_EQ(milestones.size(), 2U * SOURCE_STAGES.size() + 1U);
+    ASSERT_EQ(milestones.size(), 2U * SOURCE_STAGES.size() + 2U);
     EXPECT_LE(milestones.size(), server::WorldPreparationProgressJournal::MAX_MILESTONE_COUNT);
     std::vector<generation::GenerationStage> actual_source_stages;
     generation::GenerationConfiguration configuration;
@@ -190,9 +189,9 @@ TEST(WorldPreparationTest, CoalescesSnapshotFloodAndEncodesBoundedSourceFramesIn
         EXPECT_LE(encoded.size(), shared::MAX_MESSAGE_SIZE_BYTES);
         encoded_bytes += encoded.size();
     }
-    ASSERT_EQ(source_snapshot_count, SOURCE_STAGES.size());
+    ASSERT_EQ(source_snapshot_count, SOURCE_STAGES.size() + 1U);
     EXPECT_EQ(actual_source_stages, (std::vector<generation::GenerationStage>{
-        SOURCE_STAGES[0U], SOURCE_STAGES[1U], SOURCE_STAGES[2U], SOURCE_STAGES[3U]
+        SOURCE_STAGES[0U], SOURCE_STAGES[1U], SOURCE_STAGES[2U], SOURCE_STAGES[2U], SOURCE_STAGES[3U]
     }));
     EXPECT_EQ(latest_snapshot, snapshots.back());
     shared::ServerWorldPreparationMessage const final_message{
@@ -210,6 +209,66 @@ TEST(WorldPreparationTest, CoalescesSnapshotFloodAndEncodesBoundedSourceFramesIn
     EXPECT_EQ(final_message.latest_snapshot, snapshots.back());
     EXPECT_TRUE(final_message.final_atlas_complete);
     EXPECT_LE(encoded_bytes, MAX_ENCODED_BYTES);
+}
+
+TEST(WorldPreparationTest, PreservesFirstSourceAndFinalSourceWhileCoalescingLiveTail)
+{
+    server::WorldPreparationProgressJournal journal;
+    auto const h0 = makeV9Snapshot(generation::GenerationStage::V9Terrain, 100.0F);
+    auto const intermediate = makeV9Snapshot(generation::GenerationStage::V9Terrain, 200.0F);
+    auto const final_proxy = makeV9Snapshot(generation::GenerationStage::V9Terrain, 300.0F);
+    uint64_t sequence = 0U;
+    for (auto const& snapshot : {h0, intermediate, final_proxy}) {
+        journal.record({.sequence = ++sequence, .progress = {
+            .stage = generation::GenerationStage::V9Terrain,
+            .completed = static_cast<uint32_t>(sequence), .total = 3U, .snapshot = snapshot,
+        }});
+    }
+    ASSERT_EQ(journal.milestones().size(), 3U);
+    EXPECT_EQ(journal.milestones()[1U].update.progress.snapshot, h0);
+    EXPECT_EQ(journal.milestones()[2U].update.progress.snapshot, final_proxy);
+    EXPECT_EQ(journal.milestones()[1U].update.sequence, 1U);
+    EXPECT_EQ(journal.milestones()[2U].update.sequence, 3U);
+}
+
+TEST(WorldPreparationTest, PublishesInitialAndChangingV21SourceWhileStillPreparing)
+{
+    generation::GenerationConfiguration configuration{};
+    configuration.seed = 42U;
+    configuration.model_tag = generation::TerrainModelTag::V21;
+    configuration.resolution = 512U;
+    server::WorldPreparation preparation{configuration, 45U};
+    auto const deadline = server::WorldPreparation::Clock::now() + 10s;
+    std::shared_ptr<generation::GenerationSnapshot const> first;
+    bool changed = false;
+    while (server::WorldPreparation::Clock::now() < deadline && !changed) {
+        auto const snapshot = preparation.latest();
+        ASSERT_NE(snapshot.state, server::WorldPreparationState::Failed) << snapshot.error;
+        for (auto const& milestone : snapshot.progress_milestones) {
+            auto const& progress = milestone.update.progress;
+            if (!progress.snapshot || progress.stage != generation::GenerationStage::V21Platec) {
+                continue;
+            }
+            ASSERT_EQ(snapshot.state, server::WorldPreparationState::Preparing);
+            EXPECT_EQ(snapshot.ready_world, nullptr);
+            ASSERT_TRUE(progress.snapshot->v21.has_value());
+            EXPECT_TRUE(generation::isValidGenerationSnapshot(*progress.snapshot));
+            if (!first) {
+                first = progress.snapshot;
+                EXPECT_EQ(progress.completed, 0U);
+                RecordProperty("initial_source_microseconds", std::chrono::duration_cast<std::chrono::microseconds>(
+                    milestone.update.observed_at - snapshot.request_accepted_at).count());
+            } else if (first->v21->source_elevation_m != progress.snapshot->v21->source_elevation_m) {
+                changed = true;
+                RecordProperty("changing_source_microseconds", std::chrono::duration_cast<std::chrono::microseconds>(
+                    milestone.update.observed_at - snapshot.request_accepted_at).count());
+            }
+        }
+        std::this_thread::sleep_for(1ms);
+    }
+    EXPECT_NE(first, nullptr);
+    EXPECT_TRUE(changed) << "Expected evolving native source before any completed atlas";
+    preparation.cancel();
 }
 
 TEST(WorldPreparationTest, ThrottlesRepeatedProgressButAdmitsBoundariesAndCompletion)
@@ -404,3 +463,21 @@ TEST(WorldPreparationTest, ZeroWorldRevisionFailsBeforeGenerationStarts)
 }
 
 } // namespace
+
+TEST(WorldPreparationTest, V10JournalAcceptsCompletionAfterTheAppendedWaterStage)
+{
+    server::WorldPreparationProgressJournal journal;
+    uint64_t sequence = 0U;
+    for (auto stage : {generation::GenerationStage::V10Platec, generation::GenerationStage::V10Terrain,
+             generation::GenerationStage::V10Climate, generation::GenerationStage::V10Water,
+             generation::GenerationStage::Complete}) {
+        EXPECT_NO_THROW(journal.record({.sequence = ++sequence, .progress = {
+            .stage = stage, .completed = 1U, .total = 1U,
+        }}));
+    }
+    ASSERT_FALSE(journal.milestones().empty());
+    EXPECT_EQ(journal.milestones().back().update.progress.stage, generation::GenerationStage::Complete);
+    EXPECT_THROW(journal.record({.sequence = ++sequence, .progress = {
+        .stage = generation::GenerationStage::V10Water, .completed = 1U, .total = 1U,
+    }}), std::logic_error);
+}

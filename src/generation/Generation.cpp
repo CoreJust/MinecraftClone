@@ -2,6 +2,8 @@
 
 #include "GenerationStages.hpp"
 #include "Numerics.hpp"
+#include "V10ProviderInternal.hpp"
+#include "V21ProviderInternal.hpp"
 #include "V9ProviderInternal.hpp"
 
 #include <algorithm>
@@ -21,9 +23,23 @@ namespace
 void validateConfiguration(GenerationConfiguration const& configuration)
 {
     if (configuration.model_tag != TerrainModelTag::R6
-        && configuration.model_tag != TerrainModelTag::V9)
+        && configuration.model_tag != TerrainModelTag::V9
+        && configuration.model_tag != TerrainModelTag::V21
+        && configuration.model_tag != TerrainModelTag::V10)
     {
         throw std::invalid_argument("terrain model tag is unsupported");
+    }
+    if (configuration.use_v10_fine_terrain && configuration.model_tag != TerrainModelTag::V10)
+    {
+        throw std::invalid_argument("V10 fine terrain requires the V10 terrain model");
+    }
+    if (configuration.model_tag == TerrainModelTag::V10)
+    {
+        if (configuration.seed != 42U || configuration.resolution != 256U)
+        {
+            throw std::invalid_argument("V10 supports only seed 42 and resolution 256");
+        }
+        return;
     }
     if (configuration.resolution != 256U && configuration.resolution != 512U)
     {
@@ -118,10 +134,17 @@ void publishStage(
 
 bool isValidGenerationSnapshot(GenerationSnapshot const& snapshot) noexcept
 {
-    if (static_cast<uint8_t>(snapshot.stage) > static_cast<uint8_t>(GenerationStage::Complete)
+    if (static_cast<uint8_t>(snapshot.stage) > static_cast<uint8_t>(GenerationStage::V10Water)
         || (snapshot.resolution != 256U && snapshot.resolution != 512U))
     {
         return false;
+    }
+
+    bool const is_v10_stage = snapshot.stage >= GenerationStage::V10Platec
+        && snapshot.stage <= GenerationStage::V10Climate;
+    if (snapshot.v10 || is_v10_stage || snapshot.stage == GenerationStage::V10Water)
+    {
+        return detail::isValidV10Snapshot(snapshot);
     }
 
     uint32_t const sample_count = snapshot.resolution * snapshot.resolution;
@@ -137,6 +160,123 @@ bool isValidGenerationSnapshot(GenerationSnapshot const& snapshot) noexcept
             : values.empty() || (values.size() == sample_count
                 && std::ranges::all_of(values, [](uint8_t const value) { return value <= 1U; }));
     };
+
+    bool const is_v21_stage = snapshot.stage >= GenerationStage::V21Platec
+        && snapshot.stage <= GenerationStage::V21Water;
+    if (snapshot.v21 || is_v21_stage)
+    {
+        if (!snapshot.v21 || !is_v21_stage || snapshot.v9 || snapshot.resolution != 256U
+            || !snapshot.elevation.empty() || !snapshot.temperature.empty()
+            || !snapshot.precipitation.empty() || !snapshot.water_level.empty()
+            || !snapshot.ocean_mask.empty() || !snapshot.lake_mask.empty() || !snapshot.river_mask.empty())
+        {
+            return false;
+        }
+
+        constexpr size_t V21_SAMPLE_COUNT = 256U * 256U;
+        constexpr size_t V21_PHASE_COUNT = 8U;
+        constexpr size_t V21_PHASE_SAMPLE_COUNT = V21_PHASE_COUNT * V21_SAMPLE_COUNT;
+        V21GenerationSnapshotFields const& fields = *snapshot.v21;
+        bool const has_climate = snapshot.stage >= GenerationStage::V21Climate;
+        bool const has_water = snapshot.stage == GenerationStage::V21Water;
+        auto const valid_native_float = [](std::vector<float> const& values, bool required) {
+            return required ? values.size() == V21_SAMPLE_COUNT
+                && std::ranges::all_of(values, [](float const value) { return std::isfinite(value); })
+                : values.empty();
+        };
+        auto const valid_phase_float = [](std::vector<float> const& values, bool required) {
+            return required ? values.size() == V21_PHASE_SAMPLE_COUNT
+                && std::ranges::all_of(values, [](float const value) { return std::isfinite(value); })
+                : values.empty();
+        };
+        auto const valid_optional_native_float = [](std::vector<float> const& values) {
+            return values.empty() || (values.size() == V21_SAMPLE_COUNT
+                && std::ranges::all_of(values, [](float const value) { return std::isfinite(value); }));
+        };
+        auto const valid_optional_phase_float = [](std::vector<float> const& values) {
+            return values.empty() || (values.size() == V21_PHASE_SAMPLE_COUNT
+                && std::ranges::all_of(values, [](float const value) { return std::isfinite(value); }));
+        };
+        auto const valid_nonnegative_phase_float = [&valid_phase_float](
+            std::vector<float> const& values, bool required
+        ) {
+            return valid_phase_float(values, required)
+                && (!required || std::ranges::all_of(values, [](float const value) { return value >= 0.0F; }));
+        };
+        auto const valid_native_mask = [](std::vector<uint8_t> const& values, bool required) {
+            return required ? values.size() == V21_SAMPLE_COUNT
+                && std::ranges::all_of(values, [](uint8_t const value) { return value <= 1U; })
+                : values.empty();
+        };
+        auto const valid_native_byte_field = [](std::vector<uint8_t> const& values, bool required) {
+            return required ? values.size() == V21_SAMPLE_COUNT : values.empty();
+        };
+        if (fields.source_elevation_m.size() != V21_SAMPLE_COUNT
+            || fields.plate_ids.size() != V21_SAMPLE_COUNT
+            || fields.plate_directions.empty() || fields.plate_directions.size() > 1024U
+            || fields.plate_directions_observed_after_native_step > 2400U
+            || !std::ranges::all_of(fields.source_elevation_m, [](float const value) { return std::isfinite(value); })
+            || !valid_native_float(fields.temperature_celsius, has_climate)
+            || !valid_native_float(fields.wind_u, has_climate)
+            || !valid_native_float(fields.wind_v, has_climate)
+            || !valid_optional_native_float(fields.precipitation_mm_year)
+            || !valid_optional_native_float(fields.current_u)
+            || !valid_optional_native_float(fields.current_v)
+            || !valid_phase_float(fields.phase_temperature_celsius, has_climate)
+            || !valid_optional_phase_float(fields.phase_precipitation_mm_year)
+            || !valid_nonnegative_phase_float(fields.land_snow_water_equivalent_m, has_water)
+            || !valid_nonnegative_phase_float(fields.glacier_thickness_m, has_water)
+            || !valid_nonnegative_phase_float(fields.sea_ice_thickness_m, has_water)
+            || !valid_native_float(fields.water_level_blocks, has_water)
+            || !valid_native_mask(fields.ocean_mask, has_water)
+            || !valid_native_mask(fields.lake_mask, has_water)
+            || !valid_native_mask(fields.river_mask, has_water)
+            || !valid_native_byte_field(fields.biome_id, has_water)
+            || (has_water
+                ? fields.ice_surface_kind.size() != V21_SAMPLE_COUNT
+                : !fields.ice_surface_kind.empty()))
+        {
+            return false;
+        }
+        if (fields.current_u.empty() != fields.current_v.empty()
+            || (has_water && (fields.precipitation_mm_year.empty() || fields.phase_precipitation_mm_year.empty()))
+            || (!fields.precipitation_mm_year.empty()
+                && !std::ranges::all_of(fields.precipitation_mm_year, [](float const value) { return value >= 0.0F; }))
+            || (!fields.phase_precipitation_mm_year.empty()
+                && !std::ranges::all_of(fields.phase_precipitation_mm_year,
+                    [](float const value) { return value >= 0.0F; })))
+        {
+            return false;
+        }
+        if (has_water
+            && (!std::ranges::all_of(fields.biome_id, [](uint8_t const value) { return value <= 12U; })
+                || !std::ranges::all_of(fields.ice_surface_kind, [](uint8_t const value) {
+                    return value <= static_cast<uint8_t>(V21GenerationIceSurfaceKind::SeaIce);
+                })))
+        {
+            return false;
+        }
+        for (size_t index = 0U; index < fields.plate_directions.size(); ++index)
+        {
+            GenerationPlateDirection const& direction = fields.plate_directions[index];
+            if (!std::isfinite(direction.x) || !std::isfinite(direction.y))
+            {
+                return false;
+            }
+            for (size_t previous_index = 0U; previous_index < index; ++previous_index)
+            {
+                if (fields.plate_directions[previous_index].plate_id == direction.plate_id)
+                {
+                    return false;
+                }
+            }
+        }
+        return std::ranges::all_of(fields.plate_ids, [&fields](uint32_t const plate_id) {
+            return std::ranges::any_of(fields.plate_directions, [plate_id](GenerationPlateDirection const& direction) {
+                return direction.plate_id == plate_id;
+            });
+        });
+    }
 
     if (!snapshot.v9)
     {
@@ -228,6 +368,18 @@ GenerationCancelled::GenerationCancelled()
 std::string configurationIdentity(GenerationConfiguration const& configuration)
 {
     validateConfiguration(configuration);
+    if (configuration.model_tag == TerrainModelTag::V10)
+    {
+        std::string identity = std::string{V10_MODEL_IDENTITY}
+            + ";seed=42;resolution=256;platec=1.4.3-direct;foundation=v1;fine-climate=v1"
+              ";fresh-climate=v7;scale=1;datum=512;depth=2048;native-v10-r1;water=v5-fine-bed-v1"
+              ";river=c8f9b851f7891e555165648d473b39df1ecffc9b73ae65cf5b14ed9f5ba04703";
+        if (configuration.use_v10_fine_terrain)
+        {
+            identity.append(V10_FINE_TERRAIN_IDENTITY_SUFFIX);
+        }
+        return identity;
+    }
     if (configuration.model_tag == TerrainModelTag::V9)
     {
         std::string identity = "terrain-v9;model=coherent-practical-macro-watershed-weather-v9";
@@ -238,6 +390,16 @@ std::string configurationIdentity(GenerationConfiguration const& configuration)
         identity += ";mapping=floor(384+source_m/10)";
         identity += ";domain=0..1023;";
         identity += "native-v9-v74-r1";
+        return identity;
+    }
+    if (configuration.model_tag == TerrainModelTag::V21)
+    {
+        std::string identity{V21_MODEL_IDENTITY};
+        identity += ";src=8a8e3a5bb29881b152884f65eb26b0d0e5988cae39591bb2c2a126625108a9bd";
+        identity += ";closure=4feecac718b0f6b6160cfb8d300abaaef062783dd3e3efcec0e9d2b7e15ff216";
+        identity += ";seed=" + std::to_string(configuration.seed);
+        identity += ";resolution=" + std::to_string(configuration.resolution);
+        identity += ";scale=0.34;datum=384;depth=2048;shore-contact=v1;native-v21-r3";
         return identity;
     }
     std::string identity = "terrain-v" + std::to_string(TERRAIN_VERSION);
@@ -271,9 +433,21 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     detail::checkCancellation(cancellation_context);
     validateConfiguration(configuration);
 
+    if (configuration.model_tag == TerrainModelTag::V10)
+    {
+        return detail::prepareV10GlobalAtlas(configuration, cancellation_context, std::move(progress_context));
+    }
     if (configuration.model_tag == TerrainModelTag::V9)
     {
         return detail::prepareV9GlobalAtlas(
+            configuration,
+            cancellation_context,
+            std::move(progress_context)
+        );
+    }
+    if (configuration.model_tag == TerrainModelTag::V21)
+    {
+        return detail::prepareV21GlobalAtlas(
             configuration,
             cancellation_context,
             std::move(progress_context)
@@ -306,7 +480,7 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     detail::FloatField activity(elevation.size());
     for (size_t index = 0U; index < elevation.size(); ++index)
     {
-        if ((index & 4'095U) == 0U)
+        if ((index & 4095U) == 0U)
         {
             detail::checkCancellation(cancellation_context);
         }
@@ -467,7 +641,7 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
     );
     for (size_t index = 0U; index < final_hydrology.fjord_candidate_mask.size(); ++index)
     {
-        if ((index & 4'095U) == 0U)
+        if ((index & 4095U) == 0U)
         {
             detail::checkCancellation(cancellation_context);
         }
@@ -542,6 +716,14 @@ std::shared_ptr<GlobalAtlas const> prepareAtlas(
 
 bool isValidAtlas(GlobalAtlas const& atlas) noexcept
 {
+    if (atlas.configuration.model_tag == TerrainModelTag::V10)
+    {
+        return detail::isValidV10Atlas(atlas);
+    }
+    if (atlas.v10_provider)
+    {
+        return false;
+    }
     if (atlas.configuration.model_tag == TerrainModelTag::V9)
     {
         return atlas.v9_provider != nullptr
@@ -551,7 +733,19 @@ bool isValidAtlas(GlobalAtlas const& atlas) noexcept
             && atlas.temperature.empty()
             && atlas.precipitation.empty();
     }
-    if (atlas.configuration.model_tag != TerrainModelTag::R6 || atlas.v9_provider != nullptr)
+    if (atlas.configuration.model_tag == TerrainModelTag::V21)
+    {
+        return atlas.v21_provider != nullptr
+            && atlas.v9_provider == nullptr
+            && atlas.block_sea_level == V21_BLOCK_SEA_LEVEL
+            && atlas.max_height == V21_MAX_HEIGHT
+            && atlas.elevation.empty()
+            && atlas.temperature.empty()
+            && atlas.precipitation.empty();
+    }
+    if (atlas.configuration.model_tag != TerrainModelTag::R6
+        || atlas.v9_provider != nullptr
+        || atlas.v21_provider != nullptr)
     {
         return false;
     }

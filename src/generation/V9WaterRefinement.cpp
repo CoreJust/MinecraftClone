@@ -121,6 +121,11 @@ double V9WaterRefinement::ridgeBarrier(double z, double x, double y) const
 }
 double V9WaterRefinement::base(double x, double y) const { return ridgeBarrier(interpolate(x, y), x, y); }
 
+double V9WaterRefinement::v21FixedSupportBase(double plain_base_blocks, double x, double y) const
+{
+    return ridgeBarrier(plain_base_blocks, x, y);
+}
+
 std::expected<V9WaterRefinement, V9WaterFailure>
 V9WaterRefinement::create(V9WaterEquilibrium const& w, V9WaterRouting const& routing, double repose_slope)
 {
@@ -253,6 +258,12 @@ V9WaterRefinement::create(V9WaterEquilibrium const& w, V9WaterRouting const& rou
             indexGeometry(r, out.ridge_index_, 96, out.ridges_.size() - 1);
         }
         uniqueIndex(out.ridge_index_);
+        if (!final) {
+            out.interpolation_constraints_.assign(size, 0U);
+            for (int32_t vertex : constraints) {
+                out.interpolation_constraints_[static_cast<size_t>(vertex)] = 1U;
+            }
+        }
         out.interpolateSlopes(std::vector<int32_t>(constraints.begin(), constraints.end()));
     };
     buildRidges(false);
@@ -343,6 +354,18 @@ V9WaterRefinement::create(V9WaterEquilibrium const& w, V9WaterRouting const& rou
         }
     }
     buildRidges(true);
+    out.v21_interpolation_constraints_.assign(size, 0U);
+    for (auto const& [v0, v1] : candidates) {
+        std::pair<int32_t, int32_t> const edge{v0, v1};
+        if (flow.contains(edge) || !active_candidates.contains(edge)) {
+            continue;
+        }
+        out.v21_interpolation_constraints_[static_cast<size_t>(v0)] = 1U;
+        out.v21_interpolation_constraints_[static_cast<size_t>(v1)] = 1U;
+    }
+    for (V9ProtectedContact const& contact : out.contacts_) {
+        out.v21_interpolation_constraints_[static_cast<size_t>(contact.vertex_index)] = 1U;
+    }
     return out;
 }
 

@@ -17,9 +17,12 @@
 
 namespace client {
 
+struct S2MapImage;
+
 struct TerrainLodProduct final {
     std::shared_ptr<shared::TerrainWorld const> world;
     std::shared_ptr<shared::TerrainLodArtifact const> root;
+    std::shared_ptr<S2MapImage const> map;
 };
 
 class TerrainLodSource final {
@@ -28,9 +31,15 @@ public:
         shared::TerrainSessionIdentity const&,
         std::stop_token
     )>;
+    using MapBuilder = std::function<std::shared_ptr<S2MapImage const>(
+        shared::TerrainWorld const&,
+        shared::TerrainLodArtifact const&,
+        std::stop_token
+    )>;
     TerrainLodSource();
     explicit TerrainLodSource(Builder builder);
     explicit TerrainLodSource(PreparedTerrainWorldProvider provider);
+    TerrainLodSource(PreparedTerrainWorldProvider provider, MapBuilder map_builder);
     ~TerrainLodSource();
 
     TerrainLodSource(TerrainLodSource const&) = delete;
@@ -45,6 +54,11 @@ public:
     [[nodiscard]] std::shared_ptr<shared::TerrainLodArtifact const> rootFor(
         shared::TerrainSessionIdentity const& session
     ) const noexcept;
+    // Built-in terrain sources can publish world and root while the map is still pending.
+    [[nodiscard]] std::shared_ptr<S2MapImage const> mapFor(
+        shared::TerrainSessionIdentity const& session
+    ) const noexcept;
+    [[nodiscard]] bool mapUnavailableFor(shared::TerrainSessionIdentity const& session) const noexcept;
 
 private:
     struct Request final {
@@ -58,12 +72,19 @@ private:
         TerrainLodProduct product;
     };
 
+    TerrainLodSource(Builder builder, MapBuilder map_builder);
     void workerLoop();
+    void publish(
+        Request const& request,
+        TerrainLodProduct const& product,
+        std::shared_ptr<std::stop_source> const& cancellation
+    );
     [[nodiscard]] std::shared_ptr<Publication const> publicationFor(
         shared::TerrainSessionIdentity const& session
     ) const noexcept;
 
     Builder m_builder;
+    MapBuilder m_map_builder;
     std::thread m_worker;
     mutable std::mutex m_mutex;
     std::condition_variable m_work_available;

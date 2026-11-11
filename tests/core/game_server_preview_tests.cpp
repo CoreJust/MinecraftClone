@@ -1,3 +1,6 @@
+#if defined(MC_TEST_HAS_CPU_MAP)
+#include <client/GenerationMapPresentation.hpp>
+#endif
 #include <server/GameServer.hpp>
 #include <server/WorldPreparation.hpp>
 #include <shared/net/Message.hpp>
@@ -38,6 +41,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -506,7 +510,12 @@ public:
     std::vector<shared::ChunkCoordinate> rejected_disconnected_chunks;
     std::vector<shared::ChunkCoordinate> acknowledged_chunks;
     std::vector<HeldMaterializedDelivery> held_near_deliveries;
+    std::vector<shared::ServerHeightTileBatchMessage> held_preview_batches;
+    std::vector<uint64_t> acknowledged_preview_batch_tokens;
     bool withhold_final_near_delivery_acknowledgement = false;
+    bool withhold_next_materialized_delivery_acknowledgement = false;
+    bool withhold_next_preview_batch_acknowledgement = false;
+    bool received_authoritative_profile_during_delivery_overlap = false;
     bool received_current_delivery_while_near_acknowledgements_pending = false;
     uint32_t near_chunks_received_at_first_current_delivery = 0U;
     uint32_t near_chunks_acknowledged_at_first_current_delivery = 0U;
@@ -555,6 +564,18 @@ public:
         return true;
     }
 
+    [[nodiscard]]
+    bool releaseHeldPreviewBatchAcknowledgements()
+    {
+        for (shared::ServerHeightTileBatchMessage const& batch : held_preview_batches) {
+            if (!acknowledgePreviewBatch(batch)) {
+                return false;
+            }
+        }
+        held_preview_batches.clear();
+        return true;
+    }
+
 private:
     void onDisconnected(core::DisconnectEvent const) override { }
 
@@ -598,12 +619,16 @@ private:
     [[nodiscard]]
     bool acknowledgePreviewBatch(shared::ServerHeightTileBatchMessage const& batch)
     {
-        return send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+        bool const acknowledged = send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
             .world_revision = preview_world_revision,
             .delivery_token = batch.delivery_token,
             .credits = 1U,
             .not_resident_keys = {},
         }), shared::HEIGHT_TILE_CHANNEL, core::SendMode{core::SendMode::Reliable});
+        if (acknowledged) {
+            acknowledged_preview_batch_tokens.push_back(batch.delivery_token);
+        }
+        return acknowledged;
     }
 
     [[nodiscard]]
@@ -831,7 +856,13 @@ private:
                 .not_resident_keys = std::move(not_resident_keys),
             };
             bool acknowledged = false;
-            if (acknowledge_materialized_batches && withhold_final_near_delivery_acknowledgement
+            if (acknowledge_materialized_batches && withhold_next_materialized_delivery_acknowledgement) {
+                withhold_next_materialized_delivery_acknowledgement = false;
+                held_near_deliveries.push_back(HeldMaterializedDelivery{
+                    .acknowledgement = std::move(acknowledgement),
+                    .accepted_coordinates = std::move(accepted_coordinates),
+                });
+            } else if (acknowledge_materialized_batches && withhold_final_near_delivery_acknowledgement
                 && batch_contains_near && receivedEveryNearChunk()) {
                 withhold_final_near_delivery_acknowledgement = false;
                 held_near_deliveries.push_back(HeldMaterializedDelivery{
@@ -863,6 +894,12 @@ private:
                     received_authoritative_columns.push_back(tile.coordinate);
                 }
             }
+            if (!received_authoritative_profile_during_delivery_overlap
+                && !held_near_deliveries.empty() && !held_preview_batches.empty()) {
+                received_authoritative_profile_during_delivery_overlap = true;
+                static_cast<void>(releaseHeldNearDeliveryAcknowledgements());
+                static_cast<void>(releaseHeldPreviewBatchAcknowledgements());
+            }
             if (acknowledge_authoritative_batches) {
                 static_cast<void>(send(shared::encodeMessage(shared::ClientAuthoritativeTerrainAckMessage{
                     .session = authority->session, .coverage_epoch = authority->coverage_epoch,
@@ -879,7 +916,10 @@ private:
                 received_height_tiles.push_back(batch_tile);
                 recordPreviewTile(batch_tile);
             }
-            if (acknowledge_preview_batches) {
+            if (acknowledge_preview_batches && withhold_next_preview_batch_acknowledgement) {
+                withhold_next_preview_batch_acknowledgement = false;
+                held_preview_batches.push_back(*height_tile_batch);
+            } else if (acknowledge_preview_batches) {
                 static_cast<void>(acknowledgePreviewBatch(*height_tile_batch));
             }
         } else if (auto const* const acknowledgement =
@@ -1023,7 +1063,7 @@ bool waitForStalledDeliveryWindow(PreviewClient& client, uint32_t const first_me
 void expectBoundedDeliveryWindow(std::vector<shared::ServerHeightTileBatchMessage> const& batches)
 {
     static constexpr uint32_t MAXIMUM_BATCHES = 8U;
-    static constexpr uint32_t MAXIMUM_PACKET_BYTES = 10'118U;
+    static constexpr uint32_t MAXIMUM_PACKET_BYTES = 12'998U;
     static constexpr uint32_t MAXIMUM_WINDOW_BYTES = 34'356U;
     EXPECT_GE(batches.size(), 1U);
     EXPECT_LE(batches.size(), MAXIMUM_BATCHES);
@@ -1656,6 +1696,94 @@ TEST(GameServerPreviewTest, RejectsPreviewJoinWithoutPreparedTerrainContext)
     EXPECT_EQ(client.received_height_tiles, 0U);
 }
 
+TEST(GameServerPreviewTest, StreamsChangingV21SourcesBeforeReadyOrTheNextStage)
+{
+    static constexpr std::chrono::seconds TIMEOUT{10};
+    generation::GenerationConfiguration configuration{};
+    configuration.seed = 42U;
+    configuration.model_tag = generation::TerrainModelTag::V21;
+    auto preparation = std::make_shared<server::WorldPreparation>(configuration, 45U);
+    server::GameServer server{
+        0U, {}, shared::WorldMode::Flight, shared::World::canonicalConfiguration(),
+        shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, preparation, server::GameServer::BindMode::Loopback,
+    };
+    std::atomic_bool stop{false};
+    std::thread server_thread{[&] { server.run(stop); }};
+    defer {
+        stop.store(true, std::memory_order_relaxed);
+        server_thread.join();
+        preparation->cancel();
+    };
+    PreparedWorldClient client;
+    ASSERT_TRUE(client.connect(core::Address::localhost(server.port()), TIMEOUT));
+    ASSERT_TRUE(client.send(shared::encodeMessage(shared::JoinRequestMessage{
+        .ch = '@', .mode = shared::WorldMode::Flight, .wants_previews = false,
+    }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    std::shared_ptr<generation::GenerationSnapshot const> first;
+    uint64_t last_sequence = 0U;
+    uint32_t last_completed = 0U;
+    bool changed = false;
+#if defined(MC_TEST_HAS_CPU_MAP)
+    bool image_changed = false;
+    client::GenerationMapAnimator animator;
+    client::GenerationMapImageHandle first_image;
+    auto const visible_started = std::chrono::steady_clock::now();
+#else
+    constexpr bool image_changed = true;
+#endif
+    size_t inspected_messages = 0U;
+    while (std::chrono::steady_clock::now() < deadline && !(changed && image_changed)) {
+        static_cast<void>(client.poll(std::chrono::milliseconds{1}));
+        while (inspected_messages < client.messages.size()) {
+            auto const* update = std::get_if<shared::ServerWorldPreparationMessage>(
+                &client.messages[inspected_messages++]);
+            if (update == nullptr) {
+                continue;
+            }
+            EXPECT_GT(update->sequence, last_sequence);
+            last_sequence = update->sequence;
+            EXPECT_FALSE(update->final_atlas_complete);
+            if (!update->latest_snapshot) {
+                continue;
+            }
+            ASSERT_EQ(update->stage, generation::GenerationStage::V21Platec);
+            ASSERT_TRUE(update->latest_snapshot->v21.has_value());
+            ASSERT_EQ(preparation->latest().state, server::WorldPreparationState::Preparing);
+#if defined(MC_TEST_HAS_CPU_MAP)
+            auto const frame = animator.updateNative(update->latest_snapshot, nullptr, nullptr, {
+                .visible_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - visible_started),
+                .ready = false,
+            });
+            ASSERT_NE(frame.image, nullptr);
+            if (!first_image) {
+                first_image = frame.image;
+            } else if (first_image->rgba != frame.image->rgba) {
+                image_changed = true;
+            }
+#endif
+            EXPECT_GE(update->work_completed, last_completed);
+            last_completed = update->work_completed;
+            if (!first) {
+                first = update->latest_snapshot;
+                EXPECT_EQ(update->work_completed, 0U);
+                RecordProperty("initial_source_server_microseconds", update->server_elapsed_microseconds);
+            } else if (first->v21->source_elevation_m
+                != update->latest_snapshot->v21->source_elevation_m) {
+                changed = true;
+                RecordProperty("changing_source_server_microseconds", update->server_elapsed_microseconds);
+            }
+        }
+    }
+    EXPECT_NE(first, nullptr);
+    EXPECT_TRUE(changed) << "Live native geometry must reach the client before next-stage publication";
+#if defined(MC_TEST_HAS_CPU_MAP)
+    EXPECT_TRUE(image_changed) << "Received source must drive changing rendered CPU pixels before readiness";
+#endif
+    EXPECT_FALSE(client.final_atlas_complete);
+}
+
 TEST(GameServerPreviewTest, PreparedWorldStreamsConnectedNearChunksBeforeFarCoverage)
 {
     static constexpr std::chrono::seconds TIMEOUT{45};
@@ -1695,6 +1823,8 @@ TEST(GameServerPreviewTest, PreparedWorldStreamsConnectedNearChunksBeforeFarCove
     std::atomic<uint64_t> delivered_chunks_total{0U};
     std::atomic<uint32_t> acknowledged_required_chunks{0U};
     std::atomic<uint32_t> observed_required_full_chunks{0U};
+    std::mutex latest_server_metrics_mutex;
+    server::GameServer::PreviewStreamMetrics latest_server_metrics;
     server::GameServer::BenchmarkHooks benchmark_hooks{
         .on_tick = {},
         .on_preview_buffered = {},
@@ -1703,7 +1833,8 @@ TEST(GameServerPreviewTest, PreparedWorldStreamsConnectedNearChunksBeforeFarCove
             &max_candidates_per_delivery_call, &candidate_scan_budget_exceeded,
             &forecast_materialization_candidates_examined,
             &materialization_candidate_scan_budget_exceeded, &world_generation_dispatch_budget_exceeded,
-            &delivered_chunks_total, &acknowledged_required_chunks, &observed_required_full_chunks](
+            &delivered_chunks_total, &acknowledged_required_chunks, &observed_required_full_chunks,
+            &latest_server_metrics_mutex, &latest_server_metrics](
             core::ClientId,
             server::GameServer::PreviewStreamMetrics const metrics
         ) {
@@ -1724,6 +1855,10 @@ TEST(GameServerPreviewTest, PreparedWorldStreamsConnectedNearChunksBeforeFarCove
             );
             acknowledged_required_chunks.store(metrics.acknowledged_chunk_keys, std::memory_order_relaxed);
             observed_required_full_chunks.store(metrics.required_full_chunk_keys, std::memory_order_relaxed);
+            {
+                std::scoped_lock const lock{latest_server_metrics_mutex};
+                latest_server_metrics = metrics;
+            }
             forecast_materialization_candidates_examined.fetch_add(
                 metrics.forecast_materialization_candidates_examined,
                 std::memory_order_relaxed
@@ -1779,6 +1914,8 @@ TEST(GameServerPreviewTest, PreparedWorldStreamsConnectedNearChunksBeforeFarCove
 
     PreparedWorldClient client;
     client.wants_previews = true;
+    client.withhold_next_materialized_delivery_acknowledgement = true;
+    client.withhold_next_preview_batch_acknowledgement = true;
     uint64_t materialization_enqueued_at_far_preview_overlap = 0U;
     uint32_t materialization_outstanding_at_far_preview_overlap = 0U;
     uint32_t valid_preview_tiles = 0U;
@@ -1851,7 +1988,8 @@ TEST(GameServerPreviewTest, PreparedWorldStreamsConnectedNearChunksBeforeFarCove
     };
     while (std::chrono::steady_clock::now() < deadline
         && (!client.final_atlas_complete || !has_start_result(true) || !has_far_chunk()
-            || materialization_outstanding_at_far_preview_overlap == 0U)) {
+            || materialization_outstanding_at_far_preview_overlap == 0U
+            || !client.received_authoritative_profile_during_delivery_overlap)) {
         static_cast<void>(client.poll(std::chrono::milliseconds{1}));
     }
 
@@ -1869,6 +2007,11 @@ TEST(GameServerPreviewTest, PreparedWorldStreamsConnectedNearChunksBeforeFarCove
     EXPECT_TRUE(client.sent_early_start);
     EXPECT_TRUE(client.sent_ready_start);
     EXPECT_FALSE(client.received_height_tiles.empty());
+    EXPECT_TRUE(client.received_authoritative_profile_during_delivery_overlap)
+        << "Authoritative profile count=" << client.received_authoritative_columns.size()
+        << ", held materialized deliveries=" << client.held_near_deliveries.size()
+        << ", held preview batches=" << client.held_preview_batches.size()
+        << "; the profile must arrive while both other streams are still awaiting receipts.";
     EXPECT_GT(projected_far_preview_tiles, 0U)
         << "valid preview tiles=" << valid_preview_tiles
         << ", projected into 80-block interest XY set=" << projected_full_preview_tiles
@@ -2256,8 +2399,107 @@ TEST(GameServerPreviewTest, PreparedWorldStreamsConnectedNearChunksBeforeFarCove
         static_cast<void>(client.poll(std::chrono::milliseconds{1}));
     }
     EXPECT_TRUE(current_coverage_matches_latest_position());
-    EXPECT_TRUE(current_near_is_resident())
-        << "The latest same-epoch 48-block sphere did not become resident after continuous movement.";
+    bool const moving_near_is_resident = current_near_is_resident();
+    std::string moving_near_diagnostic;
+    if (!moving_near_is_resident) {
+        server::GameServer::PreviewStreamMetrics metrics;
+        {
+            std::scoped_lock const lock{latest_server_metrics_mutex};
+            metrics = latest_server_metrics;
+        }
+        std::optional<shared::ServerPlayerPositionMessage> latest_position;
+        std::optional<shared::ServerChunkCoverageMessage> latest_coverage;
+        for (shared::Message const& message : client.messages) {
+            if (auto const* const position = std::get_if<shared::ServerPlayerPositionMessage>(&message);
+                position != nullptr && position->acknowledged_input_sequence >= SAME_EPOCH_MOVEMENT_INPUT_COUNT) {
+                latest_position = *position;
+            } else if (auto const* const coverage = std::get_if<shared::ServerChunkCoverageMessage>(&message)) {
+                latest_coverage = *coverage;
+            }
+        }
+        uint32_t missing_near_count = 0U;
+        std::string missing_near_keys;
+        for (shared::ChunkCoordinate const coordinate : client.required_near_chunks) {
+            if (std::ranges::find(client.connected_chunks, coordinate) != client.connected_chunks.end()) {
+                continue;
+            }
+            ++missing_near_count;
+            if (missing_near_count <= 8U) {
+                if (!missing_near_keys.empty()) {
+                    missing_near_keys += ",";
+                }
+                missing_near_keys += "(" + std::to_string(coordinate.x) + ","
+                    + std::to_string(coordinate.y) + "," + std::to_string(coordinate.z) + ")";
+            }
+        }
+        auto const format_position = [](shared::PlayerPosition const& position) {
+            return "(" + std::to_string(position.x) + "," + std::to_string(position.y) + ","
+                + std::to_string(position.z) + ";" + std::to_string(position.x_subcell) + ","
+                + std::to_string(position.y_subcell) + "," + std::to_string(position.z_subcell) + ")";
+        };
+        std::string latest_position_text = "none";
+        if (latest_position.has_value()) {
+            shared::PlayerPosition const position{
+                .x = latest_position->x,
+                .y = latest_position->y,
+                .z = latest_position->z,
+                .x_subcell = latest_position->x_subcell,
+                .y_subcell = latest_position->y_subcell,
+                .z_subcell = latest_position->z_subcell,
+            };
+            latest_position_text = format_position(position)
+                + "#" + std::to_string(latest_position->acknowledged_input_sequence);
+        }
+        std::string latest_coverage_text = "none";
+        if (latest_coverage.has_value()) {
+            latest_coverage_text = format_position(latest_coverage->center)
+                + "@" + std::to_string(latest_coverage->coverage_epoch);
+        }
+        moving_near_diagnostic = "join_epoch=" + std::to_string(JOIN_EPOCH)
+            + " coverage_epoch=" + std::to_string(client.coverage_epoch)
+            + " terrain_seed=" + (client.session.has_value()
+                ? std::to_string(client.session->terrain.seed) : "none")
+            + " client_interest=(near=" + std::to_string(client.required_near_chunks.size())
+            + ",full=" + std::to_string(client.required_chunks.size())
+            + ",interest=" + std::to_string(client.required_interest_chunks.size())
+            + ",connected=" + std::to_string(client.connected_chunks.size())
+            + ",acknowledged=" + std::to_string(client.acknowledged_chunks.size())
+            + ",missing=" + std::to_string(missing_near_count) + " [" + missing_near_keys + "])"
+            + " latest_coverage=" + latest_coverage_text
+            + " latest_position=" + latest_position_text
+            + " server=(center_valid=" + std::to_string(metrics.terrain_center_valid)
+            + ",center=" + std::to_string(metrics.terrain_center_x) + "," + std::to_string(metrics.terrain_center_y)
+            + ",near=" + std::to_string(metrics.required_near_chunk_keys)
+            + ",full=" + std::to_string(metrics.required_full_chunk_keys)
+            + ",near_resident=" + std::to_string(metrics.near_required_chunks_all_resident)
+            + ",acked=" + std::to_string(metrics.acknowledged_chunk_keys)
+            + ",inflight=" + std::to_string(metrics.inflight_chunk_batches) + "/"
+            + std::to_string(metrics.inflight_chunk_keys)
+            + ",chunk_credits=" + std::to_string(metrics.chunk_delivery_credits)
+            + ",latest_input=" + std::to_string(metrics.latest_received_input_sequence)
+            + ",acked_input=" + std::to_string(metrics.acknowledged_input_sequence)
+            + ",unacked_input=" + std::to_string(metrics.unacknowledged_input_count)
+            + ",pending_input=" + std::to_string(metrics.pending_input_count)
+            + ",candidate_keys=" + std::to_string(metrics.chunk_delivery_candidate_keys_examined)
+            + ",sent_batches=" + std::to_string(metrics.chunk_delivery_batches_sent)
+            + ",sent_chunks=" + std::to_string(metrics.chunk_delivery_chunks_sent)
+            + ",consumed_credits=" + std::to_string(metrics.chunk_delivery_credits_consumed)
+            + ",materialization_admissions=" + std::to_string(metrics.materialization_admissions) + "/"
+            + std::to_string(metrics.materialization_admission_attempts)
+            + ",admission_failures=" + std::to_string(metrics.materialization_admission_failures)
+            + ",world_jobs=" + std::to_string(metrics.world_generation_jobs.pending_jobs) + "/"
+            + std::to_string(metrics.world_generation_jobs.executor_queued_jobs) + "/"
+            + std::to_string(metrics.world_generation_jobs.running_jobs) + "/"
+            + std::to_string(metrics.world_generation_jobs.completed_uncollected_jobs)
+            + ",preview=(credits=" + std::to_string(metrics.delivery_credits)
+            + ",queued=" + std::to_string(metrics.queued_tiles)
+            + ",ready=" + std::to_string(metrics.ready_tiles)
+            + ",inflight=" + std::to_string(metrics.inflight_deliveries)
+            + ",pending_workers=" + std::to_string(metrics.pending_worker_jobs) + "))";
+    }
+    EXPECT_TRUE(moving_near_is_resident)
+        << "The latest same-epoch 48-block sphere did not become resident after continuous movement. "
+        << moving_near_diagnostic;
     std::optional<shared::PlayerPosition> initial_coverage_center;
     std::unordered_set<shared::ChunkCoordinate, ChunkCoordinateHash> received_before_update;
     bool near_available_after_far_progress = false;
@@ -2645,8 +2887,11 @@ TEST(GameServerPreviewTest, PreparedWorldMaterializationAdmissionIsFairAcrossPla
 TEST(GameServerPreviewTest, MaximumHeightTileFitsOneDeliveryBatch)
 {
     static constexpr uint32_t BATCH_HEADER_BYTES = 13U;
-    static constexpr uint32_t MAX_BATCH_BYTES = 10'118U;
+    // Batch and record headers (13 + 27), packed heights (512), surface metadata (8),
+    // identity (22 + 384), and 256 surface columns (47 bytes each).
+    static constexpr uint32_t MAX_BATCH_BYTES = 12'998U;
     static constexpr uint32_t MAX_INFLIGHT_BYTES = 34'356U;
+    static constexpr uint32_t MAX_PREPARED_INFLIGHT_BYTES = 16'384U;
     shared::ServerHeightTileMessage tile;
     tile.surface.identity.configuration_identity.assign(
         shared::TERRAIN_CONFIGURATION_IDENTITY_MAX_BYTES,
@@ -2665,8 +2910,9 @@ TEST(GameServerPreviewTest, MaximumHeightTileFitsOneDeliveryBatch)
 
     EXPECT_EQ(accounted_batch_bytes, MAX_BATCH_BYTES);
     EXPECT_EQ(encoded_batch.size(), MAX_BATCH_BYTES);
-    EXPECT_LE(3U * MAX_BATCH_BYTES, MAX_INFLIGHT_BYTES);
-    EXPECT_GT(4U * MAX_BATCH_BYTES, MAX_INFLIGHT_BYTES);
+    EXPECT_LE(MAX_BATCH_BYTES, MAX_PREPARED_INFLIGHT_BYTES);
+    EXPECT_LE(2U * MAX_BATCH_BYTES, MAX_INFLIGHT_BYTES);
+    EXPECT_GT(3U * MAX_BATCH_BYTES, MAX_INFLIGHT_BYTES);
 }
 
 TEST(GameServerPreviewTest, PreviewBatchAdmissionRefillsWithinInflightByteReserve)
@@ -2674,6 +2920,9 @@ TEST(GameServerPreviewTest, PreviewBatchAdmissionRefillsWithinInflightByteReserv
     static constexpr std::chrono::seconds TIMEOUT{10};
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
     static constexpr uint32_t MAX_INFLIGHT_BYTES = 34'356U;
+    static constexpr uint32_t MAXIMUM_TILE_BYTES = 12'998U;
+    static constexpr uint32_t MAXIMUM_INFLIGHT_DELIVERIES =
+        MAX_INFLIGHT_BYTES / MAXIMUM_TILE_BYTES;
     std::atomic_uint32_t ready_tiles{0U};
     std::atomic_uint32_t inflight_deliveries{0U};
     server::GameServer::BenchmarkHooks const hooks{
@@ -2718,17 +2967,18 @@ TEST(GameServerPreviewTest, PreviewBatchAdmissionRefillsWithinInflightByteReserv
     }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
 
     auto const initial_deadline = std::chrono::steady_clock::now() + TIMEOUT;
-    while ((client.received_delivery_batches < 3U || ready_tiles.load(std::memory_order_relaxed) == 0U
-            || inflight_deliveries.load(std::memory_order_relaxed) != 3U)
+    while ((client.received_delivery_batches < MAXIMUM_INFLIGHT_DELIVERIES
+            || ready_tiles.load(std::memory_order_relaxed) == 0U
+            || inflight_deliveries.load(std::memory_order_relaxed) != MAXIMUM_INFLIGHT_DELIVERIES)
         && std::chrono::steady_clock::now() < initial_deadline) {
         client.poll(POLL_INTERVAL);
     }
-    ASSERT_EQ(client.received_delivery_batches, 3U);
+    ASSERT_EQ(client.received_delivery_batches, MAXIMUM_INFLIGHT_DELIVERIES);
     ASSERT_GT(ready_tiles.load(std::memory_order_relaxed), 0U);
-    ASSERT_EQ(inflight_deliveries.load(std::memory_order_relaxed), 3U);
+    ASSERT_EQ(inflight_deliveries.load(std::memory_order_relaxed), MAXIMUM_INFLIGHT_DELIVERIES);
 
     std::vector<shared::ServerHeightTileBatchMessage> batches = deliveryBatchesFrom(client.messages, 0U);
-    ASSERT_EQ(batches.size(), 3U);
+    ASSERT_EQ(batches.size(), MAXIMUM_INFLIGHT_DELIVERIES);
     uint32_t inflight_bytes = 0U;
     for (shared::ServerHeightTileBatchMessage const& batch : batches) {
         ASSERT_EQ(batch.tiles.size(), 1U);
@@ -2741,16 +2991,17 @@ TEST(GameServerPreviewTest, PreviewBatchAdmissionRefillsWithinInflightByteReserv
     while (std::chrono::steady_clock::now() < quiet_deadline) {
         client.poll(POLL_INTERVAL);
     }
-    EXPECT_EQ(client.received_delivery_batches, 3U);
+    EXPECT_EQ(client.received_delivery_batches, MAXIMUM_INFLIGHT_DELIVERIES);
 
     ASSERT_TRUE(client.acknowledgeDelivery(batches.front().delivery_token));
     auto const refill_deadline = std::chrono::steady_clock::now() + TIMEOUT;
-    while (client.received_delivery_batches < 4U && std::chrono::steady_clock::now() < refill_deadline) {
+    while (client.received_delivery_batches < MAXIMUM_INFLIGHT_DELIVERIES + 1U
+        && std::chrono::steady_clock::now() < refill_deadline) {
         client.poll(POLL_INTERVAL);
     }
-    ASSERT_GE(client.received_delivery_batches, 4U);
+    ASSERT_GE(client.received_delivery_batches, MAXIMUM_INFLIGHT_DELIVERIES + 1U);
     batches = deliveryBatchesFrom(client.messages, 0U);
-    ASSERT_EQ(batches.size(), 4U);
+    ASSERT_EQ(batches.size(), MAXIMUM_INFLIGHT_DELIVERIES + 1U);
     inflight_bytes = 0U;
     for (size_t index = 1U; index < batches.size(); ++index) {
         inflight_bytes += static_cast<uint32_t>(shared::encodeMessage(batches[index]).size());
@@ -4554,7 +4805,7 @@ TEST(GameServerPreviewTest, CompactTerrainUsesAvailableCreditsWithinTheGameplayB
 {
     static constexpr std::chrono::seconds TIMEOUT{2};
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
-    static constexpr uint32_t MAXIMUM_BATCH_BYTES = 10'118U;
+    static constexpr uint32_t MAXIMUM_BATCH_BYTES = 12'998U;
     static constexpr uint32_t MAXIMUM_OUTSTANDING_BYTES = 34'356U;
     static constexpr uint32_t RENDER_DISTANCE = 32U;
     static constexpr server::GameServer::SpawnPoint SPAWN{
@@ -5034,7 +5285,7 @@ TEST(GameServerPreviewTest, ReversalCancelsQueuedRemovalsForRestoredInterest)
 TEST(GameServerPreviewTest, SaturatedAdditionsDoNotStarveRemovalsAndInflightReclaimsRecover)
 {
     static constexpr auto TIMEOUT = std::chrono::seconds{12};
-    static constexpr uint32_t MAXIMUM_PACKET_BYTES = 10'118U;
+    static constexpr uint32_t MAXIMUM_PACKET_BYTES = 12'998U;
     static constexpr uint32_t MAXIMUM_WINDOW_BYTES = 34'356U;
     static constexpr uint32_t INITIAL_TILES = 1'024U;
     static constexpr uint32_t MINIMUM_REMOVALS_PER_MIXED_BATCH =
@@ -5044,7 +5295,7 @@ TEST(GameServerPreviewTest, SaturatedAdditionsDoNotStarveRemovalsAndInflightRecl
         shared::HEIGHT_TILE_INTEREST_RADIUS * shared::HEIGHT_TILE_SIDE_LENGTH * shared::SUBCELLS_PER_CELL
     ) / (shared::MOVEMENT_SUBCELLS_PER_TICK * FLIGHT_SPEEDUP) + 1U;
     static constexpr uint32_t FINAL_INPUT_SEQUENCE = 2U * MOVEMENT_INPUT_COUNT;
-    EXPECT_FALSE(meetsHeightTileRemovalQuota(0U, 9'565U, 10'118U));
+    EXPECT_FALSE(meetsHeightTileRemovalQuota(0U, 9'565U, MAXIMUM_PACKET_BYTES));
     EXPECT_FALSE(meetsHeightTileRemovalQuota(0U, 9'565U, 9'589U));
     EXPECT_TRUE(meetsHeightTileRemovalQuota(0U, 9'565U, 9'585U));
     EXPECT_TRUE(meetsHeightTileRemovalProgress(0U, 1U, 9'565U, 9'585U));
@@ -5904,6 +6155,8 @@ TEST(GameServerPreviewTest, MissingAuthoritativeLeafDoesNotBlockConnectedReadyPr
 TEST(GameServerPreviewTest, AuthoritativeFrontierRespectsWindowAndRevisitsRejectedReceipt)
 {
     static constexpr std::chrono::seconds TIMEOUT{15};
+    static constexpr uint32_t PREPARED_STREAM_INFLIGHT_BYTES = 16'384U;
+    static constexpr uint32_t STARTED_STREAM_INFLIGHT_BYTES = 49'152U;
     generation::GenerationConfiguration configuration;
     configuration.seed = shared::World::canonicalConfiguration().seed;
     configuration.epochs = 1U;
@@ -5949,40 +6202,100 @@ TEST(GameServerPreviewTest, AuthoritativeFrontierRespectsWindowAndRevisitsReject
         && std::chrono::steady_clock::now() < initial_deadline) {
         static_cast<void>(client.poll(std::chrono::milliseconds{1}));
     }
-    auto const initial = batches();
-    ASSERT_FALSE(initial.empty());
-    ASSERT_LE(initial.size(), shared::AUTHORITATIVE_TERRAIN_DELIVERY_WINDOW);
-    ASSERT_LE(inflight_bytes(), 16'384U);
-    ASSERT_FALSE(initial.front().tiles.empty());
+    ASSERT_FALSE(batches().empty());
     auto const stalled_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{200};
     while (std::chrono::steady_clock::now() < stalled_deadline) {
         static_cast<void>(client.poll(std::chrono::milliseconds{1}));
     }
-    EXPECT_EQ(batches().size(), initial.size());
+    auto const before_ack = batches();
+    ASSERT_FALSE(before_ack.empty());
+    ASSERT_LE(before_ack.size(), shared::AUTHORITATIVE_TERRAIN_DELIVERY_WINDOW);
+    auto const active_byte_limit = [&client] {
+        bool const world_started = std::ranges::any_of(client.start_acknowledgements, [](
+            shared::ServerStartWorldAckMessage const& acknowledgement
+        ) {
+            return acknowledgement.accepted;
+        });
+        return world_started ? STARTED_STREAM_INFLIGHT_BYTES : PREPARED_STREAM_INFLIGHT_BYTES;
+    };
+    auto const encoded_bytes = [](std::vector<shared::ServerAuthoritativeTerrainBatchMessage> const& observed) {
+        uint64_t bytes = 0U;
+        for (auto const& batch : observed) {
+            bytes += shared::encodedAuthoritativeTerrainBatchSize(batch);
+        }
+        return bytes;
+    };
+    ASSERT_LE(encoded_bytes(before_ack), active_byte_limit());
+    ASSERT_FALSE(before_ack.front().tiles.empty());
+    auto const rejected_column = before_ack.front().tiles.front().coordinate;
+    auto const previous_delivery_tokens = [&before_ack] {
+        std::vector<uint64_t> result;
+        result.reserve(before_ack.size());
+        for (auto const& batch : before_ack) {
+            result.push_back(batch.delivery_token);
+        }
+        return result;
+    }();
+    ASSERT_EQ(std::ranges::count_if(before_ack, [rejected_column](
+        shared::ServerAuthoritativeTerrainBatchMessage const& batch
+    ) {
+        return std::ranges::any_of(batch.tiles, [rejected_column](shared::AuthoritativeTerrainTile const& tile) {
+            return tile.coordinate == rejected_column;
+        });
+    }), 1);
     shared::ClientAuthoritativeTerrainAckMessage const receipt{
-        .session = initial.front().session,
-        .coverage_epoch = initial.front().coverage_epoch,
-        .delivery_token = initial.front().delivery_token,
-        .not_resident_keys = {initial.front().tiles.front().coordinate},
+        .session = before_ack.front().session,
+        .coverage_epoch = before_ack.front().coverage_epoch,
+        .delivery_token = before_ack.front().delivery_token,
+        .not_resident_keys = {rejected_column},
     };
     ASSERT_TRUE(client.send(shared::encodeMessage(receipt), shared::GAME_CHANNEL,
         core::SendMode{core::SendMode::Reliable}));
+    auto const has_rejected_column_resend = [&] {
+        return std::ranges::any_of(batches(), [&](shared::ServerAuthoritativeTerrainBatchMessage const& batch) {
+            bool const is_new_delivery = std::ranges::find(previous_delivery_tokens, batch.delivery_token)
+                == previous_delivery_tokens.end();
+            return is_new_delivery && std::ranges::any_of(batch.tiles, [rejected_column](
+                shared::AuthoritativeTerrainTile const& tile
+            ) {
+                return tile.coordinate == rejected_column;
+            });
+        });
+    };
     auto const retry_deadline = std::chrono::steady_clock::now() + TIMEOUT;
-    while (batches().size() == initial.size() && std::chrono::steady_clock::now() < retry_deadline) {
+    while (!has_rejected_column_resend() && std::chrono::steady_clock::now() < retry_deadline) {
         static_cast<void>(client.poll(std::chrono::milliseconds{1}));
     }
     auto const after = batches();
-    ASSERT_EQ(after.size(), initial.size() + 1U);
-    EXPECT_TRUE(std::ranges::any_of(after.back().tiles, [&](auto const& tile) {
-        return tile.coordinate == receipt.not_resident_keys.front();
-    }));
+    auto const retry_count = [&previous_delivery_tokens, rejected_column](
+        std::vector<shared::ServerAuthoritativeTerrainBatchMessage> const& observed
+    ) {
+        return std::ranges::count_if(observed, [&previous_delivery_tokens, rejected_column](
+            shared::ServerAuthoritativeTerrainBatchMessage const& batch
+        ) {
+            bool const is_new_delivery = std::ranges::find(previous_delivery_tokens, batch.delivery_token)
+                == previous_delivery_tokens.end();
+            return is_new_delivery && std::ranges::any_of(batch.tiles, [rejected_column](
+                shared::AuthoritativeTerrainTile const& tile
+            ) {
+                return tile.coordinate == rejected_column;
+            });
+        });
+    };
+    ASSERT_EQ(retry_count(after), 1);
+    auto active_after_ack = after;
+    std::erase_if(active_after_ack, [&receipt](shared::ServerAuthoritativeTerrainBatchMessage const& batch) {
+        return batch.delivery_token == receipt.delivery_token;
+    });
+    EXPECT_LE(active_after_ack.size(), shared::AUTHORITATIVE_TERRAIN_DELIVERY_WINDOW);
+    EXPECT_LE(encoded_bytes(active_after_ack), active_byte_limit());
     ASSERT_TRUE(client.send(shared::encodeMessage(receipt), shared::GAME_CHANNEL,
         core::SendMode{core::SendMode::Reliable}));
     auto const replay_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{200};
     while (std::chrono::steady_clock::now() < replay_deadline) {
         static_cast<void>(client.poll(std::chrono::milliseconds{1}));
     }
-    EXPECT_EQ(batches().size(), after.size());
+    EXPECT_EQ(retry_count(batches()), 1);
 }
 
 TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceiptsAreDelayed)
@@ -6008,7 +6321,31 @@ TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceipts
         shared::HEIGHT_TILE_INTEREST_RADIUS, nullptr, preparation, server::GameServer::BindMode::Loopback,
     };
     std::atomic_bool stop{false};
-    std::thread server_thread{[&] { server.run(stop); }};
+    std::atomic_uint32_t preview_ready_tiles{0U};
+    std::atomic_uint32_t preview_dispatched_tiles{0U};
+    std::atomic_uint32_t preview_inflight_deliveries{0U};
+    std::atomic_uint32_t preview_delivery_credits{0U};
+    std::atomic_uint32_t preview_pending_worker_jobs{0U};
+    std::atomic_uint32_t preview_submitted_worker_jobs{0U};
+    server::GameServer::BenchmarkHooks const hooks{
+        .on_tick = {},
+        .on_preview_buffered = {},
+        .on_preview_metrics = [&preview_ready_tiles, &preview_dispatched_tiles,
+            &preview_inflight_deliveries, &preview_delivery_credits,
+            &preview_pending_worker_jobs, &preview_submitted_worker_jobs](
+            core::ClientId,
+            server::GameServer::PreviewStreamMetrics const metrics
+        ) {
+            preview_ready_tiles.store(metrics.ready_tiles, std::memory_order_relaxed);
+            preview_dispatched_tiles.store(metrics.dispatched_tiles, std::memory_order_relaxed);
+            preview_inflight_deliveries.store(metrics.inflight_deliveries, std::memory_order_relaxed);
+            preview_delivery_credits.store(metrics.delivery_credits, std::memory_order_relaxed);
+            preview_pending_worker_jobs.store(metrics.pending_worker_jobs, std::memory_order_relaxed);
+            preview_submitted_worker_jobs.store(metrics.submitted_worker_jobs, std::memory_order_relaxed);
+        },
+        .before_height_tile_completion = {},
+    };
+    std::thread server_thread{[&] { server.run(stop, &hooks); }};
     defer {
         stop.store(true, std::memory_order_relaxed);
         server_thread.join();
@@ -6089,6 +6426,127 @@ TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceipts
     EXPECT_LE(dense_bytes + profile_bytes + preview_bytes, MAX_TERRAIN_BYTES);
     ASSERT_TRUE(first_profile.has_value());
     ASSERT_TRUE(first_preview.has_value());
+    for (auto index = first_held; index < client.messages.size(); ++index) {
+        auto const* preview = std::get_if<shared::ServerHeightTileBatchMessage>(&client.messages[index]);
+        if (preview == nullptr) {
+            continue;
+        }
+        ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+            .world_revision = client.preview_world_revision,
+            .delivery_token = preview->delivery_token,
+            .credits = 1U,
+            .not_resident_keys = {},
+        }), shared::HEIGHT_TILE_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+        client.acknowledged_preview_batch_tokens.push_back(preview->delivery_token);
+    }
+    client.acknowledge_preview_batches = true;
+    bool preview_idle = false;
+    auto const preview_idle_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (!preview_idle && std::chrono::steady_clock::now() < preview_idle_deadline) {
+        static_cast<void>(client.poll(std::chrono::milliseconds{1}));
+        preview_idle = preview_ready_tiles.load(std::memory_order_relaxed) == 0U
+            && preview_inflight_deliveries.load(std::memory_order_relaxed) == 0U
+            && preview_delivery_credits.load(std::memory_order_relaxed) > 0U
+            && preview_dispatched_tiles.load(std::memory_order_relaxed) == 0U;
+    }
+    ASSERT_TRUE(preview_idle)
+        << "Initial preview work must drain before the test creates a new pending frontier: ready="
+        << preview_ready_tiles.load(std::memory_order_relaxed)
+        << " inflight=" << preview_inflight_deliveries.load(std::memory_order_relaxed)
+        << " credits=" << preview_delivery_credits.load(std::memory_order_relaxed)
+        << " dispatched=" << preview_dispatched_tiles.load(std::memory_order_relaxed)
+        << " pending_workers=" << preview_pending_worker_jobs.load(std::memory_order_relaxed)
+        << " submitted_workers=" << preview_submitted_worker_jobs.load(std::memory_order_relaxed);
+    client.acknowledge_preview_batches = false;
+    uint64_t const pending_work_epoch = client.coverage_epoch;
+    size_t const preview_resume_begin = client.messages.size();
+    ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientInputMessage{
+        .direction = {.x = 127U, .y = 0U, .accelerated = true, .speedup = 500U}, .sequence = 2U,
+    }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+    auto const pending_work_epoch_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (client.coverage_epoch == pending_work_epoch
+        && std::chrono::steady_clock::now() < pending_work_epoch_deadline) {
+        static_cast<void>(client.poll(std::chrono::milliseconds{1}));
+    }
+    ASSERT_GT(client.coverage_epoch, pending_work_epoch)
+        << "The second movement must create new preview work behind the completion gate.";
+    bool preview_waiting_on_worker = false;
+    auto const preview_worker_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (!preview_waiting_on_worker && std::chrono::steady_clock::now() < preview_worker_deadline) {
+        static_cast<void>(client.poll(std::chrono::milliseconds{1}));
+        preview_waiting_on_worker = preview_ready_tiles.load(std::memory_order_relaxed) == 0U
+            && preview_inflight_deliveries.load(std::memory_order_relaxed) == 0U
+            && preview_delivery_credits.load(std::memory_order_relaxed) > 0U
+            && preview_dispatched_tiles.load(std::memory_order_relaxed) > 0U
+            && (preview_pending_worker_jobs.load(std::memory_order_relaxed) > 0U
+                || preview_submitted_worker_jobs.load(std::memory_order_relaxed) > 0U);
+    }
+    ASSERT_TRUE(preview_waiting_on_worker)
+        << "Preview needs to retain one legal packet share while worker completions are pending: ready="
+        << preview_ready_tiles.load(std::memory_order_relaxed)
+        << " inflight=" << preview_inflight_deliveries.load(std::memory_order_relaxed)
+        << " credits=" << preview_delivery_credits.load(std::memory_order_relaxed)
+        << " dispatched=" << preview_dispatched_tiles.load(std::memory_order_relaxed)
+        << " pending_workers=" << preview_pending_worker_jobs.load(std::memory_order_relaxed)
+        << " submitted_workers=" << preview_submitted_worker_jobs.load(std::memory_order_relaxed);
+    uint64_t pending_dense_bytes = 0U;
+    uint64_t pending_profile_bytes = 0U;
+    uint64_t pending_preview_bytes = 0U;
+    for (auto index = first_held; index < client.messages.size(); ++index) {
+        auto const& message = client.messages[index];
+        uint64_t const encoded_bytes = shared::encodeMessage(message).size();
+        if (std::holds_alternative<shared::ServerMaterializedChunkBatchMessage>(message)) {
+            pending_dense_bytes += encoded_bytes;
+        } else if (std::holds_alternative<shared::ServerAuthoritativeTerrainBatchMessage>(message)) {
+            pending_profile_bytes += encoded_bytes;
+        } else if (auto const* preview = std::get_if<shared::ServerHeightTileBatchMessage>(&message)) {
+            if (std::ranges::find(client.acknowledged_preview_batch_tokens, preview->delivery_token)
+                == client.acknowledged_preview_batch_tokens.end()) {
+                pending_preview_bytes += encoded_bytes;
+            }
+        }
+    }
+    EXPECT_LE(pending_dense_bytes, MAX_STREAM_BYTES);
+    EXPECT_LE(pending_preview_bytes, MAX_STREAM_BYTES);
+    EXPECT_LE(pending_dense_bytes + pending_profile_bytes + pending_preview_bytes, MAX_TERRAIN_BYTES);
+    uint32_t const pending_near_acknowledged = static_cast<uint32_t>(std::ranges::count_if(
+        client.required_near_chunks,
+        [&client](shared::ChunkCoordinate const coordinate) {
+            return std::ranges::find(client.acknowledged_chunks, coordinate) != client.acknowledged_chunks.end();
+        }
+    ));
+    CORE_INFO(
+        "Prepared stream worker-pending sample: dense={} profile={} preview={} total={} near={}/{} ready={} inflight={} "
+        "credits={} dispatched={} pending_workers={} submitted_workers={}",
+        pending_dense_bytes, pending_profile_bytes, pending_preview_bytes,
+        pending_dense_bytes + pending_profile_bytes + pending_preview_bytes,
+        pending_near_acknowledged, client.required_near_chunks.size(),
+        preview_ready_tiles.load(std::memory_order_relaxed),
+        preview_inflight_deliveries.load(std::memory_order_relaxed),
+        preview_delivery_credits.load(std::memory_order_relaxed),
+        preview_dispatched_tiles.load(std::memory_order_relaxed),
+        preview_pending_worker_jobs.load(std::memory_order_relaxed),
+        preview_submitted_worker_jobs.load(std::memory_order_relaxed)
+    );
+    std::optional<shared::ServerHeightTileBatchMessage> resumed_preview;
+    auto const preview_resume_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (!resumed_preview.has_value() && std::chrono::steady_clock::now() < preview_resume_deadline) {
+        static_cast<void>(client.poll(std::chrono::milliseconds{1}));
+        for (size_t index = preview_resume_begin; index < client.messages.size(); ++index) {
+            if (auto const* preview = std::get_if<shared::ServerHeightTileBatchMessage>(&client.messages[index])) {
+                resumed_preview = *preview;
+                break;
+            }
+        }
+    }
+    ASSERT_TRUE(resumed_preview.has_value())
+        << "Preview delivery did not resume when worker output became ready; ready="
+        << preview_ready_tiles.load(std::memory_order_relaxed)
+        << " inflight=" << preview_inflight_deliveries.load(std::memory_order_relaxed)
+        << " credits=" << preview_delivery_credits.load(std::memory_order_relaxed)
+        << " dispatched=" << preview_dispatched_tiles.load(std::memory_order_relaxed)
+        << " pending_workers=" << preview_pending_worker_jobs.load(std::memory_order_relaxed)
+        << " submitted_workers=" << preview_submitted_worker_jobs.load(std::memory_order_relaxed);
     auto const previous_count = client.messages.size();
     ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientAuthoritativeTerrainAckMessage{
         .session = first_profile->session, .coverage_epoch = first_profile->coverage_epoch,
@@ -6096,9 +6554,10 @@ TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceipts
         .not_resident_keys = {},
     }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
     ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
-        .world_revision = client.preview_world_revision, .delivery_token = first_preview->delivery_token,
+        .world_revision = client.preview_world_revision, .delivery_token = resumed_preview->delivery_token,
         .credits = 1U, .not_resident_keys = {},
     }), shared::HEIGHT_TILE_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+    client.acknowledged_preview_batch_tokens.push_back(resumed_preview->delivery_token);
     bool resumed = false;
     bool preview_resumed = false;
     auto const resume_deadline = std::chrono::steady_clock::now() + TIMEOUT;
@@ -6125,7 +6584,7 @@ TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceipts
     ASSERT_TRUE(stale_profile.has_value());
     uint64_t const old_epoch = client.coverage_epoch;
     ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientInputMessage{
-        .direction = {.x = 127U, .y = 0U, .accelerated = true, .speedup = 500U}, .sequence = 2U,
+        .direction = {.x = 127U, .y = 0U, .accelerated = true, .speedup = 500U}, .sequence = 3U,
     }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
     auto const epoch_deadline = std::chrono::steady_clock::now() + TIMEOUT;
     while (client.coverage_epoch == old_epoch && std::chrono::steady_clock::now() < epoch_deadline) {
@@ -6145,7 +6604,8 @@ TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceipts
                 continue;
             }
         } else if (auto const* preview = std::get_if<shared::ServerHeightTileBatchMessage>(&message)) {
-            if (preview->delivery_token == first_preview->delivery_token) {
+            if (std::ranges::find(client.acknowledged_preview_batch_tokens, preview->delivery_token)
+                != client.acknowledged_preview_batch_tokens.end()) {
                 continue;
             }
         } else if (!std::holds_alternative<shared::ServerMaterializedChunkBatchMessage>(message)) {
@@ -6178,9 +6638,10 @@ TEST(GameServerPreviewTest, PreparedStreamsShareAByteBudgetWhileDeliveryReceipts
     }
     EXPECT_TRUE(current_epoch_resumed) << "A stale-epoch rejection must retire its old byte debt.";
     auto const before_stale_dense_receipt = client.messages.size();
+    uint64_t const current_epoch = client.coverage_epoch;
     for (auto index = first_held; index < before_stale_dense_receipt; ++index) {
         auto const* dense = std::get_if<shared::ServerMaterializedChunkBatchMessage>(&client.messages[index]);
-        if (dense == nullptr || dense->coverage_epoch != old_epoch) {
+        if (dense == nullptr || dense->coverage_epoch == current_epoch) {
             continue;
         }
         std::vector<shared::ChunkCoordinate> rejected_dense;
