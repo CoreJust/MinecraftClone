@@ -74,6 +74,18 @@ struct S2WorldMapState final {
     std::array<bool, S2_WORLD_MAP_LAYER_COUNT> layers{
         false, true, false, true, false, false, false, false,
     };
+
+    // Weather overlays use fields already present in the raster, independent of visibility.
+    [[nodiscard]] constexpr auto rasterLayers() const noexcept
+    {
+        return std::array{
+            layers[static_cast<uint8_t>(S2WorldMapLayer::Plates)],
+            layers[static_cast<uint8_t>(S2WorldMapLayer::Heights)],
+            layers[static_cast<uint8_t>(S2WorldMapLayer::Temperature)],
+            layers[static_cast<uint8_t>(S2WorldMapLayer::Biomes)],
+            layers[static_cast<uint8_t>(S2WorldMapLayer::Moisture)],
+        };
+    }
 };
 
 struct S2PlateMotion final {

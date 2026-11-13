@@ -438,7 +438,7 @@ client::CreationAudioStage creationAudioStage(client::GenerationMapAnimationPhas
     return client::CreationAudioStage::Silent;
 }
 
-std::unordered_map<GLFWwindow*, PlayerClient*>& playerClientWindowCloseOwners()
+std::unordered_map<GLFWwindow*, PlayerClient*>& playerClientWindowOwners()
 {
     static std::unordered_map<GLFWwindow*, PlayerClient*> owners;
     return owners;
@@ -1720,10 +1720,27 @@ private:
     std::thread m_worker;
 };
 
+void PlayerClient::onWindowKey(GLFWwindow* window, int const key, int const scancode, int const action, int const mods)
+{
+    auto const owner = playerClientWindowOwners().find(window);
+    if (owner == playerClientWindowOwners().end()) {
+        return;
+    }
+    PlayerClient& client = *owner->second;
+    if (client.m_previous_window_key_callback) {
+        client.m_previous_window_key_callback(window, key, scancode, action, mods);
+    }
+    if (key == GLFW_KEY_F2 && action == GLFW_PRESS
+        && !client.m_benchmark && !client.m_capture && !client.m_screenshot_capture_requested
+        && !(client.m_benchmark_hooks && client.m_benchmark_hooks->isolate_platform_input)) {
+        client.m_screenshot_capture_pending = true;
+    }
+}
+
 void PlayerClient::onWindowCloseRequested(GLFWwindow* const window) noexcept
 {
-    auto const owner = playerClientWindowCloseOwners().find(window);
-    if (owner == playerClientWindowCloseOwners().end()) {
+    auto const owner = playerClientWindowOwners().find(window);
+    if (owner == playerClientWindowOwners().end()) {
         return;
     }
     // Keep the GLFW window alive while the client asks for deliberate confirmation.
@@ -1735,11 +1752,9 @@ PlayerClient::~PlayerClient()
 {
     m_hud_climate_sampler.reset();
     GLFWwindow* const window = m_window.nativeHandle();
-    auto const owner = playerClientWindowCloseOwners().find(window);
-    if (owner != playerClientWindowCloseOwners().end() && owner->second == this) {
-        glfwSetWindowCloseCallback(window, nullptr);
-        playerClientWindowCloseOwners().erase(owner);
-    }
+    glfwSetKeyCallback(window, m_previous_window_key_callback);
+    glfwSetWindowCloseCallback(window, nullptr);
+    playerClientWindowOwners().erase(window);
     glfwSetScrollCallback(window, nullptr);
     pendingWindowScrollDeltas().erase(m_window.nativeHandle());
     m_terrain_lod.reset(&m_renderer);
@@ -1966,11 +1981,6 @@ PlayerClient::PlayerClient(
 #if defined(_WIN32)
     m_startup_window_hidden = playerClientStartsFullscreen(m_capture.has_value(), m_benchmark.has_value());
 #endif
-    if (playerClientStartsFullscreen(m_capture.has_value(), m_benchmark.has_value())) {
-        GLFWwindow* const window = m_window.nativeHandle();
-        playerClientWindowCloseOwners().emplace(window, this);
-        glfwSetWindowCloseCallback(window, &PlayerClient::onWindowCloseRequested);
-    }
     synchronizeContinuousLook();
     static_cast<void>(m_camera.setProjection({
         .far_plane = static_cast<double>(shared::HEIGHT_TILE_INTEREST_RADIUS)
@@ -2010,8 +2020,14 @@ PlayerClient::PlayerClient(
         projection.vertical_fov_degrees = plan.vertical_fov_degrees;
         static_cast<void>(m_camera.setProjection(projection));
     }
-    pendingWindowScrollDeltas().emplace(m_window.nativeHandle(), 0.0);
-    glfwSetScrollCallback(m_window.nativeHandle(), recordWindowScroll);
+    GLFWwindow* const window = m_window.nativeHandle();
+    pendingWindowScrollDeltas().emplace(window, 0.0);
+    playerClientWindowOwners().emplace(window, this);
+    glfwSetScrollCallback(window, recordWindowScroll);
+    if (playerClientStartsFullscreen(m_capture.has_value(), m_benchmark.has_value())) {
+        glfwSetWindowCloseCallback(window, &PlayerClient::onWindowCloseRequested);
+    }
+    m_previous_window_key_callback = glfwSetKeyCallback(window, &PlayerClient::onWindowKey);
 }
 
 bool PlayerClient::requestDiagnosticFrameCapture(std::filesystem::path image_path, bool const allow_sequence)
@@ -4581,13 +4597,11 @@ bool PlayerClient::updatePlatformInputSnapshot(
         uint32_t viewport_width = 0U;
         uint32_t viewport_height = 0U;
         m_window.framebufferSize(viewport_width, viewport_height);
+        auto const raster_layers = m_s2_world_map_state.rasterLayers();
         auto const apply_action = [this, player_x, player_y, viewport_width, viewport_height](
             S2WorldMapAction const action, bool const fast = false) {
-            if (applyS2WorldMapAction(
-                    m_s2_world_map_state, action, player_x, player_y, fast, viewport_width, viewport_height)
-                && static_cast<uint8_t>(action) < static_cast<uint8_t>(S2WorldMapAction::PanLeft)) {
-                m_s2_world_map_dirty = true;
-            }
+            static_cast<void>(applyS2WorldMapAction(
+                m_s2_world_map_state, action, player_x, player_y, fast, viewport_width, viewport_height));
         };
         static constexpr std::array<std::pair<int, S2WorldMapAction>, 7U> LAYER_KEYS{{
             {GLFW_KEY_P, S2WorldMapAction::TogglePlates},
@@ -4671,6 +4685,7 @@ bool PlayerClient::updatePlatformInputSnapshot(
         if (is_pressed(GLFW_KEY_L) && !was_pressed(GLFW_KEY_L)) {
             apply_action(S2WorldMapAction::ToggleLegend);
         }
+        m_s2_world_map_dirty = m_s2_world_map_dirty || m_s2_world_map_state.rasterLayers() != raster_layers;
         return new_input_edge;
     }
 
@@ -5405,7 +5420,7 @@ void PlayerClient::updatePlayingMapPresentation()
         std::shared_ptr<S2MapImage const> image;
         bool unavailable = false;
         S2WorldMapState const default_map_state{};
-        bool const default_layers = m_s2_world_map_state.layers == default_map_state.layers;
+        bool const default_layers = m_s2_world_map_state.rasterLayers() == default_map_state.rasterLayers();
         if (default_layers) {
             if (m_prepared_s2_world_map
                 && m_prepared_s2_world_map->source_identity == world->identity()
@@ -5681,6 +5696,83 @@ void PlayerClient::setScreenshotFeedback(std::string message, bool const success
     m_screenshot_feedback_successful = successful;
     m_screenshot_feedback_started_at = std::chrono::steady_clock::now();
     m_screenshot_feedback_until = m_screenshot_feedback_started_at + std::chrono::seconds{ 4 };
+}
+
+void PlayerClient::updateScreenshotPresentation(
+    uint32_t const framebuffer_width,
+    uint32_t const framebuffer_height,
+    bool const loading_screen,
+    std::chrono::steady_clock::time_point const now
+)
+{
+    if (m_benchmark || m_capture || m_screenshot_capture_pending || m_screenshot_capture_requested) {
+        return;
+    }
+    if (loading_screen) {
+        static constexpr float SCREENSHOT_HUD_MARGIN = 24.0F;
+        static constexpr float SCREENSHOT_HUD_SCALE = 0.72F;
+#if defined(__APPLE__) || defined(_WIN32)
+        static constexpr std::string_view SCREENSHOT_HINT = "F2: copy screenshot";
+#else
+        static constexpr std::string_view SCREENSHOT_HINT = "F2: screenshot unavailable";
+#endif
+        float const hint_scale = std::min(SCREENSHOT_HUD_SCALE,
+            std::max(1.0F, static_cast<float>(framebuffer_width) - 2.0F * SCREENSHOT_HUD_MARGIN)
+                / (static_cast<float>(SCREENSHOT_HINT.size()) * 16.0F));
+        float const hint_x = std::max(0.0F, static_cast<float>(framebuffer_width) - SCREENSHOT_HUD_MARGIN
+            - static_cast<float>(SCREENSHOT_HINT.size()) * 16.0F * hint_scale);
+        float const hint_y = std::max(0.0F, static_cast<float>(framebuffer_height) - SCREENSHOT_HUD_MARGIN
+            - 32.0F * hint_scale);
+        addOutlinedGuiText(m_renderer, SCREENSHOT_HINT, {
+            .position = { hint_x, hint_y, 0.0F },
+            .scale = hint_scale,
+        }, TextColor{ .red = 0.90F, .green = 0.94F, .blue = 1.0F, .alpha = 1.0F }, 1.5F);
+    }
+    if (!m_screenshot_feedback.empty() && now < m_screenshot_feedback_until) {
+        static constexpr float FEEDBACK_MARGIN_PIXELS = 24.0F;
+        static constexpr float FEEDBACK_BASE_SCALE = 1.55F;
+        static constexpr float FEEDBACK_POP_SCALE = 0.12F;
+        static constexpr float FEEDBACK_POP_DURATION_SECONDS = 0.30F;
+        static constexpr float FEEDBACK_FADE_DURATION_SECONDS = 0.85F;
+        float const text_width = static_cast<float>(m_screenshot_feedback.size()) * 16.0F;
+        float const available_width = std::max(
+            1.0F,
+            static_cast<float>(framebuffer_width) - 2.0F * FEEDBACK_MARGIN_PIXELS
+        );
+        float const base_scale = std::min(FEEDBACK_BASE_SCALE, available_width / text_width);
+        float const elapsed_seconds = std::chrono::duration<float>(
+            now - m_screenshot_feedback_started_at
+        ).count();
+        float const remaining_seconds = std::chrono::duration<float>(m_screenshot_feedback_until - now).count();
+        float const fade_alpha = std::min(1.0F, remaining_seconds / FEEDBACK_FADE_DURATION_SECONDS);
+        float pop_amount = 0.0F;
+        if (elapsed_seconds < FEEDBACK_POP_DURATION_SECONDS) {
+            float const pop_progress = elapsed_seconds / FEEDBACK_POP_DURATION_SECONDS;
+            pop_amount = pop_progress < 0.5F
+                ? pop_progress * 2.0F
+                : (1.0F - pop_progress) * 2.0F;
+        }
+        float const feedback_scale = fade_alpha * std::min(
+            base_scale * (1.0F + FEEDBACK_POP_SCALE * pop_amount),
+            available_width / text_width
+        );
+        float const feedback_x = std::max(
+            0.0F,
+            (static_cast<float>(framebuffer_width) - text_width * feedback_scale) / 2.0F
+        );
+        float const feedback_y = std::max(FEEDBACK_MARGIN_PIXELS, static_cast<float>(framebuffer_height) * 0.12F);
+        float const brightness = fade_alpha * (1.0F + 0.2F * pop_amount);
+        TextColor feedback_color = m_screenshot_feedback_successful
+            ? TextColor{ .red = 0.88F, .green = 1.0F, .blue = 0.84F, .alpha = fade_alpha }
+            : TextColor{ .red = 1.0F, .green = 0.68F, .blue = 0.62F, .alpha = fade_alpha };
+        feedback_color.red = std::min(1.0F, feedback_color.red * brightness);
+        feedback_color.green = std::min(1.0F, feedback_color.green * brightness);
+        feedback_color.blue = std::min(1.0F, feedback_color.blue * brightness);
+        addOutlinedGuiText(m_renderer, m_screenshot_feedback, {
+            .position = { feedback_x, feedback_y, 0.0F },
+            .scale = feedback_scale,
+        }, feedback_color, 1.5F * fade_alpha);
+    }
 }
 
 namespace {
@@ -6206,11 +6298,6 @@ void PlayerClient::servicePlatformEvents() {
         return;
     }
     bool const system_shortcut_modifier_pressed = systemShortcutModifierPressed(window);
-    bool const screenshot_key_pressed = glfwGetKey(window, GLFW_KEY_F2) == GLFW_PRESS;
-    if (m_screenshot_capture_key_latch.update(screenshot_key_pressed)
-        && !m_benchmark.has_value() && !m_capture.has_value()) {
-        m_screenshot_capture_pending = true;
-    }
     std::array<int, GLFW_KEY_LAST - GLFW_KEY_SPACE + 1> pressed_keys{};
     uint32_t pressed_key_count = 0U;
     for (int key = GLFW_KEY_SPACE; key <= GLFW_KEY_LAST; ++key) {
@@ -6316,79 +6403,6 @@ void PlayerClient::renderWindowFrame(
     }
     if (loading_status.state == WorldLoadingState::Playing && !m_capture.has_value()) {
         m_renderer.clearGuiText();
-    }
-    if (playerClientPlayingUiEnabled(m_benchmark) && !m_capture.has_value() && m_debug_hud_enabled
-        && !m_s2_world_map_open
-        && !m_screenshot_capture_pending && !m_screenshot_capture_requested) {
-        static constexpr float SCREENSHOT_HUD_MARGIN = 24.0F;
-        static constexpr float SCREENSHOT_HUD_SCALE = 0.72F;
-#if defined(__APPLE__) || defined(_WIN32)
-        static constexpr std::string_view SCREENSHOT_HINT = "F2: copy screenshot";
-#else
-        static constexpr std::string_view SCREENSHOT_HINT = "F2: screenshot unavailable";
-#endif
-        uint32_t framebuffer_width = 0U;
-        uint32_t framebuffer_height = 0U;
-        m_window.framebufferSize(framebuffer_width, framebuffer_height);
-        float const hint_scale = std::min(SCREENSHOT_HUD_SCALE,
-            std::max(1.0F, static_cast<float>(framebuffer_width) - 2.0F * SCREENSHOT_HUD_MARGIN)
-                / (static_cast<float>(SCREENSHOT_HINT.size()) * 16.0F));
-        float const hint_x = std::max(0.0F, static_cast<float>(framebuffer_width) - SCREENSHOT_HUD_MARGIN
-            - static_cast<float>(SCREENSHOT_HINT.size()) * 16.0F * hint_scale);
-        float const hint_y = std::max(0.0F, static_cast<float>(framebuffer_height) - SCREENSHOT_HUD_MARGIN
-            - 32.0F * hint_scale);
-        if (loading_status.state != WorldLoadingState::Playing) {
-            addOutlinedGuiText(m_renderer, SCREENSHOT_HINT, {
-                .position = { hint_x, hint_y, 0.0F },
-                .scale = hint_scale,
-            }, TextColor{ .red = 0.90F, .green = 0.94F, .blue = 1.0F, .alpha = 1.0F }, 1.5F);
-        }
-        std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
-        if (!m_screenshot_feedback.empty() && now < m_screenshot_feedback_until) {
-            static constexpr float FEEDBACK_MARGIN_PIXELS = 24.0F;
-            static constexpr float FEEDBACK_BASE_SCALE = 1.55F;
-            static constexpr float FEEDBACK_POP_SCALE = 0.12F;
-            static constexpr float FEEDBACK_POP_DURATION_SECONDS = 0.30F;
-            static constexpr float FEEDBACK_FADE_DURATION_SECONDS = 0.85F;
-            float const text_width = static_cast<float>(m_screenshot_feedback.size()) * 16.0F;
-            float const available_width = std::max(
-                1.0F,
-                static_cast<float>(framebuffer_width) - 2.0F * FEEDBACK_MARGIN_PIXELS
-            );
-            float const base_scale = std::min(FEEDBACK_BASE_SCALE, available_width / text_width);
-            float const elapsed_seconds = std::chrono::duration<float>(
-                now - m_screenshot_feedback_started_at
-            ).count();
-            float const remaining_seconds = std::chrono::duration<float>(m_screenshot_feedback_until - now).count();
-            float const fade_alpha = std::min(1.0F, remaining_seconds / FEEDBACK_FADE_DURATION_SECONDS);
-            float pop_amount = 0.0F;
-            if (elapsed_seconds < FEEDBACK_POP_DURATION_SECONDS) {
-                float const pop_progress = elapsed_seconds / FEEDBACK_POP_DURATION_SECONDS;
-                pop_amount = pop_progress < 0.5F
-                    ? pop_progress * 2.0F
-                    : (1.0F - pop_progress) * 2.0F;
-            }
-            float const feedback_scale = fade_alpha * std::min(
-                base_scale * (1.0F + FEEDBACK_POP_SCALE * pop_amount),
-                available_width / text_width
-            );
-            float const feedback_x = std::max(
-                0.0F,
-                (static_cast<float>(framebuffer_width) - text_width * feedback_scale) / 2.0F
-            );
-            float const feedback_y = std::max(FEEDBACK_MARGIN_PIXELS, static_cast<float>(framebuffer_height) * 0.12F);
-            float const brightness = fade_alpha * (1.0F + 0.2F * pop_amount);
-            TextColor feedback_color = m_screenshot_feedback_successful
-                ? TextColor{ .red = 0.88F, .green = 1.0F, .blue = 0.84F, .alpha = fade_alpha }
-                : TextColor{ .red = 1.0F, .green = 0.68F, .blue = 0.62F, .alpha = fade_alpha };
-            feedback_color.red = std::min(1.0F, feedback_color.red * brightness);
-            feedback_color.green = std::min(1.0F, feedback_color.green * brightness);
-            feedback_color.blue = std::min(1.0F, feedback_color.blue * brightness);
-            addOutlinedGuiText(m_renderer, m_screenshot_feedback, {
-                .position = { feedback_x, feedback_y, 0.0F },
-                .scale = feedback_scale,
-            }, feedback_color, 1.5F * fade_alpha);
-        }
     }
     if (!m_capture.has_value() && m_continuous_look_active && !m_exit_confirmation.pending()
         && !hasStartTransitionInputs()) {
@@ -6801,7 +6815,7 @@ void PlayerClient::renderWindowFrame(
         terrain_projection.far_plane = 50'000.0;
     }
     m_renderer.setCamera(m_camera.pose(), terrain_projection);
-    if (m_screenshot_capture_pending) {
+    if (m_screenshot_capture_pending && !m_screenshot_capture_requested) {
         FrameCaptureState const capture_state = m_renderer.captureState();
         if (capture_state == FrameCaptureState::Ready || capture_state == FrameCaptureState::Completed) {
             m_renderer.requestFrameCapture();
@@ -6841,6 +6855,8 @@ void PlayerClient::renderWindowFrame(
             m_renderer.addGuiText(label.value, label.placement, label.color);
         }
     }
+    updateScreenshotPresentation(width, height, loading_status.state != WorldLoadingState::Playing,
+        std::chrono::steady_clock::now());
     uint64_t const submitted_before = capture_render_diagnostics
         ? m_renderer.runtimeInfo().submitted_frame_count : 0U;
     m_last_presentation_succeeded = m_renderer.render(

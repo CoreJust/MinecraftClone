@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <concepts>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -439,6 +440,14 @@ DWORD launch(fs::path const& root, fs::path const& cache, Handle root_lock)
     requireWindows(WaitForSingleObject(child.get(), INFINITE) == WAIT_OBJECT_0, L"Cannot observe the game process");
     DWORD exit = 1;
     requireWindows(GetExitCodeProcess(child.get(), &exit) != FALSE, L"Cannot read the game exit status");
+    char exit_record[64];
+    int const length = std::snprintf(exit_record, sizeof(exit_record),
+        "\r\n[launcher] Game exited with code %lu\r\n", static_cast<unsigned long>(exit));
+    if (length > 0 && static_cast<std::size_t>(length) < sizeof(exit_record)
+            && SetFilePointerEx(output.get(), LARGE_INTEGER{}, nullptr, FILE_END)) {
+        DWORD written = 0;
+        WriteFile(output.get(), exit_record, static_cast<DWORD>(length), &written, nullptr);
+    }
     if (exit != 0U) {
         throw Failure{L"The game stopped unexpectedly (exit code " + std::to_wstring(exit)
             + L"). Try starting it again. If it repeats, report this message and the log at:\n\n" + log.wstring()};

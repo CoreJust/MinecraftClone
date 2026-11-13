@@ -57,7 +57,7 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "3ab6f73b587f07b4ba1f645a4f1573abd64142f8f5bf4b31fd8f4401c5bb115e"
+      "sources_sha256": "8565fd2387073f273fe3bf091a27dd4939fc97db22ab73c0602e57f7c99da49f"
     },
     {
       "guide": "docs/BUILD.md",
@@ -131,6 +131,7 @@
         "script/ci/iwyu_gate.py",
         "script/ci/release_guard.py",
         "script/ci/s1_analysis_profile.py",
+        "script/ci/snapshot_correction.py",
         "script/ci/verify_analysis_gate.py",
         "script/ci/verify_android_hwasan.py",
         "script/ci/verify_gameplay_gate.py",
@@ -182,6 +183,7 @@
         "script/tests/test_release_guard.py",
         "script/tests/test_runtime_cli.py",
         "script/tests/test_s1_analysis_profile.py",
+        "script/tests/test_snapshot_correction.py",
         "script/tests/test_targeted_tsan_client.py",
         "script/tests/test_terrain_reference.py",
         "script/tests/test_terrain_revision_4_reference.py",
@@ -211,7 +213,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "c18011585063be701664cdd1aa2f2a1ecb1ab25be5af9bf488bc8c9544f62fd0"
+      "sources_sha256": "9b120c47f66302f80a38903954dc93564a89c20320a81b5bf49e455d53a91092"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -335,6 +337,7 @@
         "src/shared/include/shared/corelang/Backend.hpp",
         "src/shared/include/shared/corelang/Execution.hpp",
         "src/shared/include/shared/corelang/ExecutionTypes.hpp",
+        "src/shared/include/shared/net/LocalPreparationSnapshots.hpp",
         "src/shared/include/shared/net/Message.hpp",
         "src/shared/include/shared/policy/Policy.hpp",
         "src/shared/include/shared/scenario/Scenario.hpp",
@@ -407,11 +410,11 @@
         "tests/core/world_generation_tests.cpp",
         "tests/core/world_preparation_tests.cpp"
       ],
-      "sources_sha256": "a7ed69eb2180ccb9af8792c32f41db3a9db8f0a423c262b83b11b1b510f03340"
+      "sources_sha256": "983360d298b133cfabf1ade57f8fcac2119fcd293922f71429c804cbdd5eb77a"
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "1b8531abeeb636518645b024ba993af2e9ec5a7f5b2a0d4378e4c6a7658a96ec",
+      "guide_sha256": "5ceb29f07e82faf196daeb0bd330f46b2f6a61e257dcc60084c3e01402a58af1",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -1213,7 +1216,7 @@
         "tests/testsupport/include/testsupport/ImageComparison.hpp",
         "tests/testsupport/include/testsupport/TerrainFixtures.hpp"
       ],
-      "sources_sha256": "ad1a24fa4253c9af551996d77dfbabf1d53513b4f369ba816935314590c4b8ea"
+      "sources_sha256": "ccebfa915002c0fefe7ec8794cc85675e8d15dfa75cb3fd0c597b21cdbe12964"
     }
   ],
   "version": 1

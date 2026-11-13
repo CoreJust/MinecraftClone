@@ -7,6 +7,7 @@ target_sources(mc_game_core
             corelang/Backend.hpp
             corelang/Execution.hpp
             corelang/ExecutionTypes.hpp
+            net/LocalPreparationSnapshots.hpp
             net/Message.hpp
             policy/Policy.hpp
             scenario/Scenario.hpp

@@ -60,8 +60,8 @@ inland/deep beds retain Dirt.
 LocalGame and Server enable V10 fine terrain.
 `WorldPreparation` restores the shared CoreLang R6 fields. Local clients reuse immutable L0. Remote clients prepare from session identity.
 The client worker prepares default S2 imagery and V10 rivers with world/L0
-for loading and play. The main thread uploads results. Caching and publication require
-complete rasters. Later layer selections rasterize separately.
+for loading and play. The main thread uploads completed rasters. Wind, currents and
+precipitation reuse the existing raster.
 
 Benchmark `--terrain-model v10` selects the f775 foundation with the c8f9b851
 river field. `--terrain-model native-v10-fine` adds the fine field and appends

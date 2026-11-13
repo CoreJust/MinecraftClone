@@ -4918,8 +4918,12 @@ std::shared_ptr<TerrainLodScene const> buildTerrainLodSceneImpl(
         if (ordinary_jobs.empty()) {
             return;
         }
-        auto const emit_range = [&](size_t const begin, size_t const end, RiverFanQueryMemo& memo,
-                                     std::unordered_map<uint64_t, shared::Block>& materials) {
+        auto const emit_range = [&](
+            size_t const begin,
+            size_t const end,
+            RiverFanQueryMemo& memo,
+            std::unordered_map<uint64_t, shared::Block>& materials
+        ) {
             FanShard shard{.begin = begin, .end = end, .faces = {}, .audit = {}};
             for (size_t index = begin; index < end; ++index) {
                 if (cancellation.stop_requested()) {

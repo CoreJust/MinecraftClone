@@ -898,11 +898,11 @@ void AndroidPlayerClient::applyMapAction(client::S2WorldMapAction const action)
     auto const player = predictedLocalPlayer();
     double const x = player ? shared::playerPositionX(*player) : m_world_map_state.center_x;
     double const y = player ? shared::playerPositionY(*player) : m_world_map_state.center_y;
-    auto const old_layers = m_world_map_state.layers;
+    auto const old_layers = m_world_map_state.rasterLayers();
     if (client::applyS2WorldMapAction(m_world_map_state, action, x, y, false,
             static_cast<uint32_t>(ANativeWindow_getWidth(m_app.window)),
             static_cast<uint32_t>(ANativeWindow_getHeight(m_app.window)))) {
-        if (old_layers != m_world_map_state.layers) {
+        if (old_layers != m_world_map_state.rasterLayers()) {
             m_world_map_image.reset();
         }
         invalidateWorldMapView();
@@ -950,7 +950,7 @@ bool AndroidPlayerClient::updateWorldMapView(
     }
     if (!m_map_view_ready && !m_map_view_job.valid() && m_map_job_revision != m_map_view_revision) {
         auto source = m_world_map_image;
-        bool const default_layers = m_world_map_state.layers == client::S2WorldMapState{}.layers;
+        bool const default_layers = m_world_map_state.rasterLayers() == client::S2WorldMapState{}.rasterLayers();
         if (default_layers && !source) {
             source = terrainLodMap();
             if (!source || source->source_identity != world->identity()

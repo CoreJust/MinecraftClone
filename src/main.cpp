@@ -4,6 +4,7 @@
 #include <server/GameServer.hpp>
 #include <server/WorldPreparation.hpp>
 #include <shared/corelang/ExecutionTypes.hpp>
+#include <shared/net/LocalPreparationSnapshots.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/scenario/Scenario.hpp>
 #include <shared/world/World.hpp>
@@ -13,7 +14,6 @@
 #include <core/IO/Log.hpp>
 #include <core/net/Address.hpp>
 #include <core/net/Net.hpp>
-#include <shared/net/LocalPreparationSnapshots.hpp>
 
 #include <acceptance/ColumnMapReplay.hpp>
 #include <acceptance/EvidenceJson.hpp>

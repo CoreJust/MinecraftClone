@@ -11,7 +11,7 @@ toolchain-evidence JSON object. It does not infer either one from the current
 checkout or a locally installed SDK. Outputs are local files only.
 The examples below match the current source identity declared by
 [`PROJECT_VERSION`](../src/shared/include/shared/ProjectInfo.hpp):
-`EarlyDev 0.1.1:1`. For another source revision, use its source-identity
+`EarlyDev 0.1.1:2`. For another source revision, use its source-identity
 version and keep the output filename in sync. The
 [`build_snapshot.py`](../script/ci/build_snapshot.py) source-identity check
 rejects a mismatched version; the direct packager records the supplied value.
@@ -38,9 +38,9 @@ python3 script/package_snapshot.py desktop \
   --shaders build/release/shaders \
   --runtime path/to/required.dll \
   --license LICENSE --license path/to/dependency/LICENSE \
-  --version 0.1.1:1 --source-commit <40-lowercase-hex-revision> \
+  --version 0.1.1:2 --source-commit <40-lowercase-hex-revision> \
   --toolchain-evidence build/release/toolchain-evidence.json \
-  --output dist/minecraftclone-0.1.1-1-windows.zip
+  --output dist/minecraftclone-0.1.1-2-windows.zip
 ```
 
 The archive includes `LAUNCH.txt`: a compatible vendor GPU driver remains an
@@ -57,14 +57,15 @@ python3 script/package_snapshot.py desktop \
   --platform macos --format tar.gz \
   --executable build/release/mc_main \
   --shaders build/release/shaders \
+  --audio build/release/assets/audio \
   --vulkan-loader /Users/core-just/VulkanSDK/1.4.357.0/macOS/lib/libvulkan.1.4.357.dylib \
   --moltenvk /Users/core-just/VulkanSDK/1.4.357.0/macOS/lib/libMoltenVK.dylib \
   --icd-json /Users/core-just/VulkanSDK/1.4.357.0/macOS/share/vulkan/icd.d/MoltenVK_icd.json \
   --runtime path/to/other-runtime.dylib \
   --license LICENSE --license path/to/MoltenVK-LICENSE \
-  --version 0.1.1:1 --source-commit <40-lowercase-hex-revision> \
+  --version 0.1.1:2 --source-commit <40-lowercase-hex-revision> \
   --toolchain-evidence build/release/toolchain-evidence.json \
-  --output dist/minecraftclone-0.1.1-1-macos.tar.gz
+  --output dist/minecraftclone-0.1.1-2-macos.tar.gz
 ```
 
 The macOS command runs `lipo -archs`, `otool -L`, and `otool -D` over the
@@ -108,9 +109,9 @@ python3 script/package_snapshot.py android \
   --apk android/app/build/outputs/apk/debug/app-debug.apk \
   --api-level 35 --abi arm64-v8a \
   --signing development --source-exactness exact \
-  --version 0.1.1:1 --source-commit <40-lowercase-hex-revision> \
+  --version 0.1.1:2 --source-commit <40-lowercase-hex-revision> \
   --toolchain-evidence android/build/toolchain-evidence.json \
-  --output dist/minecraftclone-0.1.1-1-android-evidence.json
+  --output dist/minecraftclone-0.1.1-2-android-evidence.json
 ```
 
 `--signing` records only `development` or `unknown`; it never invents a signing

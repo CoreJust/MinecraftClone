@@ -220,6 +220,7 @@ class PackageSnapshotTests(unittest.TestCase):
         loader = self.write("mac/libvulkan.1.dylib", b"loader")
         moltenvk = self.write("mac/libMoltenVK.dylib", b"moltenvk")
         runtime = self.write("mac/libsupport.dylib", b"support")
+        audio = self.write("mac/assets/audio/welcome.wav", b"welcome track")
         icd = self.write(
             "mac/MoltenVK_icd.json",
             b'{"file_format_version":"1.0.0","ICD":{"library_path":"/SDK/MoltenVK.dylib","api_version":"1.3.0"}}',
@@ -228,6 +229,7 @@ class PackageSnapshotTests(unittest.TestCase):
         arguments = [
             "desktop", "--platform", "macos", "--format", "tar.gz",
             "--executable", str(executable), "--shaders", str(self.shader_dir),
+            "--audio", str(audio.parent),
             "--runtime", str(runtime), "--license", str(self.license),
             "--vulkan-loader", str(loader), "--moltenvk", str(moltenvk), "--icd-json", str(icd),
             *self.common, "--output", str(output),
@@ -256,6 +258,9 @@ class PackageSnapshotTests(unittest.TestCase):
             manifest = json.loads(archive.extractfile("manifest.json").read())
             packaged_icd = json.loads(archive.extractfile("vulkan/icd.d/MoltenVK_icd.json").read())
             self.assertIn("lib/libvulkan.1.dylib", archive.getnames())
+            self.assertEqual(archive.extractfile("assets/audio/welcome.wav").read(), audio.read_bytes())
+            audio_record = next(entry for entry in manifest["files"] if entry["path"] == "assets/audio/welcome.wav")
+            self.assertEqual(audio_record["sha256"], hashlib.sha256(audio.read_bytes()).hexdigest())
             self.assertIn("licenses/hud/TAMSYN_LICENSE.txt", archive.getnames())
             self.assertIn("licenses/hud/DEBUG_HUD_ATTRIBUTION.md", archive.getnames())
         self.assertIn('bundle_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)', launcher)

@@ -380,8 +380,12 @@ def package_desktop(args: argparse.Namespace) -> None:
     else:
         if args.sdk_root is None:
             raise SnapshotBuildError("macOS packaging requires --sdk-root")
+        audio = install_root / "assets/audio"
+        if not audio.is_dir():
+            raise SnapshotBuildError(f"installed audio directory is missing: {audio}")
         sdk_root = args.sdk_root.resolve()
         command.extend((
+            "--audio", str(audio),
             "--vulkan-loader", str(sdk_root / "lib/libvulkan.1.4.357.dylib"),
             "--moltenvk", str(sdk_root / "lib/libMoltenVK.dylib"),
             "--icd-json", str(sdk_root / "share/vulkan/icd.d/MoltenVK_icd.json"),
