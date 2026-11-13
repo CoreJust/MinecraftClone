@@ -68,10 +68,4 @@ Attach late assets only with exact source, provenance and hashes. An authorized 
 
 After publication, verify tag/signing and asset hashes. Replay Mac only for changed bytes, diagnosis or user request. Keep the S7 feedback hold.
 
-### MC-AI-0482 S1 analysis deferrals
-
-MC-AI-0482 EarlyDev BasicBlocks 0.1.1:1 snapshot profile
-`script/ci/s1_analysis_profile.py` defers TSan, MSan and both Windows rows.
-Seven rows remain mandatory. Only pinned ASan DispatchPing64 evidence permits
-`accepted_noise`, retaining its failed row/return code. Pinned cppcheck heap-reference false-positive retains its failed row. Defaults,
-later snapshots and minor/major require eleven. Owner trace separates coordinator selections.
+See [snapshot corrections](SNAPSHOT_CORRECTIONS.md) for scoped repairs to published snapshots.

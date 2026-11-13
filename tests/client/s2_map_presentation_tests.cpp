@@ -1527,6 +1527,27 @@ TEST(S2MapPresentationTest, LayerAndNavigationActionsAreIndependentAndBounded)
     EXPECT_FALSE(state.overview);
     EXPECT_GT(state.zoom, client::minimumS2WorldMapZoom(1'200U, 800U));
 }
+
+TEST(S2MapPresentationTest, WeatherTogglesReuseThePreparedRaster)
+{
+    using Action = client::S2WorldMapAction;
+    client::S2WorldMapState state;
+    auto const prepared_layers = state.rasterLayers();
+    for (Action const action : {Action::ToggleCurrents, Action::ToggleWind, Action::TogglePrecipitation}) {
+        ASSERT_TRUE(client::applyS2WorldMapAction(state, action, 0.0, 0.0, false, 1'920U, 1'152U));
+        EXPECT_EQ(state.rasterLayers(), prepared_layers);
+    }
+    for (Action const action : {
+        Action::TogglePlates, Action::ToggleHeights, Action::ToggleTemperature,
+        Action::ToggleBiomes, Action::ToggleMoisture,
+    }) {
+        ASSERT_TRUE(client::applyS2WorldMapAction(state, action, 0.0, 0.0, false, 1'920U, 1'152U));
+        EXPECT_NE(state.rasterLayers(), prepared_layers);
+        ASSERT_TRUE(client::applyS2WorldMapAction(state, action, 0.0, 0.0, false, 1'920U, 1'152U));
+        EXPECT_EQ(state.rasterLayers(), prepared_layers);
+    }
+}
+
 TEST(S2MapPresentationTest, CancelledMinimapRequestReturnsNoResultToWorker)
 {
     auto const world = mapWorld();

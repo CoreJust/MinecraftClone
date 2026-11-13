@@ -57,6 +57,10 @@ ACTIVE_PUBLICATION_LEDGER_EXCEPTIONS = {
     "3fa4861abafa7eb20163b89f6957bf915c10ed63",
 }
 
+# S1 used a separate ledger task under the publication policy in effect at
+# the time. Accept that shape only for the exact immutable ledger commit.
+BASICBLOCKS_S1_LEDGER = "ce4d77b57c4e22f990e49131792ec760ae14137a"
+
 # Exact immutable targets of already-published generic-title promotions. New
 # generic-title commits are never treated as historical releases.
 LEGACY_TAGGED_PROMOTIONS = {
@@ -546,6 +550,9 @@ def require_valid_prior_snapshot_ledgers(
 
     for sha in range_shas:
         task_id = commit_to_task[sha]
+        legacy_s1_ledger = sha == BASICBLOCKS_S1_LEDGER and task_id == "MC-AI-0523"
+        if legacy_s1_ledger:
+            task_id = "MC-AI-0482"
         task = by_id[task_id]
         if task_level(task) == "basic" or task_id == snapshot_id:
             continue
@@ -566,6 +573,8 @@ def require_valid_prior_snapshot_ledgers(
             git(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", sha).splitlines()
         )
         required_paths = {"docs/ai/backlog.json", f"docs/ai/tasks/{task_id}.md"}
+        if legacy_s1_ledger:
+            allowed_paths.update({"docs/ai/RELEASES.md", "docs/ai/tasks/MC-AI-0523.md"})
         if not required_paths <= changed_paths or not changed_paths <= allowed_paths:
             raise HistoryError(f"publication ledger {sha} changes non-ledger paths")
         try:
@@ -588,6 +597,8 @@ def require_valid_prior_snapshot_ledgers(
             raise HistoryError(f"publication ledger {sha} has invalid backlog metadata: {error}") from error
         before_by_id = {str(item["id"]): item for item in before}
         after_by_id = {str(item["id"]): item for item in after}
+        if legacy_s1_ledger and "MC-AI-0523" not in before_by_id:
+            after_by_id.pop("MC-AI-0523", None)
         if before_by_id.keys() != after_by_id.keys():
             raise HistoryError(f"publication ledger {sha} changes the task registry")
         if any(before_by_id[key] != after_by_id[key] for key in before_by_id if key != task_id):

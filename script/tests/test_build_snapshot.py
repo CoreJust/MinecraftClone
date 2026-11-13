@@ -208,6 +208,7 @@ class BuildSnapshotTests(unittest.TestCase):
         install_root = self.root / "install"
         self.write("install/mc_main", b"executable")
         self.write("install/shaders/grid.vert.spv", b"shader")
+        self.write("install/assets/audio/music.json", b"audio manifest")
         self.write("installed/arm64-osx/share/fmt/copyright", b"fmt")
         project_license = self.write("LICENSE", b"project")
         self.write("src/client/render/shaders/DEBUG_HUD_ATTRIBUTION.md", b"HUD attribution")
@@ -242,6 +243,7 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertEqual(invocation.count("--license"), 1)
         loader_index = invocation.index("--vulkan-loader")
         self.assertEqual(invocation[loader_index + 1], str(sdk_root.resolve() / "lib/libvulkan.1.4.357.dylib"))
+        self.assertEqual(invocation[invocation.index("--audio") + 1], str(install_root.resolve() / "assets/audio"))
         self.assertNotIn("--runtime", invocation)
 
     def test_windows_system_policy_is_explicit_and_does_not_follow_runner_contents(self):

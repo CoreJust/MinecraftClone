@@ -705,9 +705,19 @@ struct PlayerClientFocusTestAccess final {
         return player_client.hasStartTransitionInputs();
     }
 
-    static bool updateScreenshotCaptureKey(PlayerClient& player_client, bool const pressed) noexcept
+    static void dispatchScreenshotKey(PlayerClient& player_client, int const action)
     {
-        return player_client.m_screenshot_capture_key_latch.update(pressed);
+        PlayerClient::onWindowKey(player_client.m_window.nativeHandle(), GLFW_KEY_F2, 0, action, 0);
+    }
+
+    static bool takePendingScreenshotRequest(PlayerClient& player_client) noexcept
+    {
+        return std::exchange(player_client.m_screenshot_capture_pending, false);
+    }
+
+    static void setScreenshotCaptureInFlight(PlayerClient& player_client, bool const in_flight) noexcept
+    {
+        player_client.m_screenshot_capture_requested = in_flight;
     }
 
     static void captureStartTransitionInputs(PlayerClient& player_client)
@@ -844,16 +854,6 @@ struct PlayerClientFocusTestAccess final {
         return std::nullopt;
     }
 
-    static void setScreenshotFeedback(PlayerClient& player_client, std::string message, bool const successful)
-    {
-        player_client.setScreenshotFeedback(std::move(message), successful);
-    }
-
-    static void queueScreenshotCapture(PlayerClient& player_client) noexcept
-    {
-        player_client.m_screenshot_capture_pending = true;
-    }
-
     static void setScreenshotPasteboardName(PlayerClient& player_client, std::string name)
     {
         player_client.m_screenshot_test_pasteboard_name = std::move(name);
@@ -865,7 +865,8 @@ struct PlayerClientFocusTestAccess final {
         static constexpr auto CAPTURE_TIMEOUT = std::chrono::seconds{ 10 };
 
         player_client.setScreenshotFeedback({}, false);
-        queueScreenshotCapture(player_client);
+        dispatchScreenshotKey(player_client, GLFW_PRESS);
+        dispatchScreenshotKey(player_client, GLFW_RELEASE);
         std::chrono::steady_clock::time_point const deadline = std::chrono::steady_clock::now() + CAPTURE_TIMEOUT;
         for (uint32_t frame = 0U;
              frame < MAX_CAPTURE_FRAMES && std::chrono::steady_clock::now() < deadline;
@@ -2407,10 +2408,20 @@ TEST(PlayerClientFocusTest, ScreenshotKeyIsOneShotAndDoesNotStartReadyWorld)
     static constexpr std::array<int, 0U> NO_MOUSE_BUTTONS{};
     client::PlayerClient player_client;
 
-    EXPECT_TRUE(client::PlayerClientFocusTestAccess::updateScreenshotCaptureKey(player_client, true));
-    EXPECT_FALSE(client::PlayerClientFocusTestAccess::updateScreenshotCaptureKey(player_client, true));
-    EXPECT_FALSE(client::PlayerClientFocusTestAccess::updateScreenshotCaptureKey(player_client, false));
-    EXPECT_TRUE(client::PlayerClientFocusTestAccess::updateScreenshotCaptureKey(player_client, true));
+    using Access = client::PlayerClientFocusTestAccess;
+    Access::dispatchScreenshotKey(player_client, GLFW_PRESS);
+    Access::dispatchScreenshotKey(player_client, GLFW_RELEASE);
+    EXPECT_TRUE(Access::takePendingScreenshotRequest(player_client));
+    Access::dispatchScreenshotKey(player_client, GLFW_REPEAT);
+    EXPECT_FALSE(Access::takePendingScreenshotRequest(player_client));
+    Access::setScreenshotCaptureInFlight(player_client, true);
+    Access::dispatchScreenshotKey(player_client, GLFW_PRESS);
+    Access::dispatchScreenshotKey(player_client, GLFW_RELEASE);
+    EXPECT_FALSE(Access::takePendingScreenshotRequest(player_client));
+    Access::setScreenshotCaptureInFlight(player_client, false);
+    Access::dispatchScreenshotKey(player_client, GLFW_PRESS);
+    Access::dispatchScreenshotKey(player_client, GLFW_RELEASE);
+    EXPECT_TRUE(Access::takePendingScreenshotRequest(player_client));
     EXPECT_FALSE(client::PlayerClientFocusTestAccess::updateLoadingInputSnapshot(
         player_client,
         SCREENSHOT_KEY,
@@ -3829,24 +3840,19 @@ TEST(PlayerClientFocusTest, OrdinaryNativeStartupFirstFramesNeverShowFallbackGri
 }
 
 #if defined(__APPLE__)
-TEST(PlayerClientFocusTest, CopiedFrameHasNoToastAndSuccessShowsCenteredToast)
+TEST(PlayerClientFocusTest, ScreenshotCopiesCleanFrameAndShowsToastOnLoadingReadyAndMapScreens)
 {
+    using Access = client::PlayerClientFocusTestAccess;
     static constexpr uint8_t MINIMUM_GREEN_CHANNEL = 175U;
     static constexpr uint8_t MINIMUM_GREEN_MARGIN = 12U;
     static constexpr uint32_t MINIMUM_TOAST_PIXELS = 80U;
 
-    client::PlayerClient player_client;
-    ASSERT_TRUE(client::PlayerClientFocusTestAccess::beginPlayingWorld(player_client));
-    client::PlayerClientFocusTestAccess::disableDebugHud(player_client);
-    std::optional<client::RendererFrameCapture> const copied_frame =
-        client::PlayerClientFocusTestAccess::capturePlayerFrame(player_client);
-    ASSERT_TRUE(copied_frame.has_value());
     struct ToastPixels final {
         uint32_t count = 0U;
         uint64_t x_sum = 0U;
         uint64_t y_sum = 0U;
     };
-    auto const findGreenToastPixels = [](client::RendererFrameCapture const& capture) {
+    auto const findGreenToastPixels = [](auto const& capture) {
         uint32_t const margin = std::min(32U, capture.width / 4U);
         uint32_t const roi_left = margin > 4U ? margin - 4U : 0U;
         uint32_t const roi_right = capture.width - roi_left;
@@ -3873,41 +3879,76 @@ TEST(PlayerClientFocusTest, CopiedFrameHasNoToastAndSuccessShowsCenteredToast)
         }
         return pixels;
     };
-    EXPECT_LT(findGreenToastPixels(*copied_frame).count, MINIMUM_TOAST_PIXELS)
-        << "the screenshot frame must be captured before its success notification";
 
-    std::string const pasteboard_name = "MinecraftClone.ScreenshotToastTest."
-        + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    std::string error;
-    std::optional<std::vector<uint8_t>> const png = client::detail::encodeRgba8Png(
-        copied_frame->width,
-        copied_frame->height,
-        copied_frame->rgba8,
-        error
-    );
-    ASSERT_TRUE(png.has_value()) << error;
-    ASSERT_TRUE(client::detail::copyScreenshotPngToClipboard(*png, error, pasteboard_name)) << error;
-    std::optional<std::vector<uint8_t>> const pasted_png =
-        client::detail::takeScreenshotPngFromPasteboard(pasteboard_name, error);
-    ASSERT_TRUE(pasted_png.has_value()) << error;
-    EXPECT_EQ(*pasted_png, *png);
+    for (client::WorldLoadingState const state : {
+             client::WorldLoadingState::Creating,
+             client::WorldLoadingState::PreparingAtlas,
+             client::WorldLoadingState::ReadyForStart,
+             client::WorldLoadingState::Playing,
+         }) {
+        SCOPED_TRACE(static_cast<int>(state));
+        client::PlayerClient player_client;
+        if (state == client::WorldLoadingState::Creating || state == client::WorldLoadingState::PreparingAtlas) {
+            ASSERT_TRUE(Access::beginInitialLoading(player_client));
+            if (state == client::WorldLoadingState::PreparingAtlas) {
+                ASSERT_TRUE(Access::publishGeneration(player_client, {
+                    .stage = generation::GenerationStage::Tectonics,
+                    .completed = 1U,
+                    .total = 12U,
+                    .snapshot = controlledGenerationSnapshot(),
+                }));
+                ASSERT_NE(player_client.worldLoadingStatus().map_snapshot, nullptr);
+            }
+        } else {
+            ASSERT_TRUE(Access::beginPlayingWorld(player_client, state == client::WorldLoadingState::Playing));
+        }
+        ASSERT_EQ(player_client.worldLoadingStatus().state, state);
+        Access::renderFrame(player_client);
+        if (state == client::WorldLoadingState::ReadyForStart) {
+            Access::setGenerationVisibleElapsed(player_client, std::chrono::seconds{ 10 });
+            ASSERT_TRUE(Access::uploadPromptLod(player_client, 1U));
+            Access::renderFrame(player_client);
+            ASSERT_TRUE(Access::promptFrame(player_client).has_value());
+        }
+        if (state == client::WorldLoadingState::Playing) {
+            Access::openWorldMap(player_client);
+            ASSERT_TRUE(Access::worldMapOpen(player_client));
+        }
 
-    client::PlayerClientFocusTestAccess::setScreenshotFeedback(
-        player_client,
-        "Screenshot copied to clipboard",
-        true
-    );
-    std::optional<client::RendererFrameCapture> const toast_frame =
-        client::PlayerClientFocusTestAccess::capturePlayerFrame(player_client);
-    ASSERT_TRUE(toast_frame.has_value());
+        std::string const pasteboard_name = "MinecraftClone.ScreenshotToastTest."
+            + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+        Access::setScreenshotPasteboardName(player_client, pasteboard_name);
+        std::string error;
+        ASSERT_TRUE(Access::captureScreenshotToClipboard(player_client, error)) << error;
+        std::optional<std::vector<uint8_t>> const png =
+            client::detail::takeScreenshotPngFromPasteboard(pasteboard_name, error);
+        ASSERT_TRUE(png.has_value()) << error;
+        std::optional<DecodedTestPng> copied_frame = decodeStoredTestPng(*png, error);
+        ASSERT_TRUE(copied_frame.has_value()) << error;
+        EXPECT_LT(findGreenToastPixels(*copied_frame).count, MINIMUM_TOAST_PIXELS)
+            << "the screenshot frame must be captured before its success notification";
+        EXPECT_EQ(player_client.worldLoadingStatus().state, state);
+        if (state == client::WorldLoadingState::PreparingAtlas) {
+            client::RendererFrameCapture const copied_atlas{
+                .width = copied_frame->width,
+                .height = copied_frame->height,
+                .rgba8 = std::move(copied_frame->rgba8),
+            };
+            EXPECT_TRUE(loadingCanvasVisible(copied_atlas));
+            auto const atlas_crop = cropMapInterior(copied_atlas, loadingContentScale(player_client));
+            EXPECT_TRUE(mapSpatialVariation(atlas_crop).geographic());
+        }
 
-    ToastPixels const toast_pixels = findGreenToastPixels(*toast_frame);
-    ASSERT_GT(toast_pixels.count, MINIMUM_TOAST_PIXELS)
-        << "a successful clipboard copy should show a readable toast near the top center";
-    double const toast_center_x = static_cast<double>(toast_pixels.x_sum) / toast_pixels.count;
-    double const toast_center_y = static_cast<double>(toast_pixels.y_sum) / toast_pixels.count;
-    EXPECT_NEAR(toast_center_x, static_cast<double>(toast_frame->width) / 2.0, toast_frame->width * 0.1);
-    EXPECT_LT(toast_center_y, static_cast<double>(toast_frame->height) * 0.25);
+        std::optional<client::RendererFrameCapture> const toast_frame = Access::capturePlayerFrame(player_client);
+        ASSERT_TRUE(toast_frame.has_value());
+        ToastPixels const toast_pixels = findGreenToastPixels(*toast_frame);
+        ASSERT_GT(toast_pixels.count, MINIMUM_TOAST_PIXELS)
+            << "a successful clipboard copy should show a readable toast near the top center";
+        double const toast_center_x = static_cast<double>(toast_pixels.x_sum) / toast_pixels.count;
+        double const toast_center_y = static_cast<double>(toast_pixels.y_sum) / toast_pixels.count;
+        EXPECT_NEAR(toast_center_x, static_cast<double>(toast_frame->width) / 2.0, toast_frame->width * 0.1);
+        EXPECT_LT(toast_center_y, static_cast<double>(toast_frame->height) * 0.25);
+    }
 }
 #endif
 

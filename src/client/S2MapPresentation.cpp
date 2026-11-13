@@ -3,12 +3,12 @@
 #include <client/GenerationMapPresentation.hpp>
 #include <client/render/TextRenderer.hpp>
 
-#include <core/IO/Log.hpp>
-
 #include <generation/Generation.hpp>
 #include <generation/RiverBedChannel.hpp>
 #include <generation/V10Provider.hpp>
 #include <generation/V9Provider.hpp>
+
+#include <core/IO/Log.hpp>
 
 #include <algorithm>
 #include <array>

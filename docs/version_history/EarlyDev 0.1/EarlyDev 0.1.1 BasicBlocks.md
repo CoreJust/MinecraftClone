@@ -4,6 +4,14 @@ BasicBlocks develops the generated world, terrain presentation and local play fo
 
 # Snapshots
 
+## EarlyDev 0.1.1:2(26.11.12)
+
+- Block breaking and placement. Creative, Survival, and Spectator modes.
+- Adaptive HUD and crosshair.
+- Minimap and world map with terrain, climate, and tectonic plate layers.
+- Cooling lava veins during world generation.
+- Terrain relief and river rendering changes.
+
 ## EarlyDev 0.1.1:1(26.10.23)
 
 S1 adds the first Terrain-v2 world, generation map and local singleplayer launcher. The owner accepted the playable Windows application for release with remaining performance and visual issues assigned to S2. The release ledger records actual publication and artifact identities separately.

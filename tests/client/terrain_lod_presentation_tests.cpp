@@ -3421,10 +3421,17 @@ TEST(TerrainLodPresentationTest, VoxelReplacementRetainsNormalContextWithoutKeep
         {{{0, 0, 3200}, {16, 0, 3200}, {16, 16, 3200}}}, shared::Block::Snow);
     auto const voxel_face = client::StoneFaceInstance{.x = 16, .direction = 5U};
     active.groups = {
-        {.range = {0U, 1U}, .extent = 16U, .face_storage =
-            std::make_shared<std::vector<client::StoneFaceInstance> const>(std::vector{terrain_face})},
-        {.range = {1U, 1U}, .origin_x = 16U, .extent = 16U, .face_storage =
-            std::make_shared<std::vector<client::StoneFaceInstance> const>(std::vector{voxel_face})},
+        {
+            .range = {0U, 1U},
+            .face_storage = std::make_shared<std::vector<client::StoneFaceInstance> const>(std::vector{terrain_face}),
+            .extent = 16U,
+        },
+        {
+            .range = {1U, 1U},
+            .face_storage = std::make_shared<std::vector<client::StoneFaceInstance> const>(std::vector{voxel_face}),
+            .origin_x = 16U,
+            .extent = 16U,
+        },
     };
     active.logical_face_count = 2U;
     client::detail::prepareTerrainLodMeshNormals(active, {});
@@ -3434,8 +3441,12 @@ TEST(TerrainLodPresentationTest, VoxelReplacementRetainsNormalContextWithoutKeep
     auto replacement = voxel_face;
     replacement.z = 1;
     client::TerrainLodScene patch;
-    patch.groups = {{.range = {0U, 1U}, .origin_x = 16U, .extent = 16U, .face_storage =
-        std::make_shared<std::vector<client::StoneFaceInstance> const>(std::vector{replacement})}};
+    patch.groups = {{
+        .range = {0U, 1U},
+        .face_storage = std::make_shared<std::vector<client::StoneFaceInstance> const>(std::vector{replacement}),
+        .origin_x = 16U,
+        .extent = 16U,
+    }};
     patch.logical_face_count = 1U;
     std::array const ranges{active.groups[0].range, active.groups[1].range};
     auto const merged = client::detail::terrainLodReplacementPlan(active, ranges, patch).scene;

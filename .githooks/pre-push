@@ -68,6 +68,13 @@ while read -r local_ref local_sha remote_ref remote_sha; do
             echo "AI pushes require a clean working tree." >&2
             exit 1
         fi
+        if [ -n "${MC_SNAPSHOT_CORRECTION_RECEIPT:-}" ]; then
+            "${PYTHON:-python3}" script/ci/snapshot_correction.py verify \
+                --receipt "$MC_SNAPSHOT_CORRECTION_RECEIPT" \
+                --tag "${MC_SNAPSHOT_CORRECTION_TAG:?missing correction tag}" \
+                --promoted "$local_commit" --push-ref "$remote_ref" --remote-sha "$remote_sha" --remote "$remote_name"
+            continue
+        fi
         case "$remote_ref" in
             refs/heads/ai-main)
                 if "${PYTHON:-python3}" script/ai_publish.py verify-promotion-bootstrap "$local_commit" "$remote_sha" >/dev/null 2>&1; then

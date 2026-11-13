@@ -118,6 +118,23 @@ bool waitForPublication(
     return false;
 }
 
+[[nodiscard]]
+std::shared_ptr<client::S2MapImage const> waitForMapPublication(
+    client::TerrainLodSource const& source,
+    shared::TerrainSessionIdentity const& session,
+    std::chrono::milliseconds const timeout
+)
+{
+    auto const deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (auto map = source.mapFor(session)) {
+            return map;
+        }
+        std::this_thread::sleep_for(1ms);
+    }
+    return nullptr;
+}
+
 } // namespace
 
 TEST(TerrainLodSourceTest, RejectsConfigurationIdentityMismatchBeforeStartingWork)
@@ -296,7 +313,7 @@ TEST(TerrainLodSourceTest, DefaultBuilderPreparesMatchingAtlasAndFullWorldL0)
     EXPECT_EQ(root->extent, generation::WORLD_SIZE_BLOCKS);
     EXPECT_EQ(root->side, 257U);
     EXPECT_EQ(root->nodes.size(), 257U * 257U);
-    std::shared_ptr<client::S2MapImage const> const map = source.mapFor(session);
+    std::shared_ptr<client::S2MapImage const> const map = waitForMapPublication(source, session, 60s);
     ASSERT_NE(map, nullptr);
     EXPECT_EQ(map->source_identity, session.terrain);
     EXPECT_EQ(map->source_model_identity, root->model_identity);
@@ -340,7 +357,7 @@ TEST(TerrainLodSourceTest, PreparedWorldProviderBuildsL0FromTheSinglePreparedWor
         prepared_world->sampleSurfaceHeight(4'096U, 8'192U));
     ASSERT_NE(source.rootFor(session), nullptr);
     EXPECT_EQ(source.rootFor(session)->terrain_identity, prepared_world->identity());
-    std::shared_ptr<client::S2MapImage const> const map = source.mapFor(session);
+    std::shared_ptr<client::S2MapImage const> const map = waitForMapPublication(source, session, 60s);
     ASSERT_NE(map, nullptr);
     EXPECT_EQ(map->source_identity, session.terrain);
     EXPECT_EQ(map->source_model_identity, source.rootFor(session)->model_identity);

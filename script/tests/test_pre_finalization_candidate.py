@@ -74,7 +74,7 @@ class PreFinalizationCandidateTests(unittest.TestCase):
 
         readme = cls.root / "README.md"
         readme_text, count = re.subn(
-            r"(?m)^Version EarlyDev 0\.1\.1 BasicBlocks\.$",
+            r"Version EarlyDev 0\.1\.1 BasicBlocks\.",
             "Version EarlyDev 0.1.0 Initiation.",
             readme.read_text(encoding="utf-8"),
             count=1,

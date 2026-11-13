@@ -375,6 +375,8 @@ def desktop_entries(args: argparse.Namespace, evidence: dict[str, Any]) -> tuple
     executable = require_regular_file(args.executable, "executable")
     shader_entries = files_in_tree(args.shaders, "shaders", "shader directory")
     entries = list(shader_entries)
+    if args.audio is not None:
+        entries.extend(files_in_tree(args.audio, "assets/audio", "audio directory"))
     executable_name = "mc_main" if args.platform == "macos" else "mc_main.exe"
     if args.platform == "windows" and executable.suffix.lower() != ".exe":
         raise PackageError("Windows executable must have a .exe suffix")
@@ -669,6 +671,7 @@ def parser() -> argparse.ArgumentParser:
     desktop.add_argument("--format", choices=("tar.gz", "zip"), required=True)
     desktop.add_argument("--executable", type=Path, required=True)
     desktop.add_argument("--shaders", type=Path, required=True)
+    desktop.add_argument("--audio", type=Path)
     desktop.add_argument("--runtime", type=Path, action="append", default=[])
     desktop.add_argument("--license", type=Path, action="append", default=[])
     desktop.add_argument("--vulkan-loader", type=Path)

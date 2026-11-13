@@ -1,74 +1,116 @@
 # Minecraft Clone 2026
 
-A C++23 Minecraft-style game for learning networking, Vulkan graphics, and simulation architecture.
+A Minecraft-style voxel game written in C++23, with procedural terrain, Vulkan rendering, and a server-authoritative world.
 
-Version EarlyDev 0.1.1 BasicBlocks.
+## EarlyDev 0.1.1 BasicBlocks snapshot 2 (released on 12 November 2026)
 
-## Play Snapshot 1
+<!-- Version EarlyDev 0.1.1 BasicBlocks. -->
 
-On Windows, double-click the standalone **MinecraftClone S1** executable. It starts a local server and opens the game automatically. No separate server or console is needed. Wait for the centered start prompt, then press a key or mouse button.
+[Download from GitHub Releases](https://github.com/CoreJust/MinecraftClone/releases)
 
-S1 introduces generated continents, climate and surface materials, a world-generation map, textured terrain with distant detail levels, and CoreLang 0.1.5 integration. Full-detail terrain targets a 40-chunk (640-block) range around the player.
+- **Windows x64.** Run the standalone executable.
+- **macOS, Apple silicon.** Extract the archive and open `MinecraftClone.command`.
+- **Android arm64.** Install the development-signed APK and connect to a server. [Android setup](docs/ANDROID_ACCEPTANCE.md)
 
-![Snapshot 1 grassy block terrain near the canonical spawn](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.1-1-terrain.png>)
+The desktop launchers start a local server. Wait for the start prompt, then press any key.
 
-This current S1 production-renderer capture uses a 24-chunk diagnostic view. [Capture context and snapshot history](<docs/version_history/EarlyDev 0.1/EarlyDev 0.1.1 BasicBlocks.md>) distinguish it from ordinary playtest evidence. Earlier snapshots remain in their own history pages.
+## Changes in snapshot 2
 
-The owner accepted S1 for release with known performance, streaming and LOD defects. Frame pacing, continuous full-detail coverage, LOD seams and material transitions, focus recovery, and outstanding platform qualification are explicit [S2 targets](docs/ai/decisions/earlydev_0_1_1_s2_delivery_targets.md). The [S2 plan](docs/ai/decisions/earlydev_0_1_1_s2.md) also records the parallel design work.
+- Block breaking and placement.
+- Creative, Survival, and Spectator modes.
+- Adaptive HUD and crosshair.
+- Minimap.
+- World map with terrain, climate, and tectonic plate layers.
+- Cooling lava veins during world generation.
+- Terrain relief and river rendering changes.
 
-## Development lines
+## Screenshots
 
-| Branch | Purpose |
-|---|---|
-| `dev` → `main` | Original development and snapshots |
-| `ai-dev` → `ai-main` | AI-led development and verified snapshots |
-| `codex/ai-<task>` | Short-lived tasks based on `ai-dev` |
+**World generation · Relief and cooling lava**
 
-Start with [AI development](docs/ai/README.md), the [backlog](docs/ai/BACKLOG.md), the [code map](docs/code/README.md), or the [scenario scripting guide](docs/scripting/README.md). The AI line follows the same [product roadmap](docs/ROADMAP.md); it changes the development workflow, not the intended game.
+![World generation · Relief and cooling lava](<docs/version_history/EarlyDev 0.1/images/snapshot-2/world-generation-relief.png>)
 
-## Build and run
+**World generation · Water**
 
-Requires C++23, CMake 3.25+, Ninja, vcpkg (`VCPKG_ROOT`), and Vulkan SDK including `glslc`. Development tooling requires Python 3.12+. Application builds support Windows, macOS, and arm64 Android.
+![World generation · Water](<docs/version_history/EarlyDev 0.1/images/snapshot-2/world-generation-water.png>)
 
-```sh
-cmake --preset debug
-cmake --build --preset debug
-ctest --preset debug --output-on-failure --no-tests=error
-python3 script/ai_check.py
-```
+**World generation · Ice**
 
-From the repository root, run `./build/debug/mc_main` for local singleplayer. Use `--server` to host a dedicated server (optional `--port PORT`), or `--player-client --address IP:PORT` to join one. Use `--bot-client` for a headless client. On Windows use `mc_main.exe`. See [build details](docs/BUILD.md) for SDK setup, configuration options, release-path limitations, and validation.
+![World generation · Ice](<docs/version_history/EarlyDev 0.1/images/snapshot-2/world-generation-ice.png>)
 
-## Structure
+**World generation · Arrival**
 
-- `src/shared`: world state, protocol, version metadata.
-- `src/server`, `src/client`: authoritative simulation and presentation.
-- `tests`: game/core tests; `script/tests`: development-tool tests.
-- `cmake`, `script`, `.githooks`: build and local validation.
-- `docs`: contracts, roadmap, release history, AI planning.
+![World generation · Arrival](<docs/version_history/EarlyDev 0.1/images/snapshot-2/world-generation-arrival.png>)
 
-Assets, content packs, modding, replaceable modules, and broader hot reload remain planned directions. Current behavior and limitations are described in the [code guides](docs/code/README.md).
+**Gameplay · Terrain and minimap**
 
-## Dependencies
+![Gameplay · Terrain and minimap](<docs/version_history/EarlyDev 0.1/images/snapshot-2/gameplay-minimap.png>)
 
-Current dependencies:
-1. enet;
-2. fmt;
-3. glfw;
-4. spdlog;
-5. SPIRV-Reflect;
-6. glm;
-7. gtest;
-8. VMA;
-9. volk;
-10. GMP;
-11. MPFR;
-12. miniaudio.
+**Gameplay · Block breaking and target outline**
 
-The Vulkan SDK supplies the loader and shader compiler; macOS uses MoltenVK. Use a Vulkan 1.3-capable validation environment and test the vertex fallback on devices without mesh shaders. See the build guide for the distinction between requested API version and actual capabilities.
+![Gameplay · Block breaking and target outline](<docs/version_history/EarlyDev 0.1/images/snapshot-2/block-breaking.png>)
 
-## Project goals
+**Gameplay · Block placement in Creative mode**
 
-Learn by building a performant, extensible multiplayer game: world generation and updates, network authority under latency, graphics, and progressively richer entities/content. Keep module responsibilities clear as complexity grows. Vulkan 1.4, modding, and replaceable modules are goals rather than statements of current support.
+![Gameplay · Block placement in Creative mode](<docs/version_history/EarlyDev 0.1/images/snapshot-2/creative-building.png>)
 
-[Code conventions](docs/CODE_CONVENTIONS.md) · [Version/branch convention](docs/VERSION_CONVENTION.md) · [Version history](<docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md>)
+**Gameplay · River terrain from above**
+
+![Gameplay · River terrain from above](<docs/version_history/EarlyDev 0.1/images/snapshot-2/terrain-rivers.png>)
+
+**Gameplay · Creative flight at 500×**
+
+![Gameplay · Creative flight at 500×](<docs/version_history/EarlyDev 0.1/images/snapshot-2/flight-500x.png>)
+
+**World map · Currents layer**
+
+![World map · Currents layer](<docs/version_history/EarlyDev 0.1/images/snapshot-2/world-map-currents.png>)
+
+## Known issues
+
+Terrain can load slowly while traveling, transitions between detail levels remain visible, and the tectonic plate overlay needs work. Movement can be erratic at 500× flight speed.
+
+## Controls
+
+| Action | Control |
+| --- | --- |
+| Move and look around | **WASD** and the mouse |
+| Break or place a block | Hold **left click** to break, **right click** to place |
+| Choose a block to place | **B** |
+| Switch game modes when permitted | **G** |
+| Open or close the world map | **M** |
+| Pan and zoom on the map | Drag to pan, scroll to zoom |
+| Toggle currents on the world map | **C** |
+| Toggle wind on the world map | **Ctrl+W** |
+| Copy the current view to the clipboard on Windows or macOS | **F2** |
+
+## Build from source
+
+Desktop builds use C++23, CMake, Ninja, Vulkan, and vcpkg. Install the pinned CoreCpp and CoreLang packages using the desktop dependency guide before configuring CMake. The build guide has the full configure, build, and test commands for desktop and the setup for Android. [Desktop dependencies](docs/DESKTOP_DEPENDENCIES.md) · [Build and test guide](docs/BUILD.md)
+
+<details>
+<summary>vcpkg packages</summary>
+
+<!-- Current dependencies: -->
+
+1. enet
+2. fmt
+3. glfw3
+4. glm
+5. gmp
+6. miniaudio
+7. gtest
+8. mpfr
+9. spdlog
+10. spirv-reflect
+11. volk
+12. vulkan-memory-allocator
+
+</details>
+
+- [Code map](docs/code/README.md) for the client, server, world generation, and renderer.
+- [CoreLang scripting](docs/scripting/README.md) for writing world-generation and gameplay scenarios.
+- [Roadmap](docs/ROADMAP.md) for what is planned next.
+- [Development workflow](docs/ai/README.md) for work on `ai-dev` and snapshots on `ai-main`.
+
+[MIT license](LICENSE)

@@ -611,6 +611,7 @@ public:
         return m_diagnostic_frame_capture_error;
     }
 private:
+    static void onWindowKey(GLFWwindow* window, int key, int scancode, int action, int mods);
     static void onWindowCloseRequested(GLFWwindow* window) noexcept;
 
     friend struct PlayerClientTestAccess;
@@ -720,6 +721,10 @@ private:
     void resetWorldMapSource();
     void releaseActiveBreakAction(bool cancel_placement = true);
     void setScreenshotFeedback(std::string message, bool successful = false);
+    void updateScreenshotPresentation(
+        uint32_t framebuffer_width, uint32_t framebuffer_height, bool loading_screen,
+        std::chrono::steady_clock::time_point now
+    );
     void captureStartTransitionInputs();
     [[nodiscard]] bool hasStartTransitionInputs() const noexcept;
     void refreshHeightTileInterest(
@@ -968,7 +973,7 @@ private:
         PlayerClientDiagnosticFrameCaptureState::NotRequested;
     bool m_diagnostic_frame_capture_requested = false;
     bool m_diagnostic_frame_capture_sequence = false;
-    DebugHudToggleLatch m_screenshot_capture_key_latch;
+    void (*m_previous_window_key_callback)(GLFWwindow*, int, int, int, int) = nullptr;
     bool m_screenshot_capture_pending = false;
     bool m_screenshot_capture_requested = false;
     std::optional<std::string> m_screenshot_test_pasteboard_name;
